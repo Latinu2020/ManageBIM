@@ -23,7 +23,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
-$version = '0.13.1'
+$version = '0.14.0'
 
 # --- locatii (redirectionate in modul test)
 if ($TestRoot) {
@@ -125,7 +125,7 @@ if ($Uninstall) {
     }
     Remove-Item (Join-Path $Desktop 'ManageBIM.lnk'), (Join-Path $StartMenu 'ManageBIM.lnk') -Force -ErrorAction SilentlyContinue
     foreach ($k in 'Software\Classes\ManageBIM.Cache', 'Software\Classes\ManageBIM.Project', 'Software\Classes\ManageBIM.Ifc', 'Software\Microsoft\Windows\CurrentVersion\Uninstall\ManageBIM') { Remove-Reg $k }
-    foreach ($ext in '.bimc', '.bimr') {
+    foreach ($ext in '.bimc', '.bimr', '.bimd') {
         if (-not $TestRoot -and (Get-ItemProperty "HKCU:\Software\Classes\$ext" -ErrorAction SilentlyContinue).'(default)' -like 'ManageBIM.*') { Remove-Reg "Software\Classes\$ext" }
     }
     foreach ($ext in '.ifc', '.nwd', '.nwc') {
@@ -169,14 +169,14 @@ if ($NoDesktop) {
 
 # 3) fisiere asociate (HKCU, doar utilizatorul curent)
 $open = "`"$Exe`" `"%1`""
-foreach ($t in @(@('.bimc', 'ManageBIM.Cache', 'ManageBIM model cache'), @('.bimr', 'ManageBIM.Project', 'ManageBIM project'), @('', 'ManageBIM.Ifc', 'BIM model'))) {
+foreach ($t in @(@('.bimc', 'ManageBIM.Cache', 'ManageBIM model cache'), @('.bimr', 'ManageBIM.Project', 'ManageBIM project'), @('.bimd', 'ManageBIM.Published', 'ManageBIM published project'), @('', 'ManageBIM.Ifc', 'BIM model'))) {
     if ($t[0]) { Set-Reg "Software\Classes\$($t[0])" $null $t[1] }
     Set-Reg "Software\Classes\$($t[1])" $null $t[2]
     Set-Reg "Software\Classes\$($t[1])\DefaultIcon" $null "`"$Exe`",0"
     Set-Reg "Software\Classes\$($t[1])\shell\open\command" $null $open
 }
 foreach ($ext in '.ifc', '.nwd', '.nwc') { Set-Reg "Software\Classes\$ext\OpenWithProgids" 'ManageBIM.Ifc' '' }
-Ok '.bimc / .bimr open with ManageBIM; "Open with" for .ifc .nwd .nwc'
+Ok '.bimc / .bimr / .bimd open with ManageBIM; "Open with" for .ifc .nwd .nwc'
 
 # 4) Apps & features
 $u = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\ManageBIM'

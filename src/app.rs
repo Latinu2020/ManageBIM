@@ -811,6 +811,7 @@ pub enum Purpose {
     ExportClashBcf,
     ExportIfc,
     SharedFolder,
+    PublishBimd,
     ExportGrids,
     ExportClashNavis,
     ImportBcf,
@@ -989,6 +990,18 @@ pub struct App {
     pub grid_gen: GridGen,
     /// alegere in 3D: 0 nimic, 1 originea, 2 directia primei axe
     pub grid_pick: u8,
+    /// proiectul deschis dintr-un .bimd: Save il publica din nou acolo
+    pub bimd_path: Option<String>,
+    /// intrebarea "salvezi?" inainte de intoarcerea la pagina de start
+    pub confirm_start: bool,
+    /// pagina de start aratata peste proiectul deschis (ca Navisworks: sageata inapoi la proiect)
+    pub show_start: bool,
+    /// ce se face dupa intrebarea "salvezi?" (deschidere / proiect nou din pagina de start)
+    pub start_pending: Option<StartAction>,
+    /// pagina de start: sortare (0 ultima deschidere, 1 nume, 2 data modificarii, 3 tip), cautare, lista / grila
+    pub start_sort: u8,
+    pub start_search: String,
+    pub start_list: bool,
     pub override_color: [u8; 4],
     pub min_dist_result: Option<(f32, Vec3)>,
     pub cache_types: Vec<String>,
@@ -1178,6 +1191,13 @@ impl App {
             show_section_plane: true,
             grid_gen: GridGen::default(),
             grid_pick: 0,
+            bimd_path: None,
+            confirm_start: false,
+            show_start: false,
+            start_pending: None,
+            start_sort: 0,
+            start_search: String::new(),
+            start_list: false,
             override_color: [230, 120, 40, 255],
             min_dist_result: None,
             cache_types: Vec::new(),
@@ -1755,6 +1775,10 @@ impl App {
         let lower = path.to_lowercase();
         if lower.ends_with(".bimr") {
             self.load_project(path);
+            return;
+        }
+        if lower.ends_with(".bimd") {
+            self.open_bimd(path);
             return;
         }
         if lower.ends_with(".csv") {
@@ -2511,6 +2535,8 @@ impl App {
     }
 
     pub fn reset(&mut self) {
+        self.bimd_path = None;
+        self.blank_project = false;
         {
             let mut r = self.renderer.lock().unwrap();
             for i in 0..self.models.len() {
@@ -4464,8 +4490,9 @@ impl App {
             self.start_load(i, real);
         }
         self.project_path = Some(path.to_string());
-        // proiectul salvat automat nu intra in lista Recent
-        if !autosave_dir().map_or(false, |d| std::path::Path::new(path).starts_with(&d)) {
+        // proiectul salvat automat / despachetat din .bimd nu intra in lista Recent
+        let internal = autosave_dir().map_or(false, |d| std::path::Path::new(path).starts_with(&d)) || published_dir().map_or(false, |d| std::path::Path::new(path).starts_with(&d));
+        if !internal {
             self.settings.add_recent(path);
         }
         self.pending_project = Some(pf);
@@ -4823,7 +4850,14 @@ impl App {
         };
         match purpose {
             Purpose::OpenModel { append } => self.open_path(&path, append),
-            Purpose::OpenProject => self.load_project(&path),
+            Purpose::OpenProject => self.open_path(&path, false),
+            Purpose::PublishBimd => match self.publish_bimd(&path) {
+                Ok(m) => {
+                    self.bimd_path = Some(with_ext(&path, "bimd"));
+                    self.toast(m);
+                }
+                Err(e) => self.error(e),
+            },
             Purpose::SaveProject => self.save_project(&path),
             Purpose::ExportClashHtml => {
                 let c = self.clash_report_html(self.cur_test);
@@ -5084,7 +5118,8 @@ impl App {
                     .add_filter("IFC / ManageBIM", &["ifc", "bimc"])
                     .add_filter("CAD (DWG, DXF, STEP, IGES, BREP, FCStd)", &["dwg", "dxf", "step", "stp", "iges", "igs", "brep", "brp", "fcstd"])
                     .add_filter("3D meshes (glTF, OBJ, STL, PLY)", &["glb", "gltf", "obj", "stl", "ply"]).add_filter("All files", &["*"]).pick_files().map(|v| v.into_iter().map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>()),
-                Purpose::OpenProject => d.set_title("Open Project").add_filter("ManageBIM project", &["bimr"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::PublishBimd => d.set_title("Publish project + models (.bimd)").add_filter("ManageBIM published project", &["bimd"]).set_file_name(self.project_path.as_ref().map(|p| format!("{}.bimd", std::path::Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default())).unwrap_or_else(|| "project.bimd".into())).save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::OpenProject => d.set_title("Open Project").add_filter("ManageBIM project (.bimr / .bimd)", &["bimr", "bimd"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::SaveProject => d.set_title("Save Project").add_filter("ManageBIM project", &["bimr"]).set_file_name("project.bimr").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashHtml => d.set_title("Clash report (HTML)").add_filter("HTML", &["html"]).set_file_name("clash_report.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashCsv => d.set_title("Clash report (CSV)").add_filter("CSV", &["csv"]).set_file_name("clash_report.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5165,6 +5200,7 @@ impl App {
                 Purpose::ExportClashBcf => "clashes.bcf".into(),
                 Purpose::ExportIfc => "export.ifc".into(),
                 Purpose::SharedFolder => String::new(),
+                Purpose::PublishBimd => "project.bimd".into(),
                 Purpose::ExportGrids => "grids.dxf".into(),
                 Purpose::ExportClashNavis => "clashes_viewpoints.xml".into(),
                 Purpose::ExportTasksCsv => "schedule.csv".into(),
@@ -5726,6 +5762,176 @@ impl App {
                 self.toast(format!("Grid aligned: origin {:.3}, {:.3} · angle {:.2}°", self.grid_gen.origin[0], self.grid_gen.origin[1], self.grid_gen.angle_deg));
             }
             _ => {}
+        }
+    }
+}
+
+// ------------------------------------------------------------------ .bimd (un singur fisier, ca .nwd)
+/// Folderul in care se despacheteaza fisierele .bimd deschise.
+pub fn published_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("ManageBIM").join("Published"))
+}
+
+impl App {
+    /// Publica proiectul intr-un singur fisier .bimd (ZIP): project.bimr + fiecare model ca .bimc
+    /// (norii de puncte cu fisierul original). Se deschide pe orice PC, fara fisierele sursa.
+    pub fn publish_bimd(&mut self, path: &str) -> Result<String, String> {
+        let path = with_ext(path, "bimd");
+        let origin = self.origin_f64();
+        let tmp = std::env::temp_dir().join(format!("mb_publish_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+        let mut zip = crate::markup::Zip::default();
+        let mut pf = self.project_file();
+        pf.models_rel = Vec::new();
+        let mut total: u64 = 0;
+        let mut n = 0;
+        for slot in 0..self.models.len() {
+            let Some(m) = self.models[slot].clone() else {
+                if let Some(p) = pf.models.get_mut(slot) {
+                    p.clear();
+                }
+                continue;
+            };
+            let stem: String = std::path::Path::new(&m.path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| format!("model{slot}")).chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
+            let (name, data) = if m.cloud.is_some() {
+                // nor de puncte: fisierul original (E57 / LAS)
+                let ext = std::path::Path::new(&m.path).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_else(|| "e57".into());
+                (format!("models/{slot}_{stem}.{ext}"), std::fs::read(&m.path).map_err(|e| format!("{}: {e}", m.name))?)
+            } else {
+                // geometria originala (fara transformarea modelului - ea ramane in proiect)
+                let base = self.base_models.get(slot).cloned().flatten().unwrap_or(m.clone());
+                let raw = crate::bimc::from_model(&base, origin);
+                let f = tmp.join(format!("{slot}.bimc"));
+                crate::bimc::write(&raw, &f.to_string_lossy()).map_err(|e| format!("{}: {e}", m.name))?;
+                (format!("models/{slot}_{stem}.bimc"), std::fs::read(&f).map_err(|e| e.to_string())?)
+            };
+            total += data.len() as u64;
+            if total > 3_900_000_000 {
+                let _ = std::fs::remove_dir_all(&tmp);
+                return Err("The models are larger than 4 GB together - .bimd cannot hold them (save a .bimr project instead).".into());
+            }
+            zip.add(&name, &data);
+            if let Some(p) = pf.models.get_mut(slot) {
+                *p = name;
+            }
+            n += 1;
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+        let json = serde_json::to_string_pretty(&pf).map_err(|e| e.to_string())?;
+        zip.add("project.bimr", json.as_bytes());
+        let bytes = zip.finish();
+        let part = format!("{path}.part");
+        std::fs::write(&part, &bytes).map_err(|e| format!("Cannot write {path}: {e}"))?;
+        std::fs::rename(&part, &path).map_err(|e| format!("Cannot write {path}: {e}"))?;
+        self.settings.add_recent(&path);
+        Ok(format!("Published {} ({n} models, {:.1} MB)", crate::file_name(&path), bytes.len() as f64 / 1e6))
+    }
+
+    /// Deschide un .bimd: se despacheteaza in %LOCALAPPDATA%\ManageBIM\Published\<nume>, apoi proiectul se incarca
+    /// de acolo. Save scrie din nou in .bimd.
+    pub fn open_bimd(&mut self, path: &str) {
+        let r = (|| -> Result<std::path::PathBuf, String> {
+            let data = std::fs::read(path).map_err(|e| format!("Cannot read {path}: {e}"))?;
+            let zip = crate::fcstd::Zip::parse(data).map_err(|_| format!("{} is not a valid .bimd file.", crate::file_name(path)))?;
+            let stamp = std::fs::metadata(path).and_then(|m| m.modified()).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
+            let stem = std::path::Path::new(path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "project".into());
+            let dir = published_dir().ok_or("LOCALAPPDATA not set")?.join(format!("{stem}-{stamp}"));
+            std::fs::create_dir_all(dir.join("models")).map_err(|e| e.to_string())?;
+            let txt = zip.text("project.bimr").ok_or("project.bimr missing in the .bimd file")?;
+            let mut pf: ProjectFile = serde_json::from_str(&txt).map_err(|e| format!("Invalid project in the .bimd file: {e}"))?;
+            for m in pf.models.iter_mut().filter(|m| !m.is_empty()) {
+                if m.contains("..") {
+                    return Err(format!("invalid path in the .bimd file: {m}"));
+                }
+                let out = dir.join(m.replace('/', "\\"));
+                // despachetat o singura data (acelasi .bimd = acelasi folder)
+                if !out.is_file() {
+                    let data = zip.read(m).ok_or_else(|| format!("{m} missing in the .bimd file"))?;
+                    std::fs::write(&out, data).map_err(|e| e.to_string())?;
+                }
+                *m = out.to_string_lossy().to_string();
+            }
+            let bimr = dir.join("project.bimr");
+            std::fs::write(&bimr, serde_json::to_string_pretty(&pf).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+            Ok(bimr)
+        })();
+        match r {
+            Ok(bimr) => {
+                self.load_project(&bimr.to_string_lossy());
+                self.project_path = None;
+                self.bimd_path = Some(path.to_string());
+                self.settings.add_recent(path);
+            }
+            Err(e) => self.error(e),
+        }
+    }
+}
+
+impl App {
+    /// Inapoi la pagina de start: proiectul se inchide (salvarea automata pastreaza o copie).
+    pub fn close_to_start(&mut self) {
+        self.reset();
+        self.project_path = None;
+        self.blank_project = false;
+        self.confirm_start = false;
+    }
+}
+
+/// Actiune pornita din pagina de start cand un proiect e deja deschis (dupa intrebarea "salvezi?").
+#[derive(Clone, Debug, PartialEq)]
+pub enum StartAction {
+    New,
+    Open(String),
+    OpenModelDialog,
+    OpenProjectDialog,
+    /// doar inchide proiectul (ramane pagina de start)
+    Close,
+}
+
+impl App {
+    /// E ceva deschis (modele, proiect nou sau issue-uri) care s-ar pierde?
+    pub fn has_open_project(&self) -> bool {
+        self.loaded_models().next().is_some() || !self.loads.is_empty() || self.blank_project || self.project_path.is_some() || self.bimd_path.is_some() || !self.viewpoints.is_empty()
+    }
+
+    /// Din pagina de start: cu un proiect deschis se intreaba intai daca se salveaza.
+    pub fn start_action(&mut self, a: StartAction) {
+        if self.has_open_project() {
+            self.start_pending = Some(a);
+            self.confirm_start = true;
+        } else {
+            self.run_start_action(a);
+        }
+    }
+
+    pub fn run_start_action(&mut self, a: StartAction) {
+        self.confirm_start = false;
+        self.start_pending = None;
+        match a {
+            StartAction::New => {
+                self.new_project();
+                self.show_start = false;
+            }
+            StartAction::Open(p) => {
+                self.close_to_start();
+                self.open_path(&p, false);
+                self.show_start = false;
+            }
+            StartAction::OpenModelDialog => {
+                self.close_to_start();
+                self.show_start = false;
+                self.request_path(Purpose::OpenModel { append: false });
+            }
+            StartAction::OpenProjectDialog => {
+                self.close_to_start();
+                self.show_start = false;
+                self.request_path(Purpose::OpenProject);
+            }
+            StartAction::Close => {
+                self.close_to_start();
+                self.show_start = true;
+            }
         }
     }
 }

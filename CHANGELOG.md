@@ -3,6 +3,13 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.14.0 - 2026-11-19
+- **.bimd** - echivalentul NWD: **Publish** (Home › Project, sau File) pune proiectul și toate modelele într-un singur
+  fișier, care se deschide pe orice PC fără fișierele sursă; Save scrie din nou în .bimd. Se asociază cu ManageBIM.
+- **Pagina de start ca în Navisworks**: Open… cu meniu (model / proiect), New, Recent ca **carduri sau listă**,
+  **Sort by** (ultima deschidere, nume, dată, tip), **Search**; butonul **Start** o arată peste proiectul deschis, iar
+  săgeata ⬅ (sau Esc) te întoarce la proiect. Când deschizi altceva, întreabă dacă salvezi.
+- **New** intră direct într-un proiect gol, cu toată interfața și Save.
 ## 0.13.1 - 2026-11-19
 - **New** (pagina de start și File) face un proiect nou gol, cu toată interfața și Save (Ctrl+S).
 - **Secțiune pe niveluri** (Sectioning › By level): **Level box** (de la nivel la nivelul următor, ◀ ▶ între niveluri) sau

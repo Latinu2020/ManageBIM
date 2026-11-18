@@ -447,3 +447,52 @@ fn demo_grid_project() {
     pf.models = vec![abs("samples/Block_A_Architecture_Structure.ifc"), abs("samples/Block_A_MEP.ifc")];
     std::fs::write(&out, serde_json::to_string_pretty(&pf).unwrap()).unwrap();
 }
+
+#[test]
+fn bimd_holds_project_and_models_in_one_file() {
+    std::env::set_var("APPDATA", std::env::temp_dir().join("mb_test_appdata"));
+    let mut a = app();
+    a.save_viewpoint();
+    a.viewpoints[0].name = "Check duct".into();
+    a.user_grids = bimrust::app::generate_grid([0.0, 0.0], 2, 5.0, "1", 2, 5.0, "A", 1.0);
+    a.use_user_grids = true;
+    let path = std::env::temp_dir().join(format!("mb_pub_{}.bimd", std::process::id()));
+    let p = path.to_string_lossy().to_string();
+    let msg = a.publish_bimd(&p).unwrap();
+    assert!(msg.contains("2 models"), "{msg}");
+    // deschis pe "alt PC": fara fisierele sursa, doar .bimd
+    let mut b = App::new(vec![]);
+    b.open_bimd(&p);
+    let t0 = std::time::Instant::now();
+    while !b.loads.is_empty() && t0.elapsed().as_secs() < 60 {
+        b.poll_jobs();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    b.poll_jobs();
+    let count = |x: &App| x.loaded_models().map(|(_, m)| m.elements.len()).sum::<usize>();
+    assert_eq!(count(&b), count(&a), "every element back");
+    assert!(b.loaded_models().all(|(_, m)| m.path.to_lowercase().ends_with(".bimc")), "models from inside the .bimd");
+    assert_eq!(b.viewpoints.len(), 1);
+    assert_eq!(b.viewpoints[0].name, "Check duct");
+    assert_eq!(b.user_grids.len(), 4);
+    assert_eq!(b.bimd_path.as_deref(), Some(p.as_str()), "Save goes back into the .bimd");
+    assert!(b.project_path.is_none());
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn start_page_actions_ask_before_closing_an_open_project() {
+    use bimrust::app::StartAction;
+    let mut a = app();
+    a.show_start = true;
+    a.start_action(StartAction::New);
+    assert!(a.confirm_start, "an open project asks to save first");
+    assert!(a.loaded_models().next().is_some(), "nothing closed yet");
+    let pending = a.start_pending.clone().unwrap();
+    a.run_start_action(pending);
+    assert!(a.blank_project && !a.show_start && a.loaded_models().next().is_none());
+    // fara proiect deschis: actiunea se face direct
+    let mut b = App::new(vec![]);
+    b.start_action(StartAction::New);
+    assert!(!b.confirm_start && b.blank_project);
+}

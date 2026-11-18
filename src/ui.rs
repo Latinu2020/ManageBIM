@@ -315,6 +315,14 @@ impl App {
     // ================================================================== meniu
     // ================================================================== ribbon
     fn save_now(&mut self) {
+        // proiect deschis dintr-un .bimd: se publica din nou acolo (ca NWD)
+        if let Some(p) = self.bimd_path.clone() {
+            match self.publish_bimd(&p) {
+                Ok(m) => self.toast(m),
+                Err(e) => self.error(e),
+            }
+            return;
+        }
         match self.project_path.clone() {
             Some(p) => self.save_project(&p),
             None => self.request_path(Purpose::SaveProject),
@@ -381,6 +389,14 @@ impl App {
         if ui.button("New Project (close all)").clicked() {
             ui.close_menu();
             self.new_project();
+        }
+        if ui.button("📦 Publish .bimd…  (project + models in one file)").on_hover_text("Like Navisworks NWD: one file with the project and all models - opens on any PC without the source files").clicked() {
+            ui.close_menu();
+            self.request_path(Purpose::PublishBimd);
+        }
+        if ui.button("🏠 Start Page").on_hover_text("Recent files, Open, New - the project stays open until you open something else").clicked() {
+            ui.close_menu();
+            self.show_start = true;
         }
         if ui.button("Exit").clicked() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
@@ -487,8 +503,14 @@ impl App {
             if rbtn(ui, "➕", "Append", "Append a model to the federated scene", false, true).clicked() {
                 self.request_path(Purpose::OpenModel { append: true });
             }
-            if rbtn(ui, "💾", "Save", "Save the .bimr project  Ctrl+S", false, true).clicked() {
+            if rbtn(ui, "💾", "Save", "Save the project  Ctrl+S (.bimr, or the .bimd it was opened from)", false, true).clicked() {
                 self.save_now();
+            }
+            if rbtn(ui, "📦", "Publish", "Publish .bimd: the project and all models in one file (like Navisworks NWD)", false, self.loaded_models().next().is_some()).clicked() {
+                self.request_path(Purpose::PublishBimd);
+            }
+            if rbtn(ui, "🏠", "Start", "Start page: recent files, Open, New (the project stays open - come back with the arrow)", false, true).clicked() {
+                self.show_start = true;
             }
             // Refresh: evidentiat cand unul din fisierele incarcate s-a modificat pe disc
             let has_models = self.loaded_models().next().is_some();
@@ -1565,43 +1587,71 @@ impl App {
 
     /// Nimic deschis si nimic in curs de incarcare: se arata pagina de start.
     fn start_screen(&self) -> bool {
-        self.loaded_models().next().is_none() && self.loads.is_empty() && self.project_path.is_none() && !self.blank_project
+        self.loaded_models().next().is_none() && self.loads.is_empty() && self.project_path.is_none() && !self.blank_project && self.bimd_path.is_none() || self.show_start
     }
 
     // ================================================================== pagina de start
     /// Ecranul de pornire, cand nu e deschis niciun model: Open / Open Project / New si fisierele recente
     /// ca niste carduri (tip, nume, data modificarii); click deschide, click dreapta scoate din lista.
     fn start_page(&mut self, ui: &mut egui::Ui) {
+        use crate::app::StartAction;
         let rect = ui.max_rect();
         let pal = self.pal();
-        let side_w = 220.0f32.min(rect.width() * 0.35);
+        let side_w = 230.0f32.min(rect.width() * 0.35);
         let side = Rect::from_min_size(rect.min, EV::new(side_w, rect.height()));
         let dark = self.settings.theme.is_dark();
         let side_fill = if dark { Color32::from_black_alpha(70) } else { Color32::from_white_alpha(150) };
         ui.painter().rect_filled(side, 0.0, side_fill);
-        let mut open_path: Option<String> = None;
+        let mut act: Option<StartAction> = None;
         let mut forget: Option<String> = None;
-        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(side.shrink2(EV::new(18.0, 22.0))), |ui| {
+        let open_name = self.bimd_path.as_ref().or(self.project_path.as_ref()).map(|p| crate::file_name(p)).or_else(|| self.loaded_models().next().map(|(_, m)| m.name.clone())).or_else(|| self.blank_project.then(|| "New project".to_string()));
+        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(side.shrink2(EV::new(18.0, 18.0))), |ui| {
+            // ca Navisworks: sageata inapoi la proiectul deschis
+            if self.show_start {
+                if let Some(n) = &open_name {
+                    if ui.add(egui::Button::new(RichText::new(format!("⬅  {n}")).size(13.0)).frame(false)).on_hover_text("Back to the open project").clicked() {
+                        self.show_start = false;
+                    }
+                    ui.add_space(8.0);
+                }
+            }
             ui.label(RichText::new("ManageBIM").size(24.0).strong().color(accent()));
             ui.label(RichText::new(format!("version {}", env!("CARGO_PKG_VERSION"))).small().color(pal.overlay_weak));
-            ui.add_space(22.0);
-            let big = |t: &str| egui::Button::new(RichText::new(t).size(14.0)).min_size(EV::new(side_w - 36.0, 32.0));
-            if ui.add(big("📂  Open…")).on_hover_text("Open a model: IFC, Revit / Navisworks, DWG, STEP, FBX, E57…  (Ctrl+O)").clicked() {
-                self.request_path(Purpose::OpenModel { append: false });
-            }
-            ui.add_space(4.0);
-            if ui.add(big("🗂  Open Project…")).on_hover_text("Open a ManageBIM project (.bimr)").clicked() {
-                self.request_path(Purpose::OpenProject);
-            }
+            ui.add_space(20.0);
+            let bw = side_w - 36.0;
+            let big = |t: &str| egui::Button::new(RichText::new(t).size(14.0)).min_size(EV::new(bw, 32.0));
+            // Open… cu meniu (model / proiect), ca butonul Open din Navisworks
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                if ui.add(egui::Button::new(RichText::new("📂  Open…").size(14.0)).min_size(EV::new(bw - 30.0, 32.0))).on_hover_text("Open a model or a project (IFC, Revit / Navisworks, DWG, STEP, FBX, E57, .bimr, .bimd…)  Ctrl+O").clicked() {
+                    act = Some(StartAction::OpenModelDialog);
+                }
+                ui.menu_button(RichText::new("⏷").size(14.0), |ui| {
+                    if ui.button("📂 Open model…").clicked() {
+                        act = Some(StartAction::OpenModelDialog);
+                        ui.close_menu();
+                    }
+                    if ui.button("🗂 Open project (.bimr / .bimd)…").clicked() {
+                        act = Some(StartAction::OpenProjectDialog);
+                        ui.close_menu();
+                    }
+                });
+            });
             ui.add_space(4.0);
             if ui.add(big("✚  New")).on_hover_text("New empty project: add models, grids, levels; save it with Save (Ctrl+S)").clicked() {
-                self.new_project();
+                act = Some(StartAction::New);
             }
-            ui.add_space(18.0);
+            if open_name.is_some() && self.show_start {
+                ui.add_space(4.0);
+                if ui.add(big("✖  Close project")).clicked() {
+                    act = Some(StartAction::Close);
+                }
+            }
+            ui.add_space(16.0);
             ui.label(RichText::new("or drag files into the window").small().color(pal.overlay_weak));
             // recuperare dupa o inchidere neasteptata
             if let Some((_, orig, when)) = self.autosave.recover.clone() {
-                ui.add_space(22.0);
+                ui.add_space(20.0);
                 egui::Frame::none().fill(Color32::from_rgba_unmultiplied(235, 170, 60, 40)).stroke(Stroke::new(1.0_f32, Color32::from_rgb(235, 170, 60))).rounding(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.label(RichText::new("⚠ ManageBIM was closed unexpectedly").strong());
                     ui.label(RichText::new(format!("Autosaved {when}{}", orig.as_deref().map(|p| format!(" - {}", crate::file_name(p))).unwrap_or_default())).small());
@@ -1616,78 +1666,131 @@ impl App {
                 });
             }
         });
-        // carduri
-        let area = Rect::from_min_max(Pos2::new(side.right() + 28.0, rect.top() + 20.0), Pos2::new(rect.right() - 20.0, rect.bottom() - 10.0));
+        // ---- Recent: lista / grila, sortare, cautare
+        let area = Rect::from_min_max(Pos2::new(side.right() + 28.0, rect.top() + 18.0), Pos2::new(rect.right() - 20.0, rect.bottom() - 10.0));
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(area), |ui| {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Recent").size(20.0).strong().color(pal.overlay_text));
-                if !self.settings.recent.is_empty() {
-                    ui.add_space(12.0);
-                    if ui.small_button("Clear list").clicked() {
+                ui.add_space(14.0);
+                if ui.selectable_label(self.start_list, RichText::new("☰").size(15.0)).on_hover_text("List").clicked() {
+                    self.start_list = true;
+                }
+                if ui.selectable_label(!self.start_list, RichText::new("▦").size(15.0)).on_hover_text("Tiles").clicked() {
+                    self.start_list = false;
+                }
+                ui.add_space(10.0);
+                ui.label("Sort by");
+                const SORTS: [&str; 4] = ["Last opened", "Name", "Date modified", "Type"];
+                egui::ComboBox::from_id_salt("start_sort").width(120.0).selected_text(SORTS[self.start_sort.min(3) as usize]).show_ui(ui, |ui| {
+                    for (i, s) in SORTS.iter().enumerate() {
+                        ui.selectable_value(&mut self.start_sort, i as u8, *s);
+                    }
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if !self.settings.recent.is_empty() && ui.small_button("Clear list").clicked() {
                         self.settings.recent.clear();
                         self.settings.save();
                     }
-                }
+                    ui.add(egui::TextEdit::singleline(&mut self.start_search).hint_text("🔍 Search").desired_width(180.0));
+                });
             });
             ui.add_space(8.0);
-            if self.settings.recent.is_empty() {
-                ui.label(RichText::new("No recent files yet - open a model to start.").color(pal.overlay_weak));
+            let q = self.start_search.trim().to_lowercase();
+            let mut recent: Vec<(usize, String, Option<std::time::SystemTime>)> = self
+                .settings
+                .recent
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| q.is_empty() || p.to_lowercase().contains(&q))
+                .map(|(i, p)| (i, p.clone(), std::fs::metadata(p).and_then(|m| m.modified()).ok()))
+                .collect();
+            match self.start_sort {
+                1 => recent.sort_by(|a, b| crate::app::natural_cmp(&crate::file_name(&a.1).to_lowercase(), &crate::file_name(&b.1).to_lowercase())),
+                2 => recent.sort_by(|a, b| b.2.cmp(&a.2).then(a.0.cmp(&b.0))),
+                3 => recent.sort_by(|a, b| file_badge(&a.1).0.cmp(file_badge(&b.1).0).then(a.0.cmp(&b.0))),
+                _ => {}
+            }
+            if recent.is_empty() {
+                ui.label(RichText::new(if self.settings.recent.is_empty() { "No recent files yet - open a model to start." } else { "Nothing matches the search." }).color(pal.overlay_weak));
                 return;
             }
-            let recent = self.settings.recent.clone();
             egui::ScrollArea::vertical().id_salt("start_recent").auto_shrink([false, false]).show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing = EV::new(12.0, 12.0);
-                    for p in &recent {
-                        let (r, resp) = ui.allocate_exact_size(EV::new(150.0, 150.0), Sense::click());
-                        let exists = std::path::Path::new(p).exists();
-                        let hov = resp.hovered() && exists;
-                        let card = if dark { Color32::from_white_alpha(if hov { 26 } else { 14 }) } else { Color32::from_white_alpha(if hov { 255 } else { 215 }) };
-                        let painter = ui.painter();
-                        painter.rect(r, 6.0, card, Stroke::new(1.0_f32, if hov { accent() } else { Color32::from_white_alpha(if dark { 22 } else { 0 }) }));
-                        let (tag, col) = file_badge(p);
+                let mut card = |ui: &mut egui::Ui, p: &String, modified: Option<std::time::SystemTime>, size: EV| {
+                    let (r, resp) = ui.allocate_exact_size(size, Sense::click());
+                    let exists = std::path::Path::new(p).exists();
+                    let hov = resp.hovered() && exists;
+                    let bg = if dark { Color32::from_white_alpha(if hov { 26 } else { 14 }) } else { Color32::from_white_alpha(if hov { 255 } else { 215 }) };
+                    let painter = ui.painter();
+                    painter.rect(r, 6.0, bg, Stroke::new(1.0_f32, if hov { accent() } else { Color32::from_white_alpha(if dark { 22 } else { 0 }) }));
+                    let (tag, col) = file_badge(p);
+                    let col = if exists { col } else { col.gamma_multiply(0.35) };
+                    let name = crate::file_name(p);
+                    let tc = if exists { pal.overlay_text } else { pal.overlay_weak };
+                    let date = if exists { modified.map(fmt_date).unwrap_or_default() } else { "file not found".into() };
+                    if self.start_list {
+                        // rand: iconita mica, nume, folder, data
+                        let icon = Rect::from_min_size(r.min + EV::new(8.0, 5.0), EV::new(26.0, 26.0));
+                        painter.rect_filled(icon, 4.0, col);
+                        painter.text(icon.center(), Align2::CENTER_CENTER, tag, FontId::proportional(if tag.len() > 3 { 8.0 } else { 10.0 }), Color32::WHITE);
+                        painter.text(Pos2::new(r.left() + 44.0, r.center().y), Align2::LEFT_CENTER, &name, FontId::proportional(13.0), tc);
+                        let folder = std::path::Path::new(p).parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
+                        painter.text(Pos2::new(r.left() + 360.0, r.center().y), Align2::LEFT_CENTER, folder, FontId::proportional(11.0), pal.overlay_weak);
+                        painter.text(Pos2::new(r.right() - 10.0, r.center().y), Align2::RIGHT_CENTER, date, FontId::proportional(11.0), pal.overlay_weak);
+                    } else {
                         let icon = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 50.0), EV::new(64.0, 64.0));
-                        let col = if exists { col } else { col.gamma_multiply(0.35) };
                         painter.rect_filled(icon.translate(EV::new(5.0, 5.0)), 6.0, col.gamma_multiply(0.55));
                         painter.rect_filled(icon, 6.0, col);
                         painter.text(icon.center(), Align2::CENTER_CENTER, tag, FontId::proportional(if tag.len() > 3 { 15.0 } else { 19.0 }), Color32::WHITE);
-                        let name = crate::file_name(p);
-                        let short: String = if name.chars().count() > 20 { format!("{}…", name.chars().take(19).collect::<String>()) } else { name.clone() };
-                        let tc = if exists { pal.overlay_text } else { pal.overlay_weak };
-                        painter.text(Pos2::new(r.left() + 10.0, r.bottom() - 40.0), Align2::LEFT_CENTER, short, FontId::proportional(12.5), tc);
-                        let date = if exists { std::fs::metadata(p).and_then(|m| m.modified()).map(fmt_date).unwrap_or_default() } else { "file not found".into() };
+                        // iconita mica de tip langa nume, ca in Navisworks
+                        let small = Rect::from_min_size(Pos2::new(r.left() + 10.0, r.bottom() - 48.0), EV::new(14.0, 14.0));
+                        painter.rect_filled(small, 2.0, col);
+                        let short: String = if name.chars().count() > 18 { format!("{}…", name.chars().take(17).collect::<String>()) } else { name.clone() };
+                        painter.text(Pos2::new(r.left() + 30.0, r.bottom() - 41.0), Align2::LEFT_CENTER, short, FontId::proportional(12.5), tc);
                         painter.text(Pos2::new(r.left() + 10.0, r.bottom() - 20.0), Align2::LEFT_CENTER, date, FontId::proportional(10.5), pal.overlay_weak);
-                        let resp = resp.on_hover_text(p.as_str());
-                        if resp.clicked() && exists {
-                            open_path = Some(p.clone());
-                        }
-                        resp.context_menu(|ui| {
-                            if exists && ui.button("Open").clicked() {
-                                open_path = Some(p.clone());
-                                ui.close_menu();
-                            }
-                            if cfg!(windows) && exists && ui.button("Show in folder").clicked() {
-                                Self::open_folder(p);
-                                ui.close_menu();
-                            }
-                            if ui.button("Remove from list").clicked() {
-                                forget = Some(p.clone());
-                                ui.close_menu();
-                            }
-                        });
                     }
-                });
+                    let resp = resp.on_hover_text(p.as_str());
+                    if resp.clicked() && exists {
+                        act = Some(StartAction::Open(p.clone()));
+                    }
+                    resp.context_menu(|ui| {
+                        if exists && ui.button("Open").clicked() {
+                            act = Some(StartAction::Open(p.clone()));
+                            ui.close_menu();
+                        }
+                        if cfg!(windows) && exists && ui.button("Show in folder").clicked() {
+                            Self::open_folder(p);
+                            ui.close_menu();
+                        }
+                        if ui.button("Remove from list").clicked() {
+                            forget = Some(p.clone());
+                            ui.close_menu();
+                        }
+                    });
+                };
+                if self.start_list {
+                    let w = ui.available_width();
+                    for (_, p, m) in &recent {
+                        card(ui, p, *m, EV::new(w, 36.0));
+                        ui.add_space(2.0);
+                    }
+                } else {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = EV::new(12.0, 12.0);
+                        for (_, p, m) in &recent {
+                            card(ui, p, *m, EV::new(150.0, 150.0));
+                        }
+                    });
+                }
             });
         });
         if let Some(p) = forget {
             self.settings.recent.retain(|x| x != &p);
             self.settings.save();
         }
-        if let Some(p) = open_path {
-            self.open_path(&p, false);
+        if let Some(a) = act {
+            self.start_action(a);
         }
     }
-
     // ================================================================== ViewCube
     fn view_cube(&mut self, ui: &mut egui::Ui, rect: Rect) {
         let pal = self.pal();
@@ -1981,6 +2084,14 @@ impl App {
         mesh.add_triangle(0, 1, 2);
         mesh.add_triangle(0, 2, 3);
         painter.add(egui::Shape::mesh(mesh));
+        // pagina de start: doar ea, fara model / cub / suprapuneri (proiectul ramane deschis dedesubt)
+        if self.start_screen() {
+            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rect), |ui| self.start_page(ui));
+            if self.show_start && ui.input(|i| i.key_pressed(Key::Escape)) && self.has_open_project() {
+                self.show_start = false;
+            }
+            return;
+        }
 
         let aspect = rect.width() / rect.height().max(1.0);
         let params = self.frame_params(aspect);
@@ -1996,13 +2107,16 @@ impl App {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(350));
         }
         let r = self.renderer.clone();
-        painter.add(egui::PaintCallback {
-            rect,
-            callback: Arc::new(eframe::egui_glow::CallbackFn::new(move |_info, p| {
-                let mut r = r.lock().unwrap();
-                unsafe { r.paint(p.gl(), &params) };
-            })),
-        });
+        // pagina de start peste proiect: modelul nu se mai deseneaza dedesubt
+        if !self.start_screen() {
+            painter.add(egui::PaintCallback {
+                rect,
+                callback: Arc::new(eframe::egui_glow::CallbackFn::new(move |_info, p| {
+                    let mut r = r.lock().unwrap();
+                    unsafe { r.paint(p.gl(), &params) };
+                })),
+            });
+        }
         if let Some(e) = self.renderer.lock().unwrap().error.clone() {
             painter.text(rect.center(), Align2::CENTER_CENTER, e, FontId::proportional(14.0), Color32::RED);
         }
@@ -2597,9 +2711,12 @@ impl App {
             }
         }
         // stari
-        if self.loaded_models().next().is_none() && self.loads.is_empty() {
+        if self.start_screen() {
             // pagina de start (ca Navisworks): Open / New + fisierele recente
             ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rect), |ui| self.start_page(ui));
+        } else if self.loaded_models().next().is_none() && self.loads.is_empty() {
+            // proiect nou / gol: scena goala, cu o indicatie discreta
+            painter.text(rect.center(), Align2::CENTER_CENTER, "Empty project - Home › Open / Append to add models (Ctrl+O), Save to keep it (Ctrl+S)", FontId::proportional(14.0), pal.overlay_weak);
         }
         let mut yy = rect.center().y - 30.0 * self.loads.len() as f32 / 2.0;
         for j in &self.loads {
@@ -5712,6 +5829,7 @@ impl App {
                 Purpose::ExportClashBcf => "Export clashes as BCF",
                 Purpose::ExportIfc => "Export to IFC4",
                 Purpose::SharedFolder => "Shared issues folder",
+                Purpose::PublishBimd => "Publish project (.bimd)",
                 Purpose::ExportGrids => "Export grid axes",
                 Purpose::ExportClashNavis => "Export clashes as Navisworks viewpoints",
                 Purpose::ImportBcf => "Import BCF issues",
@@ -5794,7 +5912,50 @@ impl App {
                 ui.label("Formats: IFC 2x3 / IFC4 (STEP), ManageBIM cache (.bimc) and glTF 2.0. Navisworks (NWD/NWC) and Revit (RVT) files are closed formats — export to IFC from Revit.");
             });
         }
-        if self.show_grids_editor {
+        if self.confirm_start {
+            let pending = self.start_pending.clone().unwrap_or(crate::app::StartAction::Close);
+            if !self.has_open_project() {
+                self.run_start_action(pending);
+            } else {
+                let mut action = 0u8;
+                egui::Window::new("Save the project?").collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+                    let name = self.bimd_path.as_ref().or(self.project_path.as_ref()).map(|p| crate::file_name(p)).unwrap_or_else(|| "the current project".into());
+                    ui.label(format!("Save the changes to {name}?"));
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("💾 Save").clicked() {
+                            action = 1;
+                        }
+                        if ui.button("Don't save").clicked() {
+                            action = 2;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            action = 3;
+                        }
+                    });
+                });
+                match action {
+                    1 => {
+                        if self.project_path.is_some() || self.bimd_path.is_some() {
+                            self.save_now();
+                            self.run_start_action(pending);
+                        } else {
+                            // fara fisier inca: Save As; actiunea se reia apoi din pagina de start
+                            self.confirm_start = false;
+                            self.start_pending = None;
+                            self.show_start = false;
+                            self.request_path(Purpose::SaveProject);
+                        }
+                    }
+                    2 => self.run_start_action(pending),
+                    3 => {
+                        self.confirm_start = false;
+                        self.start_pending = None;
+                    }
+                    _ => {}
+                }
+            }
+        }        if self.show_grids_editor {
             let mut open = true;
             let mut export = false;
             egui::Window::new("# Grids").open(&mut open).collapsible(false).default_width(470.0).show(ctx, |ui| {
@@ -6275,6 +6436,7 @@ fn file_badge(path: &str) -> (&'static str, Color32) {
     let ext = std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     match ext.as_str() {
         "bimr" => ("BIMR", Color32::from_rgb(59, 130, 246)),
+        "bimd" => ("BIMD", Color32::from_rgb(30, 90, 200)),
         "ifc" | "ifczip" => ("IFC", Color32::from_rgb(20, 150, 140)),
         "nwd" | "nwc" | "nwf" => ("N", Color32::from_rgb(37, 99, 235)),
         "rvt" => ("R", Color32::from_rgb(30, 110, 200)),
