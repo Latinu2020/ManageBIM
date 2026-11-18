@@ -1358,3 +1358,39 @@ fn convert_dwg_oda(oda: &str, path: &str, progress: &dyn Fn(f32, &str)) -> Resul
         m
     })
 }
+
+/// DXF -> DWG cu ODA File Converter (gratuit, instalat separat). Intoarce calea DWG-ului.
+pub fn dxf_to_dwg(dxf: &str) -> Result<String, String> {
+    let oda = tools().oda;
+    if oda.is_empty() || !Path::new(&oda).is_file() {
+        return Err("DWG needs the free ODA File Converter (opendesign.com) - install it, or open the DXF in AutoCAD and save as DWG.".into());
+    }
+    let src = Path::new(dxf);
+    let dir = src.parent().ok_or("bad path")?;
+    let tmp_in = std::env::temp_dir().join(format!("mb_dxf_in_{}", std::process::id()));
+    let tmp_out = std::env::temp_dir().join(format!("mb_dxf_out_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp_in);
+    let _ = std::fs::remove_dir_all(&tmp_out);
+    std::fs::create_dir_all(&tmp_in).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&tmp_out).map_err(|e| e.to_string())?;
+    let name = src.file_name().ok_or("bad path")?;
+    std::fs::copy(src, tmp_in.join(name)).map_err(|e| e.to_string())?;
+    let mut c = std::process::Command::new(&oda);
+    c.arg(&tmp_in).arg(&tmp_out).args(["ACAD2018", "DWG", "0", "1", "*.DXF"]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000);
+    }
+    let st = c.status().map_err(|e| format!("ODA File Converter could not start: {e}"))?;
+    let out = tmp_out.join(Path::new(name).with_extension("dwg"));
+    let res = if st.success() && out.is_file() {
+        let dst = dir.join(Path::new(name).with_extension("dwg"));
+        std::fs::copy(&out, &dst).map_err(|e| e.to_string()).map(|_| dst.to_string_lossy().to_string())
+    } else {
+        Err("ODA File Converter did not produce a DWG.".into())
+    };
+    let _ = std::fs::remove_dir_all(&tmp_in);
+    let _ = std::fs::remove_dir_all(&tmp_out);
+    res
+}

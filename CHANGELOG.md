@@ -3,6 +3,15 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.13.1 - 2026-11-19
+- **New** (pagina de start și File) face un proiect nou gol, cu toată interfața și Save (Ctrl+S).
+- **Secțiune pe niveluri** (Sectioning › By level): **Level box** (de la nivel la nivelul următor, ◀ ▶ între niveluri) sau
+  **Plan cut** la o înălțime peste nivel; planul de secțiune se vede ca o **suprafață verde transparentă** (Show plane).
+- **Axe create în ManageBIM** (View › Edit Grids): generator (număr de axe, distanțe, etichete 1,2,3 / A,B,C, rotație),
+  **origine și direcție alese cu clic în model** (snap pe colțuri), mutare / rotire, editare axă cu axă, preluare din modele.
+- Axele arată ca pe planșă: **linie de ax, bulă albă cu etichetă** în prelungirea liniei; mărimea bulelor și
+  **prelungirea liniilor** reglabile - se văd și de la distanță.
+- **Export axe DXF** (straturile GRID / GRID_TAGS, coordonate reale în metri) și **DWG** prin ODA File Converter, dacă e instalat.
 ## 0.13.0 - 2026-11-19
 - **Axe și niveluri** (View › Grids & Levels): axele din IFC (IfcGrid) cu bulele etichetelor, desenate pe nivelul de sub
   cameră, și nivelurile cu nume și cotă; **Grids** și **Levels** se ascund separat.

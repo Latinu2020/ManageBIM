@@ -336,3 +336,114 @@ fn shared_issues_sync_between_two_colleagues() {
     assert!(b.viewpoints.is_empty(), "deletion reaches the colleague");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn tools_grids_levels_sections_and_project_roundtrip() {
+    use bimrust::app::{generate_grid, grid_dxf, grid_label, SectionMode};
+    assert_eq!((grid_label("A", 0), grid_label("A", 25), grid_label("A", 26), grid_label("1", 4)), ("A".into(), "Z".into(), "AA".into(), "5".into()));
+    let g = generate_grid([100.0, 200.0], 4, 6.0, "1", 3, 5.0, "A", 2.0);
+    assert_eq!(g.len(), 7);
+    assert_eq!(g[3].name, "4");
+    assert_eq!(g[3].a, [118.0, 198.0]);
+    assert_eq!(g[6].name, "C");
+    let dxf = grid_dxf(&g, 0.5);
+    assert_eq!(dxf.matches("\nLINE\n").count(), 7);
+    assert_eq!(dxf.matches("\nCIRCLE\n").count(), 14);
+    assert!(dxf.ends_with("EOF\n"));
+
+    let mut app = app();
+    // axe proprii in jurul modelului -> locatia clash-urilor le foloseste
+    let bb = app.scene_aabb();
+    let o = app.origin_f64();
+    app.user_grids = generate_grid([bb.min.x as f64 + o.x, bb.min.y as f64 + o.y], 3, 5.0, "1", 3, 5.0, "A", 1.0);
+    app.use_user_grids = true;
+    let loc = app.grid_location(glam::Vec3::new(bb.min.x + 0.2, bb.min.y + 0.3, bb.min.z + 0.5));
+    assert!(loc.starts_with("A-1"), "{loc}");
+    // sectiune pe nivel si taietura de plan
+    let levels = app.scene_grids().levels;
+    assert!(levels.len() >= 2, "levels from the models");
+    app.section_level_box(0);
+    assert!(app.section.enabled && app.section.mode == SectionMode::Box);
+    assert!((app.section.bmin[2] - (levels[0].1 - 0.05)).abs() < 1e-4 && app.section.bmax[2] < levels[1].1);
+    app.section_plan_cut(1, 1.2);
+    assert_eq!(app.section.mode, SectionMode::Planes);
+    assert!((app.section.planes[0].offset - (levels[1].1 + 1.2)).abs() < 1e-4);
+    // niveluri proprii + proiect salvat / redeschis
+    app.user_levels = vec![bimrust::app::UserLevel { name: "P0".into(), elev: 0.0 }, bimrust::app::UserLevel { name: "P1".into(), elev: 3.5 }];
+    app.use_user_levels = true;
+    app.level_zero = 12.0;
+    let path = std::env::temp_dir().join(format!("mb_tools_{}.bimr", std::process::id()));
+    let p = path.to_string_lossy().to_string();
+    // setarile (lista Recent) intr-un folder de test, nu in cele ale utilizatorului
+    std::env::set_var("APPDATA", std::env::temp_dir().join("mb_test_appdata"));
+    app.save_project(&p);
+    let mut b = App::new(vec![]);
+    b.load_project(&p);
+    // starea proiectului se aplica dupa incarcarea modelelor
+    let t0 = std::time::Instant::now();
+    while !b.loads.is_empty() && t0.elapsed().as_secs() < 60 {
+        b.poll_jobs();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    b.poll_jobs();
+    assert_eq!(b.user_grids.len(), 6);
+    assert!(b.use_user_grids && b.use_user_levels);
+    assert_eq!(b.user_levels[1].elev, 3.5);
+    assert_eq!(b.level_zero, 12.0);
+    let _ = std::fs::remove_file(&path);
+    // proiect nou: gol, fara pagina de start
+    b.new_project();
+    assert!(b.blank_project && b.project_path.is_none() && b.loaded_models().next().is_none());
+}
+
+#[test]
+fn grid_alignment_by_picking_and_rotation() {
+    use bimrust::app::{transform_grids, UserGrid};
+    let mut g = vec![UserGrid { name: "1".into(), a: [10.0, 0.0], b: [10.0, 20.0] }];
+    transform_grids(&mut g, [10.0, 0.0], 90.0, [1.0, 2.0]);
+    assert!((g[0].a[0] - 11.0).abs() < 1e-9 && (g[0].a[1] - 2.0).abs() < 1e-9);
+    assert!((g[0].b[0] - (-9.0)).abs() < 1e-9 && (g[0].b[1] - 2.0).abs() < 1e-9);
+    // alegere in 3D: originea, apoi directia la 30 de grade -> reteaua rotita
+    let mut app = app();
+    let o = app.origin_f64();
+    app.grid_gen.nx = 2;
+    app.grid_gen.ny = 2;
+    app.grid_pick = 1;
+    app.grid_pick_point(glam::Vec3::new(1.0, 1.0, 0.0));
+    assert_eq!(app.grid_pick, 2);
+    let a = 30f32.to_radians();
+    app.grid_pick_point(glam::Vec3::new(1.0 + 10.0 * a.cos(), 1.0 + 10.0 * a.sin(), 0.0));
+    assert_eq!(app.grid_pick, 0);
+    assert!((app.grid_gen.angle_deg - 30.0).abs() < 0.02, "{}", app.grid_gen.angle_deg);
+    assert_eq!(app.user_grids.len(), 4);
+    // axa "A" (prima cu litera) trece prin origine, la 30 de grade
+    let ga = app.user_grids.iter().find(|g| g.name == "A").unwrap();
+    let d = (ga.b[1] - ga.a[1]).atan2(ga.b[0] - ga.a[0]).to_degrees();
+    assert!((d - 30.0).abs() < 0.05, "{d}");
+    let (ox, oy) = (1.0 + o.x, 1.0 + o.y);
+    let cross = (ga.b[0] - ga.a[0]) * (oy - ga.a[1]) - (ga.b[1] - ga.a[1]) * (ox - ga.a[0]);
+    assert!(cross.abs() < 1e-3, "axis A through the picked origin");
+}
+
+/// Proiect demo pentru verificarea vizuala (rulat manual): cargo test --release --test navis_xml demo_grid_project -- --ignored
+#[test]
+#[ignore]
+fn demo_grid_project() {
+    let mut app = app();
+    let bb = app.scene_aabb();
+    let o = app.origin_f64();
+    app.grid_gen.origin = [bb.min.x as f64 + o.x, bb.min.y as f64 + o.y];
+    app.grid_gen.nx = 5;
+    app.grid_gen.dx = (bb.size().x as f64 / 4.0).max(1.0);
+    app.grid_gen.ny = 3;
+    app.grid_gen.dy = (bb.size().y as f64 / 2.0).max(1.0);
+    app.generate_user_grid();
+    app.grid_ext = 3.0;
+    app.cam.fit(&bb);
+    let out = std::env::var("MB_DEMO_PROJECT").unwrap_or_else(|_| std::env::temp_dir().join("mb_demo_grid.bimr").to_string_lossy().to_string());
+    std::env::set_var("APPDATA", std::env::temp_dir().join("mb_test_appdata"));
+    let abs = |p: &str| std::fs::canonicalize(p).unwrap().to_string_lossy().trim_start_matches(r"\\?\").to_string();
+    let mut pf = app.project_file();
+    pf.models = vec![abs("samples/Block_A_Architecture_Structure.ifc"), abs("samples/Block_A_MEP.ifc")];
+    std::fs::write(&out, serde_json::to_string_pretty(&pf).unwrap()).unwrap();
+}

@@ -664,6 +664,14 @@ pub struct ProjectFile {
     #[serde(default)]
     pub shared_dir: Option<String>,
     #[serde(default)]
+    pub user_grids: Vec<UserGrid>,
+    #[serde(default)]
+    pub use_user_grids: bool,
+    #[serde(default = "crate::app::grid_bubble_default")]
+    pub grid_bubble: f32,
+    #[serde(default = "crate::app::grid_ext_default")]
+    pub grid_ext: f32,
+    #[serde(default)]
     pub materials: Vec<Material>,
     #[serde(default)]
     pub mat_assign: Vec<MatAssign>,
@@ -803,6 +811,7 @@ pub enum Purpose {
     ExportClashBcf,
     ExportIfc,
     SharedFolder,
+    ExportGrids,
     ExportClashNavis,
     ImportBcf,
     ImportTasksCsv,
@@ -965,6 +974,21 @@ pub struct App {
     /// folderul comun pentru issue-uri (retea / SharePoint); None = nepartajat
     pub shared_dir: Option<String>,
     pub shared: crate::shared::SharedState,
+    /// proiect nou, gol (New): fara pagina de start, cu Save disponibil
+    pub blank_project: bool,
+    /// axe create in ManageBIM (coordonate reale, metri)
+    pub user_grids: Vec<UserGrid>,
+    pub use_user_grids: bool,
+    /// marimea bulelor axelor (px) si prelungirea liniilor dincolo de capete (m)
+    pub grid_bubble: f32,
+    pub grid_ext: f32,
+    pub show_grids_editor: bool,
+    /// planul de sectiune desenat ca suprafata verde transparenta
+    pub show_section_plane: bool,
+    /// generatorul de axe (originea si directia se pot alege cu clic in model)
+    pub grid_gen: GridGen,
+    /// alegere in 3D: 0 nimic, 1 originea, 2 directia primei axe
+    pub grid_pick: u8,
     pub override_color: [u8; 4],
     pub min_dist_result: Option<(f32, Vec3)>,
     pub cache_types: Vec<String>,
@@ -1145,6 +1169,15 @@ impl App {
             section_caps: true,
             shared_dir: None,
             shared: Default::default(),
+            blank_project: false,
+            user_grids: Vec::new(),
+            use_user_grids: false,
+            grid_bubble: 11.0,
+            grid_ext: 2.0,
+            show_grids_editor: false,
+            show_section_plane: true,
+            grid_gen: GridGen::default(),
+            grid_pick: 0,
             override_color: [230, 120, 40, 255],
             min_dist_result: None,
             cache_types: Vec::new(),
@@ -4367,6 +4400,10 @@ impl App {
             show_grids: self.show_grids,
             show_levels: self.show_levels,
             shared_dir: self.shared_dir.clone(),
+            user_grids: self.user_grids.clone(),
+            use_user_grids: self.use_user_grids,
+            grid_bubble: self.grid_bubble,
+            grid_ext: self.grid_ext,
             materials: self.materials.clone(),
             mat_assign: self.mat_assign.clone(),
             materials_on: Some(self.materials_on),
@@ -4452,6 +4489,10 @@ impl App {
         self.show_grids = pf.show_grids;
         self.show_levels = pf.show_levels;
         self.shared_dir = pf.shared_dir;
+        self.user_grids = pf.user_grids;
+        self.use_user_grids = pf.use_user_grids;
+        self.grid_bubble = pf.grid_bubble;
+        self.grid_ext = pf.grid_ext;
         self.shared = Default::default();
         if !pf.materials.is_empty() {
             self.materials = pf.materials;
@@ -4794,6 +4835,7 @@ impl App {
             }
             Purpose::ExportClashBcf => self.export_clash_bcf(&path),
             Purpose::ExportIfc => self.export_ifc(&path),
+            Purpose::ExportGrids => self.export_grids(&path),
             Purpose::SharedFolder => {
                 self.shared_dir = Some(path.clone());
                 self.shared = Default::default();
@@ -5046,6 +5088,7 @@ impl App {
                 Purpose::SaveProject => d.set_title("Save Project").add_filter("ManageBIM project", &["bimr"]).set_file_name("project.bimr").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashHtml => d.set_title("Clash report (HTML)").add_filter("HTML", &["html"]).set_file_name("clash_report.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashCsv => d.set_title("Clash report (CSV)").add_filter("CSV", &["csv"]).set_file_name("clash_report.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportGrids => d.set_title("Export grid axes").add_filter("DXF (AutoCAD, any CAD)", &["dxf"]).add_filter("DWG (needs ODA File Converter)", &["dwg"]).set_file_name("grids.dxf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::SharedFolder => d.set_title("Shared issues folder (network / SharePoint / OneDrive)").pick_folder().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportIfc => d.set_title("Export to IFC4").add_filter("IFC", &["ifc"]).set_file_name("export.ifc").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashBcf => d.set_title("Export clashes as BCF").add_filter("BIM Collaboration Format", &["bcf", "bcfzip"]).set_file_name("clashes.bcf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5122,6 +5165,7 @@ impl App {
                 Purpose::ExportClashBcf => "clashes.bcf".into(),
                 Purpose::ExportIfc => "export.ifc".into(),
                 Purpose::SharedFolder => String::new(),
+                Purpose::ExportGrids => "grids.dxf".into(),
                 Purpose::ExportClashNavis => "clashes_viewpoints.xml".into(),
                 Purpose::ExportTasksCsv => "schedule.csv".into(),
                 Purpose::ExportSets => "sets.bimsets".into(),
@@ -5274,13 +5318,18 @@ impl App {
     pub fn scene_grids(&self) -> GridData {
         let mut all = GridData::default();
         let custom = self.use_user_levels && !self.user_levels.is_empty();
+        let my_grids = self.use_user_grids && !self.user_grids.is_empty();
+        if my_grids {
+            let o = self.origin_f64();
+            all.grids = self.user_grids.iter().map(|g| (g.name.clone(), Vec3::new((g.a[0] - o.x) as f32, (g.a[1] - o.y) as f32, 0.0), Vec3::new((g.b[0] - o.x) as f32, (g.b[1] - o.y) as f32, 0.0))).collect();
+        }
         if custom {
             let oz = self.origin_f64().z;
             all.levels = self.user_levels.iter().map(|l| (l.name.clone(), (self.level_zero + l.elev - oz) as f32)).collect();
         }
         for (slot, _) in self.loaded_models() {
             let g = self.grid_data(slot);
-            for x in &g.grids {
+            for x in g.grids.iter().filter(|_| !my_grids) {
                 if !all.grids.iter().any(|y| y.0 == x.0 && (y.1 - x.1).length() < 0.05 && (y.2 - x.2).length() < 0.05) {
                     all.grids.push(x.clone());
                 }
@@ -5471,6 +5520,212 @@ impl App {
         if let Some((file, _, _)) = self.autosave.recover.take() {
             let _ = std::fs::remove_file(&file);
             let _ = std::fs::remove_file(std::path::Path::new(&file).with_extension("txt"));
+        }
+    }
+}
+
+/// Axa creata in ManageBIM: eticheta si capetele in coordonate reale (metri, XY).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UserGrid {
+    pub name: String,
+    pub a: [f64; 2],
+    pub b: [f64; 2],
+}
+
+pub fn grid_bubble_default() -> f32 {
+    11.0
+}
+pub fn grid_ext_default() -> f32 {
+    2.0
+}
+
+/// Eticheta numarul `i` (0..) in stilul A, B, … Z, AA, AB … sau 1, 2, 3 …
+pub fn grid_label(first: &str, i: usize) -> String {
+    let f = first.trim();
+    if let Ok(n) = f.parse::<i64>() {
+        return (n + i as i64).to_string();
+    }
+    let start = f.chars().next().filter(|c| c.is_ascii_alphabetic()).map(|c| c.to_ascii_uppercase() as usize - 'A' as usize).unwrap_or(0);
+    let mut k = start + i;
+    let mut s = String::new();
+    loop {
+        s.insert(0, (b'A' + (k % 26) as u8) as char);
+        if k < 26 {
+            break;
+        }
+        k = k / 26 - 1;
+    }
+    s
+}
+
+/// Retea de axe: `nx` axe verticale (de-a lungul lui Y) la distanta `dx`, etichete de la `fx`; `ny` axe orizontale
+/// (de-a lungul lui X) la `dy`, etichete de la `fy`. Originea = intersectia primelor axe; `ext` = cat ies liniile.
+pub fn generate_grid(origin: [f64; 2], nx: usize, dx: f64, fx: &str, ny: usize, dy: f64, fy: &str, ext: f64) -> Vec<UserGrid> {
+    let (lx, ly) = (dx * nx.saturating_sub(1) as f64, dy * ny.saturating_sub(1) as f64);
+    let mut out = Vec::new();
+    for i in 0..nx {
+        let x = origin[0] + dx * i as f64;
+        out.push(UserGrid { name: grid_label(fx, i), a: [x, origin[1] - ext], b: [x, origin[1] + ly + ext] });
+    }
+    for j in 0..ny {
+        let y = origin[1] + dy * j as f64;
+        out.push(UserGrid { name: grid_label(fy, j), a: [origin[0] - ext, y], b: [origin[0] + lx + ext, y] });
+    }
+    out
+}
+
+/// Axele ca DXF (R12, metri): linii pe stratul GRID, bulele (cerc + text) pe stratul GRID_TAGS.
+pub fn grid_dxf(grids: &[UserGrid], bubble_r: f64) -> String {
+    let mut s = String::from("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n6\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n2\n");
+    for (name, col) in [("GRID", 1), ("GRID_TAGS", 7)] {
+        s.push_str(&format!("0\nLAYER\n2\n{name}\n70\n0\n62\n{col}\n6\nCONTINUOUS\n"));
+    }
+    s.push_str("0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
+    for g in grids {
+        let (a, b) = (glam::DVec2::from(g.a), glam::DVec2::from(g.b));
+        let d = (b - a).normalize_or_zero();
+        // ca pe plansa: linia intre capete, bulele in prelungire (tangente la capete)
+        s.push_str(&format!("0\nLINE\n8\nGRID\n10\n{}\n20\n{}\n30\n0.0\n11\n{}\n21\n{}\n31\n0.0\n", a.x, a.y, b.x, b.y));
+        for c in [a - d * bubble_r, b + d * bubble_r] {
+            s.push_str(&format!("0\nCIRCLE\n8\nGRID_TAGS\n10\n{}\n20\n{}\n30\n0.0\n40\n{}\n", c.x, c.y, bubble_r));
+            // text centrat in bula (72=1 centru, 73=2 mijloc)
+            s.push_str(&format!("0\nTEXT\n8\nGRID_TAGS\n10\n{x}\n20\n{y}\n30\n0.0\n40\n{h}\n1\n{t}\n72\n1\n73\n2\n11\n{x}\n21\n{y}\n31\n0.0\n", x = c.x, y = c.y, h = bubble_r * 0.9, t = g.name));
+        }
+    }
+    s.push_str("0\nENDSEC\n0\nEOF\n");
+    s
+}
+
+impl App {
+    /// Proiect nou, gol: aplicatia trece de pagina de start, Save (Ctrl+S) cere unde se salveaza.
+    pub fn new_project(&mut self) {
+        self.reset();
+        self.project_path = None;
+        self.blank_project = true;
+        self.toast("New project - add models with Open / Append; save it with Save (Ctrl+S).");
+    }
+
+    /// Axele folosite acum (ale tale sau din modele), in coordonate reale - pentru editor / export.
+    pub fn grids_world(&self) -> Vec<UserGrid> {
+        if self.use_user_grids && !self.user_grids.is_empty() {
+            return self.user_grids.clone();
+        }
+        let o = self.origin_f64();
+        self.scene_grids_models().grids.iter().map(|(n, a, b)| UserGrid { name: n.clone(), a: [a.x as f64 + o.x, a.y as f64 + o.y], b: [b.x as f64 + o.x, b.y as f64 + o.y] }).collect()
+    }
+
+    /// Export DXF; daca extensia e .dwg si ODA File Converter e instalat, DXF-ul se converteste in DWG.
+    pub fn export_grids(&mut self, path: &str) {
+        let grids = self.grids_world();
+        if grids.is_empty() {
+            return self.error("No grid axes: create them in View > Edit Grids, or open a model with grids.");
+        }
+        let dwg = path.to_lowercase().ends_with(".dwg");
+        let dxf_path = if dwg { std::path::Path::new(path).with_extension("dxf").to_string_lossy().to_string() } else { with_ext(path, "dxf") };
+        if let Err(e) = std::fs::write(&dxf_path, grid_dxf(&grids, 0.5)) {
+            return self.error(format!("Cannot write {dxf_path}: {e}"));
+        }
+        if !dwg {
+            return self.toast(format!("{} grid axes exported: {}", grids.len(), crate::file_name(&dxf_path)));
+        }
+        match crate::formats::dxf_to_dwg(&dxf_path) {
+            Ok(out) => self.toast(format!("{} grid axes exported: {}", grids.len(), crate::file_name(&out))),
+            Err(e) => self.toast(format!("Saved as DXF ({}) - {e}", crate::file_name(&dxf_path))),
+        }
+    }
+
+    /// Sectiune pe nivel: box de la nivel pana la nivelul urmator (tot planul XY al scenei).
+    pub fn section_level_box(&mut self, li: usize) {
+        let g = self.scene_grids();
+        let bb = self.scene_aabb();
+        let Some(l) = g.levels.get(li) else { return };
+        if !bb.is_valid() {
+            return;
+        }
+        let top = g.levels.get(li + 1).map(|n| n.1).unwrap_or(bb.max.z + 0.01);
+        self.section.enabled = true;
+        self.section.mode = SectionMode::Box;
+        self.section.bmin = [bb.min.x - 0.5, bb.min.y - 0.5, l.1 - 0.05];
+        self.section.bmax = [bb.max.x + 0.5, bb.max.y + 0.5, top - 0.02];
+        self.colors_dirty = true;
+        self.toast(format!("Section: {} (floor to the next level)", l.0));
+    }
+
+    /// Sectiune tip plan: totul de deasupra lui (nivel + h) e taiat.
+    pub fn section_plan_cut(&mut self, li: usize, h: f32) {
+        let g = self.scene_grids();
+        let Some(l) = g.levels.get(li) else { return };
+        self.section.enabled = true;
+        self.section.mode = SectionMode::Planes;
+        self.section.planes = vec![PlaneDef { enabled: true, dir: 0, offset: l.1 + h }];
+        self.colors_dirty = true;
+        self.toast(format!("Plan cut: {} + {h:.2} m", l.0));
+    }
+}
+
+/// Parametrii generatorului de axe: originea (real, m), rotatia, numarul / distanta / prima eticheta pe fiecare directie.
+#[derive(Clone, Debug)]
+pub struct GridGen {
+    pub origin: [f64; 2],
+    pub angle_deg: f64,
+    pub nx: usize,
+    pub dx: f64,
+    pub fx: String,
+    pub ny: usize,
+    pub dy: f64,
+    pub fy: String,
+}
+
+impl Default for GridGen {
+    fn default() -> Self {
+        GridGen { origin: [0.0, 0.0], angle_deg: 0.0, nx: 5, dx: 6.0, fx: "1".into(), ny: 4, dy: 6.0, fy: "A".into() }
+    }
+}
+
+/// Roteste axele cu `deg` in jurul punctului `c` si le muta cu `d` (real, m).
+pub fn transform_grids(grids: &mut [UserGrid], c: [f64; 2], deg: f64, d: [f64; 2]) {
+    let (s, co) = deg.to_radians().sin_cos();
+    let rot = |p: [f64; 2]| {
+        let (x, y) = (p[0] - c[0], p[1] - c[1]);
+        [c[0] + x * co - y * s + d[0], c[1] + x * s + y * co + d[1]]
+    };
+    for g in grids {
+        g.a = rot(g.a);
+        g.b = rot(g.b);
+    }
+}
+
+impl App {
+    /// Genereaza reteaua din `grid_gen` (cu rotatie) ca axele utilizatorului.
+    pub fn generate_user_grid(&mut self) {
+        let g = self.grid_gen.clone();
+        let mut out = generate_grid(g.origin, g.nx, g.dx, &g.fx, g.ny, g.dy, &g.fy, self.grid_ext as f64);
+        transform_grids(&mut out, g.origin, g.angle_deg, [0.0, 0.0]);
+        self.user_grids = out;
+        self.use_user_grids = true;
+        self.show_grids = true;
+    }
+
+    /// Clic in 3D in timpul alegerii: 1 = originea (apoi directia), 2 = directia -> reteaua se regenereaza.
+    pub fn grid_pick_point(&mut self, local: Vec3) {
+        let o = self.origin_f64();
+        let w = [local.x as f64 + o.x, local.y as f64 + o.y];
+        match self.grid_pick {
+            1 => {
+                self.grid_gen.origin = [(w[0] * 1000.0).round() / 1000.0, (w[1] * 1000.0).round() / 1000.0];
+                self.grid_pick = 2;
+                self.toast("Grid origin set. Now click a point along the first axis direction (Esc: keep the current angle).");
+            }
+            2 => {
+                let (dx, dy) = (w[0] - self.grid_gen.origin[0], w[1] - self.grid_gen.origin[1]);
+                if dx.hypot(dy) > 0.01 {
+                    self.grid_gen.angle_deg = (dy.atan2(dx).to_degrees() * 100.0).round() / 100.0;
+                }
+                self.grid_pick = 0;
+                self.generate_user_grid();
+                self.toast(format!("Grid aligned: origin {:.3}, {:.3} · angle {:.2}°", self.grid_gen.origin[0], self.grid_gen.origin[1], self.grid_gen.angle_deg));
+            }
+            _ => {}
         }
     }
 }

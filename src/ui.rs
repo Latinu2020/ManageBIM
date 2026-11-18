@@ -380,7 +380,7 @@ impl App {
         ui.separator();
         if ui.button("New Project (close all)").clicked() {
             ui.close_menu();
-            self.reset();
+            self.new_project();
         }
         if ui.button("Exit").clicked() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
@@ -436,6 +436,7 @@ impl App {
                     }
                     ui.label(RichText::new("ManageBIM").strong().color(accent()));
                     if let Some(p) = &self.project_path {
+                        ui.add_space(6.0);
                         ui.label(RichText::new(crate::file_name(p)).weak());
                     }
                 });
@@ -1332,6 +1333,9 @@ impl App {
             if rbtn(ui, "≡", "Levels", "Show / hide the levels in the 3D view", self.show_levels, true).clicked() {
                 self.show_levels = !self.show_levels;
             }
+            if rbtn(ui, "✏", "Edit Grids", "Create grid axes in ManageBIM (generator or one by one), size, export DXF / DWG", self.show_grids_editor, true).clicked() {
+                self.show_grids_editor = !self.show_grids_editor;
+            }
             if rbtn(ui, "✏", "Edit Levels", "Your own levels: ±0.00 of the project, names and elevations (editable)", self.show_levels_editor, true).clicked() {
                 self.show_levels_editor = !self.show_levels_editor;
             }
@@ -1561,7 +1565,7 @@ impl App {
 
     /// Nimic deschis si nimic in curs de incarcare: se arata pagina de start.
     fn start_screen(&self) -> bool {
-        self.loaded_models().next().is_none() && self.loads.is_empty() && self.project_path.is_none()
+        self.loaded_models().next().is_none() && self.loads.is_empty() && self.project_path.is_none() && !self.blank_project
     }
 
     // ================================================================== pagina de start
@@ -1590,9 +1594,8 @@ impl App {
                 self.request_path(Purpose::OpenProject);
             }
             ui.add_space(4.0);
-            if ui.add(big("✚  New")).on_hover_text("New project: choose the first model").clicked() {
-                self.reset();
-                self.request_path(Purpose::OpenModel { append: true });
+            if ui.add(big("✚  New")).on_hover_text("New empty project: add models, grids, levels; save it with Save (Ctrl+S)").clicked() {
+                self.new_project();
             }
             ui.add_space(18.0);
             ui.label(RichText::new("or drag files into the window").small().color(pal.overlay_weak));
@@ -2011,7 +2014,11 @@ impl App {
         let mut snap: Option<Vec3> = None;
         // tipul punctului prins: 0 suprafata, 1 colt, 2 mijloc de muchie, 3 pe muchie
         let mut snap_kind = 0u8;
-        if let (Tool::Measure(_), Some(hp)) = (self.tool, hover) {
+        if self.grid_pick > 0 && ui.input(|i| i.key_pressed(Key::Escape)) {
+            self.grid_pick = 0;
+        }
+        let picking = matches!(self.tool, Tool::Measure(_)) || self.grid_pick > 0;
+        if let (true, Some(hp)) = (picking, hover) {
             let (o, d) = self.cam.ray(uv(hp), aspect);
             if let Some((_, _, p, tri)) = self.pick(o, d) {
                 let vpm = params.view_proj;
@@ -2163,7 +2170,14 @@ impl App {
                 self.cam.zoom(scroll / 50.0, d, ms);
             }
         }
-        if resp.clicked() {
+        // alegerea originii / directiei axelor are prioritate fata de unealta curenta
+        let grid_click = resp.clicked() && self.grid_pick > 0 && snap.is_some();
+        if grid_click {
+            if let Some(s) = snap {
+                self.grid_pick_point(s);
+            }
+        }
+        if resp.clicked() && !grid_click {
             if let Some(p) = resp.interact_pointer_pos() {
                 match self.tool {
                     Tool::Measure(k) => {
@@ -2276,6 +2290,41 @@ impl App {
                 painter.line_segment([sa, sb], Stroke::new(w, col));
             }
         };
+        // planurile de sectiune: suprafete verzi transparente, cat scena
+        if self.section.enabled && self.section.mode == SectionMode::Planes && self.show_section_plane && self.report_job.is_none() {
+            let bb = self.scene_aabb();
+            if bb.is_valid() {
+                let (lo, hi) = (bb.min - Vec3::splat(0.5), bb.max + Vec3::splat(0.5));
+                for p in self.section.planes.iter().filter(|p| p.enabled) {
+                    let o = p.offset;
+                    let quad: [Vec3; 4] = match p.dir {
+                        0 | 1 => [Vec3::new(lo.x, lo.y, o), Vec3::new(hi.x, lo.y, o), Vec3::new(hi.x, hi.y, o), Vec3::new(lo.x, hi.y, o)],
+                        2 | 3 => [Vec3::new(o, lo.y, lo.z), Vec3::new(o, hi.y, lo.z), Vec3::new(o, hi.y, hi.z), Vec3::new(o, lo.y, hi.z)],
+                        _ => [Vec3::new(lo.x, o, lo.z), Vec3::new(hi.x, o, lo.z), Vec3::new(hi.x, o, hi.z), Vec3::new(lo.x, o, hi.z)],
+                    };
+                    // subdivizat, ca sa ramana corect cand o parte e in spatele camerei
+                    let n = 8;
+                    let fill = Color32::from_rgba_unmultiplied(60, 200, 90, 38);
+                    for i in 0..n {
+                        for j in 0..n {
+                            let at = |u: f32, v: f32| {
+                                let a = quad[0].lerp(quad[1], u);
+                                let b = quad[3].lerp(quad[2], u);
+                                a.lerp(b, v)
+                            };
+                            let (u0, u1, v0, v1) = (i as f32 / n as f32, (i + 1) as f32 / n as f32, j as f32 / n as f32, (j + 1) as f32 / n as f32);
+                            let pts: Option<Vec<Pos2>> = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)].iter().map(|q| to_screen(&vp, rect, *q)).collect();
+                            if let Some(pts) = pts {
+                                painter.add(egui::Shape::convex_polygon(pts, fill, Stroke::NONE));
+                            }
+                        }
+                    }
+                    for k in 0..4 {
+                        line(quad[k], quad[(k + 1) % 4], Color32::from_rgb(70, 210, 100), 1.5);
+                    }
+                }
+            }
+        }
         if self.section.enabled && self.section.mode == SectionMode::Box {
             let (a, b) = (Vec3::from(self.section.bmin), Vec3::from(self.section.bmax));
             let c = |i: u32| Vec3::new(if i & 1 == 0 { a.x } else { b.x }, if i & 2 == 0 { a.y } else { b.y }, if i & 4 == 0 { a.z } else { b.z });
@@ -2303,17 +2352,51 @@ impl App {
                     prev = p;
                 }
             };
+            // axe ca pe plansa: linie-punct (ax), bula alba cu contur si eticheta, asezata DINCOLO de capatul liniei;
+            // bulele au marime fixa pe ecran (se vad si de departe), liniile se pot prelungi (Edit Grids › Extend lines)
+            let br = self.grid_bubble.clamp(6.0, 30.0);
+            let ink = Color32::from_rgb(40, 60, 95);
             for (tag, a, b) in g.grids.iter().filter(|_| self.show_grids) {
-                let (a, b) = (Vec3::new(a.x, a.y, gz), Vec3::new(b.x, b.y, gz));
-                seg(a, b, gcol, 1.0);
-                for end in [a, b] {
-                    if let Some(s) = to_screen(&vp, rect, end) {
-                        if rect.contains(s) {
-                            painter.circle(s, 10.0, pal.overlay_btn, Stroke::new(1.2_f32, gcol));
-                            painter.text(s, Align2::CENTER_CENTER, tag, FontId::proportional(10.5), pal.overlay_text);
-                        }
+                let (mut a, mut b) = (Vec3::new(a.x, a.y, gz), Vec3::new(b.x, b.y, gz));
+                let dir = (b - a).normalize_or_zero();
+                a -= dir * self.grid_ext;
+                b += dir * self.grid_ext;
+                // polilinia pe ecran (bucati, ca sa ramana corecta cand o parte e in spatele camerei)
+                let n = 32;
+                let pts: Vec<Option<Pos2>> = (0..=n).map(|k| to_screen(&vp, rect, a.lerp(b, k as f32 / n as f32))).collect();
+                let mut run: Vec<Pos2> = Vec::new();
+                let flush = |run: &mut Vec<Pos2>| {
+                    if run.len() >= 2 {
+                        // linie-punct: tronson lung, pauza, punct, pauza
+                        let st = Stroke::new(1.4_f32, gcol);
+                        painter.extend(egui::Shape::dashed_line(run, st, 16.0, 4.0));
+                    }
+                    run.clear();
+                };
+                for p in &pts {
+                    match p {
+                        Some(s) => run.push(*s),
+                        None => flush(&mut run),
                     }
                 }
+                flush(&mut run);
+                // bulele: in prelungirea liniei, tangente la capat
+                let ends = [(pts.first().copied().flatten(), pts.get(1).copied().flatten()), (pts.last().copied().flatten(), pts.get(n - 1).copied().flatten())];
+                for (end, inner) in ends {
+                    let (Some(s), Some(q)) = (end, inner) else { continue };
+                    let d = (s - q).normalized();
+                    if !d.x.is_finite() {
+                        continue;
+                    }
+                    let c = s + d * br;
+                    if rect.expand(br).contains(c) {
+                        painter.circle(c, br, Color32::from_rgb(252, 252, 250), Stroke::new(1.6_f32, ink));
+                        painter.text(c, Align2::CENTER_CENTER, tag, FontId::proportional(br * 1.05), ink);
+                    }
+                }
+            }
+            if self.grid_pick > 0 {
+                painter.text(rect.center_top() + EV::new(0.0, 14.0), Align2::CENTER_TOP, if self.grid_pick == 1 { "Grid: click the origin (snaps to corners) · Esc to cancel" } else { "Grid: click a point along the first axis direction · Esc to keep the angle" }, FontId::proportional(14.0), pal.overlay_text);
             }
             if self.show_levels && bb.is_valid() && g.levels.len() < 60 {
                 let lcol = Color32::from_rgba_unmultiplied(235, 200, 120, 60);
@@ -4542,6 +4625,42 @@ impl App {
             }
             ui.separator();
             ui.checkbox(&mut self.section_caps, "Filled cuts").on_hover_text("Cut faces drawn solid and hatched (closed solids), instead of seeing inside the elements");
+            ui.checkbox(&mut self.show_section_plane, "Show plane").on_hover_text("Draw the section plane as a transparent green surface");
+        });
+        // sectiune dupa nivel: un nivel intreg (pardoseala -> nivelul urmator) sau o taietura de plan la o inaltime
+        let levels = self.scene_grids().levels;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("By level").strong());
+            if levels.is_empty() {
+                ui.label(RichText::new("no levels in the models - add them in View › Edit Levels").weak());
+                return;
+            }
+            let id = ui.make_persistent_id("sec_level");
+            let (mut li, mut h): (usize, f32) = ui.data_mut(|d| d.get_temp(id)).unwrap_or((0, 1.2));
+            li = li.min(levels.len() - 1);
+            egui::ComboBox::from_id_salt("seclev").width(150.0).selected_text(levels[li].0.clone()).show_ui(ui, |ui| {
+                for (i, l) in levels.iter().enumerate() {
+                    ui.selectable_value(&mut li, i, &l.0);
+                }
+            });
+            if ui.button("▣ Level box").on_hover_text("Section box from this level to the next one").clicked() {
+                self.section_level_box(li);
+            }
+            ui.separator();
+            ui.label("Plan cut at");
+            ui.add(egui::DragValue::new(&mut h).speed(0.05).range(-5.0..=20.0).fixed_decimals(2).suffix(" m"));
+            if ui.button("✂ Plan cut").on_hover_text("Cut everything above this height (like a floor plan)").clicked() {
+                self.section_plan_cut(li, h);
+            }
+            if ui.small_button("◀").on_hover_text("Level below").clicked() && li > 0 {
+                li -= 1;
+                self.section_level_box(li);
+            }
+            if ui.small_button("▶").on_hover_text("Level above").clicked() && li + 1 < levels.len() {
+                li += 1;
+                self.section_level_box(li);
+            }
+            ui.data_mut(|d| d.insert_temp(id, (li, h)));
         });
         ui.separator();
         ui.spacing_mut().slider_width = (ui.available_width() - 330.0).clamp(150.0, 700.0);
@@ -5593,6 +5712,7 @@ impl App {
                 Purpose::ExportClashBcf => "Export clashes as BCF",
                 Purpose::ExportIfc => "Export to IFC4",
                 Purpose::SharedFolder => "Shared issues folder",
+                Purpose::ExportGrids => "Export grid axes",
                 Purpose::ExportClashNavis => "Export clashes as Navisworks viewpoints",
                 Purpose::ImportBcf => "Import BCF issues",
                 Purpose::ImportTasksCsv => "Import CSV Schedule",
@@ -5673,6 +5793,155 @@ impl App {
                 ui.separator();
                 ui.label("Formats: IFC 2x3 / IFC4 (STEP), ManageBIM cache (.bimc) and glTF 2.0. Navisworks (NWD/NWC) and Revit (RVT) files are closed formats — export to IFC from Revit.");
             });
+        }
+        if self.show_grids_editor {
+            let mut open = true;
+            let mut export = false;
+            egui::Window::new("# Grids").open(&mut open).collapsible(false).default_width(470.0).show(ctx, |ui| {
+                ui.checkbox(&mut self.use_user_grids, "Use my grids (instead of the grids in the models)");
+                ui.add_space(4.0);
+                // generator: originea si rotatia se pot alege cu clic in model (snap pe colturi)
+                egui::CollapsingHeader::new(RichText::new("Generate a grid").strong()).default_open(self.user_grids.is_empty()).show(ui, |ui| {
+                    let gg = &mut self.grid_gen;
+                    egui::Grid::new("gg").num_columns(4).spacing([8.0, 4.0]).show(ui, |ui| {
+                        ui.label("Origin X / Y (real, m)");
+                        ui.add(egui::DragValue::new(&mut gg.origin[0]).speed(0.1).fixed_decimals(3));
+                        ui.add(egui::DragValue::new(&mut gg.origin[1]).speed(0.1).fixed_decimals(3));
+                        ui.label("");
+                        ui.end_row();
+                        ui.label("Rotation");
+                        ui.add(egui::DragValue::new(&mut gg.angle_deg).speed(0.1).range(-360.0..=360.0).fixed_decimals(2).suffix("°"));
+                        ui.label("");
+                        ui.label("");
+                        ui.end_row();
+                        ui.label("Numbered axes (count, spacing m, first)");
+                        ui.add(egui::DragValue::new(&mut gg.nx).range(0..=60));
+                        ui.add(egui::DragValue::new(&mut gg.dx).speed(0.05).range(0.1..=1000.0).fixed_decimals(2));
+                        ui.add(egui::TextEdit::singleline(&mut gg.fx).desired_width(40.0));
+                        ui.end_row();
+                        ui.label("Lettered axes (count, spacing m, first)");
+                        ui.add(egui::DragValue::new(&mut gg.ny).range(0..=60));
+                        ui.add(egui::DragValue::new(&mut gg.dy).speed(0.05).range(0.1..=1000.0).fixed_decimals(2));
+                        ui.add(egui::TextEdit::singleline(&mut gg.fy).desired_width(40.0));
+                        ui.end_row();
+                    });
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.button("🎯 Pick origin + direction in 3D").on_hover_text("Click the grid origin in the model (snaps to corners), then a point along the first lettered axis").clicked() {
+                            self.grid_pick = 1;
+                        }
+                        if ui.small_button("Model corner").on_hover_text("Origin at the lower-left corner of the loaded models").clicked() {
+                            let bb = self.scene_aabb();
+                            if bb.is_valid() {
+                                let o = self.origin_f64();
+                                self.grid_gen.origin = [(bb.min.x as f64 + o.x).round(), (bb.min.y as f64 + o.y).round()];
+                            }
+                        }
+                        if ui.button("⚙ Generate (replaces my grids)").clicked() {
+                            self.generate_user_grid();
+                        }
+                    });
+                    if self.grid_pick > 0 {
+                        ui.label(RichText::new(if self.grid_pick == 1 { "Click the origin in the 3D view…" } else { "Click a point along the first axis direction…" }).color(accent()));
+                    }
+                });
+                // mutare / rotire a axelor existente
+                egui::CollapsingHeader::new(RichText::new("Move / rotate my axes").strong()).default_open(false).show(ui, |ui| {
+                    let id = ui.make_persistent_id("gridmove");
+                    let mut mv: (f64, f64, f64) = ui.data_mut(|d| d.get_temp(id)).unwrap_or((0.0, 0.0, 0.0));
+                    ui.horizontal(|ui| {
+                        ui.label("Move X / Y");
+                        ui.add(egui::DragValue::new(&mut mv.0).speed(0.05).fixed_decimals(3).suffix(" m"));
+                        ui.add(egui::DragValue::new(&mut mv.1).speed(0.05).fixed_decimals(3).suffix(" m"));
+                        ui.label("Rotate");
+                        ui.add(egui::DragValue::new(&mut mv.2).speed(0.1).fixed_decimals(2).suffix("°"));
+                        if ui.button("Apply").on_hover_text("Rotation around the generator origin, then the move").clicked() {
+                            let c = self.grid_gen.origin;
+                            crate::app::transform_grids(&mut self.user_grids, c, mv.2, [mv.0, mv.1]);
+                            mv = (0.0, 0.0, 0.0);
+                        }
+                    });
+                    ui.data_mut(|d| d.insert_temp(id, mv));
+                });
+                // lista
+                egui::CollapsingHeader::new(RichText::new(format!("My axes ({})", self.user_grids.len())).strong()).default_open(true).show(ui, |ui| {
+                    let mut del = None;
+                    egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                        egui::Grid::new("ug").num_columns(6).striped(true).spacing([6.0, 3.0]).show(ui, |ui| {
+                            for h in ["Tag", "X1", "Y1", "X2", "Y2", ""] {
+                                ui.label(RichText::new(h).small().strong());
+                            }
+                            ui.end_row();
+                            for (i, g) in self.user_grids.iter_mut().enumerate() {
+                                ui.add(egui::TextEdit::singleline(&mut g.name).desired_width(40.0));
+                                let [a0, a1] = &mut g.a;
+                                let [b0, b1] = &mut g.b;
+                                for v in [a0, a1, b0, b1] {
+                                    ui.add(egui::DragValue::new(v).speed(0.05).fixed_decimals(2));
+                                }
+                                if ui.small_button("✖").clicked() {
+                                    del = Some(i);
+                                }
+                                ui.end_row();
+                            }
+                        });
+                    });
+                    if let Some(i) = del {
+                        self.user_grids.remove(i);
+                    }
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.button("➕ Add axis").clicked() {
+                            let n = self.user_grids.len();
+                            let last = self.user_grids.last().cloned();
+                            let g = match last {
+                                Some(l) => {
+                                    // paralela cu ultima, la 6 m
+                                    let d = glam::DVec2::from(l.b) - glam::DVec2::from(l.a);
+                                    let nrm = glam::DVec2::new(-d.y, d.x).normalize_or_zero() * 6.0;
+                                    crate::app::UserGrid { name: crate::app::grid_label(&l.name, 1), a: (glam::DVec2::from(l.a) + nrm).into(), b: (glam::DVec2::from(l.b) + nrm).into() }
+                                }
+                                None => {
+                                    let o = self.origin_f64();
+                                    crate::app::UserGrid { name: format!("{}", n + 1), a: [o.x, o.y - 10.0], b: [o.x, o.y + 10.0] }
+                                }
+                            };
+                            self.user_grids.push(g);
+                            self.use_user_grids = true;
+                        }
+                        if ui.button("⤓ Copy from models").clicked() {
+                            let saved = self.use_user_grids;
+                            self.use_user_grids = false;
+                            let g = self.grids_world();
+                            self.use_user_grids = saved;
+                            if !g.is_empty() {
+                                self.user_grids = g;
+                                self.use_user_grids = true;
+                            }
+                        }
+                        if ui.button("Clear").clicked() {
+                            self.user_grids.clear();
+                        }
+                    });
+                });
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label("Bubble size");
+                    ui.add(egui::Slider::new(&mut self.grid_bubble, 6.0..=30.0).suffix(" px").fixed_decimals(0));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Extend lines");
+                    ui.add(egui::Slider::new(&mut self.grid_ext, 0.0..=50.0).suffix(" m").fixed_decimals(1)).on_hover_text("Draw the axes longer than they are, so they stay visible from far away");
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("📤 Export DXF / DWG…").on_hover_text("Lines on layer GRID, bubbles and tags on GRID_TAGS, real coordinates in metres").clicked() {
+                        export = true;
+                    }
+                    ui.label(RichText::new("Saved with the project (.bimr).").weak().small());
+                });
+            });
+            self.show_grids_editor = open;
+            if export {
+                self.request_path(Purpose::ExportGrids);
+            }
         }
         if self.show_levels_editor {
             let mut open = true;
