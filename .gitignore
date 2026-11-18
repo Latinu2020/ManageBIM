@@ -1,0 +1,19 @@
+# build
+/target/
+/installers/setup/target/
+/dist/
+**/bin/
+**/obj/
+# Autodesk API reference assemblies (proprietary - restored by the build scripts / NuGet)
+**/refs/
+# OpenCascade build output (tools/build-occt.ps1)
+/third_party/occt/
+# model caches and temporary files
+*.bimc
+*.bimc.log
+*.tmp
+*.pdb# OpenCascade source archive (downloaded by tools/build-occt.ps1)
+/third_party/occt-*.tar.gz
+# add-in binaries copied into the installer payload by the build scripts
+/installers/payload/**/*.dll
+/installers/payload/**/*.exe

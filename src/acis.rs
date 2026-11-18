@@ -1,0 +1,495 @@
+//! Solide ACIS din DWG / DXF (3DSOLID, REGION, BODY, suprafete) -> triunghiuri, fara ODA / Navisworks.
+//!
+//! acadrust (MPL-2.0) parseaza datele ACIS (SAT text si SAB binar) in inregistrari tipizate. Aici
+//! parcurgem topologia (fata -> bucla -> coedge -> muchie -> varf) si geometria (suprafete plane,
+//! con / cilindru, sfera, tor, B-spline; curbe dreapta, elipsa, B-spline) si o trimitem ca descriere
+//! B-rep neutra shim-ului OpenCascade (`mbo_brep_from_desc` in src/occt/mbocct.cpp), care construieste
+//! fetele, le repara (ShapeFix: pcurve-uri, cusaturi, tolerante, orientare) si le trianguleaza.
+//! Formatul descrierii e documentat in mbocct.cpp.
+use crate::occt::{self, MeshQuality};
+use acadrust::entities::acis::{
+    SatConeSurface, SatCoedge, SatDocument, SatEdge, SatEllipseCurve, SatFace, SatIntCurve, SatLoop, SatPlaneSurface, SatPoint, SatPointer, SatRecord, SatSphereSurface,
+    SatSplineSurface, SatStraightCurve, SatTorusSurface, SatVertex, Sense,
+};
+use acadrust::entities::solid3d::AcisData;
+use acadrust::{CadDocument, EntityType};
+use glam::{DMat4, DVec3, DVec4};
+use std::collections::{BTreeMap, HashMap};
+
+/// Un solid ACIS triangulat (coordonatele desenului, inainte de scalarea unitatilor).
+#[derive(Clone, Debug, Default)]
+pub struct SolidMesh {
+    pub tris: Vec<[DVec3; 3]>,
+    /// fete ACIS in total / netraduse (geometrie nesuportata sau esec la constructie / triangulare)
+    pub faces: usize,
+    pub faces_failed: usize,
+    /// shell-uri inchise devenite solide (volum orientat spre exterior)
+    pub solids: usize,
+    /// geometrii ACIS netraduse (tip -> numar), pentru raport
+    pub unsupported: BTreeMap<String, usize>,
+    /// geometrii ACIS traduse (tip -> numar), pentru raport
+    pub translated: BTreeMap<String, usize>,
+}
+
+/// Toate solidele ACIS ale unui desen, indexate dupa handle-ul entitatii (hex, majuscule - ca in DXF).
+#[derive(Debug, Default)]
+pub struct AcisMeshes {
+    pub meshes: HashMap<String, SolidMesh>,
+    /// entitati ACIS cu date
+    pub total: usize,
+    /// motiv -> numar de entitati netraduse
+    pub failed: BTreeMap<String, usize>,
+    /// entitati traduse doar partial (unele fete lipsesc)
+    pub partial: usize,
+    pub faces_failed: usize,
+    pub unsupported: BTreeMap<String, usize>,
+    pub translated: BTreeMap<String, usize>,
+}
+
+impl AcisMeshes {
+    pub fn translated_count(&self) -> usize {
+        self.meshes.len()
+    }
+    pub fn failed_count(&self) -> usize {
+        self.failed.values().sum()
+    }
+    /// "motiv (n), motiv (n)"
+    pub fn failure_summary(&self) -> String {
+        self.failed.iter().map(|(k, v)| format!("{k} ({v})")).collect::<Vec<_>>().join(", ")
+    }
+}
+
+/// Numele DXF al entitatilor bazate pe ACIS (le recunoaste incarcatorul DXF).
+pub const DXF_TYPES: [&str; 10] = ["3DSOLID", "BODY", "REGION", "SURFACE", "PLANESURFACE", "EXTRUDEDSURFACE", "LOFTEDSURFACE", "REVOLVEDSURFACE", "SWEPTSURFACE", "NURBSURFACE"];
+
+/// Handle-ul entitatii, in forma din DXF (cod 5).
+pub fn handle_key(e: &EntityType) -> String {
+    format!("{:X}", e.common().handle.value())
+}
+
+fn acis_of(e: &EntityType) -> Option<&AcisData> {
+    match e {
+        EntityType::Solid3D(s) => Some(&s.acis_data),
+        EntityType::Region(s) => Some(&s.acis_data),
+        EntityType::Body(s) => Some(&s.acis_data),
+        EntityType::Surface(s) => Some(&s.acis_data),
+        _ => None,
+    }
+}
+
+/// Trianguleaza toate solidele ACIS din document (si cele din blocuri), in paralel.
+pub fn mesh_document(doc: &CadDocument, progress: &dyn Fn(f32, &str)) -> AcisMeshes {
+    use rayon::prelude::*;
+    let jobs: Vec<(String, &AcisData)> = doc.entities().filter_map(|e| acis_of(e).filter(|a| a.has_data()).map(|a| (handle_key(e), a))).collect();
+    let mut out = AcisMeshes { total: jobs.len(), ..Default::default() };
+    if jobs.is_empty() {
+        return out;
+    }
+    let q = MeshQuality::default();
+    let n = jobs.len();
+    let mut done = 0usize;
+    for chunk in jobs.chunks(64) {
+        progress(done as f32 / n as f32, &format!("Translating ACIS solids ({done} / {n})"));
+        let res: Vec<(String, Result<SolidMesh, String>)> = chunk.par_iter().map(|(h, a)| (h.clone(), mesh_acis(a, q))).collect();
+        for (h, r) in res {
+            match r {
+                Ok(m) => {
+                    if m.faces_failed > 0 {
+                        out.partial += 1;
+                        out.faces_failed += m.faces_failed;
+                    }
+                    for (k, v) in &m.unsupported {
+                        *out.unsupported.entry(k.clone()).or_default() += v;
+                    }
+                    for (k, v) in &m.translated {
+                        *out.translated.entry(k.clone()).or_default() += v;
+                    }
+                    out.meshes.insert(h, m);
+                }
+                Err(e) => *out.failed.entry(e).or_default() += 1,
+            }
+        }
+        done += chunk.len();
+    }
+    progress(1.0, "ACIS solids translated");
+    out
+}
+
+/// Datele ACIS ale unei entitati (SAT sau SAB) -> triunghiuri.
+pub fn mesh_acis(data: &AcisData, q: MeshQuality) -> Result<SolidMesh, String> {
+    let doc = data.parse().ok_or_else(|| "ACIS data could not be parsed".to_string())?;
+    mesh_sat(&doc, q)
+}
+
+/// Un document SAT -> triunghiuri (prin OpenCascade).
+pub fn mesh_sat(doc: &SatDocument, q: MeshQuality) -> Result<SolidMesh, String> {
+    let mut d = Describer::new(doc);
+    d.run();
+    if d.nf == 0 {
+        return Err("no faces in the ACIS body".into());
+    }
+    let (unsupported, translated) = (std::mem::take(&mut d.unsupported), std::mem::take(&mut d.translated));
+    let (ints, reals) = d.finish();
+    let b = occt::brep_from_desc(&ints, &reals, q).map_err(|e| if e.contains("not found") || e.contains("Cannot load") { "OpenCascade runtime not available".to_string() } else { e })?;
+    let xf = placement(doc);
+    let mut m = SolidMesh { faces: b.faces, faces_failed: b.faces_failed, solids: b.solids, unsupported, translated, tris: Vec::new() };
+    if b.curve_fallbacks > 0 {
+        *m.unsupported.entry("edge curve (approximated by a line)".into()).or_default() += b.curve_fallbacks;
+    }
+    let flip = xf.determinant() < 0.0;
+    m.tris = b
+        .tris
+        .into_iter()
+        .map(|t| {
+            let t = t.map(|p| xf.transform_point3(p));
+            if flip {
+                [t[0], t[2], t[1]]
+            } else {
+                t
+            }
+        })
+        .collect();
+    if m.tris.is_empty() {
+        let why = if m.unsupported.is_empty() { "the faces could not be built".to_string() } else { format!("unsupported geometry: {}", m.unsupported.keys().cloned().collect::<Vec<_>>().join(", ")) };
+        return Err(why);
+    }
+    Ok(m)
+}
+
+/// Transformarea corpului: lume = scala * (p * M) + T (conventia SAT, vector linie).
+fn placement(doc: &SatDocument) -> DMat4 {
+    let (m, t, s) = doc.placement();
+    let s = if s.is_finite() && s.abs() > 1e-12 { s } else { 1.0 };
+    let col = |r: [f64; 3]| DVec4::new(r[0] * s, r[1] * s, r[2] * s, 0.0);
+    let x = DMat4::from_cols(col(m[0]), col(m[1]), col(m[2]), DVec4::new(t[0], t[1], t[2], 1.0));
+    if x.is_finite() && x.determinant().abs() > 1e-18 {
+        x
+    } else {
+        DMat4::IDENTITY
+    }
+}
+
+fn v3(t: (f64, f64, f64)) -> [f64; 3] {
+    [t.0, t.1, t.2]
+}
+
+fn finite(v: &[f64]) -> bool {
+    v.iter().all(|x| x.is_finite())
+}
+
+/// Topologia + geometria ACIS -> fluxurile de intregi / reali citite de mbo_brep_from_desc.
+struct Describer<'a> {
+    doc: &'a SatDocument,
+    vr: Vec<f64>,
+    nv: i32,
+    vmap: HashMap<i32, Option<i32>>,
+    ci: Vec<i32>,
+    cr: Vec<f64>,
+    nc: i32,
+    cmap: HashMap<i32, i32>,
+    ei: Vec<i32>,
+    ne: i32,
+    emap: HashMap<i32, Option<i32>>,
+    si: Vec<i32>,
+    sr: Vec<f64>,
+    ns: i32,
+    smap: HashMap<i32, i32>,
+    fi: Vec<i32>,
+    nf: i32,
+    shells: HashMap<i32, i32>,
+    unsupported: BTreeMap<String, usize>,
+    translated: BTreeMap<String, usize>,
+}
+
+impl<'a> Describer<'a> {
+    fn new(doc: &'a SatDocument) -> Self {
+        Describer {
+            doc,
+            vr: Vec::new(),
+            nv: 0,
+            vmap: HashMap::new(),
+            ci: Vec::new(),
+            cr: Vec::new(),
+            nc: 0,
+            cmap: HashMap::new(),
+            ei: Vec::new(),
+            ne: 0,
+            emap: HashMap::new(),
+            si: Vec::new(),
+            sr: Vec::new(),
+            ns: 0,
+            smap: HashMap::new(),
+            fi: Vec::new(),
+            nf: 0,
+            shells: HashMap::new(),
+            unsupported: BTreeMap::new(),
+            translated: BTreeMap::new(),
+        }
+    }
+
+    fn rec(&self, p: SatPointer) -> Option<&'a SatRecord> {
+        self.doc.resolve(p)
+    }
+
+    fn ok(&mut self, what: &str) {
+        *self.translated.entry(what.to_string()).or_default() += 1;
+    }
+
+    fn missing(&mut self, what: String) {
+        *self.unsupported.entry(what).or_default() += 1;
+    }
+
+    fn run(&mut self) {
+        for r in &self.doc.records {
+            if let Some(f) = SatFace::from_record(r) {
+                self.face(&f);
+            }
+        }
+    }
+
+    fn finish(self) -> (Vec<i32>, Vec<f64>) {
+        let mut ints = vec![1, self.nv, self.nc, self.ne, self.ns, self.nf];
+        ints.extend(self.ci);
+        ints.extend(self.ei);
+        ints.extend(self.si);
+        ints.extend(self.fi);
+        let res = self.doc.header.spatial_resolution;
+        let tol = if res.is_finite() && (1e-9..=1e-2).contains(&res) { res } else { 1e-6 };
+        let mut reals = vec![tol];
+        reals.extend(self.vr);
+        reals.extend(self.cr);
+        reals.extend(self.sr);
+        (ints, reals)
+    }
+
+    fn vertex(&mut self, p: SatPointer) -> Option<i32> {
+        if let Some(v) = self.vmap.get(&p.0) {
+            return *v;
+        }
+        let pos = self.rec(p).and_then(SatVertex::from_record).and_then(|v| self.rec(v.point())).and_then(SatPoint::from_record).map(|pt| v3(pt.position())).filter(|x| finite(x));
+        let idx = pos.map(|x| {
+            self.vr.extend_from_slice(&x);
+            self.nv += 1;
+            self.nv - 1
+        });
+        self.vmap.insert(p.0, idx);
+        idx
+    }
+
+    /// -1 = fara curba (muchie degenerata sau segment intre varfuri)
+    fn curve(&mut self, p: SatPointer) -> i32 {
+        if p.is_null() {
+            return -1;
+        }
+        if let Some(c) = self.cmap.get(&p.0) {
+            return *c;
+        }
+        let Some(r) = self.rec(p) else { return -1 };
+        if let Some(c) = SatStraightCurve::from_record(r) {
+            let (o, d) = (v3(c.root_point()), v3(c.direction()));
+            if finite(&o) && finite(&d) {
+                self.ci.push(0);
+                self.cr.extend_from_slice(&o);
+                self.cr.extend_from_slice(&d);
+                self.ok("curve: straight");
+            } else {
+                self.ci.push(99);
+            }
+        } else if let Some(c) = SatEllipseCurve::from_record(r) {
+            let (o, n, m, k) = (v3(c.center()), v3(c.normal()), v3(c.major_axis()), c.ratio());
+            if finite(&o) && finite(&n) && finite(&m) && k.is_finite() {
+                self.ci.push(1);
+                self.cr.extend_from_slice(&o);
+                self.cr.extend_from_slice(&n);
+                self.cr.extend_from_slice(&m);
+                self.cr.push(k);
+                self.ok(if (k.abs() - 1.0).abs() < 1e-9 { "curve: circle" } else { "curve: ellipse" });
+            } else {
+                self.ci.push(99);
+            }
+        } else if let Some((deg, knots, ctrl)) = SatIntCurve::from_record(r).and_then(|c| c.bspline_in(self.doc)).filter(|(deg, k, c)| *deg >= 1 && k.len() == c.len() + deg + 1 && finite(k) && c.iter().all(|p| finite(p) && p[3] > 0.0)) {
+            let rational = ctrl.iter().any(|p| (p[3] - 1.0).abs() > 1e-12);
+            self.ci.extend_from_slice(&[2, deg as i32, knots.len() as i32, ctrl.len() as i32, rational as i32]);
+            self.cr.extend_from_slice(&knots);
+            for p in &ctrl {
+                self.cr.extend_from_slice(&[p[0] / p[3], p[1] / p[3], p[2] / p[3], p[3]]);
+            }
+            self.ok("curve: B-spline (intcurve / bs3)");
+        } else {
+            self.ci.push(99);
+            self.missing(format!("curve: {}", r.entity_type));
+        }
+        self.nc += 1;
+        let idx = self.nc - 1;
+        self.cmap.insert(p.0, idx);
+        idx
+    }
+
+    fn edge(&mut self, p: SatPointer) -> Option<i32> {
+        if let Some(e) = self.emap.get(&p.0) {
+            return *e;
+        }
+        let idx = (|| {
+            let e = SatEdge::from_record(self.rec(p)?)?;
+            let (sv, ev) = (self.vertex(e.start_vertex())?, self.vertex(e.end_vertex())?);
+            let c = self.curve(e.curve());
+            self.ei.extend_from_slice(&[sv, ev, c, (e.sense() == Sense::Reversed) as i32]);
+            self.ne += 1;
+            Some(self.ne - 1)
+        })();
+        self.emap.insert(p.0, idx);
+        idx
+    }
+
+    /// -1 = suprafata lipsa / nesuportata
+    fn surface(&mut self, p: SatPointer) -> i32 {
+        if let Some(s) = self.smap.get(&p.0) {
+            return *s;
+        }
+        let Some(r) = self.rec(p) else { return -1 };
+        let start = (self.si.len(), self.sr.len());
+        let ok = if let Some(s) = SatPlaneSurface::from_record(r) {
+            self.si.extend_from_slice(&[0, 0]);
+            self.sr.extend_from_slice(&v3(s.root_point()));
+            self.sr.extend_from_slice(&v3(s.normal()));
+            self.sr.extend_from_slice(&v3(s.u_direction()));
+            Some("surface: plane")
+        } else if let Some(s) = SatConeSurface::from_record(r) {
+            let (ratio, sin, cos) = (s.ratio(), s.sin_half_angle(), s.cos_half_angle());
+            let elliptic = (ratio.abs() - 1.0).abs() > 1e-9;
+            self.si.extend_from_slice(&[1, 0]);
+            self.sr.extend_from_slice(&v3(s.center()));
+            self.sr.extend_from_slice(&v3(s.axis()));
+            self.sr.extend_from_slice(&v3(s.major_axis()));
+            self.sr.extend_from_slice(&[ratio, sin, cos]);
+            // eliptic: cilindrul = extrudarea elipsei, conul = con circular scalat afin (B-spline, in shim)
+            Some(match (sin.abs() < 1e-12, elliptic) {
+                (true, false) => "surface: cylinder",
+                (true, true) => "surface: elliptic cylinder",
+                (false, false) => "surface: cone",
+                (false, true) => "surface: elliptic cone",
+            })
+        } else if let Some(s) = SatSphereSurface::from_record(r) {
+            self.si.extend_from_slice(&[2, 0]);
+            self.sr.extend_from_slice(&v3(s.center()));
+            self.sr.push(s.radius());
+            self.sr.extend_from_slice(&v3(s.u_direction()));
+            self.sr.extend_from_slice(&v3(s.pole()));
+            Some("surface: sphere")
+        } else if let Some(s) = SatTorusSurface::from_record(r) {
+            if s.major_radius() <= 0.0 {
+                None // tor "lamaie" (raza mare negativa)
+            } else {
+                self.si.extend_from_slice(&[3, 0]);
+                self.sr.extend_from_slice(&v3(s.center()));
+                self.sr.extend_from_slice(&v3(s.normal()));
+                self.sr.extend_from_slice(&[s.major_radius(), s.minor_radius()]);
+                self.sr.extend_from_slice(&v3(s.u_direction()));
+                Some("surface: torus")
+            }
+        } else if let Some(s) = SatSplineSurface::from_record(r) {
+            match s.bspline(self.doc).filter(|b| {
+                b.degree_u >= 1
+                    && b.degree_v >= 1
+                    && b.control_count_u >= 2
+                    && b.control_count_v >= 2
+                    && b.u_knots.len() == b.control_count_u + b.degree_u + 1
+                    && b.v_knots.len() == b.control_count_v + b.degree_v + 1
+                    && b.control_points.len() == b.control_count_u * b.control_count_v
+                    && finite(&b.u_knots)
+                    && finite(&b.v_knots)
+                    && b.control_points.iter().all(|p| finite(p) && p[3] > 0.0)
+            }) {
+                Some(b) => {
+                    let flip = s.sense() == Sense::Reversed;
+                    self.si.extend_from_slice(&[
+                        4,
+                        flip as i32,
+                        b.degree_u as i32,
+                        b.degree_v as i32,
+                        b.u_knots.len() as i32,
+                        b.v_knots.len() as i32,
+                        b.control_count_u as i32,
+                        b.control_count_v as i32,
+                        b.rational as i32,
+                    ]);
+                    self.sr.extend_from_slice(&b.u_knots);
+                    self.sr.extend_from_slice(&b.v_knots);
+                    for p in &b.control_points {
+                        self.sr.extend_from_slice(&[p[0] / p[3], p[1] / p[3], p[2] / p[3], p[3]]);
+                    }
+                    Some("surface: B-spline")
+                }
+                None => None,
+            }
+        } else {
+            None
+        };
+        let idx = match ok {
+            Some(what) if finite(&self.sr[start.1..]) => {
+                self.ok(what);
+                self.ns += 1;
+                self.ns - 1
+            }
+            _ => {
+                self.si.truncate(start.0);
+                self.sr.truncate(start.1);
+                let name = match SatSplineSurface::from_record(r) {
+                    Some(s) => format!("surface: {} ({})", r.entity_type, spline_kind(&s, self.doc)),
+                    None => format!("surface: {}", r.entity_type),
+                };
+                self.missing(name);
+                -1
+            }
+        };
+        self.smap.insert(p.0, idx);
+        idx
+    }
+
+    fn face(&mut self, f: &SatFace<'a>) {
+        let surf = self.surface(f.surface());
+        let shell_ptr = f.shell().0;
+        let next_shell = self.shells.len() as i32;
+        let shell = *self.shells.entry(shell_ptr).or_insert(next_shell);
+        let mut loops: Vec<Vec<(i32, i32)>> = Vec::new();
+        let mut lp = f.first_loop();
+        let mut guard = 0;
+        while let Some(l) = self.rec(lp).and_then(SatLoop::from_record) {
+            guard += 1;
+            if guard > 100_000 {
+                break;
+            }
+            let mut ces = Vec::new();
+            let first = l.first_coedge();
+            let mut cp = first;
+            let mut n = 0;
+            while let Some(ce) = self.rec(cp).and_then(SatCoedge::from_record) {
+                let e = self.edge(ce.edge()).unwrap_or(-1);
+                ces.push((e, (ce.sense() == Sense::Reversed) as i32));
+                n += 1;
+                cp = ce.next();
+                if cp.is_null() || cp.0 == first.0 || n > 1_000_000 {
+                    break;
+                }
+            }
+            loops.push(ces);
+            lp = l.next_loop();
+        }
+        self.fi.extend_from_slice(&[surf, (f.sense() == Sense::Reversed) as i32, shell, loops.len() as i32]);
+        for l in loops {
+            self.fi.push(l.len() as i32);
+            for (e, r) in l {
+                self.fi.extend_from_slice(&[e, r]);
+            }
+        }
+        self.nf += 1;
+    }
+}
+
+/// Subtipul unei suprafete spline nedecodabile (ex. "rb_blend_spl_sur") - pentru raport.
+fn spline_kind(s: &SatSplineSurface, doc: &SatDocument) -> String {
+    s.definition_tokens(doc)
+        .and_then(|t| t.iter().filter_map(|x| x.as_ident()).find(|x| !matches!(*x, "{" | "}" | "forward" | "reversed" | "forward_v" | "reversed_v" | "ref")))
+        .unwrap_or("?")
+        .to_string()
+}

@@ -1,0 +1,64 @@
+[package]
+name = "bimrust"
+version = "0.13.0"
+edition = "2021"
+description = "BimRust - vizualizare si coordonare modele BIM (IFC / glTF)"
+
+[lib]
+name = "bimrust"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ManageBIM"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "0.29.1", default-features = false, features = ["glow", "default_fonts", "x11"] }
+glam = "0.29"
+egui_extras = { version = "0.29.1", default-features = false }
+earcutr = "0.4"
+gltf = { version = "1.4", default-features = false, features = ["utils", "names"] }
+base64 = "0.22"
+rayon = "1.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+miniz_oxide = "0.8"
+jpeg-encoder = "0.6"
+png = "0.17"
+jpeg-decoder = { version = "0.3", default-features = false }
+gif = "0.13"
+lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
+acadrust = "0.6.8"
+# baza de date a proiectului Plant 3D (Piping.dcf = SQLite), doar citire; MIT, SQLite inclus (bundled)
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[target.'cfg(windows)'.dependencies]
+rfd = "0.15"
+
+[build-dependencies]
+# compileaza shim-ul OpenCascade (src/occt/mbocct.cpp) cu MSVC - vezi build.rs
+cc = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+
+[profile.dev]
+opt-level = 1
+
+[[bin]]
+name = "ManageBIM-Revit-AddIn"
+path = "src/bin/addin/revit.rs"
+
+[[bin]]
+name = "ManageBIM-AutoCAD-AddIn"
+path = "src/bin/addin/acad.rs"
+
+[[bin]]
+name = "ManageBIM-Navisworks-AddIn"
+path = "src/bin/addin/navis.rs"
+
+[[bin]]
+name = "bimc-convert"
+path = "src/bin/bimc_convert.rs"

@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Build:  dotnet build -c Release -p:RevitVersion=2024
+    Revit 2023/2024 -> .NET Framework 4.8,  Revit 2025/2026 -> .NET 8
+    The build copies the add-in into %AppData%\Autodesk\Revit\Addins\<version>\
+  -->
+  <PropertyGroup>
+    <RevitVersion Condition="'$(RevitVersion)' == ''">2024</RevitVersion>
+    <TargetFramework Condition="$(RevitVersion) &gt;= 2025">net8.0-windows</TargetFramework>
+    <TargetFramework Condition="$(RevitVersion) &lt; 2025">net48</TargetFramework>
+    <AssemblyName>ManageBIM.RevitExporter</AssemblyName>
+    <RootNamespace>ManageBIM.Revit</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>0.10.0</Version>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(RevitVersion)\</OutputPath>
+    <RevitDir Condition="'$(RevitDir)' == ''">C:\Program Files\Autodesk\Revit $(RevitVersion)</RevitDir>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <!-- reference assemblies from NuGet: builds without Revit installed (also on Linux / CI) -->
+  <ItemGroup>
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="$(RevitVersion).*" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="$(RevitVersion).*" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.Xaml" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != 'net48'">
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Resources\*.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="ManageBIM.addin" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="DeployToRevit" AfterTargets="Build" Condition="'$(OS)' == 'Windows_NT' And '$(NoDeploy)' != 'true'">
+    <PropertyGroup>
+      <AddinRoot>$(AppData)\Autodesk\Revit\Addins\$(RevitVersion)</AddinRoot>
+    </PropertyGroup>
+    <ItemGroup>
+      <DeployFiles Include="$(OutputPath)ManageBIM.RevitExporter.dll;$(OutputPath)Resources\*.png" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DeployFiles)" DestinationFolder="$(AddinRoot)\ManageBIM" />
+    <Copy SourceFiles="ManageBIM.addin" DestinationFolder="$(AddinRoot)" />
+    <Message Importance="high" Text="ManageBIM exporter installed for Revit $(RevitVersion) in $(AddinRoot)" />
+  </Target>
+</Project>

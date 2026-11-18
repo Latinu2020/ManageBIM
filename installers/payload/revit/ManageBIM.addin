@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>ManageBIM Exporter</Name>
+    <Assembly>ManageBIM\ManageBIM.RevitExporter.dll</Assembly>
+    <FullClassName>ManageBIM.Revit.App</FullClassName>
+    <ClientId>6B3C1F0E-8F0D-4C55-9A71-2D3B9E5A7C41</ClientId>
+    <VendorId>MANAGEBIM</VendorId>
+    <VendorDescription>ManageBIM - native .bimc model export</VendorDescription>
+  </AddIn>
+</RevitAddIns>

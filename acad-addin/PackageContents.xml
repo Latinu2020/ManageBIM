@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ApplicationPackage SchemaVersion="1.0" AutodeskProduct="AutoCAD" ProductType="Application"
+    Name="ManageBIM Exporter" Description="Export AutoCAD 3D models to ManageBIM .bimc" Author="ManageBIM"
+    AppVersion="0.13.0" ProductCode="{8E4A2C61-5B7D-4F0E-9C23-7A1D5E3B9F42}" UpgradeCode="{2F9C7B13-6D4E-4A85-B1E0-3C8A9D2F7E56}">
+  <CompanyDetails Name="ManageBIM" />
+  <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R24.0" />
+  <Components Description="AutoCAD 2021-2024">
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R24.0" SeriesMax="R24.3" />
+    <ComponentEntry AppName="ManageBIMExporter" ModuleName="./Contents/R24/ManageBIM.AcadExporter.dll" LoadOnAutoCADStartup="True" LoadOnCommandInvocation="False">
+      <Commands GroupName="MANAGEBIM"><Command Local="BIMCEXPORT" Global="BIMCEXPORT" /></Commands>
+    </ComponentEntry>
+  </Components>
+  <Components Description="AutoCAD 2025 and later">
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R25.0" />
+    <ComponentEntry AppName="ManageBIMExporter" ModuleName="./Contents/R25/ManageBIM.AcadExporter.dll" LoadOnAutoCADStartup="True" LoadOnCommandInvocation="False">
+      <Commands GroupName="MANAGEBIM"><Command Local="BIMCEXPORT" Global="BIMCEXPORT" /></Commands>
+    </ComponentEntry>
+  </Components>
+</ApplicationPackage>

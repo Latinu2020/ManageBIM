@@ -1,0 +1,18 @@
+ManageBIM - componente terte in acest folder
+============================================
+
+Open CASCADE Technology (OCCT) 8.0.1
+  Licenta: GNU Lesser General Public License v2.1 + "Open CASCADE exception" (LICENSE_LGPL_21.txt,
+  OCCT_LGPL_EXCEPTION.txt din acest folder). Copyright (c) Open CASCADE SAS.
+  Sursa: https://github.com/Open-Cascade-SAS/OCCT (tag V8.0.1); o copie a arhivei sursa folosite e inclusa
+  in backup-ul ManageBIM (Source\ManageBIM-source\third_party\occt-8.0.1.tar.gz) si se poate obtine la cerere.
+  Compilata nemodificat cu tools\build-occt.ps1 (MSVC 2022, Release, biblioteci partajate).
+  Fisiere: TK*.dll
+
+  ManageBIM foloseste OCCT doar prin legare dinamica: mbocct.dll (shim C, sursa in src\occt\mbocct.cpp)
+  incarca DLL-urile TK*.dll din acest folder. Le poti inlocui cu o alta compilare OCCT 8.0.x compatibila
+  (aceleasi nume de DLL-uri) fara sa recompilezi ManageBIM.
+
+Microsoft Visual C++ Runtime (MSVCP140.dll, VCRUNTIME140.dll, VCRUNTIME140_1.dll)
+  Fisiere redistribuibile din Visual Studio 2022 (Microsoft.VC143.CRT), distribuite app-local conform
+  licentei Visual Studio (redist.txt).

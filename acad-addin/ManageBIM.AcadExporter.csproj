@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    ManageBIM exporter for AutoCAD (and verticals: Architecture, MEP, Civil 3D, Plant 3D, Advance Steel).
+      dotnet build -c Release -p:AcadSeries=R24   -> AutoCAD 2021-2024 (.NET Framework 4.8)
+      dotnet build -c Release -p:AcadSeries=R25   -> AutoCAD 2025-2026+ (.NET 8)
+    Reference assemblies come from NuGet, AutoCAD does not need to be installed to build.
+  -->
+  <PropertyGroup>
+    <AcadSeries Condition="'$(AcadSeries)' == ''">R25</AcadSeries>
+    <TargetFramework Condition="'$(AcadSeries)' == 'R25'">net8.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(AcadSeries)' == 'R24'">net48</TargetFramework>
+    <AcadNuget Condition="'$(AcadSeries)' == 'R25'">25.0.1</AcadNuget>
+    <AcadNuget Condition="'$(AcadSeries)' == 'R24'">24.0.0</AcadNuget>
+    <AssemblyName>ManageBIM.AcadExporter</AssemblyName>
+    <RootNamespace>ManageBIM.Acad</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <Version>0.10.0</Version>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(AcadSeries)\</OutputPath>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="AutoCAD.NET" Version="[$(AcadNuget)]" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != 'net48'">
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
+  </ItemGroup>
+</Project>

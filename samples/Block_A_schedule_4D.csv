@@ -1,0 +1,17 @@
+Name;Start;End;Type;Rule
+Foundations and ground slab;2027-03-01;2027-03-21;Construct;Level=Ground Floor;IFC Type=IfcSlab
+Structure ground floor;2027-03-22;2027-04-18;Construct;Level=Ground Floor;Phase=Structure
+Slab level 1;2027-04-19;2027-05-02;Construct;Level=Level 1;IFC Type=IfcSlab
+Structure level 1;2027-05-03;2027-05-30;Construct;Level=Level 1;Phase=Structure
+Slab level 2;2027-05-31;2027-06-13;Construct;Level=Level 2;IFC Type=IfcSlab
+Structure level 2;2027-06-14;2027-07-11;Construct;Level=Level 2;Phase=Structure
+Roof;2027-07-12;2027-08-01;Construct;IFC Type=IfcRoof
+Temporary stair access;2027-06-01;2027-09-15;Temporary;IFC Type=IfcStairFlight
+Masonry ground floor;2027-04-19;2027-05-16;Construct;Level=Ground Floor;IFC Type=IfcWall
+Masonry level 1;2027-05-31;2027-06-27;Construct;Level=Level 1;IFC Type=IfcWall
+Masonry level 2;2027-07-12;2027-08-08;Construct;Level=Level 2;IFC Type=IfcWall
+Windows;2027-08-09;2027-09-05;Construct;IFC Type=IfcWindow
+Entrance door;2027-08-23;2027-08-29;Construct;IFC Type=IfcDoor
+Ventilation;2027-08-09;2027-09-19;Construct;System=Supply Air
+Heating;2027-08-16;2027-09-19;Construct;System=Heating
+Electrical;2027-08-23;2027-09-26;Construct;System=Power
