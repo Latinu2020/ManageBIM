@@ -10,6 +10,7 @@ pub mod fbx;
 pub mod fcstd;
 pub mod formats;
 pub mod materials;
+pub mod pdf;
 pub mod markup;
 pub mod gltf_load;
 pub mod ifc;

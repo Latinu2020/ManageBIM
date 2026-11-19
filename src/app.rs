@@ -821,6 +821,7 @@ pub enum Purpose {
     ExportClashMatrix,
     ExportWeb,
     ExportAsBuilt,
+    ExportSectionCad,
     ImportCheckRules,
     ExportCheckRules,
     ExportCheckXlsx,
@@ -840,6 +841,7 @@ pub enum Purpose {
     ImportPbrFolder,
     ExportVpHtml,
     ExportVpXlsx,
+    ExportVpPdf,
     ExportBcf,
     ExportNavisXml,
     ImportNavisXml,
@@ -3747,6 +3749,7 @@ impl App {
         let ext = match job.kind {
             0 => ".html",
             1 => ".xlsx",
+            3 => ".pdf",
             _ => ".bcf",
         };
         if !path.to_lowercase().ends_with(ext) && !(job.kind == 2 && path.to_lowercase().ends_with(".bcfzip")) {
@@ -3768,6 +3771,7 @@ impl App {
                     .collect();
                 crate::markup::xlsx_report(&project, &job.items, &thumbs)
             }
+            3 => crate::pdf::sheets(&project, &job.items, &now_string()),
             _ => crate::markup::bcf_zip(&project, &job.items),
         };
         match std::fs::write(&path, data) {
@@ -5012,6 +5016,7 @@ impl App {
             Purpose::ExportClashMatrix => self.export_clash_matrix(&path),
             Purpose::ExportWeb => self.export_web(&path),
             Purpose::ExportAsBuilt => self.export_asbuilt_xlsx(&path),
+            Purpose::ExportSectionCad => self.export_section_cad(&path),
             Purpose::ImportCheckRules => self.import_check_rules(&path),
             Purpose::ExportCheckRules => self.export_check_rules(&path),
             Purpose::ExportCheckXlsx => self.export_check_xlsx(&path),
@@ -5035,6 +5040,7 @@ impl App {
             Purpose::ImportPbr | Purpose::ImportPbrFolder => self.import_pbr_packs(&[path.clone()]),
             Purpose::ExportVpHtml => self.start_report(0, &path),
             Purpose::ExportVpXlsx => self.start_report(1, &path),
+            Purpose::ExportVpPdf => self.start_report(3, &path),
             Purpose::ExportBcf => self.start_report(2, &path),
             Purpose::ExportNavisXml => self.export_navis_xml(&path),
             Purpose::ImportNavisXml => self.import_navis_xml(&path),
@@ -5278,6 +5284,7 @@ impl App {
                 Purpose::ExportClashMatrix => d.set_title("Clash matrix (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("clash_matrix.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportWeb => d.set_title("Web viewer (HTML)").add_filter("Web page", &["html"]).set_file_name("model.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportAsBuilt => d.set_title("As-built report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("as_built.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportSectionCad => d.set_title("Section cut (DWG / DXF)").add_filter("AutoCAD DWG (needs ODA File Converter)", &["dwg"]).add_filter("DXF", &["dxf"]).set_file_name("section.dwg").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportCheckRules => d.set_title("Import IDS or rules").add_filter("IDS / ManageBIM rules", &["ids", "xml", "mbrules", "json"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCheckRules => d.set_title("Save rules").add_filter("ManageBIM rules", &["mbrules"]).set_file_name("rules.mbrules").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCheckXlsx => d.set_title("Model check report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("model_check.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5317,6 +5324,7 @@ impl App {
                 Purpose::ImportMaterials => d.set_title("Import material library").add_filter("Materials / Excel / CSV", &["bimmat", "json", "xlsx", "csv"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpHtml => d.set_title("Viewpoints report (HTML)").add_filter("HTML report", &["html"]).set_file_name("viewpoints_report.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpXlsx => d.set_title("Viewpoints report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("viewpoints_report.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportVpPdf => d.set_title("Sheets (PDF)").add_filter("PDF", &["pdf"]).set_file_name("sheets.pdf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportBcf => d.set_title("Export BCF 2.1").add_filter("BIM Collaboration Format", &["bcf", "bcfzip"]).set_file_name("issues.bcf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportNavisXml => d.set_title("Export viewpoints for Navisworks").add_filter("Navisworks viewpoints XML", &["xml"]).set_file_name("viewpoints.xml").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportNavisXml => d.set_title("Import Navisworks viewpoints").add_filter("Navisworks viewpoints XML", &["xml"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5375,6 +5383,7 @@ impl App {
                 Purpose::ExportClashMatrix => "clash_matrix.xlsx".into(),
                 Purpose::ExportWeb => "model.html".into(),
                 Purpose::ExportAsBuilt => "as_built.xlsx".into(),
+                Purpose::ExportSectionCad => "section.dwg".into(),
                 Purpose::ImportCheckRules => String::new(),
                 Purpose::ExportCheckRules => "rules.mbrules".into(),
                 Purpose::ExportCheckXlsx => "model_check.xlsx".into(),
@@ -5385,6 +5394,7 @@ impl App {
                 Purpose::ExportMaterials => "materials.bimmat".into(),
                 Purpose::ExportVpHtml => "viewpoints_report.html".into(),
                 Purpose::ExportVpXlsx => "viewpoints_report.xlsx".into(),
+                Purpose::ExportVpPdf => "sheets.pdf".into(),
                 Purpose::ExportBcf => "issues.bcf".into(),
                 Purpose::ExportNavisXml => "viewpoints.xml".into(),
                 Purpose::ExportNavisSets => "sets.xml".into(),
@@ -5827,6 +5837,99 @@ impl App {
         self.scene_grids_models().grids.iter().map(|(n, a, b)| UserGrid { name: n.clone(), a: [a.x as f64 + o.x, a.y as f64 + o.y], b: [b.x as f64 + o.x, b.y as f64 + o.y] }).collect()
     }
 
+
+    /// Taietura sectiunii curente (plan / nivel) ca linii 2D intr-un DXF (sau DWG cu ODA File Converter):
+    /// un layer pe tip de element (Walls, Doors, IfcColumn...), coordonate reale in metri.
+    pub fn export_section_cad(&mut self, path: &str) {
+        if !self.section.enabled {
+            return self.error("Turn on a section first: a level (status bar › Level) or a section plane - the cut of that section is exported.");
+        }
+        // planul de taiere: axa (0 = X, 1 = Y, 2 = Z), valoarea (coordonate locale) si zona (doar la box)
+        let (axis, value, clip): (usize, f32, Option<([f32; 3], [f32; 3])>) = match self.section.mode {
+            SectionMode::Box => {
+                let (a, b) = (self.section.bmin, self.section.bmax);
+                // ca in planurile Revit: taietura la 1.2 m deasupra nivelului
+                let z = (a[2] + self.level_below.max(0.0) + 0.01 + 1.2).min(b[2] - 0.01).max(a[2] + 0.01);
+                (2, z, Some((a, b)))
+            }
+            SectionMode::Planes => {
+                let Some(p) = self.section.planes.iter().find(|p| p.enabled) else { return self.error("No active section plane.") };
+                let axis = match p.dir {
+                    0 | 1 => 2,
+                    2 | 3 => 0,
+                    _ => 1,
+                };
+                (axis, p.offset, None)
+            }
+        };
+        let o = self.origin_f64();
+        let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
+        // (layer, x1, y1, x2, y2) in coordonatele plansei
+        let mut segs: Vec<(String, [f64; 4])> = Vec::new();
+        let to2d = |p: Vec3| -> [f64; 2] {
+            let w = [p.x as f64 + o.x, p.y as f64 + o.y, p.z as f64 + o.z];
+            match axis {
+                2 => [w[0], w[1]],
+                0 => [w[1], w[2]],
+                _ => [w[0], w[2]],
+            }
+        };
+        let inside = |p: Vec3| match clip {
+            Some((a, b)) => p.x >= a[0] - 1e-3 && p.x <= b[0] + 1e-3 && p.y >= a[1] - 1e-3 && p.y <= b[1] + 1e-3,
+            None => true,
+        };
+        for (mi, m) in &models {
+            if m.cloud.is_some() {
+                continue;
+            }
+            for (ei, e) in m.elements.iter().enumerate() {
+                let id = ElemId { m: *mi as u32, e: ei as u32 };
+                if e.tri_count == 0 || e.default_hidden || self.hidden.contains(&id) {
+                    continue;
+                }
+                if e.aabb.min[axis] > value || e.aabb.max[axis] < value {
+                    continue;
+                }
+                let layer = cad_layer(if e.ifc_type.is_empty() { "Model" } else { &e.ifc_type });
+                for t in e.tri_start..e.tri_start + e.tri_count {
+                    let i = t as usize * 3;
+                    let (Some(a), Some(b), Some(c)) = (m.pos.get(i).copied(), m.pos.get(i + 1).copied(), m.pos.get(i + 2).copied()) else { continue };
+                    let d = [a[axis] - value, b[axis] - value, c[axis] - value];
+                    let mut pts: Vec<Vec3> = Vec::with_capacity(2);
+                    for (p, q, dp, dq) in [(a, b, d[0], d[1]), (b, c, d[1], d[2]), (c, a, d[2], d[0])] {
+                        if (dp < 0.0) != (dq < 0.0) {
+                            let t = dp / (dp - dq);
+                            pts.push(p + (q - p) * t);
+                        }
+                    }
+                    if pts.len() == 2 && inside(pts[0]) && inside(pts[1]) && (pts[0] - pts[1]).length_squared() > 1e-8 {
+                        let (p, q) = (to2d(pts[0]), to2d(pts[1]));
+                        segs.push((layer.clone(), [p[0], p[1], q[0], q[1]]));
+                    }
+                }
+            }
+        }
+        if segs.is_empty() {
+            return self.error("The section cuts no visible element.");
+        }
+        let dwg = path.to_lowercase().ends_with(".dwg");
+        let dxf_path = if dwg { std::path::Path::new(path).with_extension("dxf").to_string_lossy().to_string() } else { with_ext(path, "dxf") };
+        let n = segs.len();
+        if let Err(e) = std::fs::write(&dxf_path, cut_dxf(&segs)) {
+            return self.error(format!("Cannot write {dxf_path}: {e}"));
+        }
+        let what = match axis {
+            2 => "plan",
+            _ => "section",
+        };
+        if !dwg {
+            return self.toast(format!("Section cut exported ({what}, {n} lines): {}", crate::file_name(&dxf_path)));
+        }
+        match crate::formats::dxf_to_dwg(&dxf_path) {
+            Ok(out) => self.toast(format!("Section cut exported ({what}, {n} lines): {}", crate::file_name(&out))),
+            Err(e) => self.toast(format!("Saved as DXF ({}) - {e}", crate::file_name(&dxf_path))),
+        }
+    }
     /// Export DXF; daca extensia e .dwg si ODA File Converter e instalat, DXF-ul se converteste in DWG.
     pub fn export_grids(&mut self, path: &str) {
         let grids = self.grids_world();
@@ -6891,4 +6994,29 @@ pub fn thousands_app(n: usize) -> String {
         out.push(c);
     }
     out
+}
+
+/// numele layer-ului DXF pentru un tip de element (fara caractere interzise in AutoCAD)
+pub fn cad_layer(s: &str) -> String {
+    let t: String = s.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '_' }).collect();
+    let t = t.trim().to_string();
+    if t.is_empty() { "Model".into() } else { t }
+}
+
+/// DXF R12 cu linii pe layere (culoare AutoCAD diferita pe layer), unitati: metri
+pub fn cut_dxf(segs: &[(String, [f64; 4])]) -> String {
+    let mut layers: Vec<&str> = segs.iter().map(|s| s.0.as_str()).collect();
+    layers.sort();
+    layers.dedup();
+    let mut s = String::from("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n6\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n");
+    s.push_str(&format!("70\n{}\n", layers.len()));
+    for (i, l) in layers.iter().enumerate() {
+        s.push_str(&format!("0\nLAYER\n2\n{l}\n70\n0\n62\n{}\n6\nCONTINUOUS\n", [1, 2, 3, 4, 5, 6, 30, 140, 200, 40][i % 10]));
+    }
+    s.push_str("0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
+    for (l, p) in segs {
+        s.push_str(&format!("0\nLINE\n8\n{l}\n10\n{:.4}\n20\n{:.4}\n30\n0.0\n11\n{:.4}\n21\n{:.4}\n31\n0.0\n", p[0], p[1], p[2], p[3]));
+    }
+    s.push_str("0\nENDSEC\n0\nEOF\n");
+    s
 }

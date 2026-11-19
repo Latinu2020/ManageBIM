@@ -1604,6 +1604,9 @@ impl App {
                 self.section_sel_sig = 0;
             }
             self.panel_btn(ui, Panel::Section, "⚙", "Planes", "Section planes & box");
+            if rbtn(ui, "📐", "Cut to DWG", "Export the cut of the current section as 2D lines (DWG / DXF), one layer per element type:\nlevel section = plan cut at +1.20 m (like Revit plans), section plane = that plane (elevation / section).\nDWG needs the free ODA File Converter; otherwise a DXF is saved.", false, self.section.enabled).clicked() {
+                self.request_path(Purpose::ExportSectionCad);
+            }
         });
         // acces rapid: nivelul, sus / jos, box de nivel sau taietura de plan
         let levels = self.scene_grids().levels;
@@ -2087,6 +2090,9 @@ impl App {
             }
             if rbtn(ui, "📊", "Excel", "Excel workbook with one row and a snapshot per viewpoint", false, can).clicked() {
                 self.request_path(Purpose::ExportVpXlsx);
+            }
+            if rbtn(ui, "📄", "PDF Sheets", "One A3 sheet per viewpoint: large image, description, comments and a title block (project, viewpoint, status, date, sheet number)", false, can).clicked() {
+                self.request_path(Purpose::ExportVpPdf);
             }
             if rbtn(ui, "📤", "BCF", "BCF 2.1 issues (Revit, Navisworks, Solibri, BIMcollab, ACC...)", false, can).clicked() {
                 self.request_path(Purpose::ExportBcf);
@@ -5624,6 +5630,9 @@ impl App {
             if ui.add_enabled(can, egui::Button::new("📊 Excel")).clicked() {
                 self.request_path(Purpose::ExportVpXlsx);
             }
+            if ui.add_enabled(can, egui::Button::new("📄 PDF sheets")).clicked() {
+                self.request_path(Purpose::ExportVpPdf);
+            }
             if ui.add_enabled(can, egui::Button::new("📤 BCF 2.1")).clicked() {
                 self.request_path(Purpose::ExportBcf);
             }
@@ -7084,6 +7093,7 @@ impl App {
                 Purpose::ExportClashMatrix => "Clash matrix (Excel)",
                 Purpose::ExportWeb => "Web viewer (HTML)",
                 Purpose::ExportAsBuilt => "As-built report (Excel)",
+                Purpose::ExportSectionCad => "Section cut (DWG / DXF)",
                 Purpose::ImportCheckRules => "Import IDS or rules",
                 Purpose::ExportCheckRules => "Save rules",
                 Purpose::ExportCheckXlsx => "Model check report (Excel)",
@@ -7099,6 +7109,7 @@ impl App {
                 Purpose::ImportPbrFolder => "Import PBR folder",
                 Purpose::ExportVpHtml => "Viewpoints report (HTML)",
                 Purpose::ExportVpXlsx => "Viewpoints report (Excel .xlsx)",
+                Purpose::ExportVpPdf => "Sheets (PDF)",
                 Purpose::ExportBcf => "Export BCF 2.1 issues",
                 Purpose::ExportNavisXml => "Export viewpoints for Navisworks (XML)",
                 Purpose::ImportNavisXml => "Import Navisworks viewpoints (XML)",

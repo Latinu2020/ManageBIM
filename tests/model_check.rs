@@ -203,3 +203,47 @@ fn as_built_finds_built_missing_and_unscanned() {
     assert_eq!(res[1].status, Status::Missing, "{:?}", res[1]);
     assert_eq!(res[2].status, Status::NotScanned);
 }
+
+#[test]
+fn pdf_sheets_are_written() {
+    use bimrust::markup::{Issue, ReportItem, VpComment};
+    let (w, h) = (320u32, 200u32);
+    let rgb: Vec<u8> = (0..w * h).flat_map(|i| [(i % w * 255 / w) as u8, 120, (i / w * 255 / h) as u8]).collect();
+    let png = bimrust::markup::encode_png(&rgb, w, h);
+    let it = ReportItem {
+        index: 1,
+        name: "Clash C-4 / Level 2 (duct vs beam)".into(),
+        description: "The supply duct crosses the beam at grid C-4. Lower the duct by 150 mm or reroute it.".into(),
+        issue: Issue { guid: "g".into(), status: "Open".into(), priority: "High".into(), assigned: "MEP team".into(), author: "reviewer".into(), created: "2026-11-20T10:00:00Z".into() },
+        comments: vec![VpComment { author: "reviewer".into(), date: "2026-11-20".into(), text: "Checked on site (paranteze) and ș diacritics.".into() }],
+        redlines: 0,
+        eye: [0.0; 3],
+        dir: [1.0, 0.0, 0.0],
+        up: [0.0, 0.0, 1.0],
+        fov_deg: 50.0,
+        ortho_height: None,
+        selected_guids: Vec::new(),
+        hidden_guids: Vec::new(),
+        image: png,
+        image_w: w,
+        image_h: h,
+    };
+    let pdf = bimrust::pdf::sheets("Block A", std::slice::from_ref(&it), "2026-11-20");
+    assert!(pdf.starts_with(b"%PDF-1.4"));
+    assert!(pdf.ends_with(b"%%EOF\n"));
+    let s = String::from_utf8_lossy(&pdf);
+    assert_eq!(s.matches("/Type /Page ").count(), 1);
+    assert!(s.contains("/DCTDecode"));
+    let out = std::env::var("MB_PDF_OUT").unwrap_or_else(|_| "target/test_sheets.pdf".into());
+    std::fs::write(out, &pdf).unwrap();
+}
+
+#[test]
+fn section_cut_dxf_has_layers_and_lines() {
+    let segs = vec![("Walls".to_string(), [0.0, 0.0, 5.0, 0.0]), ("IfcDoor".to_string(), [1.0, 0.0, 2.0, 0.0]), ("Walls".to_string(), [5.0, 0.0, 5.0, 4.0])];
+    let d = bimrust::app::cut_dxf(&segs);
+    assert_eq!(d.matches("\nLINE\n").count(), 3);
+    assert!(d.contains("\nLAYER\n2\nWalls\n") && d.contains("\nLAYER\n2\nIfcDoor\n"));
+    assert!(d.trim_end().ends_with("EOF"));
+    assert_eq!(bimrust::app::cad_layer("Ifc/Wall:*"), "Ifc_Wall__");
+}
