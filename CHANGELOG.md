@@ -3,6 +3,20 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.19.0 - 2026-11-20
+
+- **Interfata**: font **Inter** (OFL) si **iconite vectoriale Phosphor** (MIT) in locul emoji-urilor - ribbon, bara de navigare, titlurile panourilor.
+  - **Panourile de jos in bara de stare**: filele (Find, Clash, TimeLiner, Viewpoints...) stau jos in bara de stare; clic = panoul se ridica (cu animatie), clic pe fila deschisa = coboara. Butoanele din ribbon il ridica automat.
+  - **Arborele**: punct colorat pe categorie / culoarea elementului, numarul elementelor intr-o insigna, randul selectat cu nuanta de accent si bara de 2 px.
+  - **Find Items cu chip-uri**: `IFC Type = Wall ×`, `+ Condition`, `Find All`, si „N conditions · M elements in scope”.
+  - Animatii: hover cu fade in ribbon si arbore, tranzitie la schimbarea tab-ului.
+  - Imaginea 3D: **margini fine** pe elemente (Render › Edges), umbre de contact mai moi, fundal cu „orizont” luminos.
+- **Live Link - selectie sincronizata** cu **Revit** (ManageBIM › Sync Selection) si **Navisworks** (Tool Add-ins › Sync Selection), in ambele sensuri; in ManageBIM: Select › Live Link. Potrivire dupa UniqueId / IfcGUID / GlobalId; zoom optional pe selectia primita; starea in bara de jos.
+- **As-built check** (Analyze › Scan vs Model): modelul fata de norul de puncte E57 / LAS - construit / partial / lipsa / nescanat, cu toleranta si praguri, culori pe model, Select / Isolate, raport Excel.
+- **Planse PDF** din viewpoints (Viewpoint › PDF Sheets): A3 landscape, imaginea mare, descriere si comentarii, cartus (proiect, viewpoint, stare, responsabil, data, numar plansa).
+- **Taietura sectiunii in DWG / DXF** (Sections › Cut to DWG): sectiunea pe nivel = plan la +1.20 m, planul de sectiune = sectiune / fatada; un layer pe tip de element.
+- **LOD adaptiv**: in miscare, pe modele mari, obiectele mici se ascund temporar dupa FPS (pana la 24 px) si revin cand camera se opreste.
+
 ## 0.18.0 - 2026-11-19
 
 - **Interfata noua (redesign)**: ribbon pe **carduri fara chenare** (adancimea vine din suprafete, nu din linii), **11 tab-uri**: Home, Select, Viewpoint, Review, Sections, Coordination, Analyze, Render, Export, Share, View.

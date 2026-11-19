@@ -1,6 +1,8 @@
 # Componente terțe în ManageBIM
 
 - **Open CASCADE Technology 8.0.1** - LGPL-2.1 + Open CASCADE exception, legat dinamic (folderul `occt\`, vezi `occt\NOTICE.txt`).
+- **Inter 4.1** (fontul interfeței, github.com/rsms/inter) - SIL Open Font License 1.1, inclus în executabil; textul licenței: `assets/fonts/Inter-LICENSE.txt`.
+- **Phosphor Icons** (iconițele vectoriale, prin crate-ul `egui-phosphor` 0.7) - MIT.
 - **ufbx 0.23.1** (citire FBX) - MIT, legat static. Textul licenței:
 
 ```text

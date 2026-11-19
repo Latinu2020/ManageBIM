@@ -1132,6 +1132,8 @@ pub struct App {
     /// desenare simplificata: camera din cadrul trecut, momentul ultimei miscari, elementele cu transparenta
     pub lod_cam: Camera,
     pub lod_moved: Instant,
+    /// pragul LOD in miscare (pixeli), adaptat dupa FPS
+    pub lod_px: f32,
     pub alpha_cache: HashMap<usize, (usize, Vec<bool>)>,
     /// Refresh: data modificarii fisierului sursa la momentul incarcarii (per slot)
     pub file_stamps: HashMap<usize, std::time::SystemTime>,
@@ -1343,6 +1345,7 @@ impl App {
             outbox_sig: 0,
             lod_cam: Camera::default(),
             lod_moved: Instant::now(),
+            lod_px: 2.0,
             alpha_cache: HashMap::new(),
             file_stamps: HashMap::new(),
             reloading: HashMap::new(),
@@ -3552,7 +3555,16 @@ impl App {
         };
         let section_box = (self.section.enabled && self.section.mode == SectionMode::Box).then(|| Aabb { min: Vec3::from(self.section.bmin), max: Vec3::from(self.section.bmax) });
         let tanh = (c.fov() * 0.5).tan().max(1e-3);
-        let min_px = if moving { 2.0 } else { 0.0 };
+        // LOD adaptiv: in miscare pragul (pixeli) creste cand FPS scade si revine cand FPS e bun;
+        // camera oprita = tot modelul, mai putin obiectele sub un pixel (oricum invizibile)
+        if moving {
+            if self.fps > 0.0 && self.fps < 28.0 {
+                self.lod_px = (self.lod_px * 1.25).min(24.0);
+            } else if self.fps > 50.0 {
+                self.lod_px = (self.lod_px / 1.15).max(2.0);
+            }
+        }
+        let min_px = if moving { self.lod_px } else { 0.6 };
         let eye = c.eye();
         let mut out = HashMap::new();
         let slots: Vec<usize> = self.loaded_models().map(|(i, _)| i).collect();
