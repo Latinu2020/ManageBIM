@@ -236,8 +236,12 @@ impl App {
             return;
         }
         if ctrl && a {
-            let all = self.all_ids();
-            self.apply(Action::Select(all, false));
+            if ctx.input(|i| i.modifiers.shift) {
+                self.select_similar(true);
+            } else {
+                let all = self.all_ids();
+                self.apply(Action::Select(all, false));
+            }
         }
         if !ctrl && f {
             let sel: Vec<ElemId> = self.selected.iter().copied().collect();
@@ -441,52 +445,65 @@ impl App {
     }
 
     fn ribbon(&mut self, ctx: &egui::Context) {
-        const TABS: [&str; 7] = ["Home", "Viewpoint", "Review", "Coordination", "Render", "Output", "View"];
-        egui::TopBottomPanel::top("ribbon").frame(egui::Frame::side_top_panel(&ctx.style()).inner_margin(egui::Margin::symmetric(6.0, 3.0))).show(ctx, |ui| {
+        use crate::theme::RibbonMode;
+        const TABS: [&str; 11] = ["Home", "Select", "Viewpoint", "Review", "Sections", "Coordination", "Analyze", "Render", "Export", "Share", "View"];
+        // setarile vechi: "ribbon restrans" = treapta Mini
+        if self.settings.ribbon_min {
+            self.settings.ribbon_min = false;
+            self.settings.ribbon_mode = RibbonMode::Mini;
+        }
+        if self.ribbon_tab >= TABS.len() {
+            self.ribbon_tab = 0;
+        }
+        let mode = self.settings.ribbon_mode;
+        crate::theme::RIBBON_COMPACT.store(mode == RibbonMode::Compact, std::sync::atomic::Ordering::Relaxed);
+        let fill = ctx.style().visuals.panel_fill;
+        egui::TopBottomPanel::top("ribbon").show_separator_line(false).frame(egui::Frame::none().fill(fill).inner_margin(egui::Margin { left: 8.0, right: 8.0, top: 5.0, bottom: 5.0 })).show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.style_mut().spacing.item_spacing.x = 2.0;
+                ui.style_mut().spacing.item_spacing.x = 3.0;
                 // accentul Nord e deschis (cyan): text inchis pentru contrast
                 let ftxt = match self.settings.theme { Theme::Nord => Color32::from_rgb(46, 52, 64), Theme::TokyoNight => Color32::from_rgb(26, 27, 38), _ => Color32::WHITE };
-                let fb = egui::Button::new(RichText::new("  ☰ File  ").strong().color(ftxt)).fill(accent());
+                let fb = egui::Button::new(RichText::new("  ☰ File  ").strong().color(ftxt)).fill(accent()).rounding(7.0);
                 let r = ui.add(fb);
                 let popup = ui.make_persistent_id("file_menu");
                 if r.clicked() {
                     ui.memory_mut(|m| m.toggle_popup(popup));
                 }
                 egui::popup_below_widget(ui, popup, &r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| self.file_menu(ui));
-                ui.add_space(6.0);
+                ui.add_space(8.0);
+                // tab-uri ca "pastile": activ = nuanta de accent, fara contur
                 for (i, t) in TABS.iter().enumerate() {
-                    let on = self.ribbon_tab == i && !self.settings.ribbon_min;
-                    let txt = if on { RichText::new(*t).strong() } else { RichText::new(*t) };
-                    let r = ui.selectable_label(on, txt);
+                    let on = self.ribbon_tab == i && mode != RibbonMode::Mini;
+                    let txt = if on { RichText::new(*t).color(accent()).strong() } else { RichText::new(*t) };
+                    let b = egui::Button::new(txt).fill(if on { accent().gamma_multiply(0.16) } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(7.0);
+                    let r = ui.add(b);
                     if r.double_clicked() {
-                        // ca in Office: dublu-click pe tab restrange / extinde ribbon-ul
-                        self.settings.ribbon_min = !self.settings.ribbon_min;
+                        // ca in Office: dublu-click pe tab = Mini / inapoi
+                        self.settings.ribbon_mode = if mode == RibbonMode::Mini { RibbonMode::Full } else { RibbonMode::Mini };
                         self.settings.save();
                     } else if r.clicked() {
-                        if self.settings.ribbon_min {
-                            self.settings.ribbon_min = false;
+                        if mode == RibbonMode::Mini {
+                            self.settings.ribbon_mode = RibbonMode::Full;
                             self.settings.save();
                         }
                         self.ribbon_tab = i;
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let (ic, tip) = if self.settings.ribbon_min { ("⏷", "Show the ribbon (or click a tab)") } else { ("⏶", "Hide the ribbon - more room for the model (double-click a tab does the same)") };
-                    if ui.button(RichText::new(ic).size(13.0)).on_hover_text(tip).clicked() {
-                        self.settings.ribbon_min = !self.settings.ribbon_min;
+                    let next = mode.next();
+                    let ic = match mode {
+                        RibbonMode::Full => "⏶",
+                        RibbonMode::Compact => "⏶",
+                        RibbonMode::Mini => "⏷",
+                    };
+                    if ui.add(egui::Button::new(RichText::new(ic).size(13.0)).frame(false)).on_hover_text(format!("Ribbon: {} - click for {} (Full = icons + labels, Compact = icons only, Mini = tabs only)", mode.label(), next.label())).clicked() {
+                        self.settings.ribbon_mode = next;
                         self.settings.save();
                     }
-                    let next = self.settings.theme.next();
-                    let icon = match next {
-                        Theme::Nord => "❄",
-                        Theme::TokyoNight => "🌃",
-                        Theme::Studio => "◆",
-                        Theme::Light => "☀",
-                        Theme::Dark => "🌙",
-                    };
-                    if ui.button(RichText::new(icon).size(14.0)).on_hover_text(format!("Theme: {} - click for {}", self.settings.theme.label(), next.label())).clicked() {
-                        self.set_theme(next);
+                    let nt = self.settings.theme.next();
+                    let chip = egui::Button::new(RichText::new(self.settings.theme.label()).size(11.5).color(ui.visuals().text_color())).fill(ui.visuals().window_fill).stroke(Stroke::NONE).rounding(7.0);
+                    if ui.add(chip).on_hover_text(format!("Theme: {} - click for {}", self.settings.theme.label(), nt.label())).clicked() {
+                        self.set_theme(nt);
                     }
                     ui.label(RichText::new("ManageBIM").strong().color(accent()));
                     if let Some(p) = &self.project_path {
@@ -495,32 +512,67 @@ impl App {
                     }
                 });
             });
-            if self.settings.ribbon_min {
+            if mode == RibbonMode::Mini {
                 return;
             }
-            ui.add_space(2.0);
-            // inaltime FIXA pe toate tab-urile (nu mai "sare" cand schimbi tab-ul); controalele stivuite
-            // (checkbox-uri, slidere) folosesc randuri compacte ca sa incapa in 3 randuri
-            const RIBBON_H: f32 = 66.0;
-            egui::ScrollArea::horizontal().id_salt("ribbon_scroll").max_height(RIBBON_H).show(ui, |ui| {
+            ui.add_space(4.0);
+            // inaltime FIXA pe toate tab-urile (nu mai "sare" cand schimbi tab-ul)
+            let h = mode.height();
+            egui::ScrollArea::horizontal().id_salt("ribbon_scroll").max_height(h).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded).show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.set_height(RIBBON_H);
-                    ui.set_max_height(RIBBON_H);
+                    ui.set_height(h);
+                    ui.set_max_height(h);
+                    // golul dintre carduri separa grupele - nu linii
+                    ui.spacing_mut().item_spacing = egui::vec2(5.0, 1.0);
                     ui.spacing_mut().interact_size.y = 16.0;
-                    ui.spacing_mut().item_spacing.y = 1.0;
                     ui.spacing_mut().button_padding = egui::vec2(6.0, 1.0);
                     // pagina de start: ribbon-ul se vede, dar e inactiv pana se deschide un model / proiect
                     if self.start_screen() {
                         ui.disable();
                     }
                     match self.ribbon_tab {
-                        0 => self.ribbon_home(ui),
-                        1 => self.ribbon_viewpoint(ui),
-                        2 => self.ribbon_review(ui),
-                        3 => self.ribbon_coord(ui),
-                        4 => self.ribbon_render(ui),
-                        5 => self.ribbon_output(ui),
-                        _ => self.ribbon_view(ui),
+                        0 => {
+                            self.ribbon_home(ui);
+                            self.ribbon_select(ui);
+                            self.ribbon_display(ui);
+                        }
+                        1 => {
+                            self.ribbon_select(ui);
+                            let has = !self.selected.is_empty();
+                            rgroup(ui, "Select Similar", |ui| {
+                                if rbtn(ui, "⧉", "Same Type", "Every visible item of the same type as the selection (Revit Family and Type / IFC type)  Ctrl+Shift+A", false, has).clicked() {
+                                    self.select_similar(true);
+                                }
+                                if rbtn(ui, "▦", "Same Category", "Every visible item of the same category / IFC class (all walls, all doors...)", false, has).clicked() {
+                                    self.select_similar(false);
+                                }
+                            });
+                            self.ribbon_display(ui);
+                        }
+                        2 => self.ribbon_viewpoint(ui),
+                        3 => self.ribbon_review(ui),
+                        4 => {
+                            self.ribbon_sections(ui);
+                            self.ribbon_grids(ui);
+                        }
+                        5 => self.ribbon_coord(ui),
+                        6 => {
+                            self.ribbon_models(ui);
+                            self.ribbon_relocate(ui);
+                        }
+                        7 => self.ribbon_render(ui),
+                        8 => {
+                            self.ribbon_output(ui);
+                            self.ribbon_output2(ui);
+                        }
+                        9 => {
+                            self.ribbon_share(ui);
+                        }
+                        _ => {
+                            self.ribbon_view(ui);
+                            self.ribbon_view2(ui);
+                            self.ribbon_help(ui);
+                        }
                     }
                 });
             });
@@ -567,6 +619,9 @@ impl App {
             }
             self.panel_btn(ui, Panel::Project, "📁", "Models", "Project & Model Properties (location, files, history)");
         });
+    }
+
+    fn ribbon_select(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Select & Search", |ui| {
             if rbtn(ui, "👆", "Select", "Selection tool (Esc)", self.tool == Tool::Select, true).clicked() {
                 self.cur_measure.clear();
@@ -584,10 +639,16 @@ impl App {
             if rbtn(ui, "🔲", "Clear", "Clear the selection", false, has).clicked() {
                 self.clear_selection();
             }
+            if rbtn(ui, "⧉", "Same Type", "Select Similar: every visible item of the same type as the selection (e.g. Basic Wall: 200mm), in all models  Ctrl+Shift+A\nRight-click › Select Same Category for the whole category", false, has).clicked() {
+                self.select_similar(true);
+            }
             self.panel_btn(ui, Panel::Find, "🔍", "Find Items", "Search by any property, save as search set  Ctrl+F");
             self.panel_btn(ui, Panel::Sets, "📋", "Sets", "Selection & search sets");
         });
         self.visibility_group(ui);
+    }
+
+    fn ribbon_display(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Display", |ui| {
             self.panel_btn(ui, Panel::Tree, "🌲", "Tree", "Selection tree");
             self.panel_btn(ui, Panel::PropTree, "🔎", "Prop Tree", "Browse all properties of all models");
@@ -1457,6 +1518,9 @@ impl App {
             self.panel_btn(ui, Panel::Measure, "📊", "List", "Measurements panel");
         });
         // ca in Navisworks (Measure > Transform): relocare cu puncte alese in model
+    }
+
+    fn ribbon_relocate(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Relocate", |ui| {
             let cur = self.xform.as_ref().map(|x| x.mode);
             let has = self.loaded_models().next().is_some();
@@ -1480,6 +1544,9 @@ impl App {
                 ui.radio_value(&mut self.relocate_selection, true, RichText::new("Selection").small()).on_hover_text("Move only the selected items (point to point)");
             });
         });
+    }
+
+    fn ribbon_sections(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Sectioning", |ui| {
             let sec = self.section.enabled;
             if rbtn(ui, "✂", "Enable", "Turn sectioning on / off", sec, true).clicked() {
@@ -1553,6 +1620,9 @@ impl App {
             self.panel_btn(ui, Panel::Find, "🔍", "Find Items", "Search by properties");
             self.panel_btn(ui, Panel::Sets, "📋", "Sets", "Selection & search sets");
         });
+    }
+
+    fn ribbon_models(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Models", |ui| {
             self.panel_btn(ui, Panel::Quantities, "📊", "Quantities", "Quantification: count, volume, areas, lengths grouped by any property - export to Excel");
             self.panel_btn(ui, Panel::Compare, "⚖", "Compare", "Compare two versions of a model: removed, added, moved / reshaped and changed-property elements");
@@ -1653,6 +1723,17 @@ impl App {
                 self.request_path(Purpose::ExportIfc);
             }
         });
+    }
+
+    fn ribbon_share(&mut self, ui: &mut egui::Ui) {
+        rgroup(ui, "Web", |ui| {
+            let has = self.loaded_models().next().is_some();
+            let what = if self.selected.is_empty() { "all visible items" } else { "the selected items" };
+            if rbtn(ui, "🌐", "Web viewer", &format!("One .html file with {what}: 3D view, tree, search, properties, hide / isolate, X-ray.\nSend it to anyone - it opens in Chrome / Edge / Firefox / Safari, offline, nothing to install."), false, has).clicked() {
+                self.web_selection = !self.selected.is_empty();
+                self.request_path(Purpose::ExportWeb);
+            }
+        });
         rgroup(ui, "Reference", |ui| {
             let has = self.loaded_models().next().is_some();
             let what = if self.selected.is_empty() { "all visible items" } else { "the selected items" };
@@ -1660,6 +1741,9 @@ impl App {
                 self.request_path(Purpose::ExportReference);
             }
         });
+    }
+
+    fn ribbon_output2(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Data", |ui| {
             if rbtn(ui, "📤", "Sets", "Export selection / search sets", false, !self.sets.is_empty()).clicked() {
                 self.request_path(Purpose::ExportSets);
@@ -1728,6 +1812,9 @@ impl App {
                 self.show_cloud = !self.show_cloud;
             }
         });
+    }
+
+    fn ribbon_grids(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Grids & Levels", |ui| {
             if rbtn(ui, "#", "Grids", "Show / hide the grid axes in the 3D view", self.show_grids, true).clicked() {
                 self.show_grids = !self.show_grids;
@@ -1742,6 +1829,9 @@ impl App {
                 self.show_levels_editor = !self.show_levels_editor;
             }
         });
+    }
+
+    fn ribbon_view2(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Theme", |ui| {
             if rbtn(ui, "☀", "Light", "Light theme", self.settings.theme == Theme::Light, true).clicked() {
                 self.set_theme(Theme::Light);
@@ -1806,6 +1896,9 @@ impl App {
                 }
             });
         });
+    }
+
+    fn ribbon_help(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Help", |ui| {
             if rbtn(ui, "🖱", "Controls", "Mouse & keyboard navigation", false, true).clicked() {
                 self.show_help = true;
@@ -2528,23 +2621,37 @@ impl App {
             if ui.small_button("📌").on_hover_text("Auto-hide this area: panels slide in over the model when you point at their tab").clicked() {
                 self.settings.layout.autohide[d.idx()] = true;
             }
-            for p in &tabs {
-                let on = Some(*p) == active;
-                let r = ui.selectable_label(on, if on { RichText::new(p.title()).size(14.5).strong() } else { RichText::new(p.title()).size(14.5) }).on_hover_text("Right-click: dock left / right / bottom, float or close");
-                if r.clicked() {
-                    self.settings.layout.active[d.idx()] = Some(*p);
-                }
-                r.context_menu(|ui| self.panel_menu(ui, *p));
-            }
+            // file ca un control segmentat (card cu "pastile"): fara contur, activa = suprafata mai deschisa
+            let seg_on = ui.visuals().widgets.hovered.weak_bg_fill;
+            egui::Frame::none().fill(card_fill(ui.visuals())).rounding(8.0).inner_margin(3.0).show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    for p in &tabs {
+                        let on = Some(*p) == active;
+                        let t = p.title();
+                        // pe zona de jos ramane si iconita; lateral doar numele (mai compact)
+                        let t = if d == Dock::Bottom { t.to_string() } else { p.short().to_string() };
+                        let txt = if on { RichText::new(t).size(13.0).strong() } else { RichText::new(t).size(13.0).color(ui.visuals().weak_text_color()) };
+                        ui.spacing_mut().button_padding = egui::vec2(7.0, 2.0);
+                        let b = egui::Button::new(txt).fill(if on { seg_on } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(6.0);
+                        let r = ui.add(b).on_hover_text(format!("{}\nRight-click: dock left / right / bottom, float or close", p.title()));
+                        if r.clicked() {
+                            self.settings.layout.active[d.idx()] = Some(*p);
+                        }
+                        r.context_menu(|ui| self.panel_menu(ui, *p));
+                    }
+                });
+            });
             if let Some(a) = active {
                 ui.add_space(4.0);
-                ui.menu_button("⏷", |ui| self.panel_menu(ui, a)).response.on_hover_text("Move this window");
-                if ui.small_button("✖").on_hover_text("Close this window").clicked() {
+                ui.menu_button("⏷", |ui| self.panel_menu(ui, a)).response.on_hover_text("Move or close this window");
+                // lateral: inchiderea e in meniul ⏷ (filele raman pe un singur rand)
+                if d == Dock::Bottom && ui.small_button("✖").on_hover_text("Close this window").clicked() {
                     self.settings.layout.close(a);
                 }
             }
         });
-        ui.separator();
+        ui.add_space(4.0);
         if let Some(a) = self.settings.layout.active[d.idx()] {
             if d == Dock::Bottom {
                 // continutul nu are voie sa tina panoul inalt: limitat la inaltimea aleasa (se poate trage liber)
@@ -2935,7 +3042,16 @@ impl App {
                 let (o, d) = self.cam.ray(uv(p), aspect);
                 if let Some((_, t, hit, _)) = self.pick(o, d) {
                     self.pivot = Some(hit);
-                    self.cam.focus = t * d.dot(self.cam.fwd()).max(0.05);
+                    if self.cam.ortho {
+                        // ortho: `focus` da scara vederii - nu o schimbam (raza porneste mult in spatele
+                        // camerei, iar distanta ei ar mari brusc vederea). Mutam doar ochiul de-a lungul
+                        // directiei de privire, ca punctul ales sa fie la distanta `focus` (imaginea nu se schimba).
+                        let f = self.cam.fwd();
+                        let along = (hit - self.cam.eye()).dot(f);
+                        self.cam.eye = (self.cam.eye() + f * (along - self.cam.focus)).into();
+                    } else {
+                        self.cam.focus = t * d.dot(self.cam.fwd()).max(0.05);
+                    }
                 }
             }
         }
@@ -3054,6 +3170,15 @@ impl App {
         resp.context_menu(|ui| {
             let sel: Vec<ElemId> = self.selected.iter().copied().collect();
             ui.add_enabled_ui(!sel.is_empty(), |ui| {
+                if ui.button("⧉ Select Same Type  (Ctrl+Shift+A)").on_hover_text("Every visible item of the same type (Revit Family and Type / IFC type), in all models").clicked() {
+                    self.select_similar(true);
+                    ui.close_menu();
+                }
+                if ui.button("⧉ Select Same Category").on_hover_text("Every visible item of the same category / IFC class (all walls, all doors...)").clicked() {
+                    self.select_similar(false);
+                    ui.close_menu();
+                }
+                ui.separator();
                 if ui.button("Hide (H)").clicked() {
                     self.apply(Action::Hide(sel.clone()));
                     ui.close_menu();
@@ -6146,7 +6271,31 @@ impl App {
                 if ui.small_button("📥 Images…").on_hover_text("Import PNG / JPG images as new texture materials").clicked() {
                     lib_io = Some(Purpose::ImportTextures);
                 }
+                if ui.small_button("📦 PBR pack…").on_hover_text("Import downloaded PBR packs (.zip from freepbr.com, ambientCG, Poly Haven...) - you can pick several.\nThe images are copied to your material library (%APPDATA%\\ManageBIM\\Materials) and the materials are available in every project.\nColour map = texture, roughness map = gloss, metallic map = metal.").clicked() {
+                    lib_io = Some(Purpose::ImportPbr);
+                }
                 ui.menu_button("Library ⏷", |ui| {
+                    if ui.button("📦 Import PBR pack (.zip)…").clicked() {
+                        lib_io = Some(Purpose::ImportPbr);
+                        ui.close_menu();
+                    }
+                    if ui.button("📁 Import PBR folder (already unzipped)…").clicked() {
+                        lib_io = Some(Purpose::ImportPbrFolder);
+                        ui.close_menu();
+                    }
+                    if ui.button("⭐ Save selected material to my library").on_hover_text("Keep this material for all your projects").clicked() {
+                        let i = self.mat_sel;
+                        self.save_material_to_library(i);
+                        ui.close_menu();
+                    }
+                    if ui.button("📂 Open my library folder").clicked() {
+                        if let Some(d) = crate::materials::user_library_dir() {
+                            let _ = std::fs::create_dir_all(&d);
+                            let _ = std::process::Command::new("explorer").arg(&d).spawn();
+                        }
+                        ui.close_menu();
+                    }
+                    ui.separator();
                     if ui.button("📤 Export library (.bimmat)…").clicked() {
                         lib_io = Some(Purpose::ExportMaterials);
                         ui.close_menu();
@@ -6157,7 +6306,7 @@ impl App {
                     }
                 });
                 if ui.small_button("Reset library").on_hover_text("Restore the built-in materials (keeps your own)").clicked() {
-                    for m in crate::materials::library() {
+                    for m in crate::materials::full_library() {
                         if let Some(x) = self.materials.iter_mut().find(|x| x.name == m.name) {
                             *x = m;
                         } else {
@@ -6684,6 +6833,7 @@ impl App {
                 Purpose::ImportGridsCad => "Import grid axes (DWG / DXF)",
                 Purpose::ExportReference => "Reference for Revit / AutoCAD",
                 Purpose::ExportClashMatrix => "Clash matrix (Excel)",
+                Purpose::ExportWeb => "Web viewer (HTML)",
                 Purpose::ImportCheckRules => "Import IDS or rules",
                 Purpose::ExportCheckRules => "Save rules",
                 Purpose::ExportCheckXlsx => "Model check report (Excel)",
@@ -6695,6 +6845,8 @@ impl App {
                 Purpose::ExportCache(_) => "Export ManageBIM Cache (.bimc)",
                 Purpose::ExportSets => "Export Sets",
                 Purpose::ImportTextures => "Import image as material",
+                Purpose::ImportPbr => "Import PBR material packs",
+                Purpose::ImportPbrFolder => "Import PBR folder",
                 Purpose::ExportVpHtml => "Viewpoints report (HTML)",
                 Purpose::ExportVpXlsx => "Viewpoints report (Excel .xlsx)",
                 Purpose::ExportBcf => "Export BCF 2.1 issues",
@@ -7188,22 +7340,33 @@ fn thousands(n: usize) -> String {
     out
 }
 
-/// big ribbon button: icon on top, label below
+/// buton de ribbon: iconita sus si eticheta dedesubt (Full) sau doar iconita (Compact, numele in tooltip).
+/// Fara contur: hover = fundalul se lumineaza, activ = nuanta de accent.
 fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled: bool) -> egui::Response {
     let enabled = enabled && ui.is_enabled();
-    let font = FontId::proportional(12.0);
-    let tw = ui.fonts(|f| f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE).size().x);
-    let w = (tw + 10.0).max(40.0);
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 44.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-    let vis = ui.style().interact_selectable(&resp, on);
+    let compact = crate::theme::RIBBON_COMPACT.load(std::sync::atomic::Ordering::Relaxed);
+    let font = FontId::proportional(11.5);
+    let size = if compact {
+        egui::vec2(30.0, 30.0)
+    } else {
+        let tw = ui.fonts(|f| f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE).size().x);
+        egui::vec2((tw + 10.0).max(38.0), 42.0)
+    };
+    let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let p = ui.painter();
-    if on || (enabled && resp.hovered()) {
-        let fill = if on { accent().gamma_multiply(0.28) } else { vis.weak_bg_fill };
-        p.rect(rect.shrink(1.0), 4.0, fill, if on { egui::Stroke::new(1.0_f32, accent()) } else { egui::Stroke::NONE });
+    if on {
+        p.rect_filled(rect, 6.0, accent().gamma_multiply(0.20));
+    } else if enabled && resp.hovered() {
+        p.rect_filled(rect, 6.0, ui.visuals().widgets.hovered.weak_bg_fill);
     }
     let col = if !enabled { ui.visuals().weak_text_color().gamma_multiply(0.6) } else if on { accent() } else { ui.visuals().text_color() };
-    p.text(rect.center_top() + egui::vec2(0.0, 14.0), Align2::CENTER_CENTER, icon, FontId::proportional(18.0), col);
-    p.text(rect.center_bottom() - egui::vec2(0.0, 8.0), Align2::CENTER_CENTER, label, font, col);
+    if compact {
+        p.text(rect.center(), Align2::CENTER_CENTER, icon, FontId::proportional(17.0), col);
+    } else {
+        p.text(rect.center_top() + egui::vec2(0.0, 13.0), Align2::CENTER_CENTER, icon, FontId::proportional(17.0), col);
+        p.text(rect.center_bottom() - egui::vec2(0.0, 8.0), Align2::CENTER_CENTER, label, font, col);
+    }
+    let tip = if compact { format!("{label}\n{tip}") } else { tip.to_string() };
     if enabled {
         resp.on_hover_text(tip)
     } else {
@@ -7211,24 +7374,49 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     }
 }
 
-/// labelled ribbon group with a separator after it
+/// grupa de ribbon = card ridicat (fara chenar, fara separator); titlul sub butoane doar in modul Full.
+/// Golul dintre carduri separa grupele.
 fn rgroup(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui)) {
-    ui.vertical(|ui| {
-        let r = ui
-            .horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 1.0;
-                ui.set_min_height(46.0);
-                ui.set_max_height(50.0);
-                add(ui);
-            })
-            .response;
-        let w = r.rect.width();
-        ui.allocate_ui_with_layout(egui::vec2(w, 11.0), egui::Layout::top_down(egui::Align::Center), |ui| {
-            ui.set_width(w);
-            ui.label(RichText::new(title).size(10.5).weak());
+    let compact = crate::theme::RIBBON_COMPACT.load(std::sync::atomic::Ordering::Relaxed);
+    let fill = card_fill(ui.visuals());
+    let avail_h = ui.available_height();
+    egui::Frame::none().fill(fill).rounding(7.0).inner_margin(egui::Margin { left: 6.0, right: 6.0, top: 3.0, bottom: 2.0 }).show(ui, |ui| {
+        ui.set_min_height(avail_h - 5.0);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let r = ui
+                .horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 1.0;
+                    if compact {
+                        ui.set_min_height(avail_h - 8.0);
+                        ui.set_max_height(avail_h - 6.0);
+                    } else {
+                        ui.set_min_height(44.0);
+                        ui.set_max_height(50.0);
+                    }
+                    add(ui);
+                })
+                .response;
+            if !compact {
+                let w = r.rect.width();
+                ui.allocate_ui_with_layout(egui::vec2(w, 13.0), egui::Layout::top_down(egui::Align::Center), |ui| {
+                    ui.set_width(w);
+                    ui.label(RichText::new(title).size(10.5).weak());
+                });
+            }
         });
     });
-    ui.separator();
+}
+
+/// suprafata cardurilor: putin mai deschisa decat panoul (in tema Light: alb pur)
+pub fn card_fill(v: &egui::Visuals) -> Color32 {
+    let p = v.panel_fill;
+    if v.dark_mode {
+        let up = |c: u8| c.saturating_add(9);
+        Color32::from_rgb(up(p.r()), up(p.g()), up(p.b()))
+    } else {
+        Color32::WHITE
+    }
 }
 
 fn inside(poly: &[Pos2], p: Pos2) -> bool {

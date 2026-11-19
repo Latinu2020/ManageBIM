@@ -224,3 +224,149 @@ pub fn load_texture(path: &str) -> Result<Vec<u8>, String> {
     }
     Ok(out)
 }
+
+// ===================================================================== biblioteca utilizatorului
+
+/// %APPDATA%\ManageBIM\Materials - aici stau texturile importate si `library.bimmat` (materialele tale,
+/// disponibile in orice proiect).
+pub fn user_library_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("APPDATA").map(|d| std::path::PathBuf::from(d).join("ManageBIM").join("Materials"))
+}
+
+/// Materialele salvate de utilizator (gol daca nu exista inca).
+pub fn user_library() -> Vec<Material> {
+    let Some(f) = user_library_dir().map(|d| d.join("library.bimmat")) else { return Vec::new() };
+    std::fs::read_to_string(f).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+/// Adauga / inlocuieste (dupa nume) materialele in biblioteca utilizatorului.
+pub fn save_to_user_library(mats: &[Material]) -> Result<std::path::PathBuf, String> {
+    let dir = user_library_dir().ok_or("APPDATA is not set")?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut lib = user_library();
+    for m in mats {
+        match lib.iter_mut().find(|x| x.name == m.name) {
+            Some(x) => *x = m.clone(),
+            None => lib.push(m.clone()),
+        }
+    }
+    let f = dir.join("library.bimmat");
+    let tmp = dir.join("library.bimmat.tmp");
+    std::fs::write(&tmp, serde_json::to_string_pretty(&lib).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &f).map_err(|e| e.to_string())?;
+    Ok(f)
+}
+
+/// Biblioteca completa: materialele incluse + ale utilizatorului (cele cu acelasi nume le inlocuiesc).
+pub fn full_library() -> Vec<Material> {
+    let mut lib = library();
+    for m in user_library() {
+        match lib.iter_mut().find(|x| x.name == m.name) {
+            Some(x) => *x = m,
+            None => lib.push(m),
+        }
+    }
+    lib
+}
+
+fn is_image(n: &str) -> bool {
+    let l = n.to_ascii_lowercase();
+    l.ends_with(".png") || l.ends_with(".jpg") || l.ends_with(".jpeg")
+}
+
+/// rolul unei imagini dintr-un pachet PBR, dupa nume (freepbr, ambientCG, Poly Haven, textures.com...)
+fn pbr_role(file: &str) -> Option<&'static str> {
+    let l = file.to_ascii_lowercase();
+    let l = l.rsplit(['/', '\\']).next().unwrap_or(&l);
+    if l.contains("preview") || l.contains("thumb") || l.contains("sphere") {
+        return None;
+    }
+    for (keys, role) in [
+        (&["normal", "nrm", "_nor"][..], "normal"),
+        (&["rough"][..], "roughness"),
+        (&["metal"][..], "metallic"),
+        (&["_ao", "-ao", "ambientocclusion", "ambient_occlusion", "occlusion"][..], "ao"),
+        (&["height", "displace", "_disp", "bump"][..], "height"),
+        (&["gloss"][..], "gloss"),
+        (&["albedo", "basecolor", "base_color", "base-color", "diffuse", "diff", "color", "colour", "_col", "-col"][..], "albedo"),
+    ] {
+        if keys.iter().any(|k| l.contains(k)) {
+            return Some(role);
+        }
+    }
+    None
+}
+
+/// "fabric-pattern-07-bl.zip" -> "Fabric pattern 07"
+pub fn pbr_name(path: &str) -> String {
+    let stem = std::path::Path::new(path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "PBR material".into());
+    let mut words: Vec<String> = stem.split(['-', '_', ' ', '.']).filter(|w| !w.is_empty()).map(|w| w.to_string()).collect();
+    while words.len() > 1 && matches!(words.last().map(|w| w.to_ascii_lowercase()).as_deref(), Some("bl" | "ue" | "unity" | "png" | "jpg" | "1k" | "2k" | "4k" | "8k" | "pbr")) {
+        words.pop();
+    }
+    let s = words.join(" ");
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => "PBR material".into(),
+    }
+}
+
+/// media unui canal (0..255) pe imaginea 512x512 RGBA
+fn avg(rgba: &[u8], ch: usize) -> f32 {
+    let n = rgba.len() / 4;
+    if n == 0 {
+        return 0.0;
+    }
+    rgba.chunks_exact(4).map(|p| p[ch] as f64).sum::<f64>() as f32 / n as f32
+}
+
+/// Importa un pachet PBR (arhiva .zip descarcata sau folderul dezarhivat) in biblioteca utilizatorului:
+/// imaginile se copiaza in `dest\<nume>\`, iar materialul primeste textura de culoare (albedo),
+/// luciul din harta de rugozitate si metalicitatea din harta metallic.
+pub fn import_pbr(path: &str, dest_root: &std::path::Path) -> Result<Material, String> {
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    let p = std::path::Path::new(path);
+    if p.is_dir() {
+        for e in std::fs::read_dir(p).map_err(|e| e.to_string())?.flatten() {
+            let n = e.file_name().to_string_lossy().to_string();
+            if is_image(&n) {
+                files.push((n, std::fs::read(e.path()).map_err(|e| e.to_string())?));
+            }
+        }
+    } else {
+        let zip = crate::fcstd::Zip::parse(std::fs::read(path).map_err(|e| format!("Cannot read {path}: {e}"))?).map_err(|_| format!("{} is not a ZIP archive.", crate::file_name(path)))?;
+        let names: Vec<String> = zip.names().filter(|n| is_image(n) && !n.starts_with("__MACOSX")).cloned().collect();
+        for n in names {
+            if let Some(b) = zip.read(&n) {
+                files.push((n.rsplit(['/', '\\']).next().unwrap_or(&n).to_string(), b));
+            }
+        }
+    }
+    if files.is_empty() {
+        return Err(format!("{}: no PNG / JPG images inside.", crate::file_name(path)));
+    }
+    let albedo = files.iter().position(|(n, _)| pbr_role(n) == Some("albedo")).ok_or_else(|| {
+        format!("{}: no colour map found (a file named *albedo*, *basecolor*, *diffuse* or *color*).", crate::file_name(path))
+    })?;
+    let name = pbr_name(path);
+    let safe: String = name.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();
+    let dir = dest_root.join(safe.trim());
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create {}: {e}", dir.display()))?;
+    let mut paths: Vec<(Option<&'static str>, std::path::PathBuf)> = Vec::new();
+    for (n, b) in &files {
+        let f = dir.join(n);
+        std::fs::write(&f, b).map_err(|e| format!("Cannot write {}: {e}", f.display()))?;
+        paths.push((pbr_role(n), f));
+    }
+    let tex = paths[albedo].1.to_string_lossy().to_string();
+    load_texture(&tex)?;
+    let map = |role: &str| paths.iter().find(|(r, _)| *r == Some(role)).and_then(|(_, f)| load_texture(&f.to_string_lossy()).ok());
+    let gloss = match (map("roughness"), map("gloss")) {
+        (Some(r), _) => (100.0 - avg(&r, 0) / 2.55).clamp(2.0, 95.0) as u8,
+        (None, Some(g)) => (avg(&g, 0) / 2.55).clamp(2.0, 95.0) as u8,
+        _ => 20,
+    };
+    let metal = map("metallic").map(|m| (avg(&m, 0) / 2.55).clamp(0.0, 100.0) as u8).unwrap_or(0);
+    Ok(Material { name, color: [255, 255, 255], transparency: 0, gloss, metal, pattern: Pattern::None, scale: 1.0, texture: tex })
+}

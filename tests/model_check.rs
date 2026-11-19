@@ -112,3 +112,40 @@ fn ids_file_is_imported_as_rules() {
     assert_eq!((res[1].checked, res[1].failed.len()), (3, 1), "only Door B has a wrong width; Door C has none (optional)");
     assert!(parse_ids("<foo/>", "x").is_err());
 }
+
+#[test]
+fn web_viewer_embeds_geometry_and_properties() {
+    let mut a = el("Wall 1", "IfcWall", &[("Pset_WallCommon", "FireRating", "EI60")]);
+    a.tri_count = 1;
+    let mut m = model(vec![a]);
+    m.pos = vec![glam::Vec3::ZERO, glam::Vec3::X, glam::Vec3::Y];
+    m.tri_color = vec![[200, 10, 10, 255]];
+    let items: Vec<(&Model, &Element)> = m.elements.iter().map(|e| (&m, e)).collect();
+    let (html, st) = bimrust::web::html(&items, "Test <model>", "2026-11-19");
+    assert_eq!((st.elements, st.triangles), (1, 1));
+    assert!(html.contains("Test &lt;model&gt;"), "title is escaped");
+    assert!(!html.contains("__DATA__"));
+    let (vc, ec, meta) = bimrust::web::read_back(&html).unwrap();
+    assert_eq!((vc, ec), (3, 1));
+    assert_eq!(meta["elems"][0][0], "Wall 1");
+    assert_eq!(meta["elems"][0][5][0][2], "EI60");
+}
+
+#[test]
+fn pbr_pack_names_and_roles() {
+    assert_eq!(bimrust::materials::pbr_name(r"C:\dl\fabric-pattern-07-bl.zip"), "Fabric pattern 07");
+    assert_eq!(bimrust::materials::pbr_name("Wood_Floor_2K.zip"), "Wood Floor");
+}
+
+/// exporta modelul de proba ca viewer web (rulat manual: --ignored), pentru verificare in browser
+#[test]
+#[ignore]
+fn export_sample_web_viewer() {
+    let p = "samples/Block_A_Architecture_Structure.ifc";
+    let raw = bimrust::load_any(p, &|_, _| {}).unwrap();
+    let m = bimrust::build_model(raw, p, glam::DVec3::ZERO);
+    let items: Vec<(&Model, &Element)> = m.elements.iter().filter(|e| e.tri_count > 0).map(|e| (&m, e)).collect();
+    let (html, _) = bimrust::web::html(&items, "Block A", "2026-11-19");
+    let out = std::env::var("MB_WEB_OUT").unwrap_or_else(|_| "target/sample_web.html".into());
+    std::fs::write(out, html).unwrap();
+}

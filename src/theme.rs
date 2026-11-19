@@ -80,6 +80,9 @@ pub struct Settings {
     /// ribbon restrans: doar randul cu tab-uri (mai mult loc pentru model)
     #[serde(default)]
     pub ribbon_min: bool,
+    /// inaltimea ribbon-ului: Full (iconite + etichete), Compact (doar iconite), Mini (doar tab-urile)
+    #[serde(default)]
+    pub ribbon_mode: RibbonMode,
     /// bara de navigare plutitoare din vizualizarea 3D
     #[serde(default = "yes")]
     pub nav_bar: bool,
@@ -110,7 +113,7 @@ fn default_walk() -> f32 {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, nav_bar: true, units_mm: false, navis_units: auto() }
+        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, nav_bar: true, units_mm: false, navis_units: auto() }
     }
 }
 
@@ -254,8 +257,8 @@ pub fn palette(t: Theme) -> Palette {
     }
 }
 
-fn widget(v: &mut egui::style::WidgetVisuals, bg: Color32, stroke: Color32, fg: Color32, _r: f32) {
-    let r = 3.5;
+fn widget(v: &mut egui::style::WidgetVisuals, bg: Color32, stroke: Color32, fg: Color32, r: f32) {
+    // rotunjimea vine din parametru (inainte era fixata la 3.5)
     v.bg_fill = bg;
     v.weak_bg_fill = bg;
     v.bg_stroke = Stroke::new(1.0_f32, stroke);
@@ -371,13 +374,42 @@ pub fn apply(ctx: &egui::Context, t: Theme) {
             v.popup_shadow = Shadow { offset: egui::vec2(0.0, 4.0), blur: 12.0, spread: 0.0, color: Color32::from_black_alpha(30) };
         }
     }
+    // ---- aspect "fara chenare" (redesign): adancimea vine din suprafete, nu din contururi.
+    // Toate temele mostenesc aceleasi reguli; fiecare isi pastreaza culorile.
+    {
+        let dark = v.dark_mode;
+        // tonul cu cateva unitati mai deschis (inchis in tema Light) decat panoul
+        let tone = |c: Color32, d: i16| {
+            let f = |x: u8| (x as i16 + if dark { d } else { -d }).clamp(0, 255) as u8;
+            Color32::from_rgb(f(c.r()), f(c.g()), f(c.b()))
+        };
+        let pf = v.panel_fill;
+        // hover fara contur: doar fundalul se lumineaza
+        v.widgets.hovered.bg_stroke = Stroke::NONE;
+        v.widgets.hovered.weak_bg_fill = tone(pf, 16);
+        v.widgets.hovered.bg_fill = tone(pf, 18);
+        for w in [&mut v.widgets.inactive, &mut v.widgets.active, &mut v.widgets.open] {
+            w.bg_stroke = Stroke::NONE;
+        }
+        // separatoarele raman doar ca o nuanta abia vizibila
+        v.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, tone(pf, 7));
+        // selectia: nuanta de accent, fara contur alb; textul selectat in accent deschis
+        let a = p.accent;
+        v.selection.bg_fill = a.gamma_multiply(0.22);
+        let light = |c: u8| ((c as u16 + 255) / 2) as u8;
+        v.selection.stroke = Stroke::new(1.0_f32, if dark { Color32::from_rgb(light(a.r()), light(a.g()), light(a.b())) } else { a });
+        // dunga tabelelor: se simte, nu se vede
+        v.faint_bg_color = tone(pf, 4);
+        // ferestrele plutitoare: fara chenar, doar umbra
+        v.window_stroke = Stroke::NONE;
+    }
     v.window_rounding = Rounding::same(10.0);
     v.menu_rounding = Rounding::same(8.0);
     v.striped = true;
     style.visuals = v;
     // compact: mai mult loc pentru model, randuri si butoane tot usor de tintit
-    style.spacing.item_spacing = egui::vec2(6.0, 3.0);
-    style.spacing.button_padding = egui::vec2(6.0, 2.0);
+    style.spacing.item_spacing = egui::vec2(6.0, 4.0);
+    style.spacing.button_padding = egui::vec2(8.0, 3.0);
     style.spacing.interact_size.y = 20.0;
     style.spacing.indent = 14.0;
     style.spacing.menu_margin = egui::Margin::same(5.0);
@@ -385,3 +417,43 @@ pub fn apply(ctx: &egui::Context, t: Theme) {
     style.interaction.selectable_labels = false;
     ctx.set_style(style);
 }
+
+/// Treptele ribbon-ului (ca in redesign): se pliaza, nu dispare niciodata complet.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+pub enum RibbonMode {
+    /// iconite cu eticheta dedesubt si titlul cardului
+    #[default]
+    Full,
+    /// doar iconite (numele in tooltip) - mai mult loc pentru model
+    Compact,
+    /// doar randul cu tab-uri; clic pe un tab il deschide
+    Mini,
+}
+
+impl RibbonMode {
+    pub fn next(self) -> RibbonMode {
+        match self {
+            RibbonMode::Full => RibbonMode::Compact,
+            RibbonMode::Compact => RibbonMode::Mini,
+            RibbonMode::Mini => RibbonMode::Full,
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            RibbonMode::Full => "Full",
+            RibbonMode::Compact => "Compact",
+            RibbonMode::Mini => "Mini",
+        }
+    }
+    /// inaltimea zonei cu carduri (fara randul de tab-uri)
+    pub fn height(self) -> f32 {
+        match self {
+            RibbonMode::Full => 70.0,
+            RibbonMode::Compact => 54.0,
+            RibbonMode::Mini => 0.0,
+        }
+    }
+}
+
+/// modul curent al ribbon-ului, citit de butoanele ribbon-ului (functii libere)
+pub static RIBBON_COMPACT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);

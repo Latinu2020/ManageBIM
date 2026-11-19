@@ -3,6 +3,17 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.18.0 - 2026-11-19
+
+- **Interfata noua (redesign)**: ribbon pe **carduri fara chenare** (adancimea vine din suprafete, nu din linii), **11 tab-uri**: Home, Select, Viewpoint, Review, Sections, Coordination, Analyze, Render, Export, Share, View.
+  - Trei trepte ale ribbon-ului, din sageata din dreapta sus: **Full** (iconite + etichete), **Compact** (doar iconite, numele in tooltip), **Mini** (doar tab-urile); preferinta ramane salvata. Dublu-clic pe un tab = Mini / inapoi.
+  - Toate temele: hover fara contur, selectie ca nuanta de accent, separatoare abia vizibile, ferestre plutitoare doar cu umbra; rotunjimile temelor functioneaza (erau fixate la 3.5).
+  - Panourile laterale au filele ca un control segmentat (Tree / Prop Tree / Sets), fara linii.
+- **Select Same Type** (Ctrl+Shift+A, clic dreapta, Home › Same Type, Select › Select Similar): toate elementele vizibile cu acelasi tip (Revit Family and Type / IFC type), din toate modelele; si **Select Same Category**.
+- **Export Web viewer** (Share › Web viewer): un singur fisier .html cu modelul (sau selectia) - vizualizare 3D WebGL, arbore model › tip, cautare, proprietati, ascundere / izolare, X-ray. Se deschide in orice browser, fara internet si fara instalare.
+- **Biblioteca de materiale**: import de pachete PBR (.zip de pe freepbr.com, ambientCG, Poly Haven... sau folder dezarhivat) - imaginile se copiaza in `%APPDATA%\ManageBIM\Materials`, harta de culoare devine textura, rugozitatea da luciul, metallic da metalicitatea. Materialele raman disponibile in orice proiect; „Save selected material to my library” pentru materialele proprii.
+- Corectat: in vederea **ortho**, orbitarea nu mai sare cu zoom-ul departe.
+
 ## 0.17.0 - 2026-11-19
 
 - **Model Checker** (Coordination › ✔ Checker): verificarea datelor modelului dupa reguli.

@@ -819,6 +819,7 @@ pub enum Purpose {
     ImportGridsCad,
     ExportReference,
     ExportClashMatrix,
+    ExportWeb,
     ImportCheckRules,
     ExportCheckRules,
     ExportCheckXlsx,
@@ -834,6 +835,8 @@ pub enum Purpose {
     ExportVideo,
     RenderImage,
     ImportTextures,
+    ImportPbr,
+    ImportPbrFolder,
     ExportVpHtml,
     ExportVpXlsx,
     ExportBcf,
@@ -1012,6 +1015,8 @@ pub struct App {
     pub box_start: Option<[f32; 2]>,
     /// exportul IFC: doar selectia (true) sau tot ce e vizibil
     pub ifc_selection: bool,
+    /// exportul web: doar selectia
+    pub web_selection: bool,
     /// fata section box-ului trasa acum (0..5: -X +X -Y +Y -Z +Z)
     pub box_drag: Option<usize>,
     pub show_clash_matrix: bool,
@@ -1235,6 +1240,7 @@ impl App {
             relocate_selection: false,
             box_start: None,
             ifc_selection: false,
+            web_selection: false,
             box_drag: None,
             show_clash_matrix: false,
             grid_import: None,
@@ -1276,7 +1282,7 @@ impl App {
             orbit_secs: 20.0,
             key_step: 3.0,
             proj_sel: None,
-            materials: crate::materials::library(),
+            materials: crate::materials::full_library(),
             mat_assign: Vec::new(),
             materials_on: true,
             mat_sel: 0,
@@ -2606,7 +2612,7 @@ impl App {
         self.xf_draft.clear();
         self.animations.clear();
         self.mat_assign.clear();
-        self.materials = crate::materials::library();
+        self.materials = crate::materials::full_library();
         self.home = None;
         self.mat_cache = None;
         self.cur_anim = 0;
@@ -3269,6 +3275,44 @@ impl App {
         }
     }
 
+
+    /// Pachete PBR (.zip descarcate de pe freepbr.com, ambientCG, Poly Haven... sau foldere dezarhivate) ->
+    /// materiale noi, salvate permanent in biblioteca ta (%APPDATA%\ManageBIM\Materials).
+    pub fn import_pbr_packs(&mut self, paths: &[String]) {
+        let Some(root) = crate::materials::user_library_dir() else { return self.error("APPDATA is not set - cannot create the material library.") };
+        let mut added: Vec<crate::materials::Material> = Vec::new();
+        for p in paths {
+            match crate::materials::import_pbr(p, &root) {
+                Ok(m) => added.push(m),
+                Err(e) => self.error(e),
+            }
+        }
+        if added.is_empty() {
+            return;
+        }
+        if let Err(e) = crate::materials::save_to_user_library(&added) {
+            self.error(format!("The materials were added to the project but not saved to the library: {e}"));
+        }
+        for m in &added {
+            match self.materials.iter_mut().find(|x| x.name == m.name) {
+                Some(x) => *x = m.clone(),
+                None => self.materials.push(m.clone()),
+            }
+        }
+        let last = added.last().map(|m| m.name.clone()).unwrap_or_default();
+        self.mat_sel = self.materials.iter().position(|m| m.name == last).unwrap_or(0);
+        self.materials_changed();
+        self.toast(format!("{} PBR materials added to your library ({}) - available in every project. Set the real size in \"Texture size\".", added.len(), added.iter().map(|m| m.name.clone()).collect::<Vec<_>>().join(", ")));
+    }
+
+    /// Salveaza materialul ales in biblioteca ta (disponibil in orice proiect).
+    pub fn save_material_to_library(&mut self, i: usize) {
+        let Some(m) = self.materials.get(i).cloned() else { return };
+        match crate::materials::save_to_user_library(&[m.clone()]) {
+            Ok(_) => self.toast(format!("\"{}\" saved to your material library.", m.name)),
+            Err(e) => self.error(format!("Cannot save the material library: {e}")),
+        }
+    }
     pub fn materials_changed(&mut self) {
         self.mat_cache = None;
         self.colors_dirty = true;
@@ -4581,6 +4625,12 @@ impl App {
         self.shared = Default::default();
         if !pf.materials.is_empty() {
             self.materials = pf.materials;
+            // materialele din biblioteca ta raman disponibile si in proiectele mai vechi
+            for m in crate::materials::user_library() {
+                if !self.materials.iter().any(|x| x.name == m.name) {
+                    self.materials.push(m);
+                }
+            }
         }
         self.mat_assign = pf.mat_assign;
         self.materials_on = pf.materials_on.unwrap_or(true);
@@ -4943,6 +4993,7 @@ impl App {
             Purpose::ImportGridsCad => self.import_grids_cad(&path, None),
             Purpose::ExportReference => self.export_reference(&path),
             Purpose::ExportClashMatrix => self.export_clash_matrix(&path),
+            Purpose::ExportWeb => self.export_web(&path),
             Purpose::ImportCheckRules => self.import_check_rules(&path),
             Purpose::ExportCheckRules => self.export_check_rules(&path),
             Purpose::ExportCheckXlsx => self.export_check_xlsx(&path),
@@ -4963,6 +5014,7 @@ impl App {
             Purpose::ExportCache(slot) => self.export_cache(slot, &path),
             Purpose::ExportVideo => self.start_render_job(&path),
             Purpose::ImportTextures => self.import_texture_materials(&[path.clone()]),
+            Purpose::ImportPbr | Purpose::ImportPbrFolder => self.import_pbr_packs(&[path.clone()]),
             Purpose::ExportVpHtml => self.start_report(0, &path),
             Purpose::ExportVpXlsx => self.start_report(1, &path),
             Purpose::ExportBcf => self.start_report(2, &path),
@@ -5206,6 +5258,7 @@ impl App {
                     d.set_title("Reference for Revit / AutoCAD / Plant 3D").add_filter("ManageBIM reference", &["mbref"]).set_directory(dir).set_file_name(format!("{name}.mbref")).save_file().map(|p| vec![p.to_string_lossy().to_string()])
                 }
                 Purpose::ExportClashMatrix => d.set_title("Clash matrix (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("clash_matrix.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportWeb => d.set_title("Web viewer (HTML)").add_filter("Web page", &["html"]).set_file_name("model.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportCheckRules => d.set_title("Import IDS or rules").add_filter("IDS / ManageBIM rules", &["ids", "xml", "mbrules", "json"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCheckRules => d.set_title("Save rules").add_filter("ManageBIM rules", &["mbrules"]).set_file_name("rules.mbrules").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCheckXlsx => d.set_title("Model check report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("model_check.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5232,6 +5285,14 @@ impl App {
                     }
                     None
                 }
+                Purpose::ImportPbr => {
+                    if let Some(v) = d.clone().set_title("Import PBR material packs (.zip)").add_filter("PBR pack (ZIP)", &["zip"]).pick_files() {
+                        let v: Vec<String> = v.into_iter().map(|p| p.to_string_lossy().to_string()).collect();
+                        self.import_pbr_packs(&v);
+                    }
+                    None
+                }
+                Purpose::ImportPbrFolder => d.set_title("Folder with the PBR images (albedo, normal, roughness...)").pick_folder().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::MaterialTexture => d.set_title("Choose texture image").add_filter("Images", &["png", "jpg", "jpeg"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportMaterials => d.set_title("Export material library").add_filter("ManageBIM materials", &["bimmat"]).add_filter("Excel workbook", &["xlsx"]).add_filter("CSV (Excel)", &["csv"]).set_file_name("materials.bimmat").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportMaterials => d.set_title("Import material library").add_filter("Materials / Excel / CSV", &["bimmat", "json", "xlsx", "csv"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5293,6 +5354,7 @@ impl App {
                 Purpose::ImportGridsCad => String::new(),
                 Purpose::ExportReference => "reference.mbref".into(),
                 Purpose::ExportClashMatrix => "clash_matrix.xlsx".into(),
+                Purpose::ExportWeb => "model.html".into(),
                 Purpose::ImportCheckRules => String::new(),
                 Purpose::ExportCheckRules => "rules.mbrules".into(),
                 Purpose::ExportCheckXlsx => "model_check.xlsx".into(),
@@ -6262,6 +6324,96 @@ pub fn write_mbref(items: &[(&Model, &crate::model::Element)], origin: DVec3) ->
 }
 
 impl App {
+
+
+    /// Numele tipului elementului (Revit "Family and Type" / "Type", IFC ObjectType / tipul definit);
+    /// None daca modelul nu are asa ceva (atunci "acelasi tip" = aceeasi categorie + acelasi nume).
+    pub fn type_name_of(e: &crate::model::Element) -> Option<String> {
+        const KEYS: [&str; 6] = ["Family and Type", "Type Name", "Type", "ObjectType", "IfcTypeObject", "Family Type"];
+        for k in KEYS {
+            if let Some(p) = e.props.iter().find(|p| p.name.eq_ignore_ascii_case(k) && !p.value.trim().is_empty()) {
+                return Some(p.value.trim().to_string());
+            }
+        }
+        None
+    }
+
+    /// Select Similar: toate elementele (vizibile) din toate modelele cu aceeasi categorie / tip ca selectia.
+    /// `by_type` = acelasi tip (ex. "Basic Wall: 200mm"); altfel aceeasi categorie (IfcWall / Walls).
+    pub fn select_similar(&mut self, by_type: bool) {
+        let sel: Vec<ElemId> = self.selected.iter().copied().collect();
+        if sel.is_empty() {
+            return self.toast("Select an item first.");
+        }
+        let mut cats: HashSet<String> = HashSet::new();
+        let mut types: HashSet<(String, String)> = HashSet::new();
+        for id in &sel {
+            if let Some((_, e)) = self.elem(*id) {
+                cats.insert(e.ifc_type.clone());
+                types.insert((e.ifc_type.clone(), Self::type_name_of(e).unwrap_or_else(|| format!("name:{}", e.name))));
+            }
+        }
+        let mut out: Vec<ElemId> = Vec::new();
+        for (mi, m) in self.loaded_models() {
+            for (ei, e) in m.elements.iter().enumerate() {
+                let id = ElemId { m: mi as u32, e: ei as u32 };
+                if self.hidden.contains(&id) || e.default_hidden {
+                    continue;
+                }
+                let hit = if by_type {
+                    cats.contains(&e.ifc_type) && types.contains(&(e.ifc_type.clone(), Self::type_name_of(e).unwrap_or_else(|| format!("name:{}", e.name))))
+                } else {
+                    cats.contains(&e.ifc_type)
+                };
+                if hit {
+                    out.push(id);
+                }
+            }
+        }
+        let n = out.len();
+        let what = if by_type {
+            let t: Vec<String> = types.iter().map(|(c, t)| if let Some(n) = t.strip_prefix("name:") { format!("{c} \"{n}\"") } else { t.clone() }).take(3).collect();
+            t.join(", ")
+        } else {
+            cats.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+        };
+        self.apply(Action::Select(out, false));
+        self.toast(format!("{n} items selected - same {}: {what}", if by_type { "type" } else { "category" }));
+    }
+    /// Viewer web: un singur .html cu modelul (elementele vizibile, sau selectia) - se trimite oricui,
+    /// se deschide in browser fara instalare si fara internet.
+    pub fn export_web(&mut self, path: &str) {
+        let path = with_ext(path, "html");
+        let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
+        let use_sel = self.web_selection && !self.selected.is_empty();
+        let mut items: Vec<(&Model, &crate::model::Element)> = Vec::new();
+        for (mi, m) in &models {
+            for (ei, e) in m.elements.iter().enumerate() {
+                let id = ElemId { m: *mi as u32, e: ei as u32 };
+                let take = if use_sel { self.selected.contains(&id) } else { !self.hidden.contains(&id) && !e.default_hidden };
+                if take && e.tri_count > 0 {
+                    items.push((m.as_ref(), e));
+                }
+            }
+        }
+        if items.is_empty() {
+            return self.error("Nothing to export: no visible items with geometry.");
+        }
+        let title = self.project_path.as_ref().map(|p| model_label(&crate::file_name(p))).or_else(|| models.first().map(|(_, m)| model_label(&m.name))).unwrap_or_else(|| "ManageBIM model".into());
+        let (html, st) = crate::web::html(&items, &title, &now_string());
+        match std::fs::write(&path, html) {
+            Ok(()) => {
+                self.toast(format!("Web viewer saved: {} ({} items, {} triangles, {:.1} MB) - open it in any browser", crate::file_name(&path), st.elements, st.triangles, st.bytes as f64 / 1e6));
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    let _ = std::process::Command::new("explorer").arg(&path).creation_flags(0x0800_0000).spawn();
+                }
+            }
+            Err(e) => self.error(format!("Cannot write {path}: {e}")),
+        }
+    }
+
     /// Referinta pentru Revit / AutoCAD / Plant 3D: selectia, sau tot ce e vizibil.
     pub fn export_reference(&mut self, path: &str) {
         let path = with_ext(path, "mbref");

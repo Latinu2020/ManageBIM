@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="ManageBIM">
+<title>__TITLE__</title>
+<style>
+:root{--bg:#0e0f13;--panel:#15171d;--panel2:#1b1e26;--line:#272b35;--text:#d9dce4;--weak:#8a90a0;--accent:#3478ff;--bad:#eb5555}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:13px/1.4 "Segoe UI",system-ui,-apple-system,sans-serif;overflow:hidden}
+#app{display:grid;grid-template-columns:280px 1fr 320px;grid-template-rows:44px 1fr;height:100%}
+header{grid-column:1/4;display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+header h1{font-size:14px;margin:0 12px 0 0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header .brand{color:var(--accent);font-weight:700;margin-right:4px}
+button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:5px 10px;font:inherit;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:disabled{opacity:.4;cursor:default}
+.side{background:var(--panel);overflow:auto;border-right:1px solid var(--line);min-height:0}
+#props{border-right:0;border-left:1px solid var(--line);padding:10px}
+#tree{padding:8px}
+input[type=search]{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit;margin-bottom:8px}
+.grp{margin:2px 0}
+.row{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden}
+.row:hover{background:var(--panel2)}
+.row.sel{background:var(--accent);color:#fff}
+.row .n{overflow:hidden;text-overflow:ellipsis;flex:1}
+.row .c{color:var(--weak);font-size:11px}
+.row.sel .c{color:#dfe8ff}
+.eye{opacity:.7;font-size:12px;width:16px;text-align:center}
+.eye.off{opacity:.25}
+.mdl{font-weight:600;margin-top:6px}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.kids{margin-left:14px}
+#view{position:relative;min-width:0;min-height:0}
+canvas{width:100%;height:100%;display:block;touch-action:none}
+#status{position:absolute;left:12px;bottom:10px;color:var(--weak);font-size:11px;pointer-events:none}
+#load{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--weak);font-size:14px}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 10px;margin-bottom:8px}
+.card h3{margin:0 0 6px;font-size:10.5px;letter-spacing:.06em;color:var(--weak);cursor:pointer;display:flex;justify-content:space-between}
+.card table{width:100%;border-collapse:collapse}
+.card td{padding:2px 0;vertical-align:top;word-break:break-word}
+.card td:first-child{color:var(--weak);width:45%;padding-right:8px}
+.title{font-size:15px;font-weight:600}
+.type{color:var(--accent)}
+.weak{color:var(--weak);font-size:11px}
+.foot{color:var(--weak);font-size:11px;padding:8px 2px}
+@media (max-width:820px){#app{grid-template-columns:1fr;grid-template-rows:44px 1fr 40%}#tree{display:none}#props{grid-column:1;border-left:0;border-top:1px solid var(--line)}header h1{max-width:40vw}}
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+  <span class="brand">◆</span><h1 id="ttl">__TITLE__</h1>
+  <button id="bFit" title="Zoom to the whole model (F)">⛶ Fit</button>
+  <button id="bHide" title="Hide the selected item (H)" disabled>Hide</button>
+  <button id="bIso" title="Show only the selected item (I)" disabled>Isolate</button>
+  <button id="bAll" title="Show everything (A)">Show all</button>
+  <button id="bXray" title="See-through view (X)">X-ray</button>
+</header>
+<aside class="side" id="tree"><input type="search" id="q" placeholder="🔍 Search name, type, GUID"><div id="list"></div></aside>
+<main id="view"><canvas id="c"></canvas><div id="load">Loading model…</div><div id="status"></div></main>
+<aside class="side" id="props"><div class="weak">Click an item in the model to see its properties.<br><br>Left drag: orbit · Right / middle drag or Shift: pan · Wheel: zoom · Double-click: zoom to item</div></aside>
+</div>
+<script>
+"use strict";
+const DATA="__DATA__";
+const $=id=>document.getElementById(id);
+const PAL=["#3478ff","#e8a33d","#46be6e","#d65db1","#30b5c7","#e05a4f","#9d7bff","#b8c34a"];
+let gl,prog,pickProg,vao,pickFbo,pickTex,pickDepth,flagsTex,flags,vc=0,meta,ids,pos,ebox,sel=-1,xray=false;
+const cam={t:[0,0,0],d:10,yaw:0.8,pitch:0.5},home={};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function bytes(){
+  try{const r=await fetch("data:application/octet-stream;base64,"+DATA);return new Uint8Array(await r.arrayBuffer());}
+  catch(e){const s=atob(DATA),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u;}
+}
+async function load(){
+  const z=await bytes();
+  const ds=new Blob([z]).stream().pipeThrough(new DecompressionStream("deflate"));
+  const buf=await new Response(ds).arrayBuffer();
+  const dv=new DataView(buf);
+  vc=dv.getUint32(0,true);const ec=dv.getUint32(4,true);
+  pos=new Float32Array(buf,8,vc*3);
+  const col=new Uint8Array(buf,8+vc*12,vc*4);
+  ids=new Uint32Array(buf,8+vc*16,vc);
+  const jl=dv.getUint32(8+vc*20,true);
+  meta=JSON.parse(new TextDecoder().decode(new Uint8Array(buf,12+vc*20,jl)));
+  // cutia fiecarui element (pentru zoom)
+  ebox=new Float32Array(ec*6);
+  for(let i=0;i<ec;i++){ebox.set([1e30,1e30,1e30,-1e30,-1e30,-1e30],i*6);}
+  for(let v=0;v<vc;v++){const e=ids[v]*6;for(let k=0;k<3;k++){const p=pos[v*3+k];if(p<ebox[e+k])ebox[e+k]=p;if(p>ebox[e+3+k])ebox[e+3+k]=p;}}
+  initGL(col);
+  buildTree();
+  fit();Object.assign(home,JSON.parse(JSON.stringify(cam)));
+  $("load").remove();
+  $("status").textContent=`${meta.elems.length.toLocaleString()} items · ${(vc/3).toLocaleString()} triangles · exported ${meta.date} from ManageBIM`;
+  draw();
+}
+
+const VS=`#version 300 es
+precision highp float;precision highp usampler2D;
+layout(location=0) in vec3 p;layout(location=1) in vec4 c;layout(location=2) in uint id;
+uniform mat4 mvp;uniform sampler2D flags;
+out vec3 wp;flat out vec4 vc;flat out uint vid;flat out float vf;
+void main(){float f=texelFetch(flags,ivec2(int(id%4096u),int(id/4096u)),0).r;vf=f;vid=id;vc=c;wp=p;
+ gl_Position=f<0.2?vec4(2.,2.,2.,1.):mvp*vec4(p,1.);}`;
+const FS=`#version 300 es
+precision highp float;
+in vec3 wp;flat in vec4 vc;flat in uint vid;flat in float vf;
+uniform int pass;uniform vec3 eye;uniform float xray;out vec4 o;
+void main(){float a=vc.a*(xray>0.5&&vf<0.9?0.18:1.);
+ if(pass==0&&a<0.99)discard; if(pass==1&&a>=0.99)discard;
+ vec3 n=normalize(cross(dFdx(wp),dFdy(wp)));vec3 v=normalize(eye-wp);if(dot(n,v)<0.)n=-n;
+ float l=0.42+0.38*max(dot(n,normalize(vec3(0.35,0.25,0.9))),0.)+0.25*max(dot(n,v),0.);
+ vec3 col=vc.rgb*l;if(vf>0.9){col=mix(col,vec3(0.2,0.47,1.),0.65);a=max(a,0.9);}
+ o=vec4(col,a);}`;
+const PVS=VS;
+const PFS=`#version 300 es
+precision highp float;flat in uint vid;flat in float vf;flat in vec4 vc;uniform float xray;out vec4 o;
+void main(){if(xray>0.5&&vf<0.9)discard;uint v=vid+1u;o=vec4(float(v&255u),float((v>>8)&255u),float((v>>16)&255u),255.)/255.;}`;
+
+function sh(t,s){const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(x);return x;}
+function mk(v,f){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,v));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw gl.getProgramInfoLog(p);return p;}
+function initGL(col){
+  const c=$("c");gl=c.getContext("webgl2",{antialias:true,preserveDrawingBuffer:false});
+  if(!gl){$("load").textContent="This browser does not support WebGL 2.";throw "no webgl2";}
+  prog=mk(VS,FS);pickProg=mk(PVS,PFS);
+  vao=gl.createVertexArray();gl.bindVertexArray(vao);
+  const b=(data,loc,size,type,norm,int)=>{const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);gl.enableVertexAttribArray(loc);if(int)gl.vertexAttribIPointer(loc,size,type,0,0);else gl.vertexAttribPointer(loc,size,type,norm,0,0);};
+  b(pos,0,3,gl.FLOAT,false,false);b(col,1,4,gl.UNSIGNED_BYTE,true,false);b(ids,2,1,gl.UNSIGNED_INT,false,true);
+  const n=meta.elems.length,h=Math.max(1,Math.ceil(n/4096));
+  flags=new Uint8Array(4096*h).fill(0);for(let i=0;i<n;i++)flags[i]=128;
+  flagsTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,flagsTex);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.R8,4096,h,0,gl.RED,gl.UNSIGNED_BYTE,flags);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  pickFbo=gl.createFramebuffer();pickTex=gl.createTexture();pickDepth=gl.createRenderbuffer();
+  new ResizeObserver(()=>draw()).observe($("view"));
+}
+function upFlags(){gl.bindTexture(gl.TEXTURE_2D,flagsTex);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,4096,flags.length/4096,gl.RED,gl.UNSIGNED_BYTE,flags);draw();}
+
+// ---------- matrice
+function persp(f,a,n,fa){const t=1/Math.tan(f/2);return [t/a,0,0,0,0,t,0,0,0,0,(fa+n)/(n-fa),-1,0,0,2*fa*n/(n-fa),0];}
+function sub(a,b){return[a[0]-b[0],a[1]-b[1],a[2]-b[2]];}
+function cr(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+function nz(a){const l=Math.hypot(...a)||1;return[a[0]/l,a[1]/l,a[2]/l];}
+function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+function look(e,t,u){const z=nz(sub(e,t)),x=nz(cr(u,z)),y=cr(z,x);return[x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,e),-dot(y,e),-dot(z,e),1];}
+function mul(a,b){const o=new Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];o[i*4+j]=s;}return o;}
+function eye(){const cp=Math.cos(cam.pitch);return[cam.t[0]+cam.d*cp*Math.cos(cam.yaw),cam.t[1]+cam.d*cp*Math.sin(cam.yaw),cam.t[2]+cam.d*Math.sin(cam.pitch)];}
+let diag=10;
+function mvp(w,h){const e=eye();const n=Math.max(cam.d*0.002,0.01);return mul(persp(0.8,w/h,n,cam.d+diag*4),look(e,cam.t,[0,0,1]));}
+
+let pending=false;
+function draw(){if(!gl||pending)return;pending=true;requestAnimationFrame(render);}
+function render(){
+  pending=false;const c=$("c"),dpr=Math.min(window.devicePixelRatio||1,2);
+  const w=Math.max(1,Math.round(c.clientWidth*dpr)),h=Math.max(1,Math.round(c.clientHeight*dpr));
+  if(c.width!==w||c.height!==h){c.width=w;c.height=h;}
+  gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  // fundal: gradient prin CSS al canvas-ului
+  gl.useProgram(prog);gl.bindVertexArray(vao);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,flagsTex);
+  gl.uniformMatrix4fv(gl.getUniformLocation(prog,"mvp"),false,mvp(w,h));gl.uniform1i(gl.getUniformLocation(prog,"flags"),0);
+  gl.uniform3fv(gl.getUniformLocation(prog,"eye"),eye());gl.uniform1f(gl.getUniformLocation(prog,"xray"),xray?1:0);
+  gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);
+  gl.disable(gl.BLEND);gl.depthMask(true);gl.uniform1i(gl.getUniformLocation(prog,"pass"),0);gl.drawArrays(gl.TRIANGLES,0,vc);
+  gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);gl.uniform1i(gl.getUniformLocation(prog,"pass"),1);gl.drawArrays(gl.TRIANGLES,0,vc);
+  gl.depthMask(true);
+}
+function pick(x,y){
+  const c=$("c"),dpr=c.width/c.clientWidth,w=c.width,h=c.height;
+  gl.bindTexture(gl.TEXTURE_2D,pickTex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.bindRenderbuffer(gl.RENDERBUFFER,pickDepth);gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT24,w,h);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,pickFbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,pickTex,0);gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,pickDepth);
+  gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.disable(gl.BLEND);
+  gl.useProgram(pickProg);gl.bindVertexArray(vao);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,flagsTex);
+  gl.uniformMatrix4fv(gl.getUniformLocation(pickProg,"mvp"),false,mvp(w,h));gl.uniform1i(gl.getUniformLocation(pickProg,"flags"),0);gl.uniform1f(gl.getUniformLocation(pickProg,"xray"),xray?1:0);
+  gl.drawArrays(gl.TRIANGLES,0,vc);
+  const px=new Uint8Array(4);gl.readPixels(Math.round(x*dpr),Math.round(h-y*dpr),1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);draw();
+  const v=px[0]|(px[1]<<8)|(px[2]<<16);return v-1;
+}
+
+// ---------- camera
+function boxOf(list){const b=[1e30,1e30,1e30,-1e30,-1e30,-1e30];for(const e of list){if(flags[e]<20)continue;for(let k=0;k<3;k++){b[k]=Math.min(b[k],ebox[e*6+k]);b[k+3]=Math.max(b[k+3],ebox[e*6+3+k]);}}return b[0]>b[3]?null:b;}
+function frame(b){if(!b)return;cam.t=[(b[0]+b[3])/2,(b[1]+b[4])/2,(b[2]+b[5])/2];const r=Math.max(Math.hypot(b[3]-b[0],b[4]-b[1],b[5]-b[2])/2,0.3);cam.d=r/Math.sin(0.4)*1.1;draw();}
+function fit(){const all=[...Array(meta.elems.length).keys()];const b=boxOf(all);if(b)diag=Math.hypot(b[3]-b[0],b[4]-b[1],b[5]-b[2]);frame(b);}
+const cv=$("c");let drag=null;
+cv.addEventListener("contextmenu",e=>e.preventDefault());
+cv.addEventListener("pointerdown",e=>{cv.setPointerCapture(e.pointerId);drag={x:e.clientX,y:e.clientY,b:e.button,s:e.shiftKey,moved:false};});
+cv.addEventListener("pointermove",e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>2)drag.moved=true;drag.x=e.clientX;drag.y=e.clientY;
+  if(drag.b===0&&!drag.s){cam.yaw-=dx*0.006;cam.pitch=Math.max(-1.55,Math.min(1.55,cam.pitch+dy*0.006));}
+  else{const e2=eye(),f=nz(sub(cam.t,e2)),r=nz(cr(f,[0,0,1])),u=cr(r,f),k=cam.d*0.0016;for(let i=0;i<3;i++)cam.t[i]+=-r[i]*dx*k+u[i]*dy*k;}
+  draw();});
+cv.addEventListener("pointerup",e=>{const d=drag;drag=null;if(d&&!d.moved&&d.b===0){const r=cv.getBoundingClientRect();select(pick(e.clientX-r.left,e.clientY-r.top),true);}});
+cv.addEventListener("dblclick",e=>{const r=cv.getBoundingClientRect();const id=pick(e.clientX-r.left,e.clientY-r.top);if(id>=0){select(id,true);frame(boxOf([id]));}});
+cv.addEventListener("wheel",e=>{e.preventDefault();cam.d*=Math.pow(1.0015,e.deltaY);cam.d=Math.max(0.05,Math.min(cam.d,diag*20+100));draw();},{passive:false});
+
+// ---------- selectie si vizibilitate
+function select(id,scroll){
+  if(sel>=0&&flags[sel]===255)flags[sel]=128;
+  sel=id;if(sel>=0)flags[sel]=255;upFlags();
+  $("bHide").disabled=$("bIso").disabled=sel<0;
+  document.querySelectorAll(".row.sel").forEach(r=>r.classList.remove("sel"));
+  if(sel>=0){const r=document.querySelector(`.row[data-e="${sel}"]`);if(r){r.classList.add("sel");if(scroll)r.scrollIntoView({block:"nearest"});}}
+  showProps();
+}
+function showProps(){
+  const p=$("props");if(sel<0){p.innerHTML='<div class="weak">Click an item in the model to see its properties.</div>';return;}
+  const [n,t,g,l,m,props]=meta.elems[sel];
+  let h=`<div class="card"><div class="weak">ELEMENT</div><div class="title">${esc(n)}</div><div class="type">${esc(t)}</div>${g?`<div class="weak">${esc(g)}</div>`:""}<div class="weak">${esc(meta.models[m])}${l?" · "+esc(l):""}</div></div>`;
+  const groups=new Map();for(const [gr,k,v] of props){if(!groups.has(gr))groups.set(gr,[]);groups.get(gr).push([k,v]);}
+  for(const [gr,rows] of groups){h+=`<div class="card"><h3 onclick="this.nextElementSibling.hidden=!this.nextElementSibling.hidden">${esc(gr.toUpperCase())}<span>${rows.length}</span></h3><table>${rows.map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table></div>`;}
+  p.innerHTML=h;
+}
+function setVis(list,on){for(const e of list){if(on){if(flags[e]===0)flags[e]=128;}else{flags[e]=0;if(e===sel)sel=-1;}}upFlags();refreshEyes();}
+$("bFit").onclick=fit;
+$("bAll").onclick=()=>{for(let i=0;i<meta.elems.length;i++)if(flags[i]===0)flags[i]=128;upFlags();refreshEyes();};
+$("bHide").onclick=()=>{if(sel>=0){setVis([sel],false);select(-1);}};
+$("bIso").onclick=()=>{if(sel<0)return;for(let i=0;i<meta.elems.length;i++)if(i!==sel)flags[i]=0;upFlags();refreshEyes();frame(boxOf([sel]));};
+$("bXray").onclick=()=>{xray=!xray;$("bXray").style.borderColor=xray?"var(--accent)":"";draw();};
+addEventListener("keydown",e=>{if(e.target.tagName==="INPUT")return;const k=e.key.toLowerCase();if(k==="f")fit();else if(k==="h")$("bHide").click();else if(k==="i")$("bIso").click();else if(k==="a")$("bAll").click();else if(k==="x")$("bXray").click();else if(k==="escape")select(-1);});
+
+// ---------- arbore: model › tip › elemente
+let groups=[];
+function buildTree(){
+  const map=new Map();
+  meta.elems.forEach((e,i)=>{const key=e[4]+"\u0001"+e[1];if(!map.has(key))map.set(key,{m:e[4],t:e[1]||"(no type)",items:[]});map.get(key).items.push(i);});
+  groups=[...map.values()].sort((a,b)=>a.m-b.m||a.t.localeCompare(b.t));
+  renderTree();
+}
+function eyeOf(list){return list.some(e=>flags[e]!==0);}
+function renderTree(){
+  const q=$("q").value.trim().toLowerCase(),L=$("list");
+  if(q){const hits=[];for(let i=0;i<meta.elems.length&&hits.length<500;i++){const e=meta.elems[i];if((e[0]+" "+e[1]+" "+e[2]+" "+e[3]).toLowerCase().includes(q))hits.push(i);}
+    L.innerHTML=`<div class="foot">${hits.length>=500?"First 500":hits.length} results</div>`+hits.map(i=>row(i)).join("");return;}
+  let h="";let lastM=-1;
+  groups.forEach((g,gi)=>{
+    if(g.m!==lastM){lastM=g.m;const all=groups.filter(x=>x.m===g.m).flatMap(x=>x.items);h+=`<div class="row mdl" data-m="${g.m}"><span class="eye${eyeOf(all)?"":" off"}" data-vm="${g.m}">👁</span><span class="dot" style="background:${PAL[g.m%PAL.length]}"></span><span class="n">${esc(meta.models[g.m])}</span><span class="c">${all.length}</span></div>`;}
+    h+=`<div class="grp"><div class="row" data-g="${gi}"><span class="eye${eyeOf(g.items)?"":" off"}" data-vg="${gi}">👁</span><span>${g.open?"▾":"▸"}</span><span class="n">${esc(g.t)}</span><span class="c">${g.items.length}</span></div>`;
+    if(g.open)h+=`<div class="kids">${g.items.slice(0,2000).map(i=>row(i)).join("")}${g.items.length>2000?`<div class="foot">… ${g.items.length-2000} more (use search)</div>`:""}</div>`;
+    h+="</div>";});
+  L.innerHTML=h;
+}
+function row(i){const e=meta.elems[i];return `<div class="row${i===sel?" sel":""}" data-e="${i}"><span class="eye${flags[i]===0?" off":""}" data-ve="${i}">👁</span><span class="n">${esc(e[0])}</span><span class="c">${esc(e[3]||"")}</span></div>`;}
+function refreshEyes(){renderTree();}
+$("q").addEventListener("input",renderTree);
+$("list").addEventListener("click",ev=>{
+  const t=ev.target;
+  if(t.dataset.ve!==undefined){const i=+t.dataset.ve;setVis([i],flags[i]===0);return;}
+  if(t.dataset.vg!==undefined){const g=groups[+t.dataset.vg];setVis(g.items,!eyeOf(g.items));return;}
+  if(t.dataset.vm!==undefined){const all=groups.filter(x=>x.m===+t.dataset.vm).flatMap(x=>x.items);setVis(all,!eyeOf(all));return;}
+  const r=t.closest(".row");if(!r)return;
+  if(r.dataset.g!==undefined){const g=groups[+r.dataset.g];g.open=!g.open;renderTree();return;}
+  if(r.dataset.e!==undefined)select(+r.dataset.e,false);
+});
+$("list").addEventListener("dblclick",ev=>{const r=ev.target.closest(".row");if(r&&r.dataset.e!==undefined){const i=+r.dataset.e;if(flags[i]===0)setVis([i],true);select(i,false);frame(boxOf([i]));}});
+cv.style.background="linear-gradient(#0c0d10,#22252c)";
+load().catch(e=>{$("load").textContent="Cannot open the model: "+e;console.error(e);});
+</script>
+</body>
+</html>

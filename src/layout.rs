@@ -64,6 +64,28 @@ impl Panel {
             Panel::Check => "✔ Model Checker",
         }
     }
+    /// nume scurt pentru filele din panourile laterale (controlul segmentat)
+    pub fn short(self) -> &'static str {
+        match self {
+            Panel::Tree => "Tree",
+            Panel::PropTree => "Prop Tree",
+            Panel::Sets => "Sets",
+            Panel::Properties => "Properties",
+            Panel::Find => "Find",
+            Panel::Clash => "Clash",
+            Panel::TimeLiner => "TimeLiner",
+            Panel::Viewpoints => "Viewpoints",
+            Panel::Section => "Section",
+            Panel::Measure => "Measure",
+            Panel::Coords => "Coordinates",
+            Panel::Render => "Render",
+            Panel::Project => "Project",
+            Panel::Profiler => "Profiler",
+            Panel::Compare => "Compare",
+            Panel::Quantities => "Quantities",
+            Panel::Check => "Checker",
+        }
+    }
     pub fn default_dock(self) -> Dock {
         match self {
             Panel::Tree | Panel::PropTree | Panel::Sets => Dock::Left,

@@ -23,6 +23,7 @@ pub mod shared;
 pub mod step;
 pub mod tables;
 pub mod timeline;
+pub mod web;
 
 use model::{Model, RawModel};
 
