@@ -9,7 +9,7 @@ manage issues and markups, and send the results back to Revit and Navisworks.
 
 [![Download](https://img.shields.io/badge/Download-ManageBIM%200.16.0%20for%20Windows-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.16.0.exe)
 
-![Version](https://img.shields.io/badge/version-0.16.0-blue) ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20x64-0078d4) ![Language](https://img.shields.io/badge/built%20with-Rust-b7410e) ![Admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a)
+![Version](https://img.shields.io/badge/version-0.16.0-blue) ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20x64-0078d4) ![Language](https://img.shields.io/badge/built%20with-Rust-b7410e) ![Admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ![ManageBIM main window](docs/images/main-window.png)
 
@@ -136,3 +136,9 @@ File formats: [BIMC_FORMAT.md](BIMC_FORMAT.md) · changes: [CHANGELOG.md](CHANGE
 - Rust crates under MIT / Apache-2.0 licences (egui, glam, rayon, acadrust, rusqlite…).
 
 Autodesk, Revit, Navisworks, AutoCAD and Plant 3D are trademarks of Autodesk, Inc. ManageBIM is an independent project and is not affiliated with Autodesk.
+
+---
+
+## License
+
+ManageBIM is released under the [MIT License](LICENSE). Third-party components keep their own licences (see [THIRD_PARTY.md](THIRD_PARTY.md)).

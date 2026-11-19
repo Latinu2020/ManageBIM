@@ -2,6 +2,7 @@
 name = "bimrust"
 version = "0.16.0"
 edition = "2021"
+license = "MIT"
 description = "BimRust - vizualizare si coordonare modele BIM (IFC / glTF)"
 
 [lib]
