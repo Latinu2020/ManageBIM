@@ -101,6 +101,8 @@ pub struct FrameParams {
     /// umbrire de contact: 0 = oprita; altfel taria (0..1)
     pub ao: f32,
     /// proiectia: (P22, P32, ortografic) pentru adancimea liniara si P11 (scara pe Y)
+    /// margini fine (0 = oprite; altfel taria)
+    pub edges: f32,
     pub depth_k: [f32; 4],
 }
 
@@ -460,7 +462,7 @@ impl Renderer {
             return;
         }
         let lists = self.lists.take();
-        if !(p.ao > 0.0 && self.draw_ao(gl, p, lists.as_ref())) {
+        if !((p.ao > 0.0 || p.edges > 0.0) && self.draw_ao(gl, p, lists.as_ref())) {
             gl.clear_depth_f32(1.0);
             gl.depth_mask(true);
             gl.clear(glow::DEPTH_BUFFER_BIT);
@@ -641,6 +643,7 @@ uniform vec2 u_texel;
 uniform vec4 u_k;      // P22, P32, ortografic (1/0), P11
 uniform float u_h;     // inaltimea in pixeli
 uniform float u_str;   // taria
+uniform float u_edge;  // margini (0 = oprite)
 out vec4 o_col;
 float lin(float d) {
     float z = d * 2.0 - 1.0;
@@ -659,7 +662,7 @@ void main() {
     // rotatie per pixel (zgomot fin, fara benzi)
     float ang = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
     float occ = 0.0;
-    const int N = 12;
+    const int N = 16;
     for (int i = 0; i < N; i++) {
         float t = (float(i) + 0.5) / float(N);
         float a = ang + float(i) * 2.39996323;
@@ -669,8 +672,30 @@ void main() {
         float diff = z0 - lin(ds);
         occ += smoothstep(0.015, 0.12, diff) * (1.0 - smoothstep(rw, rw * 2.5, diff));
     }
-    float ao = 1.0 - u_str * 0.6 * occ / float(N);
-    o_col = vec4(c.rgb * ao, c.a);
+    // umbre mai moi: atenuare mai blanda
+    float ao = 1.0 - u_str * 0.5 * occ / float(N);
+    // margini fine: salturi de adancime (contur) si schimbari de panta (muchii). Pe o suprafata plana
+    // 1/z (perspectiva) sau z (ortografic) variaza liniar pe ecran -> derivata a doua ~0.
+    float edge = 0.0;
+    if (u_edge > 0.0) {
+        float zl = lin(texture(u_dep, v_uv - vec2(u_texel.x, 0.0)).r);
+        float zr = lin(texture(u_dep, v_uv + vec2(u_texel.x, 0.0)).r);
+        float zd = lin(texture(u_dep, v_uv - vec2(0.0, u_texel.y)).r);
+        float zu = lin(texture(u_dep, v_uv + vec2(0.0, u_texel.y)).r);
+        float jump = max(max(abs(zl - z0), abs(zr - z0)), max(abs(zd - z0), abs(zu - z0))) / max(z0, 1e-3);
+        bool ortho = u_k.z > 0.5;
+        float q0 = ortho ? z0 : 1.0 / z0;
+        float ql = ortho ? zl : 1.0 / zl;
+        float qr = ortho ? zr : 1.0 / zr;
+        float qd = ortho ? zd : 1.0 / zd;
+        float qu = ortho ? zu : 1.0 / zu;
+        float lapAbs = abs(ql + qr - 2.0 * q0) + abs(qd + qu - 2.0 * q0);
+        // ortografic: raportat la marimea pixelului in lume; perspectiva: relativ la 1/z
+        float pix = 2.0 / max(u_k.w * u_h, 1e-3);
+        float crease = ortho ? smoothstep(0.3, 1.0, lapAbs / pix) : smoothstep(0.0009, 0.004, lapAbs / max(abs(q0), 1e-6));
+        edge = max(smoothstep(0.02, 0.06, jump), crease * 0.8);
+    }
+    o_col = vec4(c.rgb * ao * (1.0 - 0.45 * u_edge * edge), c.a);
 }
 "#;
 
@@ -735,6 +760,7 @@ impl Renderer {
         gl.uniform_4_f32(gl.get_uniform_location(aoprog, "u_k").as_ref(), p.depth_k[0], p.depth_k[1], p.depth_k[2], p.depth_k[3]);
         gl.uniform_1_f32(gl.get_uniform_location(aoprog, "u_h").as_ref(), h as f32);
         gl.uniform_1_f32(gl.get_uniform_location(aoprog, "u_str").as_ref(), p.ao.clamp(0.0, 1.0));
+        gl.uniform_1_f32(gl.get_uniform_location(aoprog, "u_edge").as_ref(), p.edges.clamp(0.0, 1.0));
         gl.disable(glow::DEPTH_TEST);
         gl.enable(glow::BLEND);
         gl.blend_func(glow::ONE, glow::ONE_MINUS_SRC_ALPHA);

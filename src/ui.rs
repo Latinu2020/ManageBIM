@@ -530,6 +530,16 @@ impl App {
                     ui.spacing_mut().item_spacing = egui::vec2(5.0, 1.0);
                     ui.spacing_mut().interact_size.y = 16.0;
                     ui.spacing_mut().button_padding = egui::vec2(6.0, 1.0);
+                    // tranzitie la schimbarea tab-ului: continutul apare cu fade
+                    let now = ui.input(|i| i.time);
+                    let fid = egui::Id::new("ribbon_fade");
+                    let (ft, fs): (usize, f64) = ui.data(|d| d.get_temp(fid)).unwrap_or((usize::MAX, 0.0));
+                    let start = if ft != self.ribbon_tab { ui.data_mut(|d| d.insert_temp(fid, (self.ribbon_tab, now))); now } else { fs };
+                    let alpha = ((now - start) / 0.16).clamp(0.0, 1.0) as f32;
+                    if alpha < 1.0 {
+                        ui.multiply_opacity(0.25 + 0.75 * alpha);
+                        ui.ctx().request_repaint();
+                    }
                     // pagina de start: ribbon-ul se vede, dar e inactiv pana se deschide un model / proiect
                     if self.start_screen() {
                         ui.disable();
@@ -2807,17 +2817,27 @@ impl App {
         let rect = ui.available_rect_before_wrap();
         let resp = ui.allocate_rect(rect, Sense::click_and_drag());
         let painter = ui.painter_at(rect);
-        // fundal in degrade
+        // fundal: degrade pe trei benzi, cu o "linie de orizont" usor luminata (mai elegant decat doua culori)
         let mut mesh = egui::Mesh::default();
         let pal = self.pal();
         let top = pal.vp_top;
         let bot = pal.vp_bottom;
-        mesh.colored_vertex(rect.left_top(), top);
-        mesh.colored_vertex(rect.right_top(), top);
-        mesh.colored_vertex(rect.right_bottom(), bot);
-        mesh.colored_vertex(rect.left_bottom(), bot);
-        mesh.add_triangle(0, 1, 2);
-        mesh.add_triangle(0, 2, 3);
+        let lift = |c: Color32, d: i16| {
+            let f = |x: u8| (x as i16 + d).clamp(0, 255) as u8;
+            Color32::from_rgb(f(c.r()), f(c.g()), f(c.b()))
+        };
+        let dark = ui.visuals().dark_mode;
+        let horizon = lift(bot, if dark { 10 } else { 6 });
+        let floor = lift(bot, if dark { -6 } else { -10 });
+        let hy = rect.top() + rect.height() * 0.62;
+        for (y, c) in [(rect.top(), top), (hy, horizon), (rect.bottom(), floor)] {
+            mesh.colored_vertex(Pos2::new(rect.left(), y), c);
+            mesh.colored_vertex(Pos2::new(rect.right(), y), c);
+        }
+        mesh.add_triangle(0, 1, 3);
+        mesh.add_triangle(0, 3, 2);
+        mesh.add_triangle(2, 3, 5);
+        mesh.add_triangle(2, 5, 4);
         painter.add(egui::Shape::mesh(mesh));
         // pagina de start: doar ea, fara model / cub / suprapuneri (proiectul ramane deschis dedesubt)
         if self.start_screen() {
@@ -3810,7 +3830,7 @@ impl App {
         }
         let eye_btn = |ui: &mut egui::Ui, ids: &[ElemId], acts: &mut Vec<Action>| {
             let all_hidden = !ids.is_empty() && ids.iter().all(|i| self.hidden.contains(i));
-            let t = if all_hidden { RichText::new("○").weak() } else { RichText::new("👁") };
+            let t = if all_hidden { RichText::new(egui_phosphor::regular::EYE_SLASH).font(crate::theme::icon_font(13.0)).weak() } else { RichText::new(egui_phosphor::regular::EYE).font(crate::theme::icon_font(13.0)).color(ui.visuals().weak_text_color()) };
             if ui.add(egui::Button::new(t).small().frame(false)).on_hover_text(if all_hidden { "Unhide" } else { "Hide" }).clicked() {
                 if all_hidden {
                     acts.push(Action::Show(ids.to_vec()));
@@ -3921,7 +3941,9 @@ impl App {
             .show_header(ui, |ui| {
                 eye_btn(ui, &ids, acts);
                 let all_sel = ids.iter().all(|i| self.selected.contains(i));
-                let r = ui.selectable_label(all_sel, format!("{}  ({})", node.label, ids.len()));
+                // grupele de ultim nivel (categorii / tipuri) au punct colorat; cele cu subgrupe (niveluri) sunt ingrosate
+                let leaf = node.children.is_empty();
+                let r = tree_row(ui, &node.label, Some(ids.len()), if leaf { Some(cat_color(&node.label)) } else { None }, all_sel, !leaf, false);
                 if r.clicked() {
                     acts.push(Action::Select(ids.clone(), ctrl));
                 }
@@ -3960,11 +3982,9 @@ impl App {
             let e = &m.elements[id.e as usize];
             ui.horizontal(|ui| {
                 eye_btn(ui, &[*id], acts);
-                let mut t = RichText::new(&e.name);
-                if self.hidden.contains(id) {
-                    t = t.weak();
-                }
-                let r = ui.selectable_label(self.selected.contains(id), t);
+                // punctul are culoarea elementului din model
+                let c = m.tri_color.get(e.tri_start as usize).copied().unwrap_or([160, 160, 160, 255]);
+                let r = tree_row(ui, &e.name, None, Some(Color32::from_rgb(c[0], c[1], c[2])), self.selected.contains(id), false, self.hidden.contains(id));
                 if r.clicked() {
                     acts.push(Action::Select(vec![*id], ctrl));
                 }
@@ -4335,15 +4355,61 @@ impl App {
                         }
                     });
                 }
+                if self.find_rules.is_empty() {
+                    self.find_rules.push(SearchRule::new(ITEM_CAT, "IFC Type", SearchOp::Equals, "", false));
+                }
+                // ---- conditiile ca "chip-uri": Level = 2 ×  Type = Wall ×  + Condition   [Find All]
+                let mut remove: Option<usize> = None;
+                let mut chip_go = false;
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                    let chip_bg = card_fill(ui.visuals());
+                    for (i, r) in self.find_rules.iter().enumerate() {
+                        if r.or && i > 0 {
+                            ui.label(RichText::new("OR").small().strong().color(accent()));
+                        }
+                        let val = if r.op.needs_value() { if r.value.is_empty() { "…".to_string() } else { r.value.clone() } } else { String::new() };
+                        egui::Frame::none().fill(chip_bg).rounding(7.0).inner_margin(egui::Margin { left: 9.0, right: 4.0, top: 3.0, bottom: 3.0 }).show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 4.0;
+                                ui.label(RichText::new(&r.field).size(12.5).color(ui.visuals().weak_text_color()));
+                                ui.label(RichText::new(r.op.label()).size(12.5).color(ui.visuals().weak_text_color()));
+                                if !val.is_empty() {
+                                    ui.label(RichText::new(val).size(12.5).monospace().strong());
+                                }
+                                if ui.add(egui::Button::new(RichText::new(egui_phosphor::regular::X).font(crate::theme::icon_font(11.0)).color(ui.visuals().weak_text_color())).frame(false)).on_hover_text("Remove this condition").clicked() {
+                                    remove = Some(i);
+                                }
+                            });
+                        });
+                    }
+                    if ui.add(egui::Button::new(RichText::new("+ Condition").size(12.5)).fill(chip_bg).stroke(Stroke::NONE).rounding(7.0)).on_hover_text("Add a condition (AND) - set it in the rows below").clicked() {
+                        let last = self.find_rules.last().cloned();
+                        let r = match last {
+                            Some(l) if !l.group.is_empty() => SearchRule::new(&l.group, &l.field, SearchOp::Equals, "", false),
+                            _ => SearchRule::new(ITEM_CAT, "IFC Type", SearchOp::Equals, "", false),
+                        };
+                        self.find_rules.push(r);
+                    }
+                    ui.add_space(8.0);
+                    chip_go = ui.add(egui::Button::new(RichText::new("Find All").strong().color(Color32::WHITE)).fill(accent()).rounding(7.0).min_size(EV::new(96.0, 24.0))).clicked();
+                });
+                if let Some(i) = remove {
+                    self.find_rules.remove(i);
+                    if self.find_rules.is_empty() {
+                        self.find_rules.push(SearchRule::new(ITEM_CAT, "IFC Type", SearchOp::Equals, "", false));
+                    }
+                }
+                let nm = self.loaded_models().filter(|(i, _)| !self.find_models_off.contains(i)).count();
+                let scope: usize = self.loaded_models().filter(|(i, _)| !self.find_models_off.contains(i)).map(|(_, m)| m.elements.len()).sum();
+                ui.label(RichText::new(format!("{} conditions · {} elements in scope ({} models){}", self.find_rules.len(), thousands(scope), nm, self.find_count.map(|n| format!(" · {n} found")).unwrap_or_default())).small().weak());
                 ui.horizontal(|ui| {
                     ui.add_space(46.0);
                     for (w, t) in [(156.0, "Category"), (176.0, "Property"), (116.0, "Condition"), (180.0, "Value")] {
                         ui.add_sized([w, 16.0], egui::Label::new(RichText::new(t).strong()));
                     }
                 });
-                if self.find_rules.is_empty() {
-                    self.find_rules.push(SearchRule::new(ITEM_CAT, "IFC Type", SearchOp::Equals, "", false));
-                }
+                ui.add_space(4.0);
                 let enter = egui::ScrollArea::vertical()
                     .id_salt("findrules")
                     .max_height((ui.available_height() - 70.0).max(60.0))
@@ -4368,7 +4434,7 @@ impl App {
                     }
                     ui.separator();
                     let go = ui.add(egui::Button::new(RichText::new("🔍 Find All").strong().color(Color32::WHITE)).fill(accent())).clicked();
-                    if go || enter {
+                    if go || enter || chip_go {
                         let r = self.find_scoped(&self.find_rules.clone(), self.find_in_selection);
                         self.find_count = Some(r.len());
                         self.apply(Action::Select(r, false));
@@ -7326,6 +7392,9 @@ impl App {
                     ui.label("Contact shadows").on_hover_text("Ambient occlusion (SSAO): soft shadows in corners and where elements meet");
                     changed |= ui.add(egui::Slider::new(&mut self.render.ao, 0.0..=1.0).fixed_decimals(2)).changed();
                     ui.end_row();
+                    ui.label("Edges").on_hover_text("Fine outlines on element edges and silhouettes (0 = off)");
+                    changed |= ui.add(egui::Slider::new(&mut self.render.edges, 0.0..=1.0).fixed_decimals(2)).changed();
+                    ui.end_row();
                 });
                 ui.horizontal(|ui| {
                     if ui.button("⟲ Default").clicked() {
@@ -7397,10 +7466,12 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     };
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let p = ui.painter();
+    // hover cu fade (tranzitie scurta), activ = nuanta de accent
+    let hov = ui.ctx().animate_bool_with_time(resp.id.with("rh"), enabled && resp.hovered(), 0.12);
     if on {
         p.rect_filled(rect, 6.0, accent().gamma_multiply(0.20));
-    } else if enabled && resp.hovered() {
-        p.rect_filled(rect, 6.0, ui.visuals().widgets.hovered.weak_bg_fill);
+    } else if hov > 0.0 {
+        p.rect_filled(rect, 6.0, ui.visuals().widgets.hovered.weak_bg_fill.gamma_multiply(hov));
     }
     let col = if !enabled { ui.visuals().weak_text_color().gamma_multiply(0.6) } else if on { accent() } else { ui.visuals().text_color() };
     if compact {
@@ -7756,4 +7827,61 @@ fn facet_editor(ui: &mut egui::Ui, f: &mut crate::check::Facet, salt: impl std::
         });
     });
     (ch, rm)
+}
+
+/// Rand de arbore / lista in stilul redesign-ului: punct colorat (categorie), text, insigna cu numarul
+/// elementelor la dreapta; selectat = nuanta de accent + bara de 2 px pe stanga; hover = fundal mai deschis.
+fn tree_row(ui: &mut egui::Ui, label: &str, count: Option<usize>, dot: Option<Color32>, selected: bool, strong: bool, weak: bool) -> egui::Response {
+    let h = 21.0;
+    // panourile laterale sunt intr-un ScrollArea orizontal: latimea vizibila, nu cea "infinita"
+    let w = (ui.clip_rect().right() - ui.cursor().left() - 4.0).min(ui.available_width()).max(60.0);
+    let (rect, resp) = ui.allocate_exact_size(EV::new(w, h), Sense::click());
+    if !ui.is_rect_visible(rect) {
+        return resp;
+    }
+    let v = ui.visuals();
+    let p = ui.painter();
+    // tranzitie lina la hover
+    let hov = ui.ctx().animate_bool_with_time(resp.id.with("hov"), resp.hovered(), 0.12);
+    if selected {
+        p.rect_filled(rect, 5.0, accent().gamma_multiply(0.16));
+        p.rect_filled(Rect::from_min_size(rect.left_top() + EV::new(0.0, 3.0), EV::new(2.0, h - 6.0)), 1.0, accent());
+    } else if hov > 0.0 {
+        p.rect_filled(rect, 5.0, v.widgets.hovered.weak_bg_fill.gamma_multiply(hov));
+    }
+    let mut x = rect.left() + 8.0;
+    if let Some(c) = dot {
+        p.circle_filled(Pos2::new(x + 3.0, rect.center().y), 3.5, c);
+        x += 12.0;
+    }
+    let col = if selected { v.strong_text_color() } else if weak { v.weak_text_color() } else if strong { v.strong_text_color() } else { v.text_color() };
+    let mut right = rect.right() - 4.0;
+    if let Some(n) = count {
+        let t = thousands(n);
+        let g = ui.fonts(|f| f.layout_no_wrap(t, FontId::proportional(11.0), v.weak_text_color()));
+        let bw = g.size().x + 10.0;
+        let br = Rect::from_min_size(Pos2::new(right - bw, rect.center().y - 8.0), EV::new(bw, 16.0));
+        p.rect_filled(br, 5.0, card_fill(v));
+        p.galley(br.center() - g.size() / 2.0, g, v.weak_text_color());
+        right = br.left() - 6.0;
+    }
+    let font = FontId::proportional(13.0);
+    let g = ui.fonts(|f| {
+        let mut job = egui::text::LayoutJob::simple_singleline(label.to_string(), font.clone(), col);
+        job.wrap = egui::text::TextWrapping::truncate_at_width((right - x).max(10.0));
+        f.layout_job(job)
+    });
+    p.galley(Pos2::new(x, rect.center().y - g.size().y / 2.0), g, col);
+    let _ = strong;
+    resp
+}
+
+/// culoare stabila pentru o categorie / tip (acelasi nume = aceeasi culoare peste tot)
+fn cat_color(label: &str) -> Color32 {
+    let mut h: u32 = 2166136261;
+    for b in label.bytes() {
+        h = (h ^ b as u32).wrapping_mul(16777619);
+    }
+    let c = crate::profiler::palette(h as usize % 12);
+    Color32::from_rgb(c[0], c[1], c[2])
 }

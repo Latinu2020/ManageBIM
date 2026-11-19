@@ -151,10 +151,17 @@ pub struct RenderSettings {
     /// umbrire de contact (SSAO), 0 = oprita
     #[serde(default = "ao_default")]
     pub ao: f32,
+    /// margini fine pe elemente (detectate din adancime), 0 = oprite
+    #[serde(default = "edges_default")]
+    pub edges: f32,
 }
 
 fn ao_default() -> f32 {
     0.8
+}
+
+fn edges_default() -> f32 {
+    0.55
 }
 
 fn one() -> f32 {
@@ -175,6 +182,7 @@ impl RenderSettings {
     }
     pub fn reset_light(&mut self) {
         (self.sun_az, self.sun_el, self.exposure, self.ambient, self.sun_power, self.ao) = (sun_az(), sun_el(), 1.0, 1.0, 1.0, ao_default());
+        self.edges = edges_default();
     }
     pub fn sun_dir(&self) -> Vec3 {
         let (a, e) = (self.sun_az.to_radians(), self.sun_el.to_radians());
@@ -184,7 +192,7 @@ impl RenderSettings {
 
 impl Default for RenderSettings {
     fn default() -> Self {
-        RenderSettings { width: 1920, height: 1080, fps: 30, quality: 92, supersample: true, background: Background::Theme, format: VideoFormat::Mp4, sun_az: sun_az(), sun_el: sun_el(), exposure: 1.0, ambient: 1.0, sun_power: 1.0, ao: ao_default() }
+        RenderSettings { width: 1920, height: 1080, fps: 30, quality: 92, supersample: true, background: Background::Theme, format: VideoFormat::Mp4, sun_az: sun_az(), sun_el: sun_el(), exposure: 1.0, ambient: 1.0, sun_power: 1.0, ao: ao_default(), edges: edges_default() }
     }
 }
 
