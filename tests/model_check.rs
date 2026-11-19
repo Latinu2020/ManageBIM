@@ -163,3 +163,43 @@ fn live_link_ids_match_revit_and_navisworks_forms() {
     let sel = bimrust::sync::parse_selection("MBSEL1\nabc-123-uid|x\n").unwrap();
     assert!(sel.iter().any(|s| ids.contains(s)));
 }
+
+#[test]
+fn as_built_finds_built_missing_and_unscanned() {
+    use bimrust::asbuilt::{check, Occupancy, Params, Status};
+    use glam::Vec3;
+    // trei pereti (patrate verticale 2 x 2 m in planul XZ): la y = 0, y = 3 si y = 50
+    let quad = |y: f32| vec![Vec3::new(0.0, y, 0.0), Vec3::new(2.0, y, 0.0), Vec3::new(2.0, y, 2.0), Vec3::new(0.0, y, 0.0), Vec3::new(2.0, y, 2.0), Vec3::new(0.0, y, 2.0)];
+    let mut pos = Vec::new();
+    let mut elems = Vec::new();
+    for (k, y) in [0.0f32, 3.0, 50.0].iter().enumerate() {
+        pos.extend(quad(*y));
+        let mut e = el(&format!("W{k}"), "IfcWall", &[]);
+        e.tri_start = (k * 2) as u32;
+        e.tri_count = 2;
+        let mut bb = bimrust::model::Aabb::EMPTY;
+        bb.grow(Vec3::new(0.0, *y, 0.0));
+        bb.grow(Vec3::new(2.0, *y, 2.0));
+        e.aabb = bb;
+        elems.push(e);
+    }
+    let mut m = model(elems);
+    m.tri_color = vec![[200, 200, 200, 255]; 6];
+    m.pos = pos;
+    // scanarea acopera primul perete (y = 0) si zona pana la y = 4 (al doilea perete lipseste in realitate)
+    let mut pts = Vec::new();
+    for i in 0..=40 {
+        for j in 0..=40 {
+            pts.push(Vec3::new(i as f32 * 0.05, 0.01, j as f32 * 0.05));
+        }
+    }
+    pts.push(Vec3::new(0.0, 4.0, 0.0));
+    pts.push(Vec3::new(2.0, 4.0, 2.0));
+    let cloud = bimrust::model::PointCloud { pos: pts, col: Vec::new(), scans: Vec::new() };
+    let occ = Occupancy::build(&[&cloud], 0.025);
+    let items: Vec<(usize, &Model, u32)> = (0..3).map(|e| (0usize, &m, e as u32)).collect();
+    let res = check(&items, &occ, Params::default());
+    assert_eq!(res[0].status, Status::Built, "{:?}", res[0]);
+    assert_eq!(res[1].status, Status::Missing, "{:?}", res[1]);
+    assert_eq!(res[2].status, Status::NotScanned);
+}

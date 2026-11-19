@@ -1,5 +1,6 @@
 pub mod acis;
 pub mod anim;
+pub mod asbuilt;
 pub mod bimc;
 pub mod check;
 pub mod clash;

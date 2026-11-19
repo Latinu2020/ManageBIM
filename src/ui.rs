@@ -1663,6 +1663,12 @@ impl App {
                 self.export_all_caches();
             }
         });
+        rgroup(ui, "Scan", |ui| {
+            let has_cloud = self.loaded_models().any(|(_, m)| m.cloud.is_some());
+            if rbtn(ui, "☁", "Scan vs Model", "As-built check: compare the model with the point cloud (E57 / LAS) - built, partial, missing, not scanned; colours and Excel report", self.asbuilt_open, has_cloud).clicked() {
+                self.asbuilt_open = !self.asbuilt_open;
+            }
+        });
     }
 
     fn ribbon_render(&mut self, ui: &mut egui::Ui) {
@@ -6949,7 +6955,115 @@ impl App {
     }
 
     // ================================================================== ferestre
+    /// Fereastra "As-built check": modelul fata de norul de puncte.
+    fn asbuilt_window(&mut self, ctx: &egui::Context) {
+        use crate::asbuilt::Status;
+        if !self.asbuilt_open {
+            return;
+        }
+        let mut open = true;
+        let mut acts: Vec<Action> = Vec::new();
+        let mut run = false;
+        let mut colors: Option<bool> = None;
+        egui::Window::new(crate::theme::icon_job("☁", "As-built check  (model vs point cloud)", 14.0, ctx.style().visuals.text_color()))
+            .id(egui::Id::new("asbuilt_win"))
+            .open(&mut open)
+            .default_size([520.0, 440.0])
+            .resizable(true)
+            .show(ctx, |ui| {
+                let clouds = self.loaded_models().filter(|(_, m)| m.cloud.is_some()).count();
+                let designs = self.loaded_models().filter(|(_, m)| m.cloud.is_none()).count();
+                ui.label(RichText::new(format!("{clouds} point cloud(s) · {designs} model(s). Every visible element is sampled on its surface; it counts as built when scan points cover enough of it.")).small().weak());
+                ui.horizontal(|ui| {
+                    ui.label("Tolerance");
+                    let mut mm = self.asbuilt_params.tol * 1000.0;
+                    if ui.add(egui::DragValue::new(&mut mm).range(5.0..=500.0).speed(1.0).suffix(" mm")).on_hover_text("Maximum distance between the scan points and the model surface").changed() {
+                        self.asbuilt_params.tol = mm / 1000.0;
+                    }
+                    ui.label("Built ≥");
+                    let mut b = self.asbuilt_params.built * 100.0;
+                    if ui.add(egui::DragValue::new(&mut b).range(5.0..=100.0).speed(1.0).suffix(" %")).on_hover_text("Coverage for 'Built' (hidden faces are never scanned, so this is low)").changed() {
+                        self.asbuilt_params.built = b / 100.0;
+                    }
+                    ui.label("Partial ≥");
+                    let mut pp = self.asbuilt_params.partial * 100.0;
+                    if ui.add(egui::DragValue::new(&mut pp).range(1.0..=100.0).speed(1.0).suffix(" %")).changed() {
+                        self.asbuilt_params.partial = pp / 100.0;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    run = ui.add_enabled(clouds > 0 && designs > 0, egui::Button::new(RichText::new("▶ Run check").strong().color(Color32::WHITE)).fill(accent())).clicked();
+                    let has = self.asbuilt.is_some();
+                    let mut show = self.asbuilt_show;
+                    if ui.add_enabled(has, egui::Checkbox::new(&mut show, "Colour the model")).changed() {
+                        colors = Some(show);
+                    }
+                    if ui.add_enabled(has, egui::Button::new("📊 Excel…")).clicked() {
+                        self.request_path(Purpose::ExportAsBuilt);
+                    }
+                });
+                let Some(res) = &self.asbuilt else {
+                    if clouds == 0 {
+                        ui.label(RichText::new("Open the scan (E57 / LAS) and Append the design model (or the other way round), then Run check.").weak());
+                    }
+                    return;
+                };
+                ui.separator();
+                // rezumat pe stari: clic = filtru, butoane select / isolate
+                ui.horizontal_wrapped(|ui| {
+                    for s in Status::ALL {
+                        let n = res.iter().filter(|r| r.status == s).count();
+                        let c = s.color();
+                        let on = self.asbuilt_filter == Some(s);
+                        let (dr, _) = ui.allocate_exact_size(EV::splat(10.0), Sense::hover());
+                        ui.painter().circle_filled(dr.center(), 4.5, Color32::from_rgb(c[0], c[1], c[2]));
+                        if ui.selectable_label(on, format!("{} {}", s.label(), n)).clicked() {
+                            self.asbuilt_filter = if on { None } else { Some(s) };
+                        }
+                    }
+                });
+                let shown: Vec<&crate::asbuilt::ElemResult> = res.iter().filter(|r| self.asbuilt_filter.map(|f| f == r.status).unwrap_or(true)).collect();
+                let ids: Vec<ElemId> = shown.iter().map(|r| r.id).collect();
+                ui.horizontal(|ui| {
+                    if ui.small_button("Select").clicked() {
+                        acts.push(Action::Select(ids.clone(), false));
+                    }
+                    if ui.small_button("Isolate").clicked() {
+                        acts.push(Action::Isolate(ids.clone()));
+                    }
+                    ui.label(RichText::new(format!("{} elements", shown.len())).small().weak());
+                });
+                egui::ScrollArea::vertical().id_salt("asb_list").auto_shrink([false, false]).show_rows(ui, 21.0, shown.len().min(5000), |ui, range| {
+                    for r in &shown[range] {
+                        let (name, ty) = self.elem(r.id).map(|(_, e)| (e.name.clone(), e.ifc_type.clone())).unwrap_or_default();
+                        let c = r.status.color();
+                        let label = format!("{name}  ·  {ty}  ·  {:.0}%", r.coverage * 100.0);
+                        let resp = tree_row(ui, &label, None, Some(Color32::from_rgb(c[0], c[1], c[2])), self.selected.contains(&r.id), false, false);
+                        if resp.clicked() {
+                            acts.push(Action::Select(vec![r.id], ui.input(|i| i.modifiers.ctrl)));
+                        }
+                        if resp.double_clicked() {
+                            acts.push(Action::Focus(vec![r.id]));
+                        }
+                    }
+                });
+            });
+        if !open {
+            self.asbuilt_open = false;
+        }
+        if let Some(on) = colors {
+            self.asbuilt_colors(on);
+        }
+        if run {
+            self.run_asbuilt();
+        }
+        for a in acts {
+            self.apply(a);
+        }
+    }
+
     fn windows(&mut self, ctx: &egui::Context) {
+        self.asbuilt_window(ctx);
         if let Some(pr) = &mut self.prompt {
             let mut ok = false;
             let mut cancel = false;
@@ -6969,6 +7083,7 @@ impl App {
                 Purpose::ExportReference => "Reference for Revit / AutoCAD",
                 Purpose::ExportClashMatrix => "Clash matrix (Excel)",
                 Purpose::ExportWeb => "Web viewer (HTML)",
+                Purpose::ExportAsBuilt => "As-built report (Excel)",
                 Purpose::ImportCheckRules => "Import IDS or rules",
                 Purpose::ExportCheckRules => "Save rules",
                 Purpose::ExportCheckXlsx => "Model check report (Excel)",

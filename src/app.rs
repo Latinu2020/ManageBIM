@@ -820,6 +820,7 @@ pub enum Purpose {
     ExportReference,
     ExportClashMatrix,
     ExportWeb,
+    ExportAsBuilt,
     ImportCheckRules,
     ExportCheckRules,
     ExportCheckXlsx,
@@ -1019,6 +1020,13 @@ pub struct App {
     pub web_selection: bool,
     /// Live Link (selectie sincronizata cu Revit / Navisworks)
     pub sync: crate::sync::SyncState,
+    /// as-built: rezultatul, parametrii, fereastra, elementele colorate de noi
+    pub asbuilt: Option<Vec<crate::asbuilt::ElemResult>>,
+    pub asbuilt_params: crate::asbuilt::Params,
+    pub asbuilt_open: bool,
+    pub asbuilt_show: bool,
+    pub asbuilt_painted: Vec<ElemId>,
+    pub asbuilt_filter: Option<crate::asbuilt::Status>,
     /// fata section box-ului trasa acum (0..5: -X +X -Y +Y -Z +Z)
     pub box_drag: Option<usize>,
     pub show_clash_matrix: bool,
@@ -1244,6 +1252,12 @@ impl App {
             ifc_selection: false,
             web_selection: false,
             sync: Default::default(),
+            asbuilt: None,
+            asbuilt_params: Default::default(),
+            asbuilt_open: false,
+            asbuilt_show: false,
+            asbuilt_painted: Vec::new(),
+            asbuilt_filter: None,
             box_drag: None,
             show_clash_matrix: false,
             grid_import: None,
@@ -4997,6 +5011,7 @@ impl App {
             Purpose::ExportReference => self.export_reference(&path),
             Purpose::ExportClashMatrix => self.export_clash_matrix(&path),
             Purpose::ExportWeb => self.export_web(&path),
+            Purpose::ExportAsBuilt => self.export_asbuilt_xlsx(&path),
             Purpose::ImportCheckRules => self.import_check_rules(&path),
             Purpose::ExportCheckRules => self.export_check_rules(&path),
             Purpose::ExportCheckXlsx => self.export_check_xlsx(&path),
@@ -5262,6 +5277,7 @@ impl App {
                 }
                 Purpose::ExportClashMatrix => d.set_title("Clash matrix (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("clash_matrix.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportWeb => d.set_title("Web viewer (HTML)").add_filter("Web page", &["html"]).set_file_name("model.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportAsBuilt => d.set_title("As-built report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("as_built.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportCheckRules => d.set_title("Import IDS or rules").add_filter("IDS / ManageBIM rules", &["ids", "xml", "mbrules", "json"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCheckRules => d.set_title("Save rules").add_filter("ManageBIM rules", &["mbrules"]).set_file_name("rules.mbrules").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCheckXlsx => d.set_title("Model check report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("model_check.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5358,6 +5374,7 @@ impl App {
                 Purpose::ExportReference => "reference.mbref".into(),
                 Purpose::ExportClashMatrix => "clash_matrix.xlsx".into(),
                 Purpose::ExportWeb => "model.html".into(),
+                Purpose::ExportAsBuilt => "as_built.xlsx".into(),
                 Purpose::ImportCheckRules => String::new(),
                 Purpose::ExportCheckRules => "rules.mbrules".into(),
                 Purpose::ExportCheckXlsx => "model_check.xlsx".into(),
@@ -6384,6 +6401,90 @@ impl App {
         self.toast(format!("{n} items selected - same {}: {what}", if by_type { "type" } else { "category" }));
     }
 
+
+    // ------------------------------------------------------------ As-built: model fata de norul de puncte
+
+    /// Compara modelele (fara nori) cu toti norii de puncte incarcati.
+    pub fn run_asbuilt(&mut self) {
+        let t = std::time::Instant::now();
+        let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
+        let clouds: Vec<&crate::model::PointCloud> = models.iter().filter_map(|(_, m)| m.cloud.as_deref()).collect();
+        if clouds.is_empty() {
+            return self.error("Load a point cloud first (E57 / LAS: Open or Append), together with the model.");
+        }
+        let p = self.asbuilt_params;
+        let occ = crate::asbuilt::Occupancy::build(&clouds, p.tol * 0.5);
+        let mut items: Vec<(usize, &Model, u32)> = Vec::new();
+        for (mi, m) in &models {
+            if m.cloud.is_some() {
+                continue;
+            }
+            for (ei, e) in m.elements.iter().enumerate() {
+                let id = ElemId { m: *mi as u32, e: ei as u32 };
+                if e.tri_count > 0 && !e.default_hidden && !self.hidden.contains(&id) {
+                    items.push((*mi, m.as_ref(), ei as u32));
+                }
+            }
+        }
+        if items.is_empty() {
+            return self.error("No visible model elements to check - load the design model next to the point cloud.");
+        }
+        let res = crate::asbuilt::check(&items, &occ, p);
+        let count = |s: crate::asbuilt::Status| res.iter().filter(|r| r.status == s).count();
+        self.toast(format!(
+            "As-built check: {} built, {} partial, {} missing, {} not scanned ({} points, {:.1} s)",
+            count(crate::asbuilt::Status::Built),
+            count(crate::asbuilt::Status::Partial),
+            count(crate::asbuilt::Status::Missing),
+            count(crate::asbuilt::Status::NotScanned),
+            thousands_app(occ.points),
+            t.elapsed().as_secs_f32()
+        ));
+        self.asbuilt_colors(false);
+        self.asbuilt = Some(res);
+        self.asbuilt_colors(true);
+    }
+
+    /// Coloreaza elementele dupa stare (verde / galben / rosu / gri) sau scoate culorile.
+    pub fn asbuilt_colors(&mut self, on: bool) {
+        for id in std::mem::take(&mut self.asbuilt_painted) {
+            self.overrides.remove(&id);
+        }
+        if on {
+            if let Some(res) = &self.asbuilt {
+                for r in res {
+                    self.overrides.insert(r.id, r.status.color());
+                    self.asbuilt_painted.push(r.id);
+                }
+            }
+        }
+        self.asbuilt_show = on;
+        self.colors_dirty = true;
+    }
+
+    pub fn export_asbuilt_xlsx(&mut self, path: &str) {
+        use crate::qto::{Cell, Sheet};
+        let Some(res) = &self.asbuilt else { return self.error("Run the as-built check first.") };
+        let mut rows = Vec::new();
+        for r in res {
+            if let Some((m, e)) = self.elem(r.id) {
+                rows.push(vec![Cell::S(r.status.label().into()), Cell::N((r.coverage as f64 * 1000.0).round() / 10.0), Cell::S(e.name.clone()), Cell::S(e.ifc_type.clone()), Cell::S(e.storey.clone()), Cell::S(model_label(&m.name)), Cell::S(e.guid.clone())]);
+            }
+        }
+        let sheet = Sheet {
+            name: "As-built".into(),
+            title: format!("Model vs point cloud - tolerance {:.0} mm", self.asbuilt_params.tol * 1000.0),
+            headers: ["Status", "Coverage %", "Element", "Type", "Level", "Model", "GUID"].iter().map(|s| s.to_string()).collect(),
+            widths: vec![14.0, 12.0, 36.0, 22.0, 18.0, 24.0, 26.0],
+            rows,
+            total_from: None,
+        };
+        let p = with_ext(path, "xlsx");
+        match std::fs::write(&p, crate::qto::xlsx(&[sheet])) {
+            Ok(()) => self.toast(format!("As-built report saved: {}", crate::file_name(&p))),
+            Err(e) => self.error(format!("Cannot write {p}: {e}")),
+        }
+    }
     // ------------------------------------------------------------ Live Link: selectie sincronizata
 
     /// Porneste / opreste selectia sincronizata cu Revit si Navisworks.
@@ -6777,4 +6878,17 @@ impl App {
 /// Numele modelului fara extensie (pentru matrice / rapoarte).
 pub fn model_label(name: &str) -> String {
     std::path::Path::new(name).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| name.to_string())
+}
+
+/// 12345 -> "12 345"
+pub fn thousands_app(n: usize) -> String {
+    let s = n.to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            out.push(' ');
+        }
+        out.push(c);
+    }
+    out
 }
