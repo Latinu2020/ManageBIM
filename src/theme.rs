@@ -12,6 +12,8 @@ pub enum Theme {
     /// Tokyo Night (github.com/folke/tokyonight.nvim): albastru-noapte, accente albastru / mov
     #[serde(alias = "Tokyo Night")]
     TokyoNight,
+    /// Studio: aproape negru, accent albastru electric, panouri ca niste carduri (aspect de aplicatie BIM moderna)
+    Studio,
 }
 
 impl Theme {
@@ -24,6 +26,7 @@ impl Theme {
             Theme::Light => "Light",
             Theme::Nord => "Nord",
             Theme::TokyoNight => "Tokyo Night",
+            Theme::Studio => "Studio",
         }
     }
     /// urmatoarea tema la click pe butonul din bara de tab-uri
@@ -31,7 +34,8 @@ impl Theme {
         match self {
             Theme::Dark => Theme::Nord,
             Theme::Nord => Theme::TokyoNight,
-            Theme::TokyoNight => Theme::Light,
+            Theme::TokyoNight => Theme::Studio,
+            Theme::Studio => Theme::Light,
             Theme::Light => Theme::Dark,
         }
     }
@@ -232,6 +236,21 @@ pub fn palette(t: Theme) -> Palette {
             gantt_text: Color32::from_rgb(192, 202, 245),
             label_bg: Color32::from_rgba_unmultiplied(22, 22, 30, 225),
         },
+        // Studio: aproape negru, albastru electric
+        Theme::Studio => Palette {
+            accent: Color32::from_rgb(52, 120, 255),
+            vp_top: Color32::from_rgb(12, 13, 16),
+            vp_bottom: Color32::from_rgb(34, 37, 44),
+            overlay_text: Color32::from_rgb(226, 230, 238),
+            overlay_weak: Color32::from_rgba_unmultiplied(200, 206, 218, 140),
+            overlay_btn: Color32::from_rgba_unmultiplied(22, 24, 30, 235),
+            elem_a: Color32::from_rgb(255, 99, 99),
+            elem_b: Color32::from_rgb(80, 210, 140),
+            gantt_bg: Color32::from_rgb(17, 19, 24),
+            gantt_grid: Color32::from_rgb(36, 40, 48),
+            gantt_text: Color32::from_rgb(220, 224, 232),
+            label_bg: Color32::from_rgba_unmultiplied(18, 20, 26, 230),
+        },
     }
 }
 
@@ -270,6 +289,27 @@ pub fn apply(ctx: &egui::Context, t: Theme) {
             v.error_fg_color = Color32::from_rgb(191, 97, 106);
             v.window_shadow = Shadow { offset: egui::vec2(0.0, 6.0), blur: 18.0, spread: 0.0, color: Color32::from_black_alpha(90) };
             v.popup_shadow = Shadow { offset: egui::vec2(0.0, 4.0), blur: 12.0, spread: 0.0, color: Color32::from_black_alpha(80) };
+        }
+        Theme::Studio => {
+            v.panel_fill = Color32::from_rgb(17, 19, 24);
+            v.window_fill = Color32::from_rgb(22, 25, 31);
+            v.extreme_bg_color = Color32::from_rgb(11, 12, 15);
+            v.faint_bg_color = Color32::from_rgb(21, 24, 30);
+            v.code_bg_color = Color32::from_rgb(11, 12, 15);
+            v.window_stroke = Stroke::new(1.0_f32, Color32::from_rgb(38, 42, 51));
+            let text = Color32::from_rgb(214, 219, 228);
+            widget(&mut v.widgets.noninteractive, Color32::from_rgb(22, 25, 31), Color32::from_rgb(34, 38, 46), Color32::from_rgb(170, 177, 190), 6.0);
+            widget(&mut v.widgets.inactive, Color32::from_rgb(30, 34, 42), Color32::from_rgb(30, 34, 42), text, 6.0);
+            widget(&mut v.widgets.hovered, Color32::from_rgb(40, 45, 56), Color32::from_rgb(70, 110, 200), Color32::WHITE, 6.0);
+            widget(&mut v.widgets.active, Color32::from_rgb(40, 90, 220), p.accent, Color32::WHITE, 6.0);
+            widget(&mut v.widgets.open, Color32::from_rgb(30, 34, 42), Color32::from_rgb(50, 56, 68), text, 6.0);
+            v.selection.bg_fill = Color32::from_rgb(40, 96, 230);
+            v.selection.stroke = Stroke::new(1.0_f32, Color32::WHITE);
+            v.hyperlink_color = Color32::from_rgb(110, 160, 255);
+            v.warn_fg_color = Color32::from_rgb(240, 180, 80);
+            v.error_fg_color = Color32::from_rgb(255, 99, 99);
+            v.window_shadow = Shadow { offset: egui::vec2(0.0, 8.0), blur: 24.0, spread: 0.0, color: Color32::from_black_alpha(150) };
+            v.popup_shadow = Shadow { offset: egui::vec2(0.0, 4.0), blur: 14.0, spread: 0.0, color: Color32::from_black_alpha(130) };
         }
         Theme::TokyoNight => {
             v.panel_fill = Color32::from_rgb(26, 27, 38);

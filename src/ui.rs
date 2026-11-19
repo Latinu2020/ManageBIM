@@ -481,6 +481,7 @@ impl App {
                     let icon = match next {
                         Theme::Nord => "❄",
                         Theme::TokyoNight => "🌃",
+                        Theme::Studio => "◆",
                         Theme::Light => "☀",
                         Theme::Dark => "🌙",
                     };
@@ -1502,6 +1503,9 @@ impl App {
             if rbtn(ui, "❄", "Nord", "Nord theme: calm arctic blue-grey (nordtheme.com)", self.settings.theme == Theme::Nord, true).clicked() {
                 self.set_theme(Theme::Nord);
             }
+            if rbtn(ui, "◆", "Studio", "Studio theme: near-black with electric blue, modern BIM look", self.settings.theme == Theme::Studio, true).clicked() {
+                self.set_theme(Theme::Studio);
+            }
             if rbtn(ui, "🌃", "Tokyo Night", "Tokyo Night theme: deep night blue with blue / purple accents", self.settings.theme == Theme::TokyoNight, true).clicked() {
                 self.set_theme(Theme::TokyoNight);
             }
@@ -2107,10 +2111,54 @@ impl App {
     fn panel_body(&mut self, ui: &mut egui::Ui, p: Panel) {
         match p {
             Panel::Tree => {
-                self.tree_config_ui(ui);
-                let acts = egui::ScrollArea::both().id_salt("tree_scroll").auto_shrink([false, false]).show(ui, |ui| self.tree_ui(ui)).inner;
-                for a in acts {
-                    self.apply(a);
+                // cautare in model (nume, tip, nivel, GUID): rezultatele inlocuiesc arborele cat timp se cauta
+                let sid = ui.make_persistent_id("tree_search");
+                let mut q: String = ui.data_mut(|d| d.get_temp(sid)).unwrap_or_default();
+                ui.add(egui::TextEdit::singleline(&mut q).hint_text("🔍 Search model").desired_width(f32::INFINITY));
+                ui.data_mut(|d| d.insert_temp(sid, q.clone()));
+                let ql = q.trim().to_lowercase();
+                if ql.is_empty() {
+                    self.tree_config_ui(ui);
+                    let acts = egui::ScrollArea::both().id_salt("tree_scroll").auto_shrink([false, false]).show(ui, |ui| self.tree_ui(ui)).inner;
+                    for a in acts {
+                        self.apply(a);
+                    }
+                } else {
+                    let mut hits: Vec<(ElemId, String, String)> = Vec::new();
+                    let mut total = 0usize;
+                    for (mi, m) in self.loaded_models() {
+                        for (ei, e) in m.elements.iter().enumerate() {
+                            if e.name.to_lowercase().contains(&ql) || e.ifc_type.to_lowercase().contains(&ql) || e.storey.to_lowercase().contains(&ql) || e.guid.to_lowercase() == ql {
+                                total += 1;
+                                if hits.len() < 500 {
+                                    hits.push((ElemId { m: mi as u32, e: ei as u32 }, e.name.clone(), format!("{} · {}", e.ifc_type, e.storey)));
+                                }
+                            }
+                        }
+                    }
+                    let mut act: Option<Action> = None;
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(format!("{total} found")).weak());
+                        if total > 0 && ui.small_button("Select all").clicked() {
+                            let all: Vec<ElemId> = self.loaded_models().flat_map(|(mi, m)| m.elements.iter().enumerate().filter(|(_, e)| e.name.to_lowercase().contains(&ql) || e.ifc_type.to_lowercase().contains(&ql) || e.storey.to_lowercase().contains(&ql) || e.guid.to_lowercase() == ql).map(move |(ei, _)| ElemId { m: mi as u32, e: ei as u32 }).collect::<Vec<_>>()).collect();
+                            act = Some(Action::Select(all, false));
+                        }
+                    });
+                    egui::ScrollArea::vertical().id_salt("tree_hits").auto_shrink([false, false]).show(ui, |ui| {
+                        for (id, n, sub) in &hits {
+                            let on = self.selected.contains(id);
+                            let r = ui.selectable_label(on, RichText::new(n)).on_hover_text(sub.as_str());
+                            if r.clicked() {
+                                act = Some(Action::Select(vec![*id], ui.input(|i| i.modifiers.command)));
+                            }
+                            if r.double_clicked() {
+                                act = Some(Action::Focus(vec![*id]));
+                            }
+                        }
+                    });
+                    if let Some(a) = act {
+                        self.apply(a);
+                    }
                 }
             }
             Panel::PropTree => self.props_tree_ui(ui),
@@ -2297,6 +2345,28 @@ impl App {
                 if nm == 0 {
                     ui.label(RichText::new("No model open").weak());
                 } else {
+                    // nivelul curent: alegerea lui face sectiunea pe nivel (ca in Navisworks / Revit)
+                    let levels = self.scene_grids().levels;
+                    if !levels.is_empty() {
+                        let cur = self.section_level.filter(|_| self.section.enabled).and_then(|i| levels.get(i)).map(|l| l.0.clone()).unwrap_or_else(|| "All levels".into());
+                        let mut pick: Option<Option<usize>> = None;
+                        egui::ComboBox::from_id_salt("status_level").width(120.0).selected_text(format!("Level: {cur}")).show_ui(ui, |ui| {
+                            if ui.selectable_label(!self.section.enabled, "All levels").clicked() {
+                                pick = Some(None);
+                            }
+                            for (i, l) in levels.iter().enumerate().rev() {
+                                if ui.selectable_label(self.section.enabled && self.section_level == Some(i), format!("{}  {:+.2}", l.0, l.1)).clicked() {
+                                    pick = Some(Some(i));
+                                }
+                            }
+                        });
+                        match pick {
+                            Some(Some(i)) => self.section_level_box(i),
+                            Some(None) => self.section.enabled = false,
+                            None => {}
+                        }
+                        ui.separator();
+                    }
                     ui.label(format!("{} {} · {} elements", nm, if nm == 1 { "model" } else { "models" }, thousands(ne))).on_hover_text(format!("{} triangles", thousands(nt)));
                 }
                 if !self.selected.is_empty() {
@@ -3153,107 +3223,147 @@ impl App {
     }
 
     /// Bara de navigare plutitoare (jos, pe centru): ce se foloseste des, fara drum prin ribbon.
+    /// Bara de unelte de jos (aspect "studio"): butoane mari cu iconita si eticheta, pe grupe
+    /// (selectie, vizibilitate, navigare, unelte). Culorile vin din tema curenta.
     fn nav_bar(&mut self, ui: &mut egui::Ui, rect: Rect) {
         let pal = self.pal();
-        let pos = rect.center_bottom() - EV::new(0.0, 12.0);
+        let pos = rect.center_bottom() - EV::new(0.0, 14.0);
         egui::Area::new(egui::Id::new("nav_bar")).fixed_pos(pos).pivot(Align2::CENTER_BOTTOM).order(egui::Order::Foreground).show(ui.ctx(), |ui| {
-            egui::Frame::none().fill(pal.overlay_btn).rounding(egui::Rounding::same(18.0)).inner_margin(egui::Margin::symmetric(10.0, 5.0)).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 3.0;
-                    ui.spacing_mut().button_padding = EV::new(7.0, 3.0);
-                    let b = |ui: &mut egui::Ui, icon: &str, tip: &str, on: bool, enabled: bool| -> bool {
-                        let txt = RichText::new(icon).size(16.0);
-                        ui.add_enabled(enabled, egui::Button::new(txt).selected(on).frame(on)).on_hover_text(tip).clicked()
-                    };
-                    // selectie: clic / fereastra
-                    if b(ui, "👆", "Select (click an item · Ctrl+click adds)", self.tool == Tool::Select && self.nav == NavMode::Orbit, true) {
-                        self.cur_measure.clear();
-                        self.tool = Tool::Select;
-                        self.nav = NavMode::Orbit;
-                    }
-                    if b(ui, "⬚", "Window selection: drag left -> right = inside, right -> left = touching (Ctrl adds)", self.tool == Tool::Window, true) {
-                        self.cur_measure.clear();
-                        self.tool = if self.tool == Tool::Window { Tool::Select } else { Tool::Window };
-                    }
-                    // vizibilitate
-                    let sel: Vec<ElemId> = self.selected.iter().copied().collect();
-                    if b(ui, "🚫", "Hide the selected items (H)", false, !sel.is_empty()) {
-                        self.apply(Action::Hide(sel.clone()));
-                    }
-                    if b(ui, "◎", "Hide unselected - show only the selection (I)", false, !sel.is_empty()) {
-                        self.apply(Action::Isolate(sel.clone()));
-                    }
-                    if b(ui, "👁", "Unhide all", false, !self.hidden.is_empty()) {
-                        self.apply(Action::ShowAll);
-                        self.clash_focus = None;
-                    }
-                    ui.separator();
-                    let orbit = self.nav == NavMode::Orbit && self.tool == Tool::Select;
-                    if b(ui, "🔄", "Orbit (drag to rotate around the point under the cursor)", orbit, true) {
-                        self.nav = NavMode::Orbit;
-                        self.tool = Tool::Select;
-                        self.path_run = None;
-                    }
-                    let pan = self.nav == NavMode::Pan && self.tool == Tool::Select;
-                    if b(ui, "✋", "Pan (drag to move the model sideways)", pan, true) {
-                        self.nav = NavMode::Pan;
-                        self.tool = Tool::Select;
-                        self.path_run = None;
-                    }
-                    let walk = self.nav == NavMode::Walk && self.tool == Tool::Select;
-                    if b(ui, "🚶", "Walk (drag up = forward, sideways = turn; W A S D)", walk, true) {
-                        self.nav = NavMode::Walk;
-                        self.tool = Tool::Select;
-                    }
-                    if b(ui, "✏", "Draw a walk path: click points on the floor, double-click to finish", self.tool == Tool::WalkPath, true) {
-                        self.path_run = None;
-                        self.tool = if self.tool == Tool::WalkPath { Tool::Select } else { Tool::WalkPath };
-                        self.nav = NavMode::Walk;
-                    }
-                    if self.walk_path.len() >= 2 {
-                        let playing = self.path_run.as_ref().map(|r| !r.paused).unwrap_or(false);
-                        if b(ui, if playing { "⏸" } else { "▶" }, "Walk along the path (Space) · Esc stops", playing, true) {
-                            self.walk_path_play();
+            egui::Frame::none()
+                .fill(pal.overlay_btn)
+                .stroke(Stroke::new(1.0_f32, Color32::from_white_alpha(18)))
+                .rounding(egui::Rounding::same(14.0))
+                .shadow(egui::epaint::Shadow { offset: EV::new(0.0, 6.0), blur: 20.0, spread: 0.0, color: Color32::from_black_alpha(110) })
+                .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 2.0;
+                        let text_col = pal.overlay_text;
+                        // buton mare: iconita + eticheta; activ = fond in culoarea de accent
+                        let big = |ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled: bool| -> bool {
+                            // compact: ~24 px, doar iconita (numele apare in tooltip)
+                            let _ = label;
+                            let (r, resp) = ui.allocate_exact_size(EV::new(30.0, 28.0), if enabled { Sense::click() } else { Sense::hover() });
+                            let p = ui.painter();
+                            if on {
+                                p.rect_filled(r.shrink(1.0), 7.0, accent());
+                            } else if enabled && resp.hovered() {
+                                p.rect_filled(r.shrink(1.0), 7.0, Color32::from_white_alpha(16));
+                            }
+                            let col = if !enabled { text_col.gamma_multiply(0.35) } else if on { Color32::WHITE } else { text_col };
+                            p.text(r.center(), Align2::CENTER_CENTER, icon, FontId::proportional(16.0), col);
+                            let resp = resp.on_hover_text(format!("{label}: {tip}"));
+                            enabled && resp.clicked()
+                        };
+                        let sep = |ui: &mut egui::Ui| {
+                            let (r, _) = ui.allocate_exact_size(EV::new(8.0, 28.0), Sense::hover());
+                            ui.painter().line_segment([r.center_top() + EV::new(0.0, 5.0), r.center_bottom() - EV::new(0.0, 5.0)], Stroke::new(1.0_f32, Color32::from_white_alpha(28)));
+                        };
+                        // ---- selectie
+                        if big(ui, "👆", "Select", "Select (click an item · Ctrl+click adds)", self.tool == Tool::Select && self.nav == NavMode::Orbit, true) {
+                            self.cur_measure.clear();
+                            self.tool = Tool::Select;
+                            self.nav = NavMode::Orbit;
                         }
-                    }
-                    if self.nav == NavMode::Walk {
-                        let mut v = self.settings.walk_speed;
-                        let r = ui.add(egui::DragValue::new(&mut v).range(0.2..=20.0).speed(0.05).max_decimals(1).suffix(" m/s")).on_hover_text("Walk speed (drag or type)");
-                        if r.changed() {
-                            self.settings.walk_speed = v;
+                        if big(ui, "⬚", "Window", "Window selection: drag left -> right = inside, right -> left = touching (Ctrl adds)", self.tool == Tool::Window, true) {
+                            self.cur_measure.clear();
+                            self.tool = if self.tool == Tool::Window { Tool::Select } else { Tool::Window };
                         }
-                        if r.drag_stopped() || r.lost_focus() {
-                            self.settings.save();
+                        sep(ui);
+                        // ---- vizibilitate
+                        let sel: Vec<ElemId> = self.selected.iter().copied().collect();
+                        if big(ui, "🚫", "Hide", "Hide the selected items (H)", false, !sel.is_empty()) {
+                            self.apply(Action::Hide(sel.clone()));
                         }
-                    }
-                    ui.separator();
-                    let bb = self.scene_aabb();
-                    if b(ui, "⛶", "Zoom to the whole model", false, true) {
-                        let mut t = self.cam;
-                        t.fit(&bb);
-                        self.fly_to(t);
-                    }
-                    if b(ui, "🏠", "Home view (Home key)", false, true) {
-                        self.go_home();
-                    }
-                    let has = !self.selected.is_empty();
-                    if b(ui, "🎯", "Focus on the selection (F) · double-click an element does the same", false, has) {
-                        let s: Vec<ElemId> = self.selected.iter().copied().collect();
-                        self.apply(Action::Focus(s));
-                    }
-                    if b(ui, "▣", "Fit Section: section box around the selection", false, has) {
-                        self.section_to_selection();
-                    }
-                    if self.section.enabled && b(ui, "✂", "Turn sectioning off", true, true) {
-                        self.section.enabled = false;
-                    }
-                    ui.separator();
-                    let (ic, tip) = if self.cam.ortho { ("⬚", "Orthographic - click for perspective") } else { ("🔭", "Perspective - click for orthographic") };
-                    if b(ui, ic, tip, false, true) {
-                        self.cam.ortho = !self.cam.ortho;
-                    }
+                        if big(ui, "◎", "Isolate", "Show only the selection - hide the rest (I)", false, !sel.is_empty()) {
+                            self.apply(Action::Isolate(sel.clone()));
+                        }
+                        if big(ui, "👁", "Unhide", &format!("Unhide all ({} hidden)", self.hidden.len()), false, !self.hidden.is_empty()) {
+                            self.apply(Action::ShowAll);
+                            self.clash_focus = None;
+                        }
+                        if big(ui, "🎯", "Focus", "Focus on the selection (F) · double-click an item does the same", false, !sel.is_empty()) {
+                            self.apply(Action::Focus(sel.clone()));
+                        }
+                        sep(ui);
+                        // ---- navigare
+                        let orbit = self.nav == NavMode::Orbit && matches!(self.tool, Tool::Select);
+                        if big(ui, "🔄", "Orbit", "Orbit: drag to rotate around the point under the cursor", orbit, true) {
+                            self.nav = NavMode::Orbit;
+                            self.tool = Tool::Select;
+                            self.path_run = None;
+                        }
+                        if big(ui, "✋", "Pan", "Pan: drag to move the model sideways (middle button always pans)", self.nav == NavMode::Pan, true) {
+                            self.nav = NavMode::Pan;
+                            self.tool = Tool::Select;
+                            self.path_run = None;
+                        }
+                        if big(ui, "🚶", "Walk", "Walk: drag up = forward, sideways = turn; W A S D", self.nav == NavMode::Walk && self.tool != Tool::WalkPath, true) {
+                            self.nav = NavMode::Walk;
+                            self.tool = Tool::Select;
+                        }
+                        let bb = self.scene_aabb();
+                        if big(ui, "⛶", "Fit", "Zoom to the whole model", false, true) {
+                            let mut t = self.cam;
+                            t.fit(&bb);
+                            self.fly_to(t);
+                        }
+                        if big(ui, "🏠", "Home", "Home view (Home key)", false, true) {
+                            self.go_home();
+                        }
+                        sep(ui);
+                        // ---- unelte
+                        let meas = matches!(self.tool, Tool::Measure(_));
+                        if big(ui, "📏", "Measure", "Measure point to point (snaps to corners, midpoints, edges) - more kinds in Review › Measure", meas, true) {
+                            self.cur_measure.clear();
+                            self.tool = if meas { Tool::Select } else { Tool::Measure(MeasureKind::PointToPoint) };
+                        }
+                        let sec = self.section.enabled;
+                        if big(ui, "▣", "Section", if sec { "Turn the section off" } else { "Section box around the selection (or the whole model) - stretch it with the arrows on its faces" }, sec, true) {
+                            if sec {
+                                self.section.enabled = false;
+                            } else if !sel.is_empty() {
+                                self.section_to_selection();
+                            } else if bb.is_valid() {
+                                self.section.enabled = true;
+                                self.section.mode = SectionMode::Box;
+                                self.section.bmin = (bb.min - Vec3::splat(0.3)).to_array();
+                                self.section.bmax = (bb.max + Vec3::splat(0.3)).to_array();
+                            }
+                        }
+                        let red = matches!(self.tool, Tool::Redline(_) | Tool::RedErase);
+                        if big(ui, "✏", "Markup", "Markups on the current view (cloud; more in Review › Redline) - saved with a viewpoint", red, true) {
+                            self.cur_measure.clear();
+                            self.tool = if red { Tool::Select } else { Tool::Redline(crate::markup::RedKind::Cloud) };
+                        }
+                        let (ic, lb, tip) = if self.cam.ortho { ("⬚", "Ortho", "Orthographic - click for perspective") } else { ("🔭", "Persp", "Perspective - click for orthographic") };
+                        if big(ui, ic, lb, tip, false, true) {
+                            self.cam.ortho = !self.cam.ortho;
+                        }
+                        // mers: traseu, redare, viteza
+                        if self.nav == NavMode::Walk {
+                            sep(ui);
+                            if big(ui, "✏", "Path", "Draw a walk path: click points on the floor, double-click to finish", self.tool == Tool::WalkPath, true) {
+                                self.path_run = None;
+                                self.tool = if self.tool == Tool::WalkPath { Tool::Select } else { Tool::WalkPath };
+                            }
+                            if self.walk_path.len() >= 2 {
+                                let playing = self.path_run.as_ref().map(|r| !r.paused).unwrap_or(false);
+                                if big(ui, if playing { "⏸" } else { "▶" }, if playing { "Pause" } else { "Play" }, "Walk along the path (Space) · Esc stops", playing, true) {
+                                    self.walk_path_play();
+                                }
+                            }
+                            let mut v = self.settings.walk_speed;
+                            let r = ui.add(egui::DragValue::new(&mut v).range(0.2..=20.0).speed(0.05).max_decimals(1).suffix(" m/s")).on_hover_text("Walk speed (drag or type)");
+                            if r.changed() {
+                                self.settings.walk_speed = v;
+                            }
+                            if r.drag_stopped() || r.lost_focus() {
+                                self.settings.save();
+                            }
+                        }
+                    });
                 });
-            });
         });
     }
 
@@ -3322,7 +3432,11 @@ impl App {
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
                 .show_header(ui, |ui| {
                     eye_btn(ui, &mids, &mut acts);
-                    let r = ui.selectable_label(false, RichText::new(format!("📂 {}", m.name)).strong());
+                    // punct colorat pe model (ca disciplinele: arhitectura, structura, instalatii...)
+                    let mc = crate::profiler::palette(mi);
+                    let (dr, _) = ui.allocate_exact_size(EV::splat(10.0), Sense::hover());
+                    ui.painter().circle_filled(dr.center(), 4.5, Color32::from_rgb(mc[0], mc[1], mc[2]));
+                    let r = ui.selectable_label(false, RichText::new(&m.name).strong());
                     if r.clicked() {
                         acts.push(Action::Select(mids.clone(), ctrl));
                     }
@@ -4055,27 +4169,84 @@ impl App {
             ],
         ));
         let mut copy = None;
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            ui.label(RichText::new(&e.name).strong().size(15.0));
-            ui.label(RichText::new(&e.ifc_type).color(accent()));
-            for (gi, (g, rows)) in groups.iter().enumerate() {
-                egui::CollapsingHeader::new(RichText::new(g).strong()).id_salt(("pg", gi, g)).default_open(gi < 6).show(ui, |ui| {
-                    egui::Grid::new(("pgrid", gi, g)).num_columns(2).striped(true).spacing([10.0, 3.0]).show(ui, |ui| {
-                        for (n, v) in rows {
-                            ui.label(RichText::new(n).weak());
-                            let r = ui.add(egui::Label::new(v).wrap().sense(Sense::click()));
-                            r.context_menu(|ui| {
-                                if ui.button("Copy value").clicked() {
-                                    copy = Some(v.clone());
-                                    ui.close_menu();
-                                }
-                            });
-                            ui.end_row();
-                        }
-                    });
-                });
+        // aspect "studio": fisa elementului sus, grupurile ca niste carduri, butonul mare "Show in Model" jos
+        let card_fill = ui.visuals().faint_bg_color;
+        let card_stroke = Stroke::new(1.0_f32, ui.visuals().widgets.noninteractive.bg_stroke.color);
+        let weak = ui.visuals().weak_text_color();
+        let filter_id = ui.make_persistent_id("prop_filter");
+        let mut filter: String = ui.data_mut(|d| d.get_temp(filter_id)).unwrap_or_default();
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
+            let b = egui::Button::new(RichText::new("🎯  Show in Model").strong().size(14.0).color(Color32::WHITE)).fill(accent()).rounding(8.0);
+            if ui.add_sized([ui.available_width(), 34.0], b).on_hover_text("Zoom to the selected item(s)").clicked() {
+                acts.push(Action::Focus(sel.clone()));
             }
+            ui.add_space(6.0);
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                // fisa elementului
+                egui::Frame::none().fill(card_fill).stroke(card_stroke).rounding(8.0).inner_margin(10.0).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.label(RichText::new("ELEMENT").small().strong().color(weak));
+                    ui.horizontal(|ui| {
+                        let c = m.tri_color.get(e.tri_start as usize).copied().unwrap_or([200, 200, 200, 255]);
+                        let (r, _) = ui.allocate_exact_size(EV::splat(10.0), Sense::hover());
+                        ui.painter().circle_filled(r.center(), 5.0, Color32::from_rgb(c[0], c[1], c[2]));
+                        ui.label(RichText::new(&e.name).strong().size(14.0));
+                    });
+                    ui.label(RichText::new(&e.ifc_type).color(accent()));
+                    if !e.guid.is_empty() {
+                        ui.label(RichText::new(&e.guid).small().color(weak));
+                    }
+                    ui.label(RichText::new(format!("{}{}", m.name, if e.storey.is_empty() { String::new() } else { format!("  ·  {}", e.storey) })).small().color(weak));
+                });
+                ui.add_space(4.0);
+                ui.add(egui::TextEdit::singleline(&mut filter).hint_text("🔍 Filter properties").desired_width(f32::INFINITY));
+                ui.add_space(4.0);
+                let q = filter.trim().to_lowercase();
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                    for (gi, (g, rows)) in groups.iter().enumerate() {
+                        let rows: Vec<&(String, String)> = rows.iter().filter(|(n, v)| q.is_empty() || n.to_lowercase().contains(&q) || v.to_lowercase().contains(&q) || g.to_lowercase().contains(&q)).collect();
+                        if rows.is_empty() {
+                            continue;
+                        }
+                        egui::Frame::none().fill(card_fill).stroke(card_stroke).rounding(8.0).inner_margin(egui::Margin { left: 10.0, right: 10.0, top: 8.0, bottom: 8.0 }).show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            let id = ui.make_persistent_id(("pcard", g));
+                            let mut st = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, gi < 6 || !q.is_empty());
+                            let open = st.is_open();
+                            let head = ui.horizontal(|ui| {
+                                ui.label(RichText::new(g.to_uppercase()).small().strong());
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.label(RichText::new(if open { "▾" } else { "▸" }).color(weak));
+                                    ui.label(RichText::new(rows.len().to_string()).small().color(weak));
+                                });
+                            });
+                            if ui.interact(head.response.rect, id.with("h"), Sense::click()).clicked() {
+                                st.toggle(ui);
+                            }
+                            st.store(ui.ctx());
+                            if open {
+                                ui.add_space(4.0);
+                                egui::Grid::new(("pgrid", gi, g)).num_columns(2).spacing([12.0, 4.0]).show(ui, |ui| {
+                                    for (n, v) in rows {
+                                        ui.label(RichText::new(n).color(weak));
+                                        let r = ui.add(egui::Label::new(v.as_str()).wrap().sense(Sense::click()));
+                                        r.context_menu(|ui| {
+                                            if ui.button("Copy value").clicked() {
+                                                copy = Some(v.clone());
+                                                ui.close_menu();
+                                            }
+                                        });
+                                        ui.end_row();
+                                    }
+                                });
+                            }
+                        });
+                        ui.add_space(4.0);
+                    }
+                });
+            });
         });
+        ui.data_mut(|d| d.insert_temp(filter_id, filter));
         if let Some(c) = copy {
             ui.ctx().copy_text(c);
         }
@@ -4378,6 +4549,9 @@ impl App {
             }
             if ui.button("CSV").clicked() {
                 self.request_path(Purpose::ExportClashCsv);
+            }
+            if ui.selectable_label(self.show_clash_matrix, "▦ Matrix").on_hover_text("Clash matrix: open / total clashes for every pair of models (all tests), Excel export").clicked() {
+                self.show_clash_matrix = !self.show_clash_matrix;
             }
             if ui.button("📤 BCF").on_hover_text("Open clashes as BCF topics (camera + the two elements) - Revit, ACC, Solibri, BIMcollab, Navisworks").clicked() {
                 self.request_path(Purpose::ExportClashBcf);
@@ -6259,6 +6433,7 @@ impl App {
                 Purpose::ExportGrids => "Export grid axes",
                 Purpose::ImportGridsCad => "Import grid axes (DWG / DXF)",
                 Purpose::ExportReference => "Reference for Revit / AutoCAD",
+                Purpose::ExportClashMatrix => "Clash matrix (Excel)",
                 Purpose::ExportClashNavis => "Export clashes as Navisworks viewpoints",
                 Purpose::ImportBcf => "Import BCF issues",
                 Purpose::ImportTasksCsv => "Import CSV Schedule",
@@ -6383,7 +6558,59 @@ impl App {
                     _ => {}
                 }
             }
-        }        if self.show_grids_editor {
+        }        if self.show_clash_matrix {
+            let mut open = true;
+            let m = self.clash_matrix();
+            let mut export = false;
+            egui::Window::new("▦ Clash matrix").open(&mut open).default_width(560.0).show(ctx, |ui| {
+                if m.cells.is_empty() {
+                    ui.label(RichText::new("No clash results yet - run the clash tests first.").weak());
+                    return;
+                }
+                ui.label(RichText::new("Open clashes (New + Active) / all clashes, for every pair of models, over all clash tests.").weak().small());
+                ui.add_space(4.0);
+                egui::ScrollArea::both().max_height(420.0).show(ui, |ui| {
+                    egui::Grid::new("cm").striped(false).spacing([4.0, 4.0]).show(ui, |ui| {
+                        ui.label("");
+                        for n in &m.models {
+                            ui.label(RichText::new(n).strong().small());
+                        }
+                        ui.end_row();
+                        let maxo = m.cells.values().map(|c| c[0]).max().unwrap_or(1).max(1) as f32;
+                        for i in 0..m.models.len() {
+                            ui.label(RichText::new(&m.models[i]).strong().small());
+                            for j in 0..m.models.len() {
+                                if j < i {
+                                    ui.label("");
+                                    continue;
+                                }
+                                let c = m.get(i, j);
+                                let all = c[0] + c[1] + c[2];
+                                // culoarea: cu cat mai multe clash-uri deschise, cu atat mai rosu
+                                let t = c[0] as f32 / maxo;
+                                let fill = if all == 0 { Color32::from_white_alpha(8) } else if c[0] == 0 { Color32::from_rgba_unmultiplied(70, 180, 100, 90) } else { Color32::from_rgba_unmultiplied(230, (170.0 - 120.0 * t) as u8, 60, (90.0 + 110.0 * t) as u8) };
+                                egui::Frame::none().fill(fill).rounding(4.0).inner_margin(egui::Margin::symmetric(8.0, 4.0)).show(ui, |ui| {
+                                    ui.set_min_width(64.0);
+                                    ui.label(RichText::new(if all == 0 { "-".to_string() } else { format!("{} / {}", c[0], all) }).strong());
+                                })
+                                .response
+                                .on_hover_text(format!("{} × {}\nopen (new + active): {}\nreviewed / approved: {}\nresolved: {}", m.models[i], m.models[j], c[0], c[1], c[2]));
+                            }
+                            ui.end_row();
+                        }
+                    });
+                });
+                ui.add_space(6.0);
+                if ui.button("📊 Export Excel").clicked() {
+                    export = true;
+                }
+            });
+            self.show_clash_matrix = open;
+            if export {
+                self.request_path(Purpose::ExportClashMatrix);
+            }
+        }
+        if self.show_grids_editor {
             let mut open = true;
             let mut export = false;
             egui::Window::new("# Grids").open(&mut open).collapsible(false).default_width(470.0).show(ctx, |ui| {

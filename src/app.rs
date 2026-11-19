@@ -816,6 +816,7 @@ pub enum Purpose {
     PublishBimd,
     ImportGridsCad,
     ExportReference,
+    ExportClashMatrix,
     ExportGrids,
     ExportClashNavis,
     ImportBcf,
@@ -1007,6 +1008,7 @@ pub struct App {
     pub ifc_selection: bool,
     /// fata section box-ului trasa acum (0..5: -X +X -Y +Y -Z +Z)
     pub box_drag: Option<usize>,
+    pub show_clash_matrix: bool,
     /// ultimul import de axe din DWG / DXF: fisierul, straturile cu linii, stratul folosit
     pub grid_import: Option<(String, Vec<(String, usize)>, String)>,
     /// generatorul de axe (originea si directia se pot alege cu clic in model)
@@ -1223,6 +1225,7 @@ impl App {
             box_start: None,
             ifc_selection: false,
             box_drag: None,
+            show_clash_matrix: false,
             grid_import: None,
             grid_gen: GridGen::default(),
             grid_pick: 0,
@@ -4917,6 +4920,7 @@ impl App {
             Purpose::ExportGrids => self.export_grids(&path),
             Purpose::ImportGridsCad => self.import_grids_cad(&path, None),
             Purpose::ExportReference => self.export_reference(&path),
+            Purpose::ExportClashMatrix => self.export_clash_matrix(&path),
             Purpose::SharedFolder => {
                 self.shared_dir = Some(path.clone());
                 self.shared = Default::default();
@@ -5175,6 +5179,7 @@ impl App {
                     let name = self.bimd_path.as_ref().or(self.project_path.as_ref()).and_then(|p| std::path::Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string())).unwrap_or_else(|| "reference".into());
                     d.set_title("Reference for Revit / AutoCAD / Plant 3D").add_filter("ManageBIM reference", &["mbref"]).set_directory(dir).set_file_name(format!("{name}.mbref")).save_file().map(|p| vec![p.to_string_lossy().to_string()])
                 }
+                Purpose::ExportClashMatrix => d.set_title("Clash matrix (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("clash_matrix.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportGridsCad => d.set_title("Import grid axes from DWG / DXF").add_filter("DWG / DXF", &["dwg", "dxf"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportGrids => d.set_title("Export grid axes").add_filter("DXF (AutoCAD, any CAD)", &["dxf"]).add_filter("DWG (needs ODA File Converter)", &["dwg"]).set_file_name("grids.dxf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::SharedFolder => d.set_title("Shared issues folder (network / SharePoint / OneDrive)").pick_folder().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5257,6 +5262,7 @@ impl App {
                 Purpose::ExportGrids => "grids.dxf".into(),
                 Purpose::ImportGridsCad => String::new(),
                 Purpose::ExportReference => "reference.mbref".into(),
+                Purpose::ExportClashMatrix => "clash_matrix.xlsx".into(),
                 Purpose::ExportClashNavis => "clashes_viewpoints.xml".into(),
                 Purpose::ExportTasksCsv => "schedule.csv".into(),
                 Purpose::ExportSets => "sets.bimsets".into(),
@@ -6252,4 +6258,77 @@ impl App {
 /// %LOCALAPPDATA%\ManageBIM\Outbox (referinte, issue-uri pentru add-in-uri)
 pub fn outbox_dir() -> Option<std::path::PathBuf> {
     std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("ManageBIM").join("Outbox"))
+}
+
+// ------------------------------------------------------------------ matricea de clash (discipline / modele)
+/// Clash-urile tuturor testelor, numarate pe perechi de modele: (modele, perechea (i <= j) -> [deschise, revizuite / aprobate, rezolvate]).
+pub struct ClashMatrix {
+    pub models: Vec<String>,
+    pub cells: HashMap<(usize, usize), [usize; 3]>,
+}
+
+impl ClashMatrix {
+    pub fn get(&self, i: usize, j: usize) -> [usize; 3] {
+        self.cells.get(&(i.min(j), i.max(j))).copied().unwrap_or([0; 3])
+    }
+}
+
+impl App {
+    pub fn clash_matrix(&self) -> ClashMatrix {
+        let mut models: Vec<String> = self.loaded_models().map(|(_, m)| crate::app::model_label(&m.name)).collect();
+        models.dedup();
+        let slot_ix: HashMap<u32, usize> = self.loaded_models().map(|(s, m)| (s as u32, models.iter().position(|n| *n == crate::app::model_label(&m.name)).unwrap_or(0))).collect();
+        let mut cells: HashMap<(usize, usize), [usize; 3]> = HashMap::new();
+        for t in &self.clash_tests {
+            for r in &t.results {
+                let (Some(&i), Some(&j)) = (slot_ix.get(&r.a.m), slot_ix.get(&r.b.m)) else { continue };
+                let k = match r.status {
+                    ClashStatus::New | ClashStatus::Active => 0,
+                    ClashStatus::Reviewed | ClashStatus::Approved => 1,
+                    ClashStatus::Resolved => 2,
+                };
+                cells.entry((i.min(j), i.max(j))).or_insert([0; 3])[k] += 1;
+            }
+        }
+        ClashMatrix { models, cells }
+    }
+
+    /// Matricea in Excel: foaia "Open" (deschise) si foaia "All" (toate), modele pe randuri si coloane.
+    pub fn export_clash_matrix(&mut self, path: &str) {
+        use crate::qto::{Cell, Sheet};
+        let m = self.clash_matrix();
+        if m.cells.is_empty() {
+            return self.error("No clash results yet - run the clash tests first.");
+        }
+        let mut headers = vec!["Model".to_string()];
+        headers.extend(m.models.iter().cloned());
+        headers.push("Total".into());
+        let sheet = |name: &str, f: &dyn Fn([usize; 3]) -> usize| {
+            let rows: Vec<Vec<Cell>> = (0..m.models.len())
+                .map(|i| {
+                    let mut r = vec![Cell::S(m.models[i].clone())];
+                    let mut tot = 0;
+                    for j in 0..m.models.len() {
+                        let v = if j < i { 0 } else { f(m.get(i, j)) };
+                        tot += v;
+                        r.push(if j < i { Cell::Empty } else { Cell::N(v as f64) });
+                    }
+                    r.push(Cell::N(tot as f64));
+                    r
+                })
+                .collect();
+            Sheet { name: name.into(), title: format!("Clash matrix - {name} clashes (all tests)"), headers: headers.clone(), widths: std::iter::once(30.0).chain(std::iter::repeat(16.0)).take(headers.len()).collect(), rows, total_from: Some(1) }
+        };
+        let data = crate::qto::xlsx(&[sheet("Open", &|c| c[0]), sheet("All", &|c| c[0] + c[1] + c[2])]);
+        let p = with_ext(path, "xlsx");
+        match std::fs::write(&p, data) {
+            Ok(()) => self.toast(format!("Clash matrix saved: {}", crate::file_name(&p))),
+            Err(e) => self.error(format!("Cannot write {p}: {e}")),
+        }
+    }
+}
+
+/// Numele modelului fara extensie (pentru matrice / rapoarte).
+pub fn model_label(name: &str) -> String {
+    std::path::Path::new(name).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| name.to_string())
 }

@@ -3,6 +3,14 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.16.0 - 2026-11-19
+- **Aspect „studio”** (pentru toate temele) + tema nouă **Studio** (aproape negru, albastru electric):
+  bara de unelte de jos, compactă, pe grupe (Select, Window, Hide, Isolate, Unhide, Focus, Orbit, Pan, Walk, Fit, Home,
+  Measure, Section, Markup), **Properties pe carduri** cu filtru și butonul **Show in Model**, **căutare în model** și
+  punct colorat pe fiecare model în arbore, **nivelul curent în bara de stare** (alegerea lui face secțiunea pe nivel).
+- **Matricea de clash** (Clash Detective › ▦ Matrix): deschise / total pe fiecare pereche de modele, toate testele,
+  export Excel.
+
 ## 0.15.1 - 2026-11-19
 - **Plant 3D / AutoCAD**: comenzile de referință apar acum (înainte nu erau înregistrate) și au butoane în tab-ul
   ManageBIM › Reference: **Attach / Reload / Detach Reference**.

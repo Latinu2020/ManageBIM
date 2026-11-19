@@ -549,3 +549,24 @@ fn relocate_model_point_to_point_and_rotate() {
     let c = a.models[0].as_ref().unwrap().aabb.center();
     assert!((c.truncate() - p.truncate()).length() < 1e-2, "rotated about the picked pivot");
 }
+
+#[test]
+fn clash_matrix_counts_pairs_of_models() {
+    let mut app = app();
+    app.clash_tests[0].a = Selector { kind: SelKind::Model, value: "Block_A_Architecture_Structure.ifc".into() };
+    app.clash_tests[0].b = Selector { kind: SelKind::Model, value: "Block_A_MEP.ifc".into() };
+    app.run_clash_blocking(0);
+    let n = app.clash_tests[0].results.len();
+    assert!(n > 0);
+    app.clash_tests[0].results[0].status = bimrust::clash::ClashStatus::Resolved;
+    let m = app.clash_matrix();
+    assert_eq!(m.models, vec!["Block_A_Architecture_Structure".to_string(), "Block_A_MEP".to_string()]);
+    let c = m.get(1, 0);
+    assert_eq!(c[0] + c[1] + c[2], n);
+    assert_eq!(c[2], 1, "the resolved one");
+    let p = std::env::temp_dir().join(format!("mb_matrix_{}.xlsx", std::process::id()));
+    app.export_clash_matrix(&p.to_string_lossy());
+    let rows = bimrust::tables::xlsx_rows(std::fs::read(&p).unwrap()).unwrap();
+    assert!(rows.iter().any(|r| r.first().map(|s| s == "Block_A_Architecture_Structure").unwrap_or(false)));
+    let _ = std::fs::remove_file(&p);
+}
