@@ -43,7 +43,7 @@ fn run(files: Vec<String>, depth: u8, msaa: u16) -> eframe::Result<()> {
         "ManageBIM",
         options,
         Box::new(move |cc| {
-            let _ = cc;
+            bimrust::theme::install_fonts(&cc.egui_ctx);
             let mut app = bimrust::app::App::new(files);
             // salvarea automata si recuperarea doar in aplicatia grafica (nu in teste / convertor)
             app.autosave = bimrust::app::Autosave::start();

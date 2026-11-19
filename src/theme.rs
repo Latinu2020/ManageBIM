@@ -457,3 +457,133 @@ impl RibbonMode {
 
 /// modul curent al ribbon-ului, citit de butoanele ribbon-ului (functii libere)
 pub static RIBBON_COMPACT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+// ===================================================================== font Inter + iconite Phosphor
+
+/// Fontul Inter (OFL, github.com/rsms/inter) pentru text si iconitele vectoriale Phosphor (MIT)
+/// in locul emoji-urilor; fonturile implicite raman ca rezerva pentru caracterele rare.
+pub fn install_fonts(ctx: &egui::Context) {
+    let mut f = egui::FontDefinitions::default();
+    f.font_data.insert("Inter".into(), egui::FontData::from_static(include_bytes!("../assets/fonts/Inter-Regular.ttf")));
+    if let Some(p) = f.families.get_mut(&egui::FontFamily::Proportional) {
+        p.insert(0, "Inter".into());
+    }
+    // iconitele au familia lor ("icons"): Phosphor contine si litere goale (pentru ligaturi), iar Inter
+    // are glife proprii in zona privata (U+E000...) - amestecate in aceeasi familie s-ar "fura" reciproc.
+    // Emoji-urile ramase raman vizibile prin fonturile de rezerva.
+    f.font_data.insert("phosphor".into(), egui_phosphor::Variant::Regular.font_data());
+    let mut icons = vec!["phosphor".to_string()];
+    if let Some(p) = f.families.get(&egui::FontFamily::Proportional) {
+        icons.extend(p.iter().filter(|n| n.as_str() != "Inter").cloned());
+    }
+    f.families.insert(egui::FontFamily::Name("icons".into()), icons);
+    ctx.set_fonts(f);
+}
+
+/// fontul iconitelor vectoriale
+pub fn icon_font(size: f32) -> egui::FontId {
+    egui::FontId::new(size, egui::FontFamily::Name("icons".into()))
+}
+
+/// text cu iconita in fata ("🌲 Selection Tree" sau iconita Phosphor + text), ca LayoutJob
+/// (iconita in fontul iconitelor, textul in Inter)
+pub fn icon_job(icon: &str, text: &str, size: f32, color: Color32) -> egui::text::LayoutJob {
+    let mut j = egui::text::LayoutJob::default();
+    let fmt = |font: egui::FontId| egui::TextFormat { font_id: font, color, valign: egui::Align::Center, ..Default::default() };
+    if !icon.is_empty() {
+        j.append(ph(icon), 0.0, fmt(icon_font(size)));
+        j.append(" ", 0.0, fmt(egui::FontId::proportional(size)));
+    }
+    j.append(text, 0.0, fmt(egui::FontId::proportional(size)));
+    j
+}
+
+/// titlul unui panou ("🌲 Selection Tree") cu iconita vectoriala
+pub fn title_job(title: &str, size: f32, color: Color32) -> egui::text::LayoutJob {
+    match title.split_once(' ') {
+        Some((ic, rest)) if !ic.chars().next().map(|c| c.is_alphanumeric()).unwrap_or(true) => icon_job(ic, rest, size, color),
+        _ => icon_job("", title, size, color),
+    }
+}
+
+/// emoji folosit in interfata -> iconita Phosphor echivalenta (necunoscut = ramane emoji-ul)
+pub fn ph(s: &str) -> &str {
+    use egui_phosphor::regular as P;
+    match s.trim() {
+        "📥" => P::DOWNLOAD_SIMPLE,
+        "📤" => P::UPLOAD_SIMPLE,
+        "⬚" => P::SELECTION,
+        "✏" => P::PENCIL_SIMPLE,
+        "📋" => P::CLIPBOARD_TEXT,
+        "📊" => P::CHART_BAR,
+        "🖼" => P::IMAGE,
+        "📷" => P::CAMERA,
+        "📦" => P::PACKAGE,
+        "🏠" => P::HOUSE,
+        "🎯" => P::CROSSHAIR,
+        "🎨" => P::PALETTE,
+        "⛶" => P::CORNERS_OUT,
+        "🚶" => P::PERSON_SIMPLE_WALK,
+        "🚫" => P::EYE_SLASH,
+        "🗑" => P::TRASH,
+        "🔗" => P::LINK,
+        "🔍" | "🔎" => P::MAGNIFYING_GLASS,
+        "🔄" => P::ARROWS_CLOCKWISE,
+        "📌" => P::PUSH_PIN,
+        "📄" => P::FILE,
+        "📁" => P::FOLDER,
+        "📂" => P::FOLDER_OPEN,
+        "💡" => P::LIGHTBULB,
+        "👆" | "🖱" => P::CURSOR,
+        "👁" => P::EYE,
+        "🎞" | "🎬" => P::FILM_STRIP,
+        "🌐" => P::GLOBE,
+        "⧉" => P::COPY,
+        "⟳" => P::ARROW_CLOCKWISE,
+        "⟲" => P::ARROW_COUNTER_CLOCKWISE,
+        "✋" => P::HAND,
+        "⚠" => P::WARNING,
+        "⚙" => P::GEAR,
+        "◎" => P::TARGET,
+        "▣" => P::CUBE_FOCUS,
+        "🧭" => P::COMPASS,
+        "🗔" => P::APP_WINDOW,
+        "🔲" => P::SQUARE,
+        "🔭" => P::PERSPECTIVE,
+        "📐" => P::ANGLE,
+        "📏" => P::RULER,
+        "📅" => P::CALENDAR,
+        "💾" => P::FLOPPY_DISK,
+        "🏗" => P::BUILDINGS,
+        "🌲" => P::TREE_STRUCTURE,
+        "🌙" => P::MOON,
+        "🌃" => P::MOON_STARS,
+        "➕" => P::PLUS,
+        "❓" => P::QUESTION,
+        "❄" => P::SNOWFLAKE,
+        "✖" => P::X,
+        "✔" => P::CHECK,
+        "✂" => P::SCISSORS,
+        "⛔" => P::PROHIBIT,
+        "⚖" => P::SCALES,
+        "☁" => P::CLOUD,
+        "☀" => P::SUN,
+        "◆" => P::DIAMOND,
+        "▦" => P::GRID_FOUR,
+        "⏹" => P::STOP,
+        "≡" => P::LIST,
+        "ℹ" => P::INFO,
+        "▶" => P::PLAY,
+        "⏸" => P::PAUSE,
+        "↔" => P::ARROWS_OUT_CARDINAL,
+        _ => s,
+    }
+}
+
+/// "🌲 Selection Tree" -> iconita Phosphor + text
+pub fn ph_label(s: &str) -> String {
+    match s.split_once(' ') {
+        Some((ic, rest)) if !ic.chars().next().map(|c| c.is_alphanumeric()).unwrap_or(true) => format!("{} {rest}", ph(ic)),
+        _ => s.to_string(),
+    }
+}

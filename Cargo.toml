@@ -32,6 +32,8 @@ lz4_flex = { version = "0.11", default-features = false, features = ["std", "saf
 acadrust = "0.6.8"
 # baza de date a proiectului Plant 3D (Piping.dcf = SQLite), doar citire; MIT, SQLite inclus (bundled)
 rusqlite = { version = "0.32", features = ["bundled"] }
+# iconite vectoriale (Phosphor, MIT) in locul emoji-urilor
+egui-phosphor = "0.7.3"
 
 [target.'cfg(windows)'.dependencies]
 rfd = "0.15"

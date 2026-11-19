@@ -123,11 +123,15 @@ impl eframe::App for App {
                 if ah[2] {
                     strips[2] = Some(egui::TopBottomPanel::bottom("bottom_strip").exact_height(26.0).resizable(false).show(ctx, |ui| self.dock_strip(ui, Dock::Bottom)).response.rect);
                 } else {
-                    let r = egui::TopBottomPanel::bottom("bottom").frame(pf).resizable(true).default_height(220.0).min_height(60.0).max_height(maxh).show(ctx, |ui| self.dock_area(ui, Dock::Bottom));
+                    // se ridica / coboara cu animatie din filele din bara de stare
+                    let open = self.settings.layout.bottom_open;
+                    let r = egui::TopBottomPanel::bottom("bottom").frame(pf).resizable(true).default_height(220.0).min_height(60.0).max_height(maxh).show_animated(ctx, open, |ui| self.dock_area(ui, Dock::Bottom));
                     // manerul de redimensionare, vizibil pe marginea de sus (trage in sus / in jos)
-                    let top = r.response.rect.center_top();
-                    let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("bottom_grip")));
-                    p.rect_filled(Rect::from_center_size(top + EV::new(0.0, 2.0), EV::new(46.0, 4.0)), 2.0, accent().gamma_multiply(0.55));
+                    if let Some(r) = r.filter(|_| open) {
+                        let top = r.response.rect.center_top();
+                        let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("bottom_grip")));
+                        p.rect_filled(Rect::from_center_size(top + EV::new(0.0, 2.0), EV::new(46.0, 4.0)), 2.0, accent().gamma_multiply(0.55));
+                    }
                 }
             }
             if !self.settings.layout.in_area(Dock::Left).is_empty() {
@@ -463,7 +467,7 @@ impl App {
                 ui.style_mut().spacing.item_spacing.x = 3.0;
                 // accentul Nord e deschis (cyan): text inchis pentru contrast
                 let ftxt = match self.settings.theme { Theme::Nord => Color32::from_rgb(46, 52, 64), Theme::TokyoNight => Color32::from_rgb(26, 27, 38), _ => Color32::WHITE };
-                let fb = egui::Button::new(RichText::new("  ☰ File  ").strong().color(ftxt)).fill(accent()).rounding(7.0);
+                let fb = egui::Button::new(crate::theme::icon_job("≡", "File ", 14.0, ftxt)).fill(accent()).rounding(7.0);
                 let r = ui.add(fb);
                 let popup = ui.make_persistent_id("file_menu");
                 if r.clicked() {
@@ -1781,7 +1785,7 @@ impl App {
                 ui.set_min_width(200.0);
                 for p in crate::layout::ALL_PANELS.iter() {
                     let mut open = self.settings.layout.is_open(*p);
-                    if ui.checkbox(&mut open, p.title()).changed() {
+                    if ui.checkbox(&mut open, crate::theme::title_job(p.title(), 14.0, ui.visuals().text_color())).changed() {
                         if open {
                             self.open_panel(*p);
                         } else {
@@ -2526,9 +2530,9 @@ impl App {
     fn dock_strip(&mut self, ui: &mut egui::Ui, d: Dock) {
         let tabs = self.settings.layout.in_area(d);
         let show = |ui: &mut egui::Ui, p: Panel, this: &mut Self| {
-            let icon = p.title().split_whitespace().next().unwrap_or("•").to_string();
+            let icon = crate::theme::ph(p.title().split_whitespace().next().unwrap_or("•")).to_string();
             let on = this.flyout.map(|f| f.1 == p).unwrap_or(false);
-            let r = ui.add(egui::Button::new(RichText::new(icon).size(15.0)).selected(on).min_size(EV::new(24.0, 24.0))).on_hover_text(p.title().trim_start_matches(|c: char| !c.is_alphanumeric()).to_string());
+            let r = ui.add(egui::Button::new(RichText::new(icon).font(crate::theme::icon_font(15.0))).selected(on).min_size(EV::new(24.0, 24.0))).on_hover_text(p.title().trim_start_matches(|c: char| !c.is_alphanumeric()).to_string());
             if r.hovered() || r.clicked() {
                 this.flyout = Some((d, p));
                 this.flyout_seen = Instant::now();
@@ -2581,7 +2585,7 @@ impl App {
                 ui.set_min_size(size - EV::splat(16.0));
                 ui.set_max_size(size - EV::splat(16.0));
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(p.title()).strong());
+                    ui.label(crate::theme::title_job(p.title(), 14.0, ui.visuals().strong_text_color()));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.small_button("✖").on_hover_text("Hide").clicked() {
                             self.flyout = None;
@@ -2615,6 +2619,24 @@ impl App {
     fn dock_area(&mut self, ui: &mut egui::Ui, d: Dock) {
         let tabs = self.settings.layout.in_area(d);
         let active = self.settings.layout.active[d.idx()];
+        if d == Dock::Bottom {
+            // zona de jos: filele sunt in bara de stare; aici doar titlul si comenzile ferestrei
+            ui.horizontal(|ui| {
+                if let Some(a) = active {
+                    ui.label(crate::theme::title_job(a.title(), 14.0, ui.visuals().strong_text_color()));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add(egui::Button::new(RichText::new(egui_phosphor::regular::CARET_DOWN).font(crate::theme::icon_font(15.0))).frame(false)).on_hover_text("Lower the panel (click its tab in the status bar to raise it again)").clicked() {
+                            self.settings.layout.bottom_open = false;
+                        }
+                        if ui.add(egui::Button::new(RichText::new(egui_phosphor::regular::X).font(crate::theme::icon_font(14.0))).frame(false)).on_hover_text("Close this window").clicked() {
+                            self.settings.layout.close(a);
+                        }
+                        ui.menu_button(RichText::new(egui_phosphor::regular::DOTS_THREE).font(crate::theme::icon_font(15.0)), |ui| self.panel_menu(ui, a)).response.on_hover_text("Move this window (dock left / right, float)");
+                    });
+                }
+            });
+            ui.add_space(2.0);
+        } else {
         ui.horizontal_wrapped(|ui| {
             ui.style_mut().spacing.item_spacing.x = 3.0;
             // auto-hide: zona devine o banda subtire, panourile apar peste model cand le atingi
@@ -2628,9 +2650,8 @@ impl App {
                     ui.spacing_mut().item_spacing.x = 2.0;
                     for p in &tabs {
                         let on = Some(*p) == active;
-                        let t = p.title();
                         // pe zona de jos ramane si iconita; lateral doar numele (mai compact)
-                        let t = if d == Dock::Bottom { t.to_string() } else { p.short().to_string() };
+                        let t = p.short().to_string();
                         let txt = if on { RichText::new(t).size(13.0).strong() } else { RichText::new(t).size(13.0).color(ui.visuals().weak_text_color()) };
                         ui.spacing_mut().button_padding = egui::vec2(7.0, 2.0);
                         let b = egui::Button::new(txt).fill(if on { seg_on } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(6.0);
@@ -2646,12 +2667,10 @@ impl App {
                 ui.add_space(4.0);
                 ui.menu_button("⏷", |ui| self.panel_menu(ui, a)).response.on_hover_text("Move or close this window");
                 // lateral: inchiderea e in meniul ⏷ (filele raman pe un singur rand)
-                if d == Dock::Bottom && ui.small_button("✖").on_hover_text("Close this window").clicked() {
-                    self.settings.layout.close(a);
-                }
             }
         });
         ui.add_space(4.0);
+        }
         if let Some(a) = self.settings.layout.active[d.idx()] {
             if d == Dock::Bottom {
                 // continutul nu are voie sa tina panoul inalt: limitat la inaltimea aleasa (se poate trage liber)
@@ -2673,7 +2692,7 @@ impl App {
     fn float_windows(&mut self, ctx: &egui::Context) {
         for p in self.settings.layout.in_area(Dock::Float) {
             let mut open = true;
-            egui::Window::new(p.title())
+            egui::Window::new(crate::theme::title_job(p.title(), 14.0, ctx.style().visuals.text_color()))
                 .id(egui::Id::new(("float_panel", p)))
                 .open(&mut open)
                 .default_size([560.0, 400.0])
@@ -2696,6 +2715,30 @@ impl App {
     fn status_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
             ui.horizontal(|ui| {
+                // filele panourilor de jos (Find Items, Clash, TimeLiner...): clic = panoul se ridica,
+                // clic pe fila deschisa = coboara (tot ecranul pentru model)
+                let bottom = self.settings.layout.in_area(Dock::Bottom);
+                if !bottom.is_empty() && !self.settings.layout.hide_all && !self.settings.layout.autohide[2] {
+                    let active = self.settings.layout.active[2];
+                    let open = self.settings.layout.bottom_open;
+                    for p in bottom {
+                        let on = open && active == Some(p);
+                        let col = if on { accent() } else { ui.visuals().weak_text_color() };
+                        let icon = p.title().split_whitespace().next().unwrap_or("");
+                        let b = egui::Button::new(crate::theme::icon_job(icon, p.short(), 12.5, col)).fill(if on { accent().gamma_multiply(0.16) } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(6.0);
+                        let r = ui.add(b).on_hover_text(if on { format!("{} - click to lower it", p.title()) } else { format!("{} - click to raise it", p.title()) });
+                        if r.clicked() {
+                            if on {
+                                self.settings.layout.bottom_open = false;
+                            } else {
+                                self.settings.layout.active[2] = Some(p);
+                                self.settings.layout.bottom_open = true;
+                            }
+                        }
+                        r.context_menu(|ui| self.panel_menu(ui, p));
+                    }
+                    ui.separator();
+                }
                 let nm = self.loaded_models().count();
                 let ne: usize = self.loaded_models().map(|(_, m)| m.elements.len()).sum();
                 let nt: usize = self.loaded_models().map(|(_, m)| m.tri_total()).sum();
@@ -3626,7 +3669,7 @@ impl App {
                                 p.rect_filled(r.shrink(1.0), 7.0, Color32::from_white_alpha(16));
                             }
                             let col = if !enabled { text_col.gamma_multiply(0.35) } else if on { Color32::WHITE } else { text_col };
-                            p.text(r.center(), Align2::CENTER_CENTER, icon, FontId::proportional(16.0), col);
+                            p.text(r.center(), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(16.0), col);
                             let resp = resp.on_hover_text(format!("{label}: {tip}"));
                             enabled && resp.clicked()
                         };
@@ -7361,9 +7404,9 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     }
     let col = if !enabled { ui.visuals().weak_text_color().gamma_multiply(0.6) } else if on { accent() } else { ui.visuals().text_color() };
     if compact {
-        p.text(rect.center(), Align2::CENTER_CENTER, icon, FontId::proportional(17.0), col);
+        p.text(rect.center(), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), col);
     } else {
-        p.text(rect.center_top() + egui::vec2(0.0, 13.0), Align2::CENTER_CENTER, icon, FontId::proportional(17.0), col);
+        p.text(rect.center_top() + egui::vec2(0.0, 13.0), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), col);
         p.text(rect.center_bottom() - egui::vec2(0.0, 8.0), Align2::CENTER_CENTER, label, font, col);
     }
     let tip = if compact { format!("{label}\n{tip}") } else { tip.to_string() };

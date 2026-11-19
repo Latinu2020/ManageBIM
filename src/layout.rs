@@ -141,6 +141,9 @@ pub struct UiLayout {
     /// toate panourile ascunse (F11): tot ecranul pentru model
     #[serde(default)]
     pub hide_all: bool,
+    /// zona de jos ridicata (filele ei stau in bara de stare; clic pe fila activa o coboara)
+    #[serde(default = "crate::layout::yes")]
+    pub bottom_open: bool,
 }
 
 impl Default for UiLayout {
@@ -151,6 +154,7 @@ impl Default for UiLayout {
             active: [Some(Panel::Tree), Some(Panel::Properties), Some(Panel::Find)],
             autohide: [false; 3],
             hide_all: false,
+            bottom_open: true,
         }
     }
 }
@@ -195,6 +199,9 @@ impl UiLayout {
         let d = s.dock;
         if d != Dock::Float {
             self.active[d.idx()] = Some(p);
+            if d == Dock::Bottom {
+                self.bottom_open = true;
+            }
         }
     }
     pub fn close(&mut self, p: Panel) {
@@ -202,7 +209,11 @@ impl UiLayout {
         self.fixup();
     }
     pub fn toggle(&mut self, p: Panel) {
-        if self.shown(p) {
+        // panou de jos coborat: butonul il ridica (nu il inchide)
+        let lowered = !self.bottom_open && self.get(p).map(|s| s.dock == Dock::Bottom && s.open).unwrap_or(false);
+        if lowered {
+            self.open(p);
+        } else if self.shown(p) {
             self.close(p);
         } else {
             self.open(p);
@@ -230,4 +241,7 @@ impl UiLayout {
     pub fn in_area(&self, d: Dock) -> Vec<Panel> {
         self.panels.iter().filter(|s| s.open && s.dock == d).map(|s| s.panel).collect()
     }
+}
+pub fn yes() -> bool {
+    true
 }

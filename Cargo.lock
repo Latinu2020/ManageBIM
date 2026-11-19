@@ -334,13 +334,14 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bimrust"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "acadrust",
  "base64",
  "cc",
  "earcutr",
  "eframe",
+ "egui-phosphor",
  "egui_extras",
  "gif",
  "glam",
@@ -840,6 +841,15 @@ dependencies = [
  "epaint",
  "log",
  "nohash-hasher",
+]
+
+[[package]]
+name = "egui-phosphor"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74744068685d20e004d1a4326c48403b6759e325c7fce8c5eeeab93f0a9f67ca"
+dependencies = [
+ "egui",
 ]
 
 [[package]]
