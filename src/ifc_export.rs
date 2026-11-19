@@ -118,12 +118,15 @@ pub struct ExportStats {
     pub elements: usize,
     pub triangles: usize,
     pub properties: usize,
+    /// suprafete inchise (solide etanse) si elemente scrise ca instante ale unei geometrii deja scrise
+    pub closed: usize,
+    pub instances: usize,
 }
 
 /// Scrie fisierul IFC. `items`: (model, element) de exportat; `origin`: coordonatele reale ale originii scenei.
 pub fn write_ifc(items: &[(&Model, &Element)], origin: DVec3, project: &str, now: &str) -> (String, ExportStats) {
     let mut w = W { s: String::new(), n: 0 };
-    let mut st = ExportStats { elements: 0, triangles: 0, properties: 0 };
+    let mut st = ExportStats { elements: 0, triangles: 0, properties: 0, closed: 0, instances: 0 };
     let person = w.add("IFCPERSON($,$,'',$,$,$,$,$)");
     let org = w.add("IFCORGANIZATION($,'ManageBIM',$,$,$)");
     let po = w.add(&format!("IFCPERSONANDORGANIZATION(#{person},#{org},$)"));
@@ -178,74 +181,131 @@ pub fn write_ifc(items: &[(&Model, &Element)], origin: DVec3, project: &str, now
 
     let mut contained: HashMap<u64, Vec<u64>> = HashMap::new();
     let mut styles: HashMap<[u8; 4], u64> = HashMap::new();
+    let mut rep_maps: HashMap<u64, u64> = HashMap::new();
     let mut used_guids: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (k, (m, e)) in items.iter().enumerate() {
         let tris = m.tris(e);
         if tris.len() < 3 {
             continue;
         }
-        // varfuri sudate (aceeasi pozitie -> acelasi index)
-        let mut map: HashMap<[u32; 3], usize> = HashMap::new();
-        let mut pts: Vec<[f32; 3]> = Vec::new();
-        let mut idx: Vec<[usize; 3]> = Vec::with_capacity(tris.len() / 3);
-        for t in tris.chunks_exact(3) {
-            let mut tri = [0usize; 3];
-            for (j, v) in t.iter().enumerate() {
-                let key = [v.x.to_bits(), v.y.to_bits(), v.z.to_bits()];
-                tri[j] = *map.entry(key).or_insert_with(|| {
-                    pts.push([v.x, v.y, v.z]);
-                    pts.len()
-                });
-            }
-            if tri[0] != tri[1] && tri[1] != tri[2] && tri[0] != tri[2] {
-                idx.push(tri);
-            }
+        // geometria fata de coltul elementului (coordonate mici = precizie buna), pe culori: o suprafata pe culoare
+        let base = tris.iter().fold(glam::Vec3::splat(f32::INFINITY), |a, v| a.min(*v));
+        let cols = &m.tri_color[e.tri_start as usize..(e.tri_start + e.tri_count) as usize];
+        let mut by_col: BTreeMap<[u8; 4], Vec<usize>> = BTreeMap::new();
+        for (ti, c) in cols.iter().enumerate().take(tris.len() / 3) {
+            by_col.entry(*c).or_default().push(ti);
         }
-        if idx.is_empty() {
+        // fiecare grup de culoare: varfuri sudate (toleranta 0.1 mm), triunghiuri degenerate scoase, inchis / deschis
+        let mut parts: Vec<([u8; 4], Vec<[f32; 3]>, Vec<[usize; 3]>, bool)> = Vec::new();
+        for (c, list) in &by_col {
+            let mut map: HashMap<[i64; 3], usize> = HashMap::new();
+            let mut pts: Vec<[f32; 3]> = Vec::new();
+            let mut idx: Vec<[usize; 3]> = Vec::with_capacity(list.len());
+            for &ti in list {
+                let mut tri = [0usize; 3];
+                for j in 0..3 {
+                    let v = tris[ti * 3 + j] - base;
+                    let key = [(v.x as f64 * 1e4).round() as i64, (v.y as f64 * 1e4).round() as i64, (v.z as f64 * 1e4).round() as i64];
+                    tri[j] = *map.entry(key).or_insert_with(|| {
+                        pts.push([key[0] as f32 * 1e-4, key[1] as f32 * 1e-4, key[2] as f32 * 1e-4]);
+                        pts.len()
+                    });
+                }
+                if tri[0] != tri[1] && tri[1] != tri[2] && tri[0] != tri[2] {
+                    idx.push(tri);
+                }
+            }
+            if idx.is_empty() {
+                continue;
+            }
+            // inchis = fiecare muchie folosita exact de doua triunghiuri (solid etans)
+            let mut edges: HashMap<(usize, usize), u32> = HashMap::new();
+            for t in &idx {
+                for k in 0..3 {
+                    let (a, b) = (t[k], t[(k + 1) % 3]);
+                    *edges.entry((a.min(b), a.max(b))).or_default() += 1;
+                }
+            }
+            let closed = edges.values().all(|n| *n == 2);
+            parts.push((*c, pts, idx, closed));
+        }
+        if parts.is_empty() {
             continue;
         }
-        let mut pl = String::with_capacity(pts.len() * 30);
-        for (i, p) in pts.iter().enumerate() {
-            if i > 0 {
-                pl.push(',');
+        // geometrie identica deja scrisa (fitinguri, flanse...): instanta a aceleiasi reprezentari (IfcMappedItem)
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            for (c, pts, idx, _) in &parts {
+                c.hash(&mut h);
+                for p in pts {
+                    for v in p {
+                        v.to_bits().hash(&mut h);
+                    }
+                }
+                idx.hash(&mut h);
             }
-            let _ = write!(pl, "({},{},{})", f(p[0] as f64), f(p[1] as f64), f(p[2] as f64));
-        }
-        let plist = w.add(&format!("IFCCARTESIANPOINTLIST3D(({pl}),$)"));
-        let mut il = String::with_capacity(idx.len() * 16);
-        for (i, t) in idx.iter().enumerate() {
-            if i > 0 {
-                il.push(',');
-            }
-            let _ = write!(il, "({},{},{})", t[0], t[1], t[2]);
-        }
-        let fs = w.add(&format!("IFCTRIANGULATEDFACESET(#{plist},$,$,({il}),$)"));
-        st.triangles += idx.len();
-        // culoarea cea mai folosita a elementului
-        let col = {
-            let cols = &m.tri_color[e.tri_start as usize..(e.tri_start + e.tri_count) as usize];
-            let mut cnt: HashMap<[u8; 4], usize> = HashMap::new();
-            for c in cols {
-                *cnt.entry(*c).or_default() += 1;
-            }
-            cnt.into_iter().max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0))).map(|x| x.0).unwrap_or([200, 200, 200, 255])
+            h.finish()
         };
-        let style = match styles.get(&col) {
-            Some(s) => *s,
+        let rep = match rep_maps.get(&key) {
+            Some(map) => {
+                let op = w.add(&format!("IFCCARTESIANTRANSFORMATIONOPERATOR3D($,$,#{o3},1.,$)"));
+                let mi = w.add(&format!("IFCMAPPEDITEM(#{map},#{op})"));
+                st.instances += 1;
+                w.add(&format!("IFCSHAPEREPRESENTATION(#{body_ctx},'Body','MappedRepresentation',(#{mi}))"))
+            }
             None => {
-                let rgb = w.add(&format!("IFCCOLOURRGB($,{},{},{})", f(col[0] as f64 / 255.0), f(col[1] as f64 / 255.0), f(col[2] as f64 / 255.0)));
-                let sh = w.add(&format!("IFCSURFACESTYLESHADING(#{rgb},{})", f(1.0 - col[3] as f64 / 255.0)));
-                let s = w.add(&format!("IFCSURFACESTYLE($,.BOTH.,(#{sh}))"));
-                styles.insert(col, s);
-                s
+                let mut items_ids = Vec::new();
+                for (col, pts, idx, closed) in &parts {
+                    let mut pl = String::with_capacity(pts.len() * 30);
+                    for (i, p) in pts.iter().enumerate() {
+                        if i > 0 {
+                            pl.push(',');
+                        }
+                        let _ = write!(pl, "({},{},{})", f(p[0] as f64), f(p[1] as f64), f(p[2] as f64));
+                    }
+                    let plist = w.add(&format!("IFCCARTESIANPOINTLIST3D(({pl}),$)"));
+                    let mut il = String::with_capacity(idx.len() * 16);
+                    for (i, t) in idx.iter().enumerate() {
+                        if i > 0 {
+                            il.push(',');
+                        }
+                        let _ = write!(il, "({},{},{})", t[0], t[1], t[2]);
+                    }
+                    let fs = w.add(&format!("IFCTRIANGULATEDFACESET(#{plist},$,{},({il}),$)", if *closed { ".T." } else { ".F." }));
+                    st.triangles += idx.len();
+                    if *closed {
+                        st.closed += 1;
+                    }
+                    let style = match styles.get(col) {
+                        Some(s) => *s,
+                        None => {
+                            let rgb = w.add(&format!("IFCCOLOURRGB($,{},{},{})", f(col[0] as f64 / 255.0), f(col[1] as f64 / 255.0), f(col[2] as f64 / 255.0)));
+                            let sh = w.add(&format!("IFCSURFACESTYLESHADING(#{rgb},{})", f(1.0 - col[3] as f64 / 255.0)));
+                            let s = w.add(&format!("IFCSURFACESTYLE($,.BOTH.,(#{sh}))"));
+                            styles.insert(*col, s);
+                            s
+                        }
+                    };
+                    w.add(&format!("IFCSTYLEDITEM(#{fs},(#{style}),$)"));
+                    items_ids.push(fs);
+                }
+                let list = items_ids.iter().map(|i| format!("#{i}")).collect::<Vec<_>>().join(",");
+                let shape = w.add(&format!("IFCSHAPEREPRESENTATION(#{body_ctx},'Body','Tessellation',({list}))"));
+                // prima aparitie: reprezentarea devine si harta pentru urmatoarele elemente identice
+                let map = w.add(&format!("IFCREPRESENTATIONMAP(#{ax},#{shape})"));
+                rep_maps.insert(key, map);
+                let op = w.add(&format!("IFCCARTESIANTRANSFORMATIONOPERATOR3D($,$,#{o3},1.,$)"));
+                let mi = w.add(&format!("IFCMAPPEDITEM(#{map},#{op})"));
+                w.add(&format!("IFCSHAPEREPRESENTATION(#{body_ctx},'Body','MappedRepresentation',(#{mi}))"))
             }
         };
-        w.add(&format!("IFCSTYLEDITEM(#{fs},(#{style}),$)"));
-        let rep = w.add(&format!("IFCSHAPEREPRESENTATION(#{body_ctx},'Body','Tessellation',(#{fs}))"));
         let pds = w.add(&format!("IFCPRODUCTDEFINITIONSHAPE($,$,(#{rep}))"));
         let lvl = if e.storey.trim().is_empty() { "(no level)".to_string() } else { e.storey.clone() };
         let (sid, spl) = storeys[&lvl];
-        let epl = w.add(&format!("IFCLOCALPLACEMENT(#{spl},#{ax})"));
+        let bp = w.add(&format!("IFCCARTESIANPOINT(({},{},{}))", f(base.x as f64), f(base.y as f64), f(base.z as f64)));
+        let bax = w.add(&format!("IFCAXIS2PLACEMENT3D(#{bp},#{zdir},#{xdir})"));
+        let epl = w.add(&format!("IFCLOCALPLACEMENT(#{spl},#{bax})"));
         let (class, extra, otype) = match ifc_class(&e.ifc_type) {
             Some((c, x)) => (c, x, "$".to_string()),
             None => ("IfcBuildingElementProxy", 2, if e.ifc_type.trim().is_empty() { "$".into() } else { step_str(&e.ifc_type) }),

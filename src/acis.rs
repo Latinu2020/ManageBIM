@@ -87,29 +87,42 @@ pub fn mesh_document(doc: &CadDocument, progress: &dyn Fn(f32, &str)) -> AcisMes
     }
     let q = MeshQuality::default();
     let n = jobs.len();
-    let mut done = 0usize;
-    for chunk in jobs.chunks(64) {
-        progress(done as f32 / n as f32, &format!("Translating ACIS solids ({done} / {n})"));
-        let res: Vec<(String, Result<SolidMesh, String>)> = chunk.par_iter().map(|(h, a)| (h.clone(), mesh_acis(a, q))).collect();
-        for (h, r) in res {
-            match r {
-                Ok(m) => {
-                    if m.faces_failed > 0 {
-                        out.partial += 1;
-                        out.faces_failed += m.faces_failed;
-                    }
-                    for (k, v) in &m.unsupported {
-                        *out.unsupported.entry(k.clone()).or_default() += v;
-                    }
-                    for (k, v) in &m.translated {
-                        *out.translated.entry(k.clone()).or_default() += v;
-                    }
-                    out.meshes.insert(h, m);
-                }
-                Err(e) => *out.failed.entry(e).or_default() += 1,
-            }
+    // toate solidele odata pe toate nucleele (loturile asteptau dupa cel mai lent solid); progresul din firul curent
+    let done = std::sync::atomic::AtomicUsize::new(0);
+    let all: Vec<(String, Result<SolidMesh, String>)> = std::thread::scope(|s| {
+        let h = s.spawn(|| {
+            jobs.par_iter()
+                .map(|(h, a)| {
+                    let r = (h.clone(), mesh_acis(a, q));
+                    done.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    r
+                })
+                .collect::<Vec<_>>()
+        });
+        while !h.is_finished() {
+            let d = done.load(std::sync::atomic::Ordering::Relaxed);
+            progress(d as f32 / n as f32, &format!("Translating ACIS solids ({d} / {n})"));
+            std::thread::sleep(std::time::Duration::from_millis(40));
         }
-        done += chunk.len();
+        h.join().unwrap_or_default()
+    });
+    for (h, r) in all {
+        match r {
+            Ok(m) => {
+                if m.faces_failed > 0 {
+                    out.partial += 1;
+                    out.faces_failed += m.faces_failed;
+                }
+                for (k, v) in &m.unsupported {
+                    *out.unsupported.entry(k.clone()).or_default() += v;
+                }
+                for (k, v) in &m.translated {
+                    *out.translated.entry(k.clone()).or_default() += v;
+                }
+                out.meshes.insert(h, m);
+            }
+            Err(e) => *out.failed.entry(e).or_default() += 1,
+        }
     }
     progress(1.0, "ACIS solids translated");
     out

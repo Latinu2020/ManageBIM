@@ -117,6 +117,8 @@ pub fn inbox_dir() -> Option<std::path::PathBuf> {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tool {
     Select,
+    /// selectie cu fereastra: stanga->dreapta = complet in interior, dreapta->stanga = atinge (ca AutoCAD)
+    Window,
     Measure(MeasureKind),
     Redline(crate::markup::RedKind),
     RedErase,
@@ -812,6 +814,8 @@ pub enum Purpose {
     ExportIfc,
     SharedFolder,
     PublishBimd,
+    ImportGridsCad,
+    ExportReference,
     ExportGrids,
     ExportClashNavis,
     ImportBcf,
@@ -986,6 +990,23 @@ pub struct App {
     pub show_grids_editor: bool,
     /// planul de sectiune desenat ca suprafata verde transparenta
     pub show_section_plane: bool,
+    /// panoul deschis dintr-o zona auto-hide si ultima data cand mouse-ul era pe el
+    pub flyout: Option<(crate::layout::Dock, crate::layout::Panel)>,
+    pub flyout_seen: Instant,
+    /// sectiunea pe nivel curenta (pentru PgUp / PgDn), marginile box-ului de nivel (m) si inaltimea taieturii de plan
+    pub section_level: Option<usize>,
+    pub level_below: f32,
+    pub level_above: f32,
+    pub plan_cut_h: f32,
+    /// relocare in curs (mutare / rotire / aliniere pe fata)
+    pub xform: Option<XformPick>,
+    pub relocate_selection: bool,
+    /// fereastra de selectie in curs (punctul de pornire, pe ecran)
+    pub box_start: Option<[f32; 2]>,
+    /// exportul IFC: doar selectia (true) sau tot ce e vizibil
+    pub ifc_selection: bool,
+    /// ultimul import de axe din DWG / DXF: fisierul, straturile cu linii, stratul folosit
+    pub grid_import: Option<(String, Vec<(String, usize)>, String)>,
     /// generatorul de axe (originea si directia se pot alege cu clic in model)
     pub grid_gen: GridGen,
     /// alegere in 3D: 0 nimic, 1 originea, 2 directia primei axe
@@ -1189,6 +1210,17 @@ impl App {
             grid_ext: 2.0,
             show_grids_editor: false,
             show_section_plane: true,
+            flyout: None,
+            flyout_seen: Instant::now(),
+            section_level: None,
+            level_below: 0.0,
+            level_above: 0.0,
+            plan_cut_h: 1.2,
+            xform: None,
+            relocate_selection: false,
+            box_start: None,
+            ifc_selection: false,
+            grid_import: None,
             grid_gen: GridGen::default(),
             grid_pick: 0,
             bimd_path: None,
@@ -3961,7 +3993,7 @@ impl App {
     pub fn export_ifc(&mut self, path: &str) {
         let path = with_ext(path, "ifc");
         let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
-        let use_sel = !self.selected.is_empty();
+        let use_sel = self.ifc_selection && !self.selected.is_empty();
         let mut items: Vec<(&Model, &crate::model::Element)> = Vec::new();
         for (mi, m) in &models {
             for (ei, e) in m.elements.iter().enumerate() {
@@ -3979,9 +4011,10 @@ impl App {
         let (text, st) = crate::ifc_export::write_ifc(&items, self.origin_f64(), &project, &now_string());
         match std::fs::write(&path, text) {
             Ok(()) => self.toast(format!(
-                "IFC4 exported: {} items, {} triangles, {} properties → {}",
+                "IFC4 exported: {} items ({} closed solids, {} reused geometries), {} properties → {}",
                 st.elements,
-                st.triangles,
+                st.closed,
+                st.instances,
                 st.properties,
                 crate::file_name(&path)
             )),
@@ -4839,7 +4872,16 @@ impl App {
         s
     }
 
+    /// Fisierul ales intr-un dialog: exporturile / importurile ruleaza protejat - o eroare interna devine mesaj,
+    /// nu inchide aplicatia (proiectul ramane deschis).
     pub fn handle_path(&mut self, purpose: Purpose, path: String) {
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.handle_path_inner(purpose, path)));
+        if let Err(e) = r {
+            self.error(format!("Internal error ({}) - the operation was stopped, the project is unchanged on disk.", panic_text(&e)));
+        }
+    }
+
+    fn handle_path_inner(&mut self, purpose: Purpose, path: String) {
         let path = path.trim().trim_matches('"').to_string();
         if path.is_empty() {
             return;
@@ -4870,6 +4912,8 @@ impl App {
             Purpose::ExportClashBcf => self.export_clash_bcf(&path),
             Purpose::ExportIfc => self.export_ifc(&path),
             Purpose::ExportGrids => self.export_grids(&path),
+            Purpose::ImportGridsCad => self.import_grids_cad(&path, None),
+            Purpose::ExportReference => self.export_reference(&path),
             Purpose::SharedFolder => {
                 self.shared_dir = Some(path.clone());
                 self.shared = Default::default();
@@ -5123,6 +5167,12 @@ impl App {
                 Purpose::SaveProject => d.set_title("Save Project").add_filter("ManageBIM project", &["bimr"]).set_file_name("project.bimr").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashHtml => d.set_title("Clash report (HTML)").add_filter("HTML", &["html"]).set_file_name("clash_report.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashCsv => d.set_title("Clash report (CSV)").add_filter("CSV", &["csv"]).set_file_name("clash_report.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportReference => {
+                    let dir = outbox_dir().map(|d| { let _ = std::fs::create_dir_all(&d); d }).unwrap_or_default();
+                    let name = self.bimd_path.as_ref().or(self.project_path.as_ref()).and_then(|p| std::path::Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string())).unwrap_or_else(|| "reference".into());
+                    d.set_title("Reference for Revit / AutoCAD / Plant 3D").add_filter("ManageBIM reference", &["mbref"]).set_directory(dir).set_file_name(format!("{name}.mbref")).save_file().map(|p| vec![p.to_string_lossy().to_string()])
+                }
+                Purpose::ImportGridsCad => d.set_title("Import grid axes from DWG / DXF").add_filter("DWG / DXF", &["dwg", "dxf"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportGrids => d.set_title("Export grid axes").add_filter("DXF (AutoCAD, any CAD)", &["dxf"]).add_filter("DWG (needs ODA File Converter)", &["dwg"]).set_file_name("grids.dxf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::SharedFolder => d.set_title("Shared issues folder (network / SharePoint / OneDrive)").pick_folder().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportIfc => d.set_title("Export to IFC4").add_filter("IFC", &["ifc"]).set_file_name("export.ifc").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5202,6 +5252,8 @@ impl App {
                 Purpose::SharedFolder => String::new(),
                 Purpose::PublishBimd => "project.bimd".into(),
                 Purpose::ExportGrids => "grids.dxf".into(),
+                Purpose::ImportGridsCad => String::new(),
+                Purpose::ExportReference => "reference.mbref".into(),
                 Purpose::ExportClashNavis => "clashes_viewpoints.xml".into(),
                 Purpose::ExportTasksCsv => "schedule.csv".into(),
                 Purpose::ExportSets => "sets.bimsets".into(),
@@ -5674,17 +5726,55 @@ impl App {
     pub fn section_level_box(&mut self, li: usize) {
         let g = self.scene_grids();
         let bb = self.scene_aabb();
-        let Some(l) = g.levels.get(li) else { return };
+        let Some(l) = g.levels.get(li).cloned() else { return };
         if !bb.is_valid() {
             return;
         }
         let top = g.levels.get(li + 1).map(|n| n.1).unwrap_or(bb.max.z + 0.01);
         self.section.enabled = true;
         self.section.mode = SectionMode::Box;
-        self.section.bmin = [bb.min.x - 0.5, bb.min.y - 0.5, l.1 - 0.05];
-        self.section.bmax = [bb.max.x + 0.5, bb.max.y + 0.5, top - 0.02];
+        // marginile: sub nivel (ex. placa de sub) si sub nivelul urmator (ex. fara placa de deasupra)
+        self.section.bmin = [bb.min.x - 0.5, bb.min.y - 0.5, l.1 - self.level_below.max(0.0) - 0.01];
+        self.section.bmax = [bb.max.x + 0.5, bb.max.y + 0.5, top + self.level_above - 0.02];
+        self.section_level = Some(li);
         self.colors_dirty = true;
-        self.toast(format!("Section: {} (floor to the next level)", l.0));
+        self.toast(format!("Section: {} (to {})", l.0, g.levels.get(li + 1).map(|n| n.0.clone()).unwrap_or_else(|| "the top".into())));
+    }
+
+    /// Nivelul de deasupra / dedesubt (PgUp / PgDn sau ◀ ▶), pastrand tipul sectiunii (box de nivel sau plan).
+    pub fn section_level_step(&mut self, delta: i32) {
+        let n = self.scene_grids().levels.len();
+        if n == 0 {
+            return;
+        }
+        let cur = self.section_level.unwrap_or(0) as i32;
+        let li = (cur + delta).clamp(0, n as i32 - 1) as usize;
+        if self.section.enabled && self.section.mode == SectionMode::Planes {
+            self.section_plan_cut(li, self.plan_cut_h);
+        } else {
+            self.section_level_box(li);
+        }
+    }
+
+    /// Doar elementele nivelului (dupa numele nivelului din model; altfel dupa inaltime), restul ascunse.
+    pub fn isolate_level(&mut self, li: usize) {
+        let g = self.scene_grids();
+        let Some(l) = g.levels.get(li).cloned() else { return };
+        let top = g.levels.get(li + 1).map(|n| n.1).unwrap_or(f32::INFINITY);
+        let by_name = self.loaded_models().any(|(_, m)| m.elements.iter().any(|e| e.storey == l.0));
+        let mut keep = Vec::new();
+        for (mi, m) in self.loaded_models() {
+            for (ei, e) in m.elements.iter().enumerate() {
+                let ok = if by_name { e.storey == l.0 } else { e.aabb.is_valid() && { let z = (e.aabb.min.z + e.aabb.max.z) * 0.5; z >= l.1 - 0.01 && z < top } };
+                if ok {
+                    keep.push(ElemId { m: mi as u32, e: ei as u32 });
+                }
+            }
+        }
+        let n = keep.len();
+        self.apply(Action::Isolate(keep));
+        self.section_level = Some(li);
+        self.toast(format!("{}: {n} items shown, the rest hidden (Unhide All to undo)", l.0));
     }
 
     /// Sectiune tip plan: totul de deasupra lui (nivel + h) e taiat.
@@ -5694,6 +5784,8 @@ impl App {
         self.section.enabled = true;
         self.section.mode = SectionMode::Planes;
         self.section.planes = vec![PlaneDef { enabled: true, dir: 0, offset: l.1 + h }];
+        self.section_level = Some(li);
+        self.plan_cut_h = h;
         self.colors_dirty = true;
         self.toast(format!("Plan cut: {} + {h:.2} m", l.0));
     }
@@ -5934,4 +6026,227 @@ impl App {
             }
         }
     }
+}
+
+// ------------------------------------------------------------------ relocare (ca Navisworks: masurare -> transformare)
+/// Ce se muta: modelul punctului ales sau elementele selectate.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum XformMode {
+    /// punct -> punct (translatie)
+    Move,
+    /// pivot, directia de pornire, directia tinta (rotatie in jurul verticalei)
+    Rotate,
+    /// fata elementului de mutat -> fata tinta (rotatie in plan + lipire pe fata)
+    Align,
+}
+
+impl XformMode {
+    pub fn needed(self) -> usize {
+        match self {
+            XformMode::Move | XformMode::Align => 2,
+            XformMode::Rotate => 3,
+        }
+    }
+    pub fn hint(self, k: usize) -> &'static str {
+        match (self, k) {
+            (XformMode::Move, 0) => "Move: click the point to move FROM (snaps to corners)",
+            (XformMode::Move, _) => "Move: click the point to move TO",
+            (XformMode::Rotate, 0) => "Rotate: click the pivot point",
+            (XformMode::Rotate, 1) => "Rotate: click a point giving the current direction",
+            (XformMode::Rotate, _) => "Rotate: click a point giving the new direction",
+            (XformMode::Align, 0) => "Align: click a face of the item to move",
+            (XformMode::Align, _) => "Align: click the target face (the first face is placed against it)",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct XformPick {
+    pub mode: XformMode,
+    /// true = elementele selectate (doar translatie), false = modelul primului punct
+    pub selection: bool,
+    /// (punct, normala fetei, elementul atins)
+    pub pts: Vec<(Vec3, Vec3, ElemId)>,
+}
+
+/// Rotatia in jurul verticalei care duce directia orizontala `a` peste `b` (grade).
+pub fn z_angle(a: Vec3, b: Vec3) -> Option<f32> {
+    let (a2, b2) = (a.truncate(), b.truncate());
+    if a2.length() < 1e-4 || b2.length() < 1e-4 {
+        return None;
+    }
+    Some(a2.angle_to(b2).to_degrees())
+}
+
+impl App {
+    pub fn xform_start(&mut self, mode: XformMode, selection: bool) {
+        self.xform = Some(XformPick { mode, selection, pts: Vec::new() });
+        self.grid_pick = 0;
+    }
+
+    /// Un punct ales in 3D (cu normala fetei); la ultimul punct se aplica transformarea.
+    pub fn xform_point(&mut self, p: Vec3, n: Vec3, id: ElemId) {
+        let Some(mut x) = self.xform.take() else { return };
+        x.pts.push((p, n, id));
+        if x.pts.len() < x.mode.needed() {
+            self.xform = Some(x);
+            return;
+        }
+        let r = self.xform_apply(&x);
+        match r {
+            Ok(msg) => self.toast(msg),
+            Err(e) => self.error(e),
+        }
+    }
+
+    fn xform_apply(&mut self, x: &XformPick) -> Result<String, String> {
+        let p = &x.pts;
+        // (unghi in grade in jurul verticalei prin pivot, translatie)
+        let (angle, pivot, delta) = match x.mode {
+            XformMode::Move => (0.0, p[0].0, p[1].0 - p[0].0),
+            XformMode::Rotate => {
+                let a = z_angle(p[1].0 - p[0].0, p[2].0 - p[0].0).ok_or("Rotate: the direction points are too close to the pivot.")?;
+                (a, p[0].0, Vec3::ZERO)
+            }
+            XformMode::Align => {
+                let (pa, na) = (p[0].0, p[0].1.normalize_or_zero());
+                let (pb, nb) = (p[1].0, p[1].1.normalize_or_zero());
+                // fata de mutat ajunge cu spatele pe fata tinta: normala ei = -normala tintei (rotatie doar in plan)
+                let ang = if na.truncate().length() > 0.3 && nb.truncate().length() > 0.3 { z_angle(na, -nb).unwrap_or(0.0) } else { 0.0 };
+                let rot = Mat4::from_rotation_z(ang.to_radians());
+                let pa_rot = pivot_rotate(pa, pa, &rot);
+                let na_rot = rot.transform_vector3(na);
+                // dupa rotatie (in jurul lui pa), lipim fata: miscam pe normala tintei pana pe planul ei
+                let dist = (pb - pa_rot).dot(nb);
+                let d = if na_rot.dot(nb).abs() > 0.5 { nb * dist } else { pb - pa_rot };
+                (ang, pa, d)
+            }
+        };
+        if x.selection {
+            if angle.abs() > 1e-4 {
+                return Err("Selected items can only be moved - rotate / align whole models (choose \"Model\").".into());
+            }
+            if self.selected.is_empty() {
+                return Err("Nothing selected.".into());
+            }
+            self.move_selected(delta);
+            return Ok(format!("Moved {} items by {}", self.selected.len(), fmt_vec_len(delta)));
+        }
+        let slot = p[0].2.m as usize;
+        let Some(base) = self.base_models.get(slot).cloned().flatten() else { return Err("The model is not loaded.".into()) };
+        let mut xf = self.model_xf.get(slot).copied().unwrap_or_default();
+        let piv_m = if xf.pivot_origin { (-self.origin_f64()).as_vec3() } else { base.aabb.center() };
+        // M' = T(delta) * T(P) Rz(a) T(-P) * M  ->  rot_z += a, (pivot + t') = P + Rz(a)(pivot + t - P) + delta
+        let r = Mat4::from_rotation_z(angle.to_radians());
+        let t = Vec3::new(xf.translate[0] as f32, xf.translate[1] as f32, xf.translate[2] as f32);
+        let new_pt = pivot + r.transform_vector3(piv_m + t - pivot) + delta;
+        let t2 = new_pt - piv_m;
+        xf.translate = [t2.x as f64, t2.y as f64, t2.z as f64];
+        xf.rot_z = ((xf.rot_z + angle as f64) * 1e6).round() / 1e6;
+        let name = base.name.clone();
+        self.set_model_xf(slot, xf);
+        Ok(match x.mode {
+            XformMode::Move => format!("{name} moved by {}", fmt_vec_len(delta)),
+            XformMode::Rotate => format!("{name} rotated by {angle:.3}°"),
+            XformMode::Align => format!("{name} aligned: rotated {angle:.3}°, moved {}", fmt_vec_len(delta)),
+        })
+    }
+}
+
+fn pivot_rotate(p: Vec3, pivot: Vec3, rot: &Mat4) -> Vec3 {
+    pivot + rot.transform_vector3(p - pivot)
+}
+
+fn fmt_vec_len(d: Vec3) -> String {
+    format!("{} (ΔX {} ΔY {} ΔZ {})", fmt_len(d.length() as f64), fmt_num(d.x as f64), fmt_num(d.y as f64), fmt_num(d.z as f64))
+}
+
+impl App {
+    /// Axe din DWG / DXF: devin axele mele (se pot muta / roti / edita apoi). `layer` = alt strat decat cel ghicit.
+    pub fn import_grids_cad(&mut self, path: &str, layer: Option<&str>) {
+        match crate::formats::grids_from_cad(path, layer) {
+            Ok(g) if g.grids.is_empty() => {
+                // stratul axelor nu s-a putut ghici: se alege din lista in fereastra Grids
+                self.grid_import = Some((path.to_string(), g.layers, String::new()));
+                self.show_grids_editor = true;
+                self.toast("No layer named GRID / AXE / AX in the drawing - choose the layer with the grid lines in the Grids window.");
+            }
+            Ok(g) => {
+                let n = g.grids.len();
+                self.user_grids = g.grids.into_iter().map(|(name, a, b)| UserGrid { name, a, b }).collect();
+                self.use_user_grids = true;
+                self.show_grids = true;
+                self.grid_import = Some((path.to_string(), g.layers, g.layer.clone()));
+                self.toast(format!("{n} grid axes imported from {} (layer {}, units x{})", crate::file_name(path), g.layer, g.scale));
+            }
+            Err(e) => self.error(e),
+        }
+    }
+}
+
+// ------------------------------------------------------------------ referinta pentru Revit / AutoCAD (.mbref)
+/// Format simplu, citit de add-in-uri: "MBREF1", originea (f64 x3, metri reali), numarul de elemente, apoi pe element:
+/// nume, GUID, tip, nivel (u16 lungime + UTF-8), culoare RGBA, numar de triunghiuri, triunghiurile (f32 x9, metri fata de origine).
+pub fn write_mbref(items: &[(&Model, &crate::model::Element)], origin: DVec3) -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend_from_slice(b"MBREF1");
+    for v in origin.to_array() {
+        b.extend_from_slice(&v.to_le_bytes());
+    }
+    b.extend_from_slice(&(items.len() as u32).to_le_bytes());
+    let s = |b: &mut Vec<u8>, t: &str| {
+        let t: String = t.chars().take(2000).collect();
+        b.extend_from_slice(&(t.len() as u16).to_le_bytes());
+        b.extend_from_slice(t.as_bytes());
+    };
+    for (m, e) in items {
+        s(&mut b, &e.name);
+        s(&mut b, &e.guid);
+        s(&mut b, &e.ifc_type);
+        s(&mut b, &e.storey);
+        let cols = &m.tri_color[e.tri_start as usize..(e.tri_start + e.tri_count) as usize];
+        let col = cols.first().copied().unwrap_or([200, 200, 200, 255]);
+        b.extend_from_slice(&col);
+        let tris = m.tris(e);
+        b.extend_from_slice(&((tris.len() / 3) as u32).to_le_bytes());
+        for v in tris {
+            for c in [v.x, v.y, v.z] {
+                b.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+    }
+    b
+}
+
+impl App {
+    /// Referinta pentru Revit / AutoCAD / Plant 3D: selectia, sau tot ce e vizibil.
+    pub fn export_reference(&mut self, path: &str) {
+        let path = with_ext(path, "mbref");
+        let use_sel = !self.selected.is_empty();
+        let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
+        let mut items: Vec<(&Model, &crate::model::Element)> = Vec::new();
+        for (mi, m) in &models {
+            for (ei, e) in m.elements.iter().enumerate() {
+                let id = ElemId { m: *mi as u32, e: ei as u32 };
+                let take = if use_sel { self.selected.contains(&id) } else { !self.hidden.contains(&id) && !e.default_hidden };
+                if take && e.tri_count > 0 {
+                    items.push((m.as_ref(), e));
+                }
+            }
+        }
+        if items.is_empty() {
+            return self.error("Nothing to export: no visible items with geometry.");
+        }
+        let n = items.len();
+        let data = write_mbref(&items, self.origin_f64());
+        match std::fs::write(&path, &data) {
+            Ok(()) => self.toast(format!("Reference saved: {} ({n} items, {:.1} MB). Revit: ManageBIM › Reference; AutoCAD / Plant 3D: command MBREFERENCE.", crate::file_name(&path), data.len() as f64 / 1e6)),
+            Err(e) => self.error(format!("Cannot write {path}: {e}")),
+        }
+    }
+}
+
+/// %LOCALAPPDATA%\ManageBIM\Outbox (referinte, issue-uri pentru add-in-uri)
+pub fn outbox_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("ManageBIM").join("Outbox"))
 }

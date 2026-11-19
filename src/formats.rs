@@ -1394,3 +1394,250 @@ pub fn dxf_to_dwg(dxf: &str) -> Result<String, String> {
     let _ = std::fs::remove_dir_all(&tmp_out);
     res
 }
+
+// ====================================================================== axe din DWG / DXF
+/// Axe gasite intr-un desen: (eticheta, capat 1, capat 2) in metri, plus straturile cu linii (pentru alegere).
+pub struct CadGrids {
+    pub grids: Vec<(String, [f64; 2], [f64; 2])>,
+    pub layer: String,
+    /// (strat, numar de linii), cele mai probabile pentru axe primele
+    pub layers: Vec<(String, usize)>,
+    pub scale: f64,
+}
+
+fn dxf_text_of(path: &str) -> Result<String, String> {
+    if path.to_lowercase().ends_with(".dwg") {
+        use acadrust::{DwgReader, DxfWriter};
+        let mut reader = DwgReader::from_mmap(path).map_err(|e| format!("Cannot open the DWG: {e}"))?;
+        let doc = match reader.read() {
+            Ok(d) => d,
+            Err(_) => {
+                let mut r = DwgReader::from_mmap(path).map_err(|e| format!("Cannot open the DWG: {e}"))?;
+                r.options.failsafe = true;
+                r.read().map_err(|e| format!("Cannot read the DWG: {e}"))?
+            }
+        };
+        let v = DxfWriter::new(&doc).write_to_vec().map_err(|e| format!("Cannot convert the DWG: {e}"))?;
+        Ok(String::from_utf8_lossy(&v).into_owned())
+    } else {
+        let d = std::fs::read(path).map_err(|e| format!("Cannot read the file: {e}"))?;
+        if d.starts_with(b"AutoCAD Binary DXF") {
+            return Err("Binary DXF is not supported - save as ASCII DXF.".into());
+        }
+        Ok(String::from_utf8_lossy(&d).into_owned())
+    }
+}
+
+/// Textul MTEXT fara coduri de formatare (\P, {\f...;}, \A1; ...).
+fn mtext_plain(s: &str) -> String {
+    let mut out = String::new();
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        match c {
+            '{' | '}' => {}
+            '\\' => match it.next() {
+                Some('P') | Some('~') => out.push(' '),
+                Some('\\') => out.push('\\'),
+                Some(_) => {
+                    // cod cu parametru pana la ';'
+                    for d in it.by_ref() {
+                        if d == ';' {
+                            break;
+                        }
+                    }
+                }
+                None => {}
+            },
+            _ => out.push(c),
+        }
+    }
+    out.trim().to_string()
+}
+
+/// Citeste axele dintr-un DWG / DXF: liniile stratului de axe (ghicit dupa nume, sau `layer`) si eticheta de la
+/// capatul fiecarei linii (textul / atributul din bula cea mai apropiata). Segmentele cu aceeasi eticheta se unesc.
+pub fn grids_from_cad(path: &str, layer: Option<&str>) -> Result<CadGrids, String> {
+    let text = dxf_text_of(path)?;
+    let lines: Vec<&str> = text.lines().collect();
+    let mut pairs: Vec<(i32, String)> = Vec::with_capacity(lines.len() / 2);
+    for k in (0..lines.len().saturating_sub(1)).step_by(2) {
+        if let Ok(c) = lines[k].trim().parse::<i32>() {
+            pairs.push((c, lines[k + 1].trim_end().to_string()));
+        }
+    }
+    let mut insunits = 0i64;
+    let mut entities: Vec<Ent> = Vec::new();
+    let mut blocks: HashMap<String, (DVec3, Vec<Ent>)> = HashMap::new();
+    let mut i = 0;
+    while i < pairs.len() {
+        if pairs[i] == (0, "SECTION".to_string()) && i + 1 < pairs.len() {
+            let name = pairs[i + 1].1.clone();
+            i += 2;
+            match name.as_str() {
+                "HEADER" => {
+                    while i < pairs.len() && pairs[i] != (0, "ENDSEC".to_string()) {
+                        if pairs[i] == (9, "$INSUNITS".to_string()) && i + 1 < pairs.len() {
+                            insunits = pairs[i + 1].1.trim().parse().unwrap_or(0);
+                        }
+                        i += 1;
+                    }
+                }
+                "BLOCKS" => {
+                    while i < pairs.len() && pairs[i] != (0, "ENDSEC".to_string()) {
+                        if pairs[i] == (0, "BLOCK".to_string()) {
+                            let mut hdr = Ent::default();
+                            i += 1;
+                            while i < pairs.len() && pairs[i].0 != 0 {
+                                hdr.codes.push(pairs[i].clone());
+                                i += 1;
+                            }
+                            let (ents, j) = dxf_entities(&pairs, i);
+                            i = j;
+                            if let Some(n) = hdr.s(2) {
+                                blocks.insert(n.to_string(), (hdr.p(10), ents));
+                            }
+                        }
+                        i += 1;
+                    }
+                }
+                "ENTITIES" => {
+                    let (ents, j) = dxf_entities(&pairs, i);
+                    entities = ents;
+                    i = j;
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    // linii (LINE, LWPOLYLINE cu 2 varfuri) pe strat; etichete: TEXT / MTEXT / ATTRIB si TEXT din blocuri (bule)
+    let mut segs: Vec<(String, glam::DVec2, glam::DVec2)> = Vec::new();
+    let mut tags: Vec<(String, glam::DVec2)> = Vec::new();
+    let mut circles: Vec<f64> = Vec::new();
+    for e in &entities {
+        let lay = e.s(8).unwrap_or("0").to_string();
+        match e.ty.as_str() {
+            "LINE" => segs.push((lay, e.p(10).truncate(), e.p(11).truncate())),
+            "LWPOLYLINE" => {
+                let (xs, ys) = (e.all_f(10), e.all_f(20));
+                if xs.len() == 2 && ys.len() == 2 {
+                    segs.push((lay, glam::DVec2::new(xs[0], ys[0]), glam::DVec2::new(xs[1], ys[1])));
+                }
+            }
+            "TEXT" | "ATTRIB" => {
+                if let Some(t) = e.s(1).map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) {
+                    // aliniat (72/73/74 != 0): punctul de aliniere 11 e centrul textului
+                    let p = if e.i(72).unwrap_or(0) != 0 || e.i(73).unwrap_or(0) != 0 || e.i(74).unwrap_or(0) != 0 { e.p(11) } else { e.p(10) };
+                    tags.push((t, p.truncate()));
+                }
+            }
+            "MTEXT" => {
+                let raw: String = e.codes.iter().filter(|c| c.0 == 3 || c.0 == 1).map(|c| c.1.as_str()).collect();
+                let t = mtext_plain(&raw);
+                if !t.is_empty() {
+                    tags.push((t, e.p(10).truncate()));
+                }
+            }
+            "CIRCLE" => circles.push(e.f(40).unwrap_or(0.0)),
+            "INSERT" => {
+                if let Some((base, ents)) = e.s(2).and_then(|n| blocks.get(n)) {
+                    let ip = e.p(10);
+                    let (sx, sy) = (e.f(41).unwrap_or(1.0), e.f(42).unwrap_or(1.0));
+                    let rot = e.f(50).unwrap_or(0.0).to_radians();
+                    let xf = |p: DVec3| {
+                        let q = glam::DVec2::new((p.x - base.x) * sx, (p.y - base.y) * sy);
+                        let (s, c) = rot.sin_cos();
+                        glam::DVec2::new(ip.x + q.x * c - q.y * s, ip.y + q.x * s + q.y * c)
+                    };
+                    for b in ents {
+                        match b.ty.as_str() {
+                            "TEXT" => {
+                                if let Some(t) = b.s(1).map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) {
+                                    let p = if b.i(72).unwrap_or(0) != 0 || b.i(73).unwrap_or(0) != 0 { b.p(11) } else { b.p(10) };
+                                    tags.push((t, xf(p)));
+                                }
+                            }
+                            "CIRCLE" => circles.push(b.f(40).unwrap_or(0.0) * sx.abs()),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    // straturile cu linii; cele cu nume de axe primele
+    let mut count: HashMap<String, usize> = HashMap::new();
+    for s in &segs {
+        *count.entry(s.0.clone()).or_default() += 1;
+    }
+    let looks = |l: &str| {
+        let u = l.to_uppercase();
+        ["GRID", "AXE", "AXA", "AXIS", "AXES", "-AX", "AX_", "RASTER"].iter().any(|k| u.contains(k)) || u == "AX"
+    };
+    let mut layers: Vec<(String, usize)> = count.into_iter().collect();
+    layers.sort_by(|a, b| looks(&b.0).cmp(&looks(&a.0)).then(b.1.cmp(&a.1)).then(a.0.cmp(&b.0)));
+    let chosen = match layer {
+        Some(l) => l.to_string(),
+        // nici un strat cu nume de axe: lista straturilor, ca utilizatorul sa-l aleaga
+        None => match layers.iter().find(|(l, _)| looks(l)) {
+            Some((l, _)) => l.clone(),
+            None => return Ok(CadGrids { grids: Vec::new(), layer: String::new(), layers, scale: 1.0 }),
+        },
+    };
+    let scale = match insunits {
+        1 => 0.0254,
+        2 => 0.3048,
+        4 => 0.001,
+        5 => 0.01,
+        6 => 1.0,
+        _ => {
+            // necunoscut: desenele de arhitectura sunt de obicei in mm
+            let ext = segs.iter().map(|s| (s.2 - s.1).length()).fold(0.0, f64::max);
+            if ext > 1000.0 { 0.001 } else { 1.0 }
+        }
+    };
+    let gsegs: Vec<(glam::DVec2, glam::DVec2)> = segs.iter().filter(|s| s.0 == chosen).map(|s| (s.1, s.2)).filter(|(a, b)| (*b - *a).length() > 1e-6).collect();
+    if gsegs.is_empty() {
+        return Err(format!("No lines on the layer {chosen}."));
+    }
+    // distanta de cautare a etichetei fata de capat: ~2 x raza bulelor, sau 3% din cea mai lunga axa
+    let mut rs: Vec<f64> = circles.iter().copied().filter(|r| *r > 0.0).collect();
+    rs.sort_by(|a, b| a.total_cmp(b));
+    let longest = gsegs.iter().map(|(a, b)| (*b - *a).length()).fold(0.0, f64::max);
+    let reach = rs.get(rs.len() / 2).map(|r| r * 2.2).unwrap_or(0.0).max(longest * 0.03);
+    let mut by_tag: Vec<(String, glam::DVec2, glam::DVec2)> = Vec::new();
+    let mut untagged = 0;
+    for (a, b) in gsegs {
+        let near = |p: glam::DVec2| tags.iter().map(|(t, q)| (t, (*q - p).length())).filter(|x| x.1 <= reach).min_by(|x, y| x.1.total_cmp(&y.1));
+        let tag = match (near(a), near(b)) {
+            (Some(x), Some(y)) => Some(if x.1 <= y.1 { x.0.clone() } else { y.0.clone() }),
+            (Some(x), None) | (None, Some(x)) => Some(x.0.clone()),
+            _ => None,
+        };
+        let tag = tag.unwrap_or_else(|| {
+            untagged += 1;
+            format!("G{untagged}")
+        });
+        // aceeasi eticheta si aceeasi directie: segmentele se unesc (capetele cele mai departate)
+        let d = (b - a).normalize();
+        if let Some(g) = by_tag.iter_mut().find(|g| g.0 == tag && ((g.2 - g.1).normalize().perp_dot(d)).abs() < 0.02) {
+            let pts = [g.1, g.2, a, b];
+            let mut best = (g.1, g.2, (g.2 - g.1).length());
+            for i in 0..4 {
+                for j in i + 1..4 {
+                    let l = (pts[j] - pts[i]).length();
+                    if l > best.2 {
+                        best = (pts[i], pts[j], l);
+                    }
+                }
+            }
+            g.1 = best.0;
+            g.2 = best.1;
+        } else {
+            by_tag.push((tag, a, b));
+        }
+    }
+    let grids = by_tag.into_iter().map(|(t, a, b)| (t, (a * scale).to_array(), (b * scale).to_array())).collect();
+    Ok(CadGrids { grids, layer: chosen, layers, scale })
+}

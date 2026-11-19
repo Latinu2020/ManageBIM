@@ -364,7 +364,13 @@ fn tools_grids_levels_sections_and_project_roundtrip() {
     assert!(levels.len() >= 2, "levels from the models");
     app.section_level_box(0);
     assert!(app.section.enabled && app.section.mode == SectionMode::Box);
-    assert!((app.section.bmin[2] - (levels[0].1 - 0.05)).abs() < 1e-4 && app.section.bmax[2] < levels[1].1);
+    assert!((app.section.bmin[2] - (levels[0].1 - 0.01)).abs() < 1e-4 && app.section.bmax[2] < levels[1].1);
+    // marginile reglabile: placa de sub nivel inclusa
+    app.level_below = 0.3;
+    app.section_level_box(0);
+    assert!((app.section.bmin[2] - (levels[0].1 - 0.31)).abs() < 1e-4);
+    app.section_level_step(1);
+    assert_eq!(app.section_level, Some(1));
     app.section_plan_cut(1, 1.2);
     assert_eq!(app.section.mode, SectionMode::Planes);
     assert!((app.section.planes[0].offset - (levels[1].1 + 1.2)).abs() < 1e-4);
@@ -495,4 +501,51 @@ fn start_page_actions_ask_before_closing_an_open_project() {
     let mut b = App::new(vec![]);
     b.start_action(StartAction::New);
     assert!(!b.confirm_start && b.blank_project);
+}
+
+#[test]
+fn grids_import_back_from_dxf() {
+    use bimrust::app::{generate_grid, grid_dxf};
+    let g = generate_grid([1000.0, 2000.0], 3, 7.5, "1", 2, 6.0, "A", 1.5);
+    let path = std::env::temp_dir().join(format!("mb_grid_imp_{}.dxf", std::process::id()));
+    std::fs::write(&path, grid_dxf(&g, 0.5)).unwrap();
+    let r = bimrust::formats::grids_from_cad(&path.to_string_lossy(), None).unwrap();
+    assert_eq!(r.layer, "GRID");
+    assert_eq!(r.grids.len(), 5, "{:?}", r.grids.iter().map(|x| &x.0).collect::<Vec<_>>());
+    for a in &g {
+        let b = r.grids.iter().find(|x| x.0 == a.name).unwrap_or_else(|| panic!("axis {} with its tag", a.name));
+        let close = |p: [f64; 2], q: [f64; 2]| (p[0] - q[0]).hypot(p[1] - q[1]) < 1e-3;
+        assert!((close(a.a, b.1) && close(a.b, b.2)) || (close(a.a, b.2) && close(a.b, b.1)), "{} position", a.name);
+    }
+    // alt strat ales manual
+    assert!(bimrust::formats::grids_from_cad(&path.to_string_lossy(), Some("GRID_TAGS")).is_err());
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn relocate_model_point_to_point_and_rotate() {
+    use bimrust::app::XformMode;
+    let mut a = app();
+    // base_models = modelele incarcate (ca dupa incarcare), ca transformarile sa se poata reface
+    a.base_models = a.models.clone();
+    while a.model_xf.len() < a.models.len() {
+        a.model_xf.push(Default::default());
+    }
+    let id = bimrust::model::ElemId { m: 0, e: 0 };
+    let before = a.models[0].as_ref().unwrap().aabb;
+    a.xform_start(XformMode::Move, false);
+    a.xform_point(glam::Vec3::new(0.0, 0.0, 0.0), glam::Vec3::Z, id);
+    a.xform_point(glam::Vec3::new(10.0, -5.0, 2.0), glam::Vec3::Z, id);
+    assert!(a.xform.is_none());
+    let after = a.models[0].as_ref().unwrap().aabb;
+    assert!((after.min - before.min - glam::Vec3::new(10.0, -5.0, 2.0)).length() < 1e-3, "moved by the picked vector");
+    // rotatie 90 de grade in jurul unui punct: punctul ramane pe loc
+    let p = before.center() + glam::Vec3::new(10.0, -5.0, 2.0);
+    a.xform_start(XformMode::Rotate, false);
+    a.xform_point(p, glam::Vec3::Z, id);
+    a.xform_point(p + glam::Vec3::X, glam::Vec3::Z, id);
+    a.xform_point(p + glam::Vec3::Y, glam::Vec3::Z, id);
+    assert!((a.model_xf[0].rot_z - 90.0).abs() < 1e-3, "{}", a.model_xf[0].rot_z);
+    let c = a.models[0].as_ref().unwrap().aabb.center();
+    assert!((c.truncate() - p.truncate()).length() < 1e-2, "rotated about the picked pivot");
 }

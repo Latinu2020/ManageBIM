@@ -158,3 +158,33 @@ fn e57_point_cloud_reads_scans_points_and_colours() {
     for p in &c.pos { for i in 0..3 { lo[i] = lo[i].min(p[i]); hi[i] = hi[i].max(p[i]); } }
     eprintln!("bbox {lo:?} .. {hi:?}, base {:?}", c.base);
 }
+
+/// Timpii pe etape la incarcarea unui DWG mare (rulat manual): MB_PROFILE_FILE=cale cargo test --release --test formats profile_load -- --ignored --nocapture
+#[test]
+#[ignore]
+fn profile_load() {
+    let Ok(p) = std::env::var("MB_PROFILE_FILE") else { return };
+    let t0 = std::time::Instant::now();
+    let last = std::cell::RefCell::new((String::new(), 0.0f64));
+    let prog = |_f: f32, s: &str| {
+        let now = t0.elapsed().as_secs_f64();
+        let mut l = last.borrow_mut();
+        if l.0 != s {
+            if !l.0.is_empty() {
+                eprintln!("{:>7.3} s  {}", now - l.1, l.0);
+            }
+            *l = (s.to_string(), now);
+        }
+    };
+    let raw = bimrust::load_any(&p, &prog).unwrap();
+    let l = last.borrow().clone();
+    eprintln!("{:>7.3} s  {}", t0.elapsed().as_secs_f64() - l.1, l.0);
+    let t1 = std::time::Instant::now();
+    let m = bimrust::build_model(raw, &p, raw_center());
+    eprintln!("{:>7.3} s  build model ({} elements)", t1.elapsed().as_secs_f64(), m.elements.len());
+    eprintln!("total {:.3} s", t0.elapsed().as_secs_f64());
+}
+
+fn raw_center() -> glam::DVec3 {
+    glam::DVec3::ZERO
+}

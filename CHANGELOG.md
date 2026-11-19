@@ -3,6 +3,26 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.15.0 - 2026-11-19
+- **Panouri profesionale**: fiecare zonă (stânga / dreapta / jos) are 📌 **auto-hide** - devine o bandă subțire cu
+  file, panoul apare peste model când îl atingi și se ascunde singur; **View › Auto-hide** pentru toate, **Hide panels
+  (F11)** pentru tot ecranul pe model.
+- **Selecție cu fereastră** (Home › Window): stânga → dreapta = complet în interior, dreapta → stânga = atinge
+  (ca AutoCAD), Ctrl adaugă.
+- **Export IFC doar pentru selecție** (Output › IFC › Selection, sau click dreapta › Export selection to IFC).
+- **Export IFC mai corect**: vârfuri sudate (0.1 mm), solide închise marcate Closed, o suprafață pe culoare,
+  plasarea fiecărui element la colțul lui (precizie), geometria identică scrisă o dată (IfcMappedItem).
+- **Relocare ca în Navisworks** (Review › Relocate): **Move** punct → punct, **Rotate** (pivot + direcții),
+  **Align** fața unui model pe o fată țintă; pentru tot modelul sau doar mutarea selecției.
+- **Secțiuni pe niveluri mai bune**: grup **Level** în Viewpoint (nivel, ▲ ▼, box, plan, doar nivelul), **PgUp / PgDn**,
+  margini reglabile (placa de sub nivel / de deasupra), **Only this level** (ascunde restul).
+- **Import axe din DWG / DXF** (Edit Grids): liniile stratului de axe + etichetele din bule; stratul se ghicește sau se alege.
+- **Referință în Revit și AutoCAD / Plant 3D** (Output › Reference → .mbref):
+  Revit - butonul **ManageBIM Reference** (Load / Reload / Unload, DirectShape Generic Models în grup fixat);
+  AutoCAD / Plant 3D - **MBREFERENCE / MBREFRELOAD / MBREFUNLOAD** (plase 3D pe strat blocat).
+- Stabilitate: exporturile / importurile din dialoguri rulează protejat (o eroare internă nu mai închide aplicația);
+  DWG-urile cu solide ACIS se încarcă ~15% mai repede.
+
 ## 0.14.0 - 2026-11-19
 - **.bimd** - echivalentul NWD: **Publish** (Home › Project, sau File) pune proiectul și toate modelele într-un singur
   fișier, care se deschide pe orice PC fără fișierele sursă; Save scrie din nou în .bimd. Se asociază cu ManageBIM.

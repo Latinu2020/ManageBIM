@@ -114,16 +114,35 @@ impl eframe::App for App {
         self.status_bar(ctx);
         let maxh = (ctx.screen_rect().height() * 0.65).max(200.0);
         let side_max = (ctx.screen_rect().width() * 0.38).max(260.0);
-        if !self.settings.layout.in_area(Dock::Bottom).is_empty() {
-            egui::TopBottomPanel::bottom("bottom").resizable(true).default_height(220.0).min_height(100.0).max_height(maxh).show(ctx, |ui| self.dock_area(ui, Dock::Bottom));
-        }
-        if !self.settings.layout.in_area(Dock::Left).is_empty() {
-            egui::SidePanel::left("left").resizable(true).default_width(250.0).min_width(180.0).max_width(side_max).show(ctx, |ui| self.dock_area(ui, Dock::Left));
-        }
-        if !self.settings.layout.in_area(Dock::Right).is_empty() {
-            egui::SidePanel::right("right").resizable(true).default_width(270.0).min_width(190.0).max_width(side_max).show(ctx, |ui| self.dock_area(ui, Dock::Right));
+        // zonele de panouri: fixate (pin) sau auto-hide (banda subtire cu file, panoul apare peste model)
+        let mut strips: [Option<Rect>; 3] = [None; 3];
+        if !self.settings.layout.hide_all {
+            let ah = self.settings.layout.autohide;
+            let pf = egui::Frame::side_top_panel(&ctx.style()).inner_margin(egui::Margin::symmetric(6.0, 4.0));
+            if !self.settings.layout.in_area(Dock::Bottom).is_empty() {
+                if ah[2] {
+                    strips[2] = Some(egui::TopBottomPanel::bottom("bottom_strip").exact_height(26.0).resizable(false).show(ctx, |ui| self.dock_strip(ui, Dock::Bottom)).response.rect);
+                } else {
+                    egui::TopBottomPanel::bottom("bottom").frame(pf).resizable(true).default_height(220.0).min_height(100.0).max_height(maxh).show(ctx, |ui| self.dock_area(ui, Dock::Bottom));
+                }
+            }
+            if !self.settings.layout.in_area(Dock::Left).is_empty() {
+                if ah[0] {
+                    strips[0] = Some(egui::SidePanel::left("left_strip").exact_width(30.0).resizable(false).show(ctx, |ui| self.dock_strip(ui, Dock::Left)).response.rect);
+                } else {
+                    egui::SidePanel::left("left").frame(pf).resizable(true).default_width(250.0).min_width(180.0).max_width(side_max).show(ctx, |ui| self.dock_area(ui, Dock::Left));
+                }
+            }
+            if !self.settings.layout.in_area(Dock::Right).is_empty() {
+                if ah[1] {
+                    strips[1] = Some(egui::SidePanel::right("right_strip").exact_width(30.0).resizable(false).show(ctx, |ui| self.dock_strip(ui, Dock::Right)).response.rect);
+                } else {
+                    egui::SidePanel::right("right").frame(pf).resizable(true).default_width(270.0).min_width(190.0).max_width(side_max).show(ctx, |ui| self.dock_area(ui, Dock::Right));
+                }
+            }
         }
         egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| self.viewport(ui));
+        self.flyout_ui(ctx, strips);
         // mers: tastele (shortcuts) si mouse-ul (viewport) au setat viteza tinta - aplicam lin
         self.walk_tick(dt);
         self.section_follow_tick();
@@ -176,6 +195,20 @@ impl App {
     // ================================================================== shortcuts
     fn shortcuts(&mut self, ctx: &egui::Context) {
         let typing = ctx.wants_keyboard_input();
+        // F11: toate panourile ascunse / inapoi (tot ecranul pentru model)
+        if ctx.input(|i| i.key_pressed(Key::F11)) {
+            self.settings.layout.hide_all = !self.settings.layout.hide_all;
+            self.flyout = None;
+        }
+        // PgUp / PgDn: nivelul de deasupra / dedesubt, cand o sectiune pe nivel e activa
+        if !typing && self.section.enabled && self.section_level.is_some() {
+            if ctx.input(|i| i.key_pressed(Key::PageUp)) {
+                self.section_level_step(1);
+            }
+            if ctx.input(|i| i.key_pressed(Key::PageDown)) {
+                self.section_level_step(-1);
+            }
+        }
         let (ctrl, o, s, f, h, i, esc, a, del) = ctx.input(|i| {
             (i.modifiers.command, i.key_pressed(Key::O), i.key_pressed(Key::S), i.key_pressed(Key::F), i.key_pressed(Key::H), i.key_pressed(Key::I), i.key_pressed(Key::Escape), i.key_pressed(Key::A), i.key_pressed(Key::Delete))
         });
@@ -533,6 +566,10 @@ impl App {
             if rbtn(ui, "👆", "Select", "Selection tool (Esc)", self.tool == Tool::Select, true).clicked() {
                 self.cur_measure.clear();
                 self.tool = Tool::Select;
+            }
+            if rbtn(ui, "⬚", "Window", "Window selection: drag left -> right = items fully inside, right -> left = items touching (Ctrl adds). Middle / Shift-drag still pans", self.tool == Tool::Window, true).clicked() {
+                self.cur_measure.clear();
+                self.tool = if self.tool == Tool::Window { Tool::Select } else { Tool::Window };
             }
             if rbtn(ui, "⬚", "Select All", "Select every visible element  Ctrl+A", false, true).clicked() {
                 let all = self.all_ids();
@@ -1166,6 +1203,30 @@ impl App {
             }
             self.panel_btn(ui, Panel::Measure, "📊", "List", "Measurements panel");
         });
+        // ca in Navisworks (Measure > Transform): relocare cu puncte alese in model
+        rgroup(ui, "Relocate", |ui| {
+            let cur = self.xform.as_ref().map(|x| x.mode);
+            let has = self.loaded_models().next().is_some();
+            for (m, ic, n, tip) in [
+                (crate::app::XformMode::Move, "✥", "Move", "Move a model point to point (snaps to corners)"),
+                (crate::app::XformMode::Rotate, "⟳", "Rotate", "Rotate a model about a picked point (current direction -> new direction)"),
+                (crate::app::XformMode::Align, "⇥", "Align", "Align a face of a model against a target face (rotation in plan + placing it on the face)"),
+            ] {
+                if rbtn(ui, ic, n, tip, cur == Some(m), has).clicked() {
+                    if cur == Some(m) {
+                        self.xform = None;
+                    } else {
+                        let sel = self.relocate_selection;
+                        self.xform_start(m, sel);
+                    }
+                }
+            }
+            ui.vertical(|ui| {
+                ui.add_space(4.0);
+                ui.radio_value(&mut self.relocate_selection, false, RichText::new("Model").small()).on_hover_text("Move / rotate the whole model of the first picked point");
+                ui.radio_value(&mut self.relocate_selection, true, RichText::new("Selection").small()).on_hover_text("Move only the selected items (point to point)");
+            });
+        });
         rgroup(ui, "Sectioning", |ui| {
             let sec = self.section.enabled;
             if rbtn(ui, "✂", "Enable", "Turn sectioning on / off", sec, true).clicked() {
@@ -1184,6 +1245,40 @@ impl App {
             }
             self.panel_btn(ui, Panel::Section, "⚙", "Planes", "Section planes & box");
         });
+        // acces rapid: nivelul, sus / jos, box de nivel sau taietura de plan
+        let levels = self.scene_grids().levels;
+        if !levels.is_empty() {
+            rgroup(ui, "Level", |ui| {
+                ui.vertical(|ui| {
+                    let mut li = self.section_level.unwrap_or(0).min(levels.len() - 1);
+                    egui::ComboBox::from_id_salt("rib_lev").width(118.0).selected_text(levels[li].0.clone()).show_ui(ui, |ui| {
+                        for (i, l) in levels.iter().enumerate().rev() {
+                            if ui.selectable_value(&mut li, i, &l.0).clicked() {
+                                self.section_level_box(i);
+                            }
+                        }
+                    });
+                    self.section_level = Some(li);
+                    ui.horizontal(|ui| {
+                        if ui.small_button("▼").on_hover_text("Level below (PgDn)").clicked() {
+                            self.section_level_step(-1);
+                        }
+                        if ui.small_button("▲").on_hover_text("Level above (PgUp)").clicked() {
+                            self.section_level_step(1);
+                        }
+                        if ui.small_button("▣").on_hover_text("Level box (floor to the next level)").clicked() {
+                            self.section_level_box(li);
+                        }
+                        if ui.small_button("✂").on_hover_text(format!("Plan cut at {:.2} m above the level", self.plan_cut_h)).clicked() {
+                            self.section_plan_cut(li, self.plan_cut_h);
+                        }
+                        if ui.small_button("👁").on_hover_text("Only this level's items").clicked() {
+                            self.isolate_level(li);
+                        }
+                    });
+                });
+            });
+        }
         self.visibility_group(ui);
     }
 
@@ -1284,9 +1379,21 @@ impl App {
             }
         });
         rgroup(ui, "IFC", |ui| {
-            let tip = if self.selected.is_empty() { "Export all visible items to IFC4: geometry, colours, levels, GUIDs and all properties" } else { "Export the selected items to IFC4: geometry, colours, levels, GUIDs and all properties" };
-            if rbtn(ui, "🏗", "Export IFC", tip, false, self.loaded_models().next().is_some()).clicked() {
+            let has = self.loaded_models().next().is_some();
+            if rbtn(ui, "🏗", "Export IFC", "Export all visible items to IFC4: geometry, colours, levels, GUIDs and all properties", false, has).clicked() {
+                self.ifc_selection = false;
                 self.request_path(Purpose::ExportIfc);
+            }
+            if rbtn(ui, "🎯", "Selection", "Export only the selected items to IFC4 (select them in the tree, with Find Items or with a Window)", false, !self.selected.is_empty()).clicked() {
+                self.ifc_selection = true;
+                self.request_path(Purpose::ExportIfc);
+            }
+        });
+        rgroup(ui, "Reference", |ui| {
+            let has = self.loaded_models().next().is_some();
+            let what = if self.selected.is_empty() { "all visible items" } else { "the selected items" };
+            if rbtn(ui, "🔗", "Revit / CAD", &format!("Reference of {what} for Revit (ManageBIM › Reference: Generic Model shapes, pinned) and AutoCAD / Plant 3D (command MBREFERENCE: meshes on a locked layer). Also: Revit can link the IFC export (Insert › Link IFC)."), false, has).clicked() {
+                self.request_path(Purpose::ExportReference);
             }
         });
         rgroup(ui, "Data", |ui| {
@@ -1335,6 +1442,15 @@ impl App {
                     }
                 }
             });
+            let all_auto = self.settings.layout.autohide.iter().all(|a| *a);
+            if rbtn(ui, "📌", "Auto-hide", "All panel areas auto-hide: thin tab strips, the panels slide in over the model when you point at them", all_auto, true).clicked() {
+                self.settings.layout.autohide = [!all_auto; 3];
+                self.flyout = None;
+            }
+            if rbtn(ui, "⛶", "Hide panels", "Hide all panels - the whole window for the model (F11)", self.settings.layout.hide_all, true).clicked() {
+                self.settings.layout.hide_all = !self.settings.layout.hide_all;
+                self.flyout = None;
+            }
             if rbtn(ui, "⟲", "Reset", "Restore the default window arrangement", false, true).clicked() {
                 self.settings.layout = Default::default();
             }
@@ -1583,6 +1699,39 @@ impl App {
                 self.request_path(Purpose::ExportNavisXml);
             }
         });
+    }
+
+    /// Selectie cu fereastra: `crossing` = tot ce atinge dreptunghiul, altfel doar ce e complet in interior.
+    /// Doar elementele vizibile; `add` (Ctrl) pastreaza selectia existenta.
+    fn select_in_window(&mut self, vp: &Mat4, view: Rect, sel: Rect, crossing: bool, add: bool) {
+        let mut ids = Vec::new();
+        for (mi, m) in self.loaded_models() {
+            for (ei, e) in m.elements.iter().enumerate() {
+                let id = ElemId { m: mi as u32, e: ei as u32 };
+                if !e.aabb.is_valid() || self.hidden.contains(&id) || e.default_hidden {
+                    continue;
+                }
+                let (a, b) = (e.aabb.min, e.aabb.max);
+                let corners: Vec<Option<Pos2>> = (0..8).map(|i| to_screen(vp, view, Vec3::new(if i & 1 == 0 { a.x } else { b.x }, if i & 2 == 0 { a.y } else { b.y }, if i & 4 == 0 { a.z } else { b.z }))).collect();
+                let ok = if crossing {
+                    let pts: Vec<Pos2> = corners.iter().flatten().copied().collect();
+                    if pts.is_empty() {
+                        false
+                    } else {
+                        let r = Rect::from_points(&pts);
+                        r.intersects(sel)
+                    }
+                } else {
+                    corners.iter().all(|c| c.map_or(false, |p| sel.contains(p)))
+                };
+                if ok {
+                    ids.push(id);
+                }
+            }
+        }
+        let n = ids.len();
+        self.apply(Action::Select(ids, add));
+        self.toast(format!("{n} items {} the window", if crossing { "touching" } else { "inside" }));
     }
 
     /// Nimic deschis si nimic in curs de incarcare: se arata pagina de start.
@@ -1968,11 +2117,105 @@ impl App {
         }
     }
 
+    /// Banda unei zone in auto-hide: cate un buton pe panou (iconita); hover / clic deschide panoul peste model.
+    fn dock_strip(&mut self, ui: &mut egui::Ui, d: Dock) {
+        let tabs = self.settings.layout.in_area(d);
+        let show = |ui: &mut egui::Ui, p: Panel, this: &mut Self| {
+            let icon = p.title().split_whitespace().next().unwrap_or("•").to_string();
+            let on = this.flyout.map(|f| f.1 == p).unwrap_or(false);
+            let r = ui.add(egui::Button::new(RichText::new(icon).size(15.0)).selected(on).min_size(EV::new(24.0, 24.0))).on_hover_text(p.title().trim_start_matches(|c: char| !c.is_alphanumeric()).to_string());
+            if r.hovered() || r.clicked() {
+                this.flyout = Some((d, p));
+                this.flyout_seen = Instant::now();
+            }
+        };
+        if d == Dock::Bottom {
+            ui.horizontal(|ui| {
+                for p in tabs {
+                    show(ui, p, self);
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button("📌").on_hover_text("Pin the panels (always visible)").clicked() {
+                        self.settings.layout.autohide[d.idx()] = false;
+                        self.flyout = None;
+                    }
+                });
+            });
+        } else {
+            ui.vertical_centered(|ui| {
+                if ui.small_button("📌").on_hover_text("Pin the panels (always visible)").clicked() {
+                    self.settings.layout.autohide[d.idx()] = false;
+                    self.flyout = None;
+                }
+                ui.add_space(6.0);
+                for p in tabs {
+                    show(ui, p, self);
+                }
+            });
+        }
+    }
+
+    /// Panoul deschis peste model dintr-o zona auto-hide; se inchide cand mouse-ul pleaca (sau Esc / clic in model).
+    fn flyout_ui(&mut self, ctx: &egui::Context, strips: [Option<Rect>; 3]) {
+        let Some((d, p)) = self.flyout else { return };
+        let Some(strip) = strips[d.idx()] else {
+            self.flyout = None;
+            return;
+        };
+        let screen = ctx.screen_rect();
+        let (pos, size) = match d {
+            Dock::Left => (strip.right_top(), EV::new(320.0, strip.height())),
+            Dock::Right => (Pos2::new(strip.left() - 340.0, strip.top()), EV::new(340.0, strip.height())),
+            _ => {
+                let h = (screen.height() * 0.38).clamp(200.0, 420.0);
+                (Pos2::new(strip.left(), strip.top() - h), EV::new(strip.width(), h))
+            }
+        };
+        let fr = egui::Area::new(egui::Id::new("flyout")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
+            egui::Frame::window(&ctx.style()).rounding(6.0).inner_margin(8.0).show(ui, |ui| {
+                ui.set_min_size(size - EV::splat(16.0));
+                ui.set_max_size(size - EV::splat(16.0));
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(p.title()).strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("✖").on_hover_text("Hide").clicked() {
+                            self.flyout = None;
+                        }
+                        if ui.small_button("📌").on_hover_text("Pin this area (panels always visible)").clicked() {
+                            self.settings.layout.autohide[d.idx()] = false;
+                            self.settings.layout.active[d.idx()] = Some(p);
+                            self.flyout = None;
+                        }
+                    });
+                });
+                ui.separator();
+                egui::ScrollArea::both().id_salt(("flyout_scroll", p)).auto_shrink([false, false]).show(ui, |ui| self.panel_body(ui, p));
+            });
+        });
+        let area = fr.response.rect;
+        // ramane deschis cat mouse-ul e pe panou / pe banda, cat se tasteaza sau se trage ceva
+        let hover = ctx.pointer_hover_pos().map_or(false, |h| area.expand(6.0).contains(h) || strip.contains(h));
+        let busy = ctx.wants_keyboard_input() || ctx.is_using_pointer() || ctx.memory(|m| m.any_popup_open());
+        if hover || busy {
+            self.flyout_seen = Instant::now();
+        }
+        if ctx.input(|i| i.key_pressed(Key::Escape)) || self.flyout_seen.elapsed().as_secs_f32() > 0.6 {
+            self.flyout = None;
+        }
+        if self.flyout.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        }
+    }
+
     fn dock_area(&mut self, ui: &mut egui::Ui, d: Dock) {
         let tabs = self.settings.layout.in_area(d);
         let active = self.settings.layout.active[d.idx()];
         ui.horizontal_wrapped(|ui| {
             ui.style_mut().spacing.item_spacing.x = 3.0;
+            // auto-hide: zona devine o banda subtire, panourile apar peste model cand le atingi
+            if ui.small_button("📌").on_hover_text("Auto-hide this area: panels slide in over the model when you point at their tab").clicked() {
+                self.settings.layout.autohide[d.idx()] = true;
+            }
             for p in &tabs {
                 let on = Some(*p) == active;
                 let r = ui.selectable_label(on, if on { RichText::new(p.title()).strong() } else { RichText::new(p.title()) }).on_hover_text("Right-click: dock left / right / bottom, float or close");
@@ -2128,13 +2371,19 @@ impl App {
         let mut snap: Option<Vec3> = None;
         // tipul punctului prins: 0 suprafata, 1 colt, 2 mijloc de muchie, 3 pe muchie
         let mut snap_kind = 0u8;
+        // elementul si normala fetei sub cursor (relocare: aliniere pe fata)
+        let mut snap_hit: Option<(ElemId, Vec3)> = None;
+        if self.xform.is_some() && ui.input(|i| i.key_pressed(Key::Escape)) {
+            self.xform = None;
+        }
         if self.grid_pick > 0 && ui.input(|i| i.key_pressed(Key::Escape)) {
             self.grid_pick = 0;
         }
-        let picking = matches!(self.tool, Tool::Measure(_)) || self.grid_pick > 0;
+        let picking = matches!(self.tool, Tool::Measure(_)) || self.grid_pick > 0 || self.xform.is_some();
         if let (true, Some(hp)) = (picking, hover) {
             let (o, d) = self.cam.ray(uv(hp), aspect);
-            if let Some((_, _, p, tri)) = self.pick(o, d) {
+            if let Some((hit_id, _, p, tri)) = self.pick(o, d) {
+                snap_hit = Some((hit_id, (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalize_or_zero()));
                 let vpm = params.view_proj;
                 let scr = |v: Vec3| to_screen(&vpm, rect, v).map(|s| s.distance(hp));
                 let mut best = (p, 0u8, f32::INFINITY);
@@ -2217,7 +2466,37 @@ impl App {
                 }
             }
         }
-        let walk = self.nav == NavMode::Walk && red_tool.is_none();
+        // selectie cu fereastra (unealta Window): tragerea cu butonul stang deseneaza dreptunghiul
+        let box_tool = self.tool == Tool::Window;
+        if box_tool {
+            if resp.drag_started_by(egui::PointerButton::Primary) {
+                self.box_start = resp.interact_pointer_pos().map(|p| [p.x, p.y]);
+            }
+            if let (Some(s), Some(p)) = (self.box_start, resp.interact_pointer_pos().or(hover)) {
+                let a = Pos2::new(s[0], s[1]);
+                let r = Rect::from_two_pos(a, p);
+                // stanga -> dreapta: fereastra (albastru, continuu); dreapta -> stanga: crossing (verde, punctat)
+                let crossing = p.x < a.x;
+                let (fill, col) = if crossing { (Color32::from_rgba_unmultiplied(80, 200, 110, 30), Color32::from_rgb(80, 200, 110)) } else { (Color32::from_rgba_unmultiplied(80, 140, 255, 30), Color32::from_rgb(80, 140, 255)) };
+                painter.rect_filled(r, 0.0, fill);
+                if crossing {
+                    let c = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()];
+                    painter.extend(egui::Shape::dashed_line(&c, Stroke::new(1.2_f32, col), 6.0, 4.0));
+                } else {
+                    painter.rect_stroke(r, 0.0, Stroke::new(1.2_f32, col));
+                }
+                if resp.drag_stopped() {
+                    self.box_start = None;
+                    if r.width() > 3.0 && r.height() > 3.0 {
+                        self.select_in_window(&params.view_proj, rect, r, crossing, mods.command || mods.ctrl);
+                    }
+                }
+            }
+            if !resp.dragged() && !resp.drag_stopped() {
+                self.box_start = None;
+            }
+        }
+        let walk = self.nav == NavMode::Walk && red_tool.is_none() && !box_tool;
         if walk && resp.drag_started_by(egui::PointerButton::Primary) && !mods.shift {
             self.walk_drag = resp.interact_pointer_pos().map(|p| [p.x, p.y]);
         }
@@ -2242,7 +2521,7 @@ impl App {
         if red_tool.is_some() {
             // primary drag deseneaza; doar middle / right navigheaza
         }
-        if !walk && ((red_tool.is_none() && resp.drag_started_by(egui::PointerButton::Primary)) || resp.drag_started_by(egui::PointerButton::Middle)) {
+        if !walk && ((red_tool.is_none() && !box_tool && resp.drag_started_by(egui::PointerButton::Primary)) || resp.drag_started_by(egui::PointerButton::Middle)) {
             self.pivot = None;
             if let Some(p) = resp.interact_pointer_pos() {
                 let (o, d) = self.cam.ray(uv(p), aspect);
@@ -2253,7 +2532,7 @@ impl App {
             }
         }
         let delta = resp.drag_delta();
-        if (walk || red_tool.is_some()) && resp.dragged_by(egui::PointerButton::Primary) && !mods.shift {
+        if (walk || red_tool.is_some() || box_tool) && resp.dragged_by(egui::PointerButton::Primary) && !mods.shift {
             // handled above
         } else if resp.dragged_by(egui::PointerButton::Primary) && !mods.shift && self.nav == NavMode::Pan {
             // modul Pan: modelul urmeaza mouse-ul
@@ -2285,13 +2564,22 @@ impl App {
             }
         }
         // alegerea originii / directiei axelor are prioritate fata de unealta curenta
-        let grid_click = resp.clicked() && self.grid_pick > 0 && snap.is_some();
+        // relocare: punctele alese (cu snap) si normala fetei
+        let xform_click = resp.clicked() && self.xform.is_some() && snap.is_some();
+        if xform_click {
+            if let (Some(s), Some((id, n))) = (snap, snap_hit) {
+                // normala spre camera (fata vazuta)
+                let n = if n.dot(self.cam.eye() - s) < 0.0 { -n } else { n };
+                self.xform_point(s, n, id);
+            }
+        }
+        let grid_click = resp.clicked() && self.grid_pick > 0 && snap.is_some() && !xform_click;
         if grid_click {
             if let Some(s) = snap {
                 self.grid_pick_point(s);
             }
         }
-        if resp.clicked() && !grid_click {
+        if resp.clicked() && !grid_click && !xform_click {
             if let Some(p) = resp.interact_pointer_pos() {
                 match self.tool {
                     Tool::Measure(k) => {
@@ -2328,7 +2616,7 @@ impl App {
                             }
                         }
                     }
-                    Tool::Select => {
+                    Tool::Select | Tool::Window => {
                         let (o, d) = self.cam.ray(uv(p), aspect);
                         match self.pick(o, d) {
                             Some((id, ..)) => self.apply(Action::Select(vec![id], mods.command)),
@@ -2378,6 +2666,11 @@ impl App {
                     let n = self.sets.len() + 1;
                     self.sets.push(SelSet { name: format!("Set {n}"), kind: SetKind::Explicit(sel.clone()) });
                     self.open_panel(Panel::Sets);
+                    ui.close_menu();
+                }
+                if ui.button("🏗 Export selection to IFC…").clicked() {
+                    self.ifc_selection = true;
+                    self.request_path(Purpose::ExportIfc);
                     ui.close_menu();
                 }
                 if ui.button("Attach to current TimeLiner task").clicked() {
@@ -2529,6 +2822,26 @@ impl App {
                     }
                 }
             }
+        }
+        // relocare in curs: punctele alese, linia spre cursor si indicatia pasului urmator
+        if let Some(x) = &self.xform {
+            let col = Color32::from_rgb(255, 140, 60);
+            let mut prev: Option<Pos2> = None;
+            for (i, (p, _, _)) in x.pts.iter().enumerate() {
+                if let Some(s) = to_screen(&vp, rect, *p) {
+                    painter.circle_filled(s, 5.0, col);
+                    painter.text(s + EV::new(8.0, -8.0), Align2::LEFT_BOTTOM, format!("{}", i + 1), FontId::proportional(12.0), col);
+                    if let Some(q) = prev {
+                        painter.line_segment([q, s], Stroke::new(2.0_f32, col));
+                    }
+                    prev = Some(s);
+                }
+            }
+            if let (Some(q), Some(sp)) = (prev, snap.and_then(|s| to_screen(&vp, rect, s))) {
+                painter.add(egui::Shape::dashed_line(&[q, sp], Stroke::new(1.5_f32, col), 8.0, 4.0));
+            }
+            let target = if x.selection { "selected items" } else { "model" };
+            painter.text(rect.center_top() + EV::new(0.0, 14.0), Align2::CENTER_TOP, format!("{} ({target}) · Esc to cancel", x.mode.hint(x.pts.len())), FontId::proportional(14.0), pal.overlay_text);
         }
         let mcol = Color32::from_rgb(255, 220, 70);
         for m in &self.measures {
@@ -4744,40 +5057,46 @@ impl App {
             ui.checkbox(&mut self.section_caps, "Filled cuts").on_hover_text("Cut faces drawn solid and hatched (closed solids), instead of seeing inside the elements");
             ui.checkbox(&mut self.show_section_plane, "Show plane").on_hover_text("Draw the section plane as a transparent green surface");
         });
-        // sectiune dupa nivel: un nivel intreg (pardoseala -> nivelul urmator) sau o taietura de plan la o inaltime
+        // sectiune dupa nivel: un nivel intreg (cu margini sub / deasupra), taietura de plan sau doar elementele nivelului
         let levels = self.scene_grids().levels;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("By level").strong());
             if levels.is_empty() {
                 ui.label(RichText::new("no levels in the models - add them in View › Edit Levels").weak());
                 return;
             }
-            let id = ui.make_persistent_id("sec_level");
-            let (mut li, mut h): (usize, f32) = ui.data_mut(|d| d.get_temp(id)).unwrap_or((0, 1.2));
-            li = li.min(levels.len() - 1);
-            egui::ComboBox::from_id_salt("seclev").width(150.0).selected_text(levels[li].0.clone()).show_ui(ui, |ui| {
-                for (i, l) in levels.iter().enumerate() {
-                    ui.selectable_value(&mut li, i, &l.0);
+            let mut li = self.section_level.unwrap_or(0).min(levels.len() - 1);
+            egui::ComboBox::from_id_salt("seclev").width(150.0).selected_text(format!("{}  {:+.2}", levels[li].0, levels[li].1)).show_ui(ui, |ui| {
+                for (i, l) in levels.iter().enumerate().rev() {
+                    ui.selectable_value(&mut li, i, format!("{}  {:+.2}", l.0, l.1));
                 }
             });
+            if Some(li) != self.section_level {
+                self.section_level = Some(li);
+            }
+            if ui.small_button("▼").on_hover_text("Level below (PgDn)").clicked() {
+                self.section_level_step(-1);
+            }
+            if ui.small_button("▲").on_hover_text("Level above (PgUp)").clicked() {
+                self.section_level_step(1);
+            }
             if ui.button("▣ Level box").on_hover_text("Section box from this level to the next one").clicked() {
                 self.section_level_box(li);
             }
-            ui.separator();
-            ui.label("Plan cut at");
-            ui.add(egui::DragValue::new(&mut h).speed(0.05).range(-5.0..=20.0).fixed_decimals(2).suffix(" m"));
-            if ui.button("✂ Plan cut").on_hover_text("Cut everything above this height (like a floor plan)").clicked() {
-                self.section_plan_cut(li, h);
+            if ui.button("✂ Plan cut").on_hover_text("Cut everything above the height below (like a floor plan)").clicked() {
+                self.section_plan_cut(li, self.plan_cut_h);
             }
-            if ui.small_button("◀").on_hover_text("Level below").clicked() && li > 0 {
-                li -= 1;
-                self.section_level_box(li);
+            if ui.button("👁 Only this level").on_hover_text("Show only the items of this level (by the level name in the models, otherwise by height); Unhide All to undo").clicked() {
+                self.isolate_level(li);
             }
-            if ui.small_button("▶").on_hover_text("Level above").clicked() && li + 1 < levels.len() {
-                li += 1;
-                self.section_level_box(li);
-            }
-            ui.data_mut(|d| d.insert_temp(id, (li, h)));
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new("Plan cut height").weak());
+            ui.add(egui::DragValue::new(&mut self.plan_cut_h).speed(0.05).range(-5.0..=20.0).fixed_decimals(2).suffix(" m"));
+            ui.label(RichText::new("Level box: below the level").weak());
+            ui.add(egui::DragValue::new(&mut self.level_below).speed(0.02).range(0.0..=5.0).fixed_decimals(2).suffix(" m")).on_hover_text("e.g. 0.30 to include the slab under the floor");
+            ui.label(RichText::new("past the next level").weak());
+            ui.add(egui::DragValue::new(&mut self.level_above).speed(0.02).range(-5.0..=5.0).fixed_decimals(2).suffix(" m")).on_hover_text("negative = stop under the next slab, positive = include it");
         });
         ui.separator();
         ui.spacing_mut().slider_width = (ui.available_width() - 330.0).clamp(150.0, 700.0);
@@ -5831,6 +6150,8 @@ impl App {
                 Purpose::SharedFolder => "Shared issues folder",
                 Purpose::PublishBimd => "Publish project (.bimd)",
                 Purpose::ExportGrids => "Export grid axes",
+                Purpose::ImportGridsCad => "Import grid axes (DWG / DXF)",
+                Purpose::ExportReference => "Reference for Revit / AutoCAD",
                 Purpose::ExportClashNavis => "Export clashes as Navisworks viewpoints",
                 Purpose::ImportBcf => "Import BCF issues",
                 Purpose::ImportTasksCsv => "Import CSV Schedule",
@@ -6080,6 +6401,26 @@ impl App {
                         }
                         if ui.button("Clear").clicked() {
                             self.user_grids.clear();
+                        }
+                    });
+                    // import din DWG / DXF (planul de axe al arhitectului / structuristului)
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.button("📥 Import from DWG / DXF…").on_hover_text("Grid lines from the drawing (layer GRID / AXE / AX…) with the tags from their bubbles; units from the drawing").clicked() {
+                            self.request_path(Purpose::ImportGridsCad);
+                        }
+                        if let Some((path, layers, cur)) = self.grid_import.clone() {
+                            ui.label(RichText::new("Layer").weak());
+                            let mut pick: Option<String> = None;
+                            egui::ComboBox::from_id_salt("grid_layer").width(150.0).selected_text(if cur.is_empty() { "choose…".to_string() } else { cur.clone() }).show_ui(ui, |ui| {
+                                for (l, n) in layers.iter().take(200) {
+                                    if ui.selectable_label(*l == cur, format!("{l}  ({n} lines)")).clicked() {
+                                        pick = Some(l.clone());
+                                    }
+                                }
+                            });
+                            if let Some(l) = pick {
+                                self.import_grids_cad(&path, Some(&l));
+                            }
                         }
                     });
                 });

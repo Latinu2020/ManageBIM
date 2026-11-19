@@ -50,6 +50,17 @@ namespace ManageBIM.Revit
                 ib.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
                 ib.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
             }
+            var reference = new PushButtonData("ManageBIMReference", "ManageBIM\nReference", asm, typeof(ReferenceCommand).FullName)
+            {
+                ToolTip = "Bring a model from ManageBIM in as reference geometry (Generic Models, pinned group)",
+                LongDescription = "In ManageBIM: Output › Reference (Revit / CAD) saves a .mbref file (the visible or the selected items). " +
+                                  "This command reads it and creates one DirectShape per item, with its colour, in shared coordinates.",
+            };
+            if (panel.AddItem(reference) is PushButton rb)
+            {
+                rb.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
+                rb.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
+            }
             return Result.Succeeded;
         }
 

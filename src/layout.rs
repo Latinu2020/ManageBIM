@@ -110,6 +110,12 @@ pub struct UiLayout {
     pub panels: Vec<PanelState>,
     /// active tab of the left, right and bottom areas
     pub active: [Option<Panel>; 3],
+    /// auto-hide (ca in Navisworks): zona e o banda subtire cu filele; panoul apare peste model la hover / clic
+    #[serde(default)]
+    pub autohide: [bool; 3],
+    /// toate panourile ascunse (F11): tot ecranul pentru model
+    #[serde(default)]
+    pub hide_all: bool,
 }
 
 impl Default for UiLayout {
@@ -118,6 +124,8 @@ impl Default for UiLayout {
             // panourile noi pornesc inchise (se deschid din ribbon), ca sa nu aglomereze zona de jos
             panels: ALL_PANELS.iter().map(|&p| PanelState { panel: p, dock: p.default_dock(), open: !matches!(p, Panel::Profiler | Panel::Compare | Panel::Quantities) }).collect(),
             active: [Some(Panel::Tree), Some(Panel::Properties), Some(Panel::Find)],
+            autohide: [false; 3],
+            hide_all: false,
         }
     }
 }
