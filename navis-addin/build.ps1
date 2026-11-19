@@ -73,7 +73,7 @@ function Get-ApiRef([int]$year) {
 
 $fw = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
 $common = @('/nologo', '/langversion:latest', '/optimize+', '/platform:x64', '/nowarn:1701,1702', "/r:$fw\System.dll", "/r:$fw\System.Core.dll")
-$srcs = @('BimcWriter.cs', 'BimcStream.cs', 'NwCom.cs', 'NwExporter.cs', 'ExportPlugin.cs', 'ManageBimLink.cs', 'ManageBimIssues.cs', 'IssuesPlugin.cs') | ForEach-Object { Join-Path $here $_ }
+$srcs = @('BimcWriter.cs', 'BimcStream.cs', 'NwCom.cs', 'NwExporter.cs', 'ExportPlugin.cs', 'ManageBimLink.cs', 'ManageBimIssues.cs', 'IssuesPlugin.cs', 'SyncPlugin.cs') | ForEach-Object { Join-Path $here $_ }
 
 # --- add-in: cate unul pentru fiecare an
 $built = @{}

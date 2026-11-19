@@ -1017,6 +1017,8 @@ pub struct App {
     pub ifc_selection: bool,
     /// exportul web: doar selectia
     pub web_selection: bool,
+    /// Live Link (selectie sincronizata cu Revit / Navisworks)
+    pub sync: crate::sync::SyncState,
     /// fata section box-ului trasa acum (0..5: -X +X -Y +Y -Z +Z)
     pub box_drag: Option<usize>,
     pub show_clash_matrix: bool,
@@ -1241,6 +1243,7 @@ impl App {
             box_start: None,
             ifc_selection: false,
             web_selection: false,
+            sync: Default::default(),
             box_drag: None,
             show_clash_matrix: false,
             grid_import: None,
@@ -6379,6 +6382,102 @@ impl App {
         };
         self.apply(Action::Select(out, false));
         self.toast(format!("{n} items selected - same {}: {what}", if by_type { "type" } else { "category" }));
+    }
+
+    // ------------------------------------------------------------ Live Link: selectie sincronizata
+
+    /// Porneste / opreste selectia sincronizata cu Revit si Navisworks.
+    pub fn set_sync(&mut self, on: bool) {
+        self.settings.sync_selection = on;
+        self.settings.save();
+        self.sync.enabled_at = std::time::SystemTime::now();
+        self.sync.sent = u64::MAX;
+        self.sync.seen = [None; 2];
+        if on {
+            self.toast("Live Link on: the selection follows Revit / Navisworks (Revit: ManageBIM › Sync Selection; Navisworks: Tool Add-ins › Sync Selection).");
+        }
+    }
+
+    fn sel_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.selected.len().hash(&mut h);
+        for id in &self.selected {
+            id.hash(&mut h);
+        }
+        h.finish()
+    }
+
+    /// identificator -> element, pentru toate modelele incarcate (refacut cand se schimba modelele)
+    fn sync_index(&mut self) -> &HashMap<String, ElemId> {
+        let key: usize = self.loaded_models().map(|(i, m)| m.elements.len() * 31 + i).sum::<usize>() + self.loaded_models().count();
+        if self.sync.index_key != key || self.sync.index.is_empty() {
+            let mut idx: HashMap<String, ElemId> = HashMap::new();
+            for (mi, m) in self.loaded_models() {
+                for (ei, e) in m.elements.iter().enumerate() {
+                    for s in crate::sync::ids_of(e) {
+                        idx.entry(s).or_insert(ElemId { m: mi as u32, e: ei as u32 });
+                    }
+                }
+            }
+            self.sync.index = idx;
+            self.sync.index_key = key;
+        }
+        &self.sync.index
+    }
+
+    /// Apelat la fiecare cadru: trimite selectia cand se schimba, citeste selectia add-in-urilor.
+    pub fn sync_tick(&mut self) {
+        if !self.settings.sync_selection || self.sync.last_poll.elapsed().as_millis() < 250 {
+            return;
+        }
+        self.sync.last_poll = Instant::now();
+        // ---- primit din Revit / Navisworks
+        if let Some(dir) = crate::sync::sync_dir() {
+            for (k, (file, who)) in crate::sync::PEERS.iter().enumerate() {
+                let p = dir.join(file);
+                let Ok(t) = std::fs::metadata(&p).and_then(|m| m.modified()) else { continue };
+                if self.sync.seen[k] == Some(t) {
+                    continue;
+                }
+                self.sync.seen[k] = Some(t);
+                self.sync.peer_seen[k] = Some(Instant::now());
+                // selectia veche (de dinainte de pornirea legaturii) nu se aplica
+                if t < self.sync.enabled_at {
+                    continue;
+                }
+                let Some(ids) = std::fs::read_to_string(&p).ok().and_then(|s| crate::sync::parse_selection(&s)) else { continue };
+                let idx = self.sync_index().clone();
+                let mut found: Vec<ElemId> = ids.iter().filter_map(|s| idx.get(s).copied()).collect();
+                found.sort();
+                found.dedup();
+                let n_found = found.len();
+                let current: Vec<ElemId> = self.selected.iter().copied().collect();
+                if found != current {
+                    self.apply(Action::Select(found.clone(), false));
+                    if self.settings.sync_follow && !found.is_empty() {
+                        self.apply(Action::Focus(found));
+                    }
+                }
+                // nu o trimitem inapoi (fara ecou)
+                self.sync.sent = self.sel_hash();
+                if !ids.is_empty() && n_found == 0 {
+                    self.sync.last_msg = format!("{who}: selection not found in the loaded models");
+                } else {
+                    self.sync.last_msg = format!("{who}: {n_found} items");
+                }
+            }
+        }
+        // ---- trimis catre Revit / Navisworks
+        let h = self.sel_hash();
+        if h != self.sync.sent {
+            self.sync.sent = h;
+            let sel: Vec<ElemId> = self.selected.iter().copied().take(20_000).collect();
+            let lines: Vec<Vec<String>> = sel.iter().filter_map(|id| self.elem(*id).map(|(_, e)| crate::sync::ids_of(e))).filter(|v| !v.is_empty()).collect();
+            if let Err(e) = crate::sync::write_selection(crate::sync::OURS, &lines) {
+                self.sync.last_msg = format!("Cannot write the selection: {e}");
+            }
+        }
     }
     /// Viewer web: un singur .html cu modelul (elementele vizibile, sau selectia) - se trimite oricui,
     /// se deschide in browser fara instalare si fara internet.

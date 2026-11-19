@@ -149,3 +149,17 @@ fn export_sample_web_viewer() {
     let out = std::env::var("MB_WEB_OUT").unwrap_or_else(|_| "target/sample_web.html".into());
     std::fs::write(out, html).unwrap();
 }
+
+#[test]
+fn live_link_ids_match_revit_and_navisworks_forms() {
+    // element din IFC exportat din Revit: GlobalId comprimat + UniqueId in proprietati
+    let g = bimrust::sync::guid_to_ifc("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0").unwrap();
+    let mut e = el("Wall", "IfcWall", &[("Element", "UniqueId", "abc-123-uid")]);
+    e.guid = g.clone();
+    let ids = bimrust::sync::ids_of(&e);
+    assert!(ids.contains(&g));
+    assert!(ids.contains(&"0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0".to_string()), "Navisworks / Revit export id form");
+    assert!(ids.contains(&"abc-123-uid".to_string()), "Revit UniqueId");
+    let sel = bimrust::sync::parse_selection("MBSEL1\nabc-123-uid|x\n").unwrap();
+    assert!(sel.iter().any(|s| ids.contains(s)));
+}

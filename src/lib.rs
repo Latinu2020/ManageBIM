@@ -21,6 +21,7 @@ pub mod profiler;
 pub mod qto;
 pub mod shared;
 pub mod step;
+pub mod sync;
 pub mod tables;
 pub mod timeline;
 pub mod web;

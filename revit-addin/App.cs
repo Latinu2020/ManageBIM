@@ -61,6 +61,18 @@ namespace ManageBIM.Revit
                 rb.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
                 rb.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
             }
+            var sync = new PushButtonData("ManageBIMSync", "Sync\nSelection", asm, typeof(SyncCommand).FullName)
+            {
+                ToolTip = "Live Link: the selection follows ManageBIM and Navisworks, both ways (click again to stop)",
+                LongDescription = "Select elements in Revit and they are selected (and zoomed to) in ManageBIM; select in ManageBIM and they are selected here. " +
+                                  "Elements are matched by UniqueId / IFC GUID, so the ManageBIM model must come from this Revit model (Export BIMC, Send, or its IFC export). " +
+                                  "In ManageBIM turn it on in Select › Live Link › Sync Selection.",
+            };
+            if (panel.AddItem(sync) is PushButton syb)
+            {
+                syb.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
+                syb.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
+            }
             return Result.Succeeded;
         }
 

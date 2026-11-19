@@ -153,6 +153,11 @@ impl eframe::App for App {
         self.flyout_ui(ctx, strips);
         // mers: tastele (shortcuts) si mouse-ul (viewport) au setat viteza tinta - aplicam lin
         self.walk_tick(dt);
+        // Live Link: selectia sincronizata cu Revit / Navisworks (sondare usoara, de 4 ori pe secunda)
+        if self.settings.sync_selection {
+            self.sync_tick();
+            ctx.request_repaint_after(std::time::Duration::from_millis(300));
+        }
         self.section_follow_tick();
         self.float_windows(ctx);
         self.windows(ctx);
@@ -559,6 +564,17 @@ impl App {
                                 }
                                 if rbtn(ui, "▦", "Same Category", "Every visible item of the same category / IFC class (all walls, all doors...)", false, has).clicked() {
                                     self.select_similar(false);
+                                }
+                            });
+                            rgroup(ui, "Live Link", |ui| {
+                                let on = self.settings.sync_selection;
+                                if rbtn(ui, "🔗", "Sync Selection", "Selection follows Revit and Navisworks, both ways:\nselect here and the elements are selected in Revit / Navisworks, and the other way round.\nIn Revit: ManageBIM › Sync Selection. In Navisworks: Tool Add-ins › Sync Selection (once per session).\nThe models must be the same (exported from Revit / IFC from Revit / NWC).", on, true).clicked() {
+                                    self.set_sync(!on);
+                                }
+                                let follow = self.settings.sync_follow;
+                                if rbtn(ui, "🎯", "Zoom to It", "Zoom to the elements selected in Revit / Navisworks", follow, on).clicked() {
+                                    self.settings.sync_follow = !follow;
+                                    self.settings.save();
                                 }
                             });
                             self.ribbon_display(ui);
@@ -2790,6 +2806,16 @@ impl App {
                 if self.section.enabled {
                     ui.separator();
                     ui.colored_label(Color32::from_rgb(240, 180, 60), "Section active");
+                }
+                if self.settings.sync_selection {
+                    ui.separator();
+                    // verde = un add-in a raspuns in ultimele 10 minute
+                    let live: Vec<&str> = crate::sync::PEERS.iter().enumerate().filter(|(k, _)| self.sync.peer_seen[*k].map(|t| t.elapsed().as_secs() < 600).unwrap_or(false)).map(|(_, p)| p.1).collect();
+                    let (txt, col) = if live.is_empty() { ("Live Link: waiting for Revit / Navisworks".to_string(), ui.visuals().weak_text_color()) } else { (format!("Live Link: {}", live.join(" + ")), Color32::from_rgb(70, 190, 110)) };
+                    let r = ui.label(crate::theme::icon_job("🔗", &txt, 13.0, col));
+                    if !self.sync.last_msg.is_empty() {
+                        r.on_hover_text(&self.sync.last_msg);
+                    }
                 }
                 if self.sim_view() {
                     ui.separator();
