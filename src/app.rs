@@ -691,6 +691,8 @@ pub struct ProjectFile {
     /// Quantification
     #[serde(default)]
     pub qto: Option<crate::qto::QtoSetup>,
+    #[serde(default)]
+    pub check_rules: Vec<crate::check::Rule>,
 }
 
 /// Un nivel de grupare al arborelui de selectie: proprietatea (categorie, nume) dupa care se grupeaza.
@@ -817,6 +819,10 @@ pub enum Purpose {
     ImportGridsCad,
     ExportReference,
     ExportClashMatrix,
+    ImportCheckRules,
+    ExportCheckRules,
+    ExportCheckXlsx,
+    ExportCheckBcf,
     ExportGrids,
     ExportClashNavis,
     ImportBcf,
@@ -1127,6 +1133,11 @@ pub struct App {
     pub compare_on: bool,
     pub compare_pick: (Option<usize>, Option<usize>),
     pub compare_tol: f32,
+    /// Model Checker: regulile, ultimul rezultat, regula aleasa si avertismentele importului IDS
+    pub check_rules: Vec<crate::check::Rule>,
+    pub check_results: Option<Vec<crate::check::RuleResult>>,
+    pub check_sel: Option<usize>,
+    pub check_warn: Vec<String>,
     /// editorul de grupare al arborelui de selectie e deschis
     pub tree_edit: bool,
     /// Quantification: configuratia (salvata in proiect / sablon .bimqto) si ultimul rezultat
@@ -1319,6 +1330,10 @@ impl App {
             compare_on: false,
             compare_pick: (None, None),
             compare_tol: 1.0,
+            check_rules: Vec::new(),
+            check_results: None,
+            check_sel: None,
+            check_warn: Vec::new(),
             tree_edit: false,
             qto: Default::default(),
             qto_result: None,
@@ -2629,6 +2644,9 @@ impl App {
         self.compare_on = false;
         self.compare_pick = (None, None);
         self.qto = Default::default();
+        self.check_rules.clear();
+        self.check_results = None;
+        self.check_sel = None;
         self.qto_result = None;
     }
 
@@ -4476,6 +4494,7 @@ impl App {
             walk_path: self.walk_path.iter().map(|p| p.to_array()).collect(),
             profile: if self.profile.rules.is_empty() { None } else { Some(self.profile.clone()) },
             qto: Some(self.qto.clone()),
+            check_rules: self.check_rules.clone(),
         }
     }
 
@@ -4578,6 +4597,9 @@ impl App {
         self.profile = pf.profile.unwrap_or_default();
         self.profile_map = None;
         self.qto = pf.qto.unwrap_or_default();
+        self.check_rules = pf.check_rules;
+        self.check_results = None;
+        self.check_sel = None;
         self.qto_result = None;
         if let Some((s, _)) = self.sim_range() {
             self.sim_day = s as f32;
@@ -4921,6 +4943,10 @@ impl App {
             Purpose::ImportGridsCad => self.import_grids_cad(&path, None),
             Purpose::ExportReference => self.export_reference(&path),
             Purpose::ExportClashMatrix => self.export_clash_matrix(&path),
+            Purpose::ImportCheckRules => self.import_check_rules(&path),
+            Purpose::ExportCheckRules => self.export_check_rules(&path),
+            Purpose::ExportCheckXlsx => self.export_check_xlsx(&path),
+            Purpose::ExportCheckBcf => self.export_check_bcf(&path),
             Purpose::SharedFolder => {
                 self.shared_dir = Some(path.clone());
                 self.shared = Default::default();
@@ -5180,6 +5206,10 @@ impl App {
                     d.set_title("Reference for Revit / AutoCAD / Plant 3D").add_filter("ManageBIM reference", &["mbref"]).set_directory(dir).set_file_name(format!("{name}.mbref")).save_file().map(|p| vec![p.to_string_lossy().to_string()])
                 }
                 Purpose::ExportClashMatrix => d.set_title("Clash matrix (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("clash_matrix.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ImportCheckRules => d.set_title("Import IDS or rules").add_filter("IDS / ManageBIM rules", &["ids", "xml", "mbrules", "json"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportCheckRules => d.set_title("Save rules").add_filter("ManageBIM rules", &["mbrules"]).set_file_name("rules.mbrules").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportCheckXlsx => d.set_title("Model check report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("model_check.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportCheckBcf => d.set_title("Model check issues (BCF)").add_filter("BCF", &["bcf", "bcfzip"]).set_file_name("model_check.bcf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportGridsCad => d.set_title("Import grid axes from DWG / DXF").add_filter("DWG / DXF", &["dwg", "dxf"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportGrids => d.set_title("Export grid axes").add_filter("DXF (AutoCAD, any CAD)", &["dxf"]).add_filter("DWG (needs ODA File Converter)", &["dwg"]).set_file_name("grids.dxf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::SharedFolder => d.set_title("Shared issues folder (network / SharePoint / OneDrive)").pick_folder().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5263,6 +5293,10 @@ impl App {
                 Purpose::ImportGridsCad => String::new(),
                 Purpose::ExportReference => "reference.mbref".into(),
                 Purpose::ExportClashMatrix => "clash_matrix.xlsx".into(),
+                Purpose::ImportCheckRules => String::new(),
+                Purpose::ExportCheckRules => "rules.mbrules".into(),
+                Purpose::ExportCheckXlsx => "model_check.xlsx".into(),
+                Purpose::ExportCheckBcf => "model_check.bcf".into(),
                 Purpose::ExportClashNavis => "clashes_viewpoints.xml".into(),
                 Purpose::ExportTasksCsv => "schedule.csv".into(),
                 Purpose::ExportSets => "sets.bimsets".into(),
@@ -6325,6 +6359,167 @@ impl App {
             Ok(()) => self.toast(format!("Clash matrix saved: {}", crate::file_name(&p))),
             Err(e) => self.error(format!("Cannot write {p}: {e}")),
         }
+    }
+
+    // ------------------------------------------------------------ Model Checker (reguli + IDS)
+
+    /// Ruleaza toate regulile active pe modelele incarcate.
+    pub fn run_check(&mut self) {
+        if self.check_rules.is_empty() {
+            return self.error("No rules yet - add a rule, load the starter rules or import an IDS file.");
+        }
+        let t = std::time::Instant::now();
+        let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
+        if models.is_empty() {
+            return self.error("Open a model first.");
+        }
+        let refs: Vec<(usize, &Model)> = models.iter().map(|(i, m)| (*i, m.as_ref())).collect();
+        let res = crate::check::run(&self.check_rules, &refs);
+        let failed: usize = res.iter().map(|r| r.failed.len()).sum();
+        let checked: usize = res.iter().map(|r| r.checked).sum();
+        self.check_results = Some(res);
+        self.toast(format!("Model check: {checked} checks, {failed} failed ({:.1} s)", t.elapsed().as_secs_f32()));
+    }
+
+    /// Importa specificatiile unui fisier IDS ca reguli (se adauga la cele existente).
+    pub fn import_ids(&mut self, path: &str) {
+        let txt = match std::fs::read(path) {
+            Ok(b) => String::from_utf8_lossy(&b).to_string(),
+            Err(e) => return self.error(format!("Cannot read {path}: {e}")),
+        };
+        match crate::check::parse_ids(&txt, &crate::file_name(path)) {
+            Ok((rules, warn)) => {
+                let n = rules.len();
+                // aceeasi specificatie importata din nou: o inlocuim
+                let src = crate::file_name(path);
+                self.check_rules.retain(|r| !(r.source == src && rules.iter().any(|x| x.name == r.name)));
+                self.check_rules.extend(rules);
+                self.check_results = None;
+                self.check_warn = warn;
+                self.open_panel(Panel::Check);
+                self.toast(format!("IDS imported: {n} specifications from {src}"));
+            }
+            Err(e) => self.error(format!("{}: {e}", crate::file_name(path))),
+        }
+    }
+
+    pub fn export_check_rules(&mut self, path: &str) {
+        let p = with_ext(path, "mbrules");
+        match serde_json::to_string_pretty(&self.check_rules).map_err(|e| e.to_string()).and_then(|s| std::fs::write(&p, s).map_err(|e| e.to_string())) {
+            Ok(()) => self.toast(format!("{} rules saved: {}", self.check_rules.len(), crate::file_name(&p))),
+            Err(e) => self.error(format!("Cannot write {p}: {e}")),
+        }
+    }
+
+    pub fn import_check_rules(&mut self, path: &str) {
+        let lower = path.to_lowercase();
+        if lower.ends_with(".ids") || lower.ends_with(".xml") {
+            return self.import_ids(path);
+        }
+        match std::fs::read_to_string(path).map_err(|e| e.to_string()).and_then(|s| serde_json::from_str::<Vec<crate::check::Rule>>(&s).map_err(|e| e.to_string())) {
+            Ok(r) => {
+                let n = r.len();
+                self.check_rules.extend(r);
+                self.check_results = None;
+                self.open_panel(Panel::Check);
+                self.toast(format!("{n} rules loaded"));
+            }
+            Err(e) => self.error(format!("{}: not a ManageBIM rules file ({e})", crate::file_name(path))),
+        }
+    }
+
+    /// Raport Excel: foaia "Summary" (o linie pe regula) + "Failures" (fiecare element care nu respecta).
+    pub fn export_check_xlsx(&mut self, path: &str) {
+        use crate::qto::{Cell, Sheet};
+        let Some(res) = &self.check_results else { return self.error("Run the model check first.") };
+        let mut sum = Vec::new();
+        let mut fail = Vec::new();
+        for (r, x) in self.check_rules.iter().zip(res) {
+            if !r.enabled {
+                continue;
+            }
+            let status = if x.checked == 0 { "Not applicable" } else if x.failed.is_empty() { "Pass" } else { "Fail" };
+            sum.push(vec![Cell::S(r.name.clone()), Cell::S(status.into()), Cell::S(r.applies_text()), Cell::S(r.requirements.iter().map(|f| f.describe()).collect::<Vec<_>>().join("; ")), Cell::N(x.checked as f64), Cell::N(x.passed() as f64), Cell::N(x.failed.len() as f64)]);
+            for (id, why) in &x.failed {
+                if let Some((m, e)) = self.elem(*id) {
+                    fail.push(vec![Cell::S(r.name.clone()), Cell::S(e.name.clone()), Cell::S(e.ifc_type.clone()), Cell::S(e.storey.clone()), Cell::S(model_label(&m.name)), Cell::S(e.guid.clone()), Cell::S(why.clone())]);
+                }
+            }
+        }
+        let s1 = Sheet { name: "Summary".into(), title: "Model check - summary".into(), headers: ["Rule", "Status", "Applies to", "Requirements", "Checked", "Passed", "Failed"].iter().map(|s| s.to_string()).collect(), widths: vec![36.0, 14.0, 40.0, 60.0, 12.0, 12.0, 12.0], rows: sum, total_from: Some(4) };
+        let s2 = Sheet { name: "Failures".into(), title: "Model check - elements that fail".into(), headers: ["Rule", "Element", "Type", "Level", "Model", "GUID", "Problem"].iter().map(|s| s.to_string()).collect(), widths: vec![32.0, 36.0, 22.0, 18.0, 24.0, 26.0, 70.0], rows: fail, total_from: None };
+        let p = with_ext(path, "xlsx");
+        match std::fs::write(&p, crate::qto::xlsx(&[s1, s2])) {
+            Ok(()) => self.toast(format!("Model check report saved: {}", crate::file_name(&p))),
+            Err(e) => self.error(format!("Cannot write {p}: {e}")),
+        }
+    }
+
+    /// BCF: un topic pentru fiecare regula care nu trece, cu elementele gresite selectate si o camera pe ele.
+    pub fn export_check_bcf(&mut self, path: &str) {
+        let Some(res) = self.check_results.clone() else { return self.error("Run the model check first.") };
+        let user = crate::markup::user_name();
+        let now = crate::markup::now_iso();
+        let mut items = Vec::new();
+        for (r, x) in self.check_rules.iter().zip(&res) {
+            if !r.enabled || x.failed.is_empty() {
+                continue;
+            }
+            let ids: Vec<ElemId> = x.failed.iter().map(|f| f.0).collect();
+            let bb = self.ids_aabb(&ids);
+            let mut c = self.cam;
+            c.ortho = false;
+            if bb.is_valid() {
+                c.yaw = std::f32::consts::FRAC_PI_4;
+                c.pitch = -0.5;
+                c.fit(&bb);
+            }
+            let guids: Vec<String> = ids.iter().filter_map(|id| self.elem(*id).map(|(_, e)| e.guid.clone())).filter(|g| !g.is_empty()).collect();
+            let mut desc = format!("{} of {} elements fail. Applies to: {}. Requirements: {}.", x.failed.len(), x.checked, r.applies_text(), r.requirements.iter().map(|f| f.describe()).collect::<Vec<_>>().join("; "));
+            for (id, why) in x.failed.iter().take(20) {
+                let n = self.elem(*id).map(|(_, e)| e.name.clone()).unwrap_or_default();
+                desc.push_str(&format!("\n- {n}: {why}"));
+            }
+            if x.failed.len() > 20 {
+                desc.push_str(&format!("\n... and {} more", x.failed.len() - 20));
+            }
+            items.push(crate::markup::ReportItem {
+                index: items.len() + 1,
+                name: format!("Model check: {}", r.name),
+                description: desc,
+                issue: crate::markup::Issue { guid: crate::markup::new_guid(), status: "Open".into(), priority: "Normal".into(), assigned: String::new(), author: user.clone(), created: now.clone() },
+                comments: Vec::new(),
+                redlines: 0,
+                eye: self.world(Vec3::from(c.eye)).to_array(),
+                dir: c.fwd().as_dvec3().to_array(),
+                up: c.up().as_dvec3().to_array(),
+                fov_deg: c.fov_deg,
+                ortho_height: None,
+                selected_guids: guids,
+                hidden_guids: Vec::new(),
+                image: Vec::new(),
+                image_w: 0,
+                image_h: 0,
+            });
+        }
+        if items.is_empty() {
+            return self.toast("All rules pass - nothing to export.");
+        }
+        let path = if path.to_lowercase().ends_with(".bcf") || path.to_lowercase().ends_with(".bcfzip") { path.to_string() } else { format!("{path}.bcf") };
+        let project = self.project_path.as_ref().map(|p| crate::file_name(p)).unwrap_or_else(|| "ManageBIM model check".into());
+        match std::fs::write(&path, crate::markup::bcf_zip(&project, &items)) {
+            Ok(()) => self.toast(format!("{} issues exported as BCF: {}", items.len(), crate::file_name(&path))),
+            Err(e) => self.error(format!("Cannot write {path}: {e}")),
+        }
+    }
+
+    /// Elementele care nu respecta regula `ri` (sau toate regulile, daca None).
+    pub fn check_failed_ids(&self, ri: Option<usize>) -> Vec<ElemId> {
+        let Some(res) = &self.check_results else { return Vec::new() };
+        let mut v: Vec<ElemId> = res.iter().enumerate().filter(|(i, _)| ri.map(|r| r == *i).unwrap_or(true)).flat_map(|(_, r)| r.failed.iter().map(|f| f.0)).collect();
+        v.sort();
+        v.dedup();
+        v
     }
 }
 

@@ -19,9 +19,10 @@ pub enum Panel {
     Profiler,
     Compare,
     Quantities,
+    Check,
 }
 
-pub const ALL_PANELS: [Panel; 16] = [
+pub const ALL_PANELS: [Panel; 17] = [
     Panel::Tree,
     Panel::PropTree,
     Panel::Sets,
@@ -38,6 +39,7 @@ pub const ALL_PANELS: [Panel; 16] = [
     Panel::Profiler,
     Panel::Compare,
     Panel::Quantities,
+    Panel::Check,
 ];
 
 impl Panel {
@@ -59,6 +61,7 @@ impl Panel {
             Panel::Profiler => "🎨 Appearance Profiler",
             Panel::Compare => "⚖ Compare",
             Panel::Quantities => "📊 Quantification",
+            Panel::Check => "✔ Model Checker",
         }
     }
     pub fn default_dock(self) -> Dock {
@@ -122,7 +125,7 @@ impl Default for UiLayout {
     fn default() -> Self {
         UiLayout {
             // panourile noi pornesc inchise (se deschid din ribbon), ca sa nu aglomereze zona de jos
-            panels: ALL_PANELS.iter().map(|&p| PanelState { panel: p, dock: p.default_dock(), open: !matches!(p, Panel::Profiler | Panel::Compare | Panel::Quantities) }).collect(),
+            panels: ALL_PANELS.iter().map(|&p| PanelState { panel: p, dock: p.default_dock(), open: !matches!(p, Panel::Profiler | Panel::Compare | Panel::Quantities | Panel::Check) }).collect(),
             active: [Some(Panel::Tree), Some(Panel::Properties), Some(Panel::Find)],
             autohide: [false; 3],
             hide_all: false,

@@ -926,6 +926,254 @@ impl App {
     }
 
     // ================================================================== Compare
+
+    /// Model Checker: reguli (proprii sau din IDS) in stanga, detaliile regulii alese + elementele gresite in dreapta.
+    fn check_ui(&mut self, ui: &mut egui::Ui) {
+        use crate::check::{Card, Facet, Kind, Rule, Value};
+        let mut acts: Vec<Action> = Vec::new();
+        let mut run = false;
+        ui.horizontal_wrapped(|ui| {
+            run = ui.add(egui::Button::new(RichText::new("▶ Run check").strong().color(Color32::WHITE)).fill(accent())).on_hover_text("Check every loaded model against the active rules").clicked();
+            if ui.button("➕ New rule").on_hover_text("A rule: which elements it applies to + what they must have").clicked() {
+                let mut r = Rule::new(&format!("Rule {}", self.check_rules.len() + 1));
+                r.requirements.push(Facet::property("", "", Value::Any));
+                self.check_rules.push(r);
+                self.check_sel = Some(self.check_rules.len() - 1);
+                self.check_results = None;
+            }
+            if ui.button("⭐ Starter rules").on_hover_text("Add a few common rules (names, fire rating of walls, IsExternal of doors) to start from").clicked() {
+                self.check_rules.extend(crate::check::starter_rules());
+                self.check_results = None;
+            }
+            if ui.button("📥 Import IDS…").on_hover_text("buildingSMART IDS 1.0 (.ids) - or a saved ManageBIM rules file (.mbrules)").clicked() {
+                self.request_path(Purpose::ImportCheckRules);
+            }
+            if ui.add_enabled(!self.check_rules.is_empty(), egui::Button::new("💾 Save rules…")).on_hover_text("Save the rules (.mbrules) to reuse them on other projects. The rules are also saved with the project.").clicked() {
+                self.request_path(Purpose::ExportCheckRules);
+            }
+            ui.separator();
+            let has = self.check_results.is_some();
+            if ui.add_enabled(has, egui::Button::new("📊 Excel…")).on_hover_text("Report: summary per rule + every failing element with the reason").clicked() {
+                self.request_path(Purpose::ExportCheckXlsx);
+            }
+            if ui.add_enabled(has, egui::Button::new("📋 BCF…")).on_hover_text("One BCF issue per failing rule, with the failing elements selected - for Revit, ACC, Solibri, BIMcollab").clicked() {
+                self.request_path(Purpose::ExportCheckBcf);
+            }
+            if ui.add_enabled(!self.check_rules.is_empty(), egui::Button::new("🗑 Clear")).on_hover_text("Remove all rules and results").clicked() {
+                self.check_rules.clear();
+                self.check_results = None;
+                self.check_sel = None;
+                self.check_warn.clear();
+            }
+        });
+        if run {
+            self.run_check();
+        }
+        if self.check_rules.is_empty() {
+            ui.add_space(8.0);
+            ui.label(RichText::new("No rules yet. Import a buildingSMART IDS file, add the ⭐ starter rules or create a ➕ New rule (e.g. \"every IfcDoor has Pset_DoorCommon.FireRating\"), then press ▶ Run check.").weak());
+            return;
+        }
+        // rezumat
+        if let Some(res) = &self.check_results {
+            let active: Vec<usize> = (0..self.check_rules.len()).filter(|i| self.check_rules[*i].enabled).collect();
+            let fail = active.iter().filter(|i| res.get(**i).map(|r| !r.failed.is_empty()).unwrap_or(false)).count();
+            let na = active.iter().filter(|i| res.get(**i).map(|r| r.checked == 0).unwrap_or(true)).count();
+            let bad = self.check_failed_ids(None).len();
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(format!("✔ {} pass", active.len() - fail - na)).color(Color32::from_rgb(70, 190, 110)).strong());
+                ui.label(RichText::new(format!("✖ {fail} fail")).color(Color32::from_rgb(235, 85, 85)).strong());
+                if na > 0 {
+                    ui.label(RichText::new(format!("○ {na} not applicable")).weak());
+                }
+                ui.label(RichText::new(format!("· {bad} elements with problems")).weak());
+                if bad > 0 {
+                    if ui.small_button("Select all").clicked() {
+                        acts.push(Action::Select(self.check_failed_ids(None), false));
+                    }
+                    if ui.small_button("Isolate all").clicked() {
+                        acts.push(Action::Isolate(self.check_failed_ids(None)));
+                    }
+                }
+            });
+        }
+        if !self.check_warn.is_empty() {
+            egui::CollapsingHeader::new(RichText::new(format!("⚠ {} IDS conditions not supported", self.check_warn.len())).small()).id_salt("check_warn").show(ui, |ui| {
+                for w in &self.check_warn {
+                    ui.label(RichText::new(w).small().weak());
+                }
+            });
+        }
+        ui.separator();
+        let results = self.check_results.clone();
+        let mut remove: Option<usize> = None;
+        let sel_now = self.check_sel;
+        let mut new_sel: Option<usize> = None;
+        let mut dirty = false;
+        ui.columns(2, |cols| {
+            // ---------------- lista regulilor
+            egui::ScrollArea::vertical().id_salt("check_rules").auto_shrink([false, false]).show(&mut cols[0], |ui| {
+                for i in 0..self.check_rules.len() {
+                    let r = &mut self.check_rules[i];
+                    let res = results.as_ref().and_then(|v| v.get(i));
+                    ui.horizontal(|ui| {
+                        if ui.checkbox(&mut r.enabled, "").on_hover_text("Active").changed() {
+                            dirty = true;
+                        }
+                        let (icon, col) = match res {
+                            _ if !r.enabled => ("○", ui.visuals().weak_text_color()),
+                            None => ("•", ui.visuals().weak_text_color()),
+                            Some(x) if x.checked == 0 => ("○", ui.visuals().weak_text_color()),
+                            Some(x) if x.failed.is_empty() => ("✔", Color32::from_rgb(70, 190, 110)),
+                            Some(_) => ("✖", Color32::from_rgb(235, 85, 85)),
+                        };
+                        ui.label(RichText::new(icon).color(col).strong());
+                        let txt = match res {
+                            Some(x) if r.enabled => format!("{}   {}/{}", r.name, x.failed.len(), x.checked),
+                            _ => r.name.clone(),
+                        };
+                        let resp = ui.selectable_label(sel_now == Some(i), txt).on_hover_text(format!("Applies to: {}\nRequires: {}{}", r.applies_text(), r.requirements.iter().map(|f| f.describe()).collect::<Vec<_>>().join("; "), if r.source.is_empty() { String::new() } else { format!("\nFrom: {}", r.source) }));
+                        if resp.clicked() {
+                            new_sel = Some(i);
+                        }
+                        if resp.double_clicked() {
+                            let ids: Vec<ElemId> = res.map(|x| x.failed.iter().map(|f| f.0).collect()).unwrap_or_default();
+                            if !ids.is_empty() {
+                                acts.push(Action::Select(ids.clone(), false));
+                                acts.push(Action::Focus(ids));
+                            }
+                        }
+                    });
+                }
+            });
+            // ---------------- regula aleasa
+            let ui = &mut cols[1];
+            let Some(si) = self.check_sel.filter(|i| *i < self.check_rules.len()) else {
+                ui.label(RichText::new("Click a rule to see its failing elements and edit it.").weak());
+                return;
+            };
+            egui::ScrollArea::vertical().id_salt("check_detail").auto_shrink([false, false]).show(ui, |ui| {
+                let r = &mut self.check_rules[si];
+                ui.horizontal(|ui| {
+                    dirty |= ui.add(egui::TextEdit::singleline(&mut r.name).desired_width(ui.available_width() - 70.0).font(egui::TextStyle::Heading)).changed();
+                    if ui.small_button("🗑").on_hover_text("Delete this rule").clicked() {
+                        remove = Some(si);
+                    }
+                    if ui.small_button("⧉").on_hover_text("Duplicate this rule").clicked() {
+                        let mut c = r.clone();
+                        c.name.push_str(" (copy)");
+                        c.source.clear();
+                        // adaugata dupa bucla
+                        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("check_dup"), serde_json::to_string(&c).unwrap_or_default()));
+                    }
+                });
+                if !r.description.is_empty() {
+                    ui.label(RichText::new(&r.description).small().weak());
+                }
+                // failures first: this is what people look at
+                if let Some(x) = results.as_ref().and_then(|v| v.get(si)) {
+                    if r.enabled {
+                        ui.add_space(4.0);
+                        if x.checked == 0 {
+                            ui.label(RichText::new("No element matches \"Applies to\" - nothing was checked.").weak());
+                        } else if x.failed.is_empty() {
+                            ui.label(RichText::new(format!("✔ All {} elements pass.", x.checked)).color(Color32::from_rgb(70, 190, 110)));
+                        } else {
+                            let ids: Vec<ElemId> = x.failed.iter().map(|f| f.0).collect();
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new(format!("✖ {} of {} elements fail", x.failed.len(), x.checked)).color(Color32::from_rgb(235, 85, 85)).strong());
+                                if ui.small_button("Select").clicked() {
+                                    acts.push(Action::Select(ids.clone(), false));
+                                }
+                                if ui.small_button("Isolate").clicked() {
+                                    acts.push(Action::Isolate(ids.clone()));
+                                }
+                                if ui.small_button("Focus").clicked() {
+                                    acts.push(Action::Focus(ids.clone()));
+                                }
+                            });
+                            let rows = x.failed.len().min(5000);
+                            egui::ScrollArea::vertical().id_salt(("check_fail", si)).max_height(220.0).auto_shrink([false, true]).show_rows(ui, 18.0, rows, |ui, range| {
+                                for (id, why) in &x.failed[range] {
+                                    let (name, ty) = self.elem(*id).map(|(_, e)| (e.name.clone(), e.ifc_type.clone())).unwrap_or_default();
+                                    ui.horizontal(|ui| {
+                                        let resp = ui.selectable_label(self.selected.contains(id), RichText::new(&name).strong()).on_hover_text("Click: select · double-click: zoom to it");
+                                        if resp.clicked() {
+                                            acts.push(Action::Select(vec![*id], ui.input(|i| i.modifiers.ctrl)));
+                                        }
+                                        if resp.double_clicked() {
+                                            acts.push(Action::Focus(vec![*id]));
+                                        }
+                                        ui.label(RichText::new(ty).small().color(accent()));
+                                        ui.label(RichText::new(why).small().weak());
+                                    });
+                                }
+                            });
+                        }
+                    }
+                }
+                ui.add_space(6.0);
+                let r = &mut self.check_rules[si];
+                ui.label(RichText::new("APPLIES TO").small().strong().weak()).on_hover_text("All conditions must be true for an element to be checked. Empty = every element.");
+                let mut del = None;
+                for (k, f) in r.applicability.iter_mut().enumerate() {
+                    let (ch, rm) = facet_editor(ui, f, ("ap", si, k), false);
+                    dirty |= ch;
+                    if rm {
+                        del = Some(k);
+                    }
+                }
+                if let Some(k) = del {
+                    r.applicability.remove(k);
+                    dirty = true;
+                }
+                if ui.small_button("➕ condition").clicked() {
+                    r.applicability.push(Facet { kind: Kind::Entity, ..Default::default() });
+                    dirty = true;
+                }
+                ui.add_space(6.0);
+                ui.label(RichText::new("REQUIREMENTS").small().strong().weak()).on_hover_text("Every requirement must be met, otherwise the element fails.");
+                let mut del = None;
+                for (k, f) in r.requirements.iter_mut().enumerate() {
+                    let (ch, rm) = facet_editor(ui, f, ("rq", si, k), true);
+                    dirty |= ch;
+                    if rm {
+                        del = Some(k);
+                    }
+                }
+                if let Some(k) = del {
+                    r.requirements.remove(k);
+                    dirty = true;
+                }
+                if ui.small_button("➕ requirement").clicked() {
+                    r.requirements.push(Facet { kind: Kind::Property, card: Card::Required, ..Default::default() });
+                    dirty = true;
+                }
+            });
+        });
+        if new_sel.is_some() {
+            self.check_sel = new_sel;
+        }
+        if let Some(s) = ui.ctx().data_mut(|d| d.remove_temp::<String>(egui::Id::new("check_dup"))) {
+            if let Ok(r) = serde_json::from_str::<Rule>(&s) {
+                self.check_rules.push(r);
+                self.check_sel = Some(self.check_rules.len() - 1);
+                dirty = true;
+            }
+        }
+        if let Some(i) = remove {
+            self.check_rules.remove(i);
+            self.check_sel = None;
+            dirty = true;
+        }
+        if dirty {
+            // rezultatele vechi nu mai corespund regulilor
+            self.check_results = None;
+        }
+        for a in acts {
+            self.apply(a);
+        }
+    }
     fn compare_ui(&mut self, ui: &mut egui::Ui) {
         use crate::compare::Diff;
         let models: Vec<(usize, String)> = self.loaded_models().map(|(i, m)| (i, m.name.clone())).collect();
@@ -1300,6 +1548,7 @@ impl App {
     fn ribbon_coord(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Coordination", |ui| {
             self.panel_btn(ui, Panel::Clash, "⚠", "Clash", "Clash Detective — clashes are shown only while this panel is visible");
+            self.panel_btn(ui, Panel::Check, "✔", "Checker", "Model Checker: check properties and data against rules or a buildingSMART IDS file - results to Excel / BCF");
             self.panel_btn(ui, Panel::TimeLiner, "📅", "TimeLiner", "4D schedule and simulation");
             self.panel_btn(ui, Panel::Find, "🔍", "Find Items", "Search by properties");
             self.panel_btn(ui, Panel::Sets, "📋", "Sets", "Selection & search sets");
@@ -2175,6 +2424,7 @@ impl App {
             Panel::Project => self.models_ui(ui),
             Panel::Profiler => self.profiler_ui(ui),
             Panel::Compare => self.compare_ui(ui),
+            Panel::Check => self.check_ui(ui),
             Panel::Quantities => self.qto_ui(ui),
         }
     }
@@ -6434,6 +6684,10 @@ impl App {
                 Purpose::ImportGridsCad => "Import grid axes (DWG / DXF)",
                 Purpose::ExportReference => "Reference for Revit / AutoCAD",
                 Purpose::ExportClashMatrix => "Clash matrix (Excel)",
+                Purpose::ImportCheckRules => "Import IDS or rules",
+                Purpose::ExportCheckRules => "Save rules",
+                Purpose::ExportCheckXlsx => "Model check report (Excel)",
+                Purpose::ExportCheckBcf => "Model check issues (BCF)",
                 Purpose::ExportClashNavis => "Export clashes as Navisworks viewpoints",
                 Purpose::ImportBcf => "Import BCF issues",
                 Purpose::ImportTasksCsv => "Import CSV Schedule",
@@ -7164,4 +7418,111 @@ pub(crate) fn local_offset_secs() -> i64 {
     }
     #[allow(unreachable_code)]
     0
+}
+
+/// Textul unei restrictii de nume: "A, B" = una dintre valori, "/regex/" = model, gol = oricare.
+fn value_text(v: &crate::check::Value) -> String {
+    use crate::check::Value;
+    match v {
+        Value::Any => String::new(),
+        Value::OneOf(l) => l.join(", "),
+        Value::Pattern(p) => format!("/{p}/"),
+        Value::Range { min, max } => format!("{}..{}", min.map(|x| x.to_string()).unwrap_or_default(), max.map(|x| x.to_string()).unwrap_or_default()),
+    }
+}
+
+fn parse_value_text(s: &str) -> crate::check::Value {
+    use crate::check::Value;
+    let t = s.trim();
+    if t.is_empty() {
+        return Value::Any;
+    }
+    if t.len() >= 2 && t.starts_with('/') && t.ends_with('/') {
+        return Value::Pattern(t[1..t.len() - 1].to_string());
+    }
+    if let Some((a, b)) = t.split_once("..") {
+        let (a, b) = (a.trim(), b.trim());
+        let pa = if a.is_empty() { Some(None) } else { a.replace(',', ".").parse::<f64>().ok().map(Some) };
+        let pb = if b.is_empty() { Some(None) } else { b.replace(',', ".").parse::<f64>().ok().map(Some) };
+        if let (Some(min), Some(max)) = (pa, pb) {
+            if min.is_some() || max.is_some() {
+                return Value::Range { min, max };
+            }
+        }
+    }
+    Value::OneOf(t.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
+}
+
+/// camp text legat de o restrictie (textul se pastreaza cat timp scrii, ca sa nu sara virgulele)
+fn value_field(ui: &mut egui::Ui, v: &mut crate::check::Value, id: egui::Id, hint: &str, width: f32) -> bool {
+    let mut s: String = ui.data_mut(|d| d.get_temp(id)).unwrap_or_else(|| value_text(v));
+    if parse_value_text(&s) != *v {
+        s = value_text(v);
+    }
+    let r = ui.add(egui::TextEdit::singleline(&mut s).hint_text(hint).desired_width(width)).on_hover_text("Text: exact value (or several, separated by commas) · /regex/: pattern · 10..20: number range · empty: any");
+    let mut ch = false;
+    if r.changed() {
+        let nv = parse_value_text(&s);
+        if nv != *v {
+            *v = nv;
+            ch = true;
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(id, s));
+    ch
+}
+
+/// O conditie a unei reguli: tip / proprietate / atribut ... ; intoarce (modificat, de sters)
+fn facet_editor(ui: &mut egui::Ui, f: &mut crate::check::Facet, salt: impl std::hash::Hash + Copy, requirement: bool) -> (bool, bool) {
+    use crate::check::{Card, Kind};
+    let mut ch = false;
+    let mut rm = false;
+    let id = ui.make_persistent_id(salt);
+    egui::Frame::none().fill(ui.visuals().faint_bg_color).rounding(6.0).inner_margin(egui::Margin::symmetric(6.0, 4.0)).show(ui, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            egui::ComboBox::from_id_salt(id.with("k")).width(96.0).selected_text(f.kind.label()).show_ui(ui, |ui| {
+                for k in Kind::ALL {
+                    if ui.selectable_value(&mut f.kind, k, k.label()).changed() {
+                        ch = true;
+                    }
+                }
+            });
+            match f.kind {
+                Kind::Entity => {
+                    ch |= value_field(ui, &mut f.name, id.with("n"), "IfcWall, IfcSlab or Walls", 170.0);
+                    ch |= value_field(ui, &mut f.value, id.with("v"), "predefined type (optional)", 120.0);
+                }
+                Kind::Property => {
+                    ch |= value_field(ui, &mut f.set, id.with("s"), "Pset (any)", 120.0);
+                    ui.label(".");
+                    ch |= value_field(ui, &mut f.name, id.with("n"), "property name", 120.0);
+                }
+                Kind::Attribute => ch |= value_field(ui, &mut f.name, id.with("n"), "Name, Description, Tag...", 150.0),
+                Kind::Classification => ch |= value_field(ui, &mut f.set, id.with("s"), "system (any)", 120.0),
+                Kind::Material => {}
+            }
+            if f.kind != Kind::Entity {
+                ui.label("=");
+                ch |= value_field(ui, &mut f.value, id.with("v"), "any value", 120.0);
+            }
+            if requirement {
+                let lbl = |c: Card| match c {
+                    Card::Required => "required",
+                    Card::Optional => "optional",
+                    Card::Prohibited => "prohibited",
+                };
+                egui::ComboBox::from_id_salt(id.with("c")).width(84.0).selected_text(lbl(f.card)).show_ui(ui, |ui| {
+                    for c in [Card::Required, Card::Optional, Card::Prohibited] {
+                        if ui.selectable_value(&mut f.card, c, lbl(c)).changed() {
+                            ch = true;
+                        }
+                    }
+                });
+            }
+            if ui.small_button("✖").on_hover_text("Remove").clicked() {
+                rm = true;
+            }
+        });
+    });
+    (ch, rm)
 }

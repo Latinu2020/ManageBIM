@@ -20,15 +20,15 @@ pub const MAX_POINTS: usize = 40_000_000;
 // ------------------------------------------------------------------ XML minimal
 
 #[derive(Default, Debug)]
-struct Node {
-    name: String,
-    attrs: Vec<(String, String)>,
-    text: String,
-    kids: Vec<Node>,
+pub(crate) struct Node {
+    pub(crate) name: String,
+    pub(crate) attrs: Vec<(String, String)>,
+    pub(crate) text: String,
+    pub(crate) kids: Vec<Node>,
 }
 
 impl Node {
-    fn attr(&self, k: &str) -> Option<&str> {
+    pub(crate) fn attr(&self, k: &str) -> Option<&str> {
         self.attrs.iter().find(|a| a.0 == k).map(|a| a.1.as_str())
     }
     fn kid(&self, k: &str) -> Option<&Node> {
@@ -51,7 +51,7 @@ fn unesc(s: &str) -> String {
     s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&")
 }
 
-fn parse_xml(s: &str) -> Result<Node, String> {
+pub(crate) fn parse_xml(s: &str) -> Result<Node, String> {
     let b = s.as_bytes();
     let mut stack: Vec<Node> = vec![Node::default()];
     let mut i = 0;

@@ -3,6 +3,15 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.17.0 - 2026-11-19
+
+- **Model Checker** (Coordination › ✔ Checker): verificarea datelor modelului dupa reguli.
+  - Regula = „Applies to” (tip IFC / categorie, proprietati, atribute) + „Requirements” (proprietate prezenta, valoare exacta sau din lista, model /regex/, interval numeric 10..20, optional / interzis).
+  - **Import buildingSMART IDS 1.0** (.ids): entity, attribute, property, classification, material; conditiile nesuportate (ex. partOf) sunt raportate.
+  - Reguli de pornire (⭐), editor de reguli, salvare / incarcare .mbrules; regulile se salveaza si in proiect.
+  - Rezultate pe regula (trec / nu trec / neaplicabile), lista elementelor gresite cu motivul; Select / Isolate / Focus.
+  - Export **Excel** (Summary + Failures) si **BCF** (un issue pe regula, cu elementele selectate si camera pe ele).
+
 ## 0.16.0 - 2026-11-19
 - **Aspect „studio”** (pentru toate temele) + tema nouă **Studio** (aproape negru, albastru electric):
   bara de unelte de jos, compactă, pe grupe (Select, Window, Hide, Isolate, Unhide, Focus, Orbit, Pan, Walk, Fit, Home,

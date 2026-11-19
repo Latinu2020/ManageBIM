@@ -1,6 +1,7 @@
 pub mod acis;
 pub mod anim;
 pub mod bimc;
+pub mod check;
 pub mod clash;
 pub mod compare;
 pub mod e57;
