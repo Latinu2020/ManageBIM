@@ -138,64 +138,70 @@ namespace ManageBIM.Revit
             double tol = doc.Application.ShortCurveTolerance;
             var mats = new Dictionary<string, ElementId>();
             var ids = new List<ElementId>();
-            int skipped = 0;
             string refName = Path.GetFileNameWithoutExtension(path);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            // compact si rapid: toate triunghiurile de aceeasi culoare intr-o singura plasa neteda (Mesh, fara muchiile
+            // triunghiurilor), impartita in bucati de cel mult 150 000 de triunghiuri - cateva forme in loc de mii
+            var byColour = items.GroupBy(e => (e.R, e.G, e.B, e.A)).ToList();
+            int tris = 0;
             using (var tr = new Transaction(doc, replace != null ? "ManageBIM reference reload" : "ManageBIM reference"))
             {
                 tr.Start();
                 if (replace != null) Unload(doc, replace);
-                foreach (var e in items)
+                foreach (var grp in byColour)
                 {
-                    ElementId mat = Material(doc, mats, e);
-                    var b = new TessellatedShapeBuilder();
-                    b.OpenConnectedFaceSet(false);
-                    int faces = 0;
-                    for (int i = 0; i + 8 < e.Tris.Length; i += 9)
+                    ElementId mat = Material(doc, mats, grp.First());
+                    TessellatedShapeBuilder b = null;
+                    int inShape = 0;
+                    void Flush()
                     {
-                        XYZ a = P(e.Tris, i), c = P(e.Tris, i + 3), d = P(e.Tris, i + 6);
-                        // Revit refuza fetele mai mici decat toleranta
-                        if (a.DistanceTo(c) < tol || c.DistanceTo(d) < tol || d.DistanceTo(a) < tol) continue;
-                        b.AddFace(new TessellatedFace(new List<XYZ> { a, c, d }, mat));
-                        faces++;
+                        if (b == null) return;
+                        b.CloseConnectedFaceSet();
+                        if (inShape > 0)
+                        {
+                            b.Target = TessellatedShapeBuilderTarget.Mesh;
+                            b.Fallback = TessellatedShapeBuilderFallback.Salvage;
+                            try
+                            {
+                                b.Build();
+                                var ds = DirectShape.CreateElement(doc, new ElementId(BuiltInCategory.OST_GenericModel));
+                                ds.ApplicationId = "ManageBIM";
+                                ds.ApplicationDataId = refName;
+                                ds.SetShape(b.GetBuildResult().GetGeometricalObjects());
+                                try { ds.SetName($"ManageBIM {refName}"); } catch { }
+                                ds.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set($"{Tag}{refName}|{path}|");
+                                ds.Pinned = true;
+                                ids.Add(ds.Id);
+                            }
+                            catch { }
+                        }
+                        b = null;
+                        inShape = 0;
                     }
-                    b.CloseConnectedFaceSet();
-                    if (faces == 0) { skipped++; continue; }
-                    b.Target = TessellatedShapeBuilderTarget.AnyGeometry;
-                    b.Fallback = TessellatedShapeBuilderFallback.Mesh;
-                    try
+                    foreach (var e in grp)
                     {
-                        b.Build();
-                        var res = b.GetBuildResult();
-                        var ds = DirectShape.CreateElement(doc, new ElementId(BuiltInCategory.OST_GenericModel));
-                        ds.ApplicationId = "ManageBIM";
-                        ds.ApplicationDataId = string.IsNullOrEmpty(e.Guid) ? e.Name : e.Guid;
-                        ds.SetShape(res.GetGeometricalObjects());
-                        try { ds.SetName(e.Name); } catch { }
-                        ds.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set($"{Tag}{refName}|{path}|{e.Type} {e.Guid}".Trim());
-                        ids.Add(ds.Id);
+                        for (int i = 0; i + 8 < e.Tris.Length; i += 9)
+                        {
+                            XYZ a = P(e.Tris, i), c = P(e.Tris, i + 3), d = P(e.Tris, i + 6);
+                            if (a.DistanceTo(c) < tol || c.DistanceTo(d) < tol || d.DistanceTo(a) < tol) continue;
+                            if (b == null)
+                            {
+                                b = new TessellatedShapeBuilder();
+                                b.OpenConnectedFaceSet(false);
+                            }
+                            b.AddFace(new TessellatedFace(new List<XYZ> { a, c, d }, mat));
+                            inShape++;
+                            tris++;
+                            if (inShape >= 150000) Flush();
+                        }
                     }
-                    catch { skipped++; }
-                }
-                if (ids.Count > 0)
-                {
-                    try
-                    {
-                        Group g = doc.Create.NewGroup(ids);
-                        string gname = "ManageBIM reference - " + refName;
-                        foreach (char ch in "{}[]|;<>?`~:\\") gname = gname.Replace(ch, '-');
-                        var used = new HashSet<string>(new FilteredElementCollector(doc).OfClass(typeof(GroupType)).Select(x => x.Name));
-                        string n = gname;
-                        for (int k = 2; used.Contains(n); k++) n = $"{gname} ({k})";
-                        g.GroupType.Name = n;
-                        g.Pinned = true;
-                    }
-                    catch { }
+                    Flush();
                 }
                 tr.Commit();
             }
-            TaskDialog.Show("ManageBIM reference", $"{refName}: {ids.Count} items {(replace != null ? "reloaded" : "loaded")} as reference (Generic Models, pinned group)." +
-                (skipped > 0 ? $"\n{skipped} items had only very small faces and were skipped." : "") +
-                "\n\nRun ManageBIM Reference again to reload (after updating the file in ManageBIM) or unload it.");
+            TaskDialog.Show("ManageBIM reference", $"{refName}: {items.Count} items {(replace != null ? "reloaded" : "loaded")} in {sw.Elapsed.TotalSeconds:0.0} s " +
+                $"as {ids.Count} pinned reference shapes (one per colour, {tris:N0} triangles, Generic Models).\n\n" +
+                "Run ManageBIM Reference again to reload (after updating the file in ManageBIM) or unload it.");
             return Result.Succeeded;
         }
 

@@ -123,7 +123,11 @@ impl eframe::App for App {
                 if ah[2] {
                     strips[2] = Some(egui::TopBottomPanel::bottom("bottom_strip").exact_height(26.0).resizable(false).show(ctx, |ui| self.dock_strip(ui, Dock::Bottom)).response.rect);
                 } else {
-                    egui::TopBottomPanel::bottom("bottom").frame(pf).resizable(true).default_height(220.0).min_height(100.0).max_height(maxh).show(ctx, |ui| self.dock_area(ui, Dock::Bottom));
+                    let r = egui::TopBottomPanel::bottom("bottom").frame(pf).resizable(true).default_height(220.0).min_height(60.0).max_height(maxh).show(ctx, |ui| self.dock_area(ui, Dock::Bottom));
+                    // manerul de redimensionare, vizibil pe marginea de sus (trage in sus / in jos)
+                    let top = r.response.rect.center_top();
+                    let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("bottom_grip")));
+                    p.rect_filled(Rect::from_center_size(top + EV::new(0.0, 2.0), EV::new(46.0, 4.0)), 2.0, accent().gamma_multiply(0.55));
                 }
             }
             if !self.settings.layout.in_area(Dock::Left).is_empty() {
@@ -496,7 +500,7 @@ impl App {
             ui.add_space(2.0);
             // inaltime FIXA pe toate tab-urile (nu mai "sare" cand schimbi tab-ul); controalele stivuite
             // (checkbox-uri, slidere) folosesc randuri compacte ca sa incapa in 3 randuri
-            const RIBBON_H: f32 = 62.0;
+            const RIBBON_H: f32 = 66.0;
             egui::ScrollArea::horizontal().id_salt("ribbon_scroll").max_height(RIBBON_H).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.set_height(RIBBON_H);
@@ -1238,6 +1242,16 @@ impl App {
             }
             if rbtn(ui, "⬚", "Fit Section", "Section box around the selected elements, and zoom to them (also: right-click > Section box around selection)", false, !self.selected.is_empty()).clicked() {
                 self.section_to_selection();
+            }
+            if rbtn(ui, "▣", "Model box", "Section box around the whole model - stretch it with the arrows on its faces (like Revit)", false, self.loaded_models().next().is_some()).clicked() {
+                let bb = self.scene_aabb();
+                if bb.is_valid() {
+                    self.section.enabled = true;
+                    self.section.mode = SectionMode::Box;
+                    self.section.bmin = (bb.min - Vec3::splat(0.3)).to_array();
+                    self.section.bmax = (bb.max + Vec3::splat(0.3)).to_array();
+                    self.section_level = None;
+                }
             }
             if rbtn(ui, "🔗", "Follow", "Section box follows the selection: every time you select elements the box fits around them (the camera stays)", self.section_follow, true).clicked() {
                 self.section_follow = !self.section_follow;
@@ -2218,7 +2232,7 @@ impl App {
             }
             for p in &tabs {
                 let on = Some(*p) == active;
-                let r = ui.selectable_label(on, if on { RichText::new(p.title()).strong() } else { RichText::new(p.title()) }).on_hover_text("Right-click: dock left / right / bottom, float or close");
+                let r = ui.selectable_label(on, if on { RichText::new(p.title()).size(14.5).strong() } else { RichText::new(p.title()).size(14.5) }).on_hover_text("Right-click: dock left / right / bottom, float or close");
                 if r.clicked() {
                     self.settings.layout.active[d.idx()] = Some(*p);
                 }
@@ -2235,7 +2249,15 @@ impl App {
         ui.separator();
         if let Some(a) = self.settings.layout.active[d.idx()] {
             if d == Dock::Bottom {
-                self.panel_body(ui, a);
+                // continutul nu are voie sa tina panoul inalt: limitat la inaltimea aleasa (se poate trage liber)
+                let h = ui.available_height().max(40.0);
+                let size = EV::new(ui.available_width(), h);
+                ui.allocate_ui_with_layout(size, egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.set_max_height(h);
+                    let clip = ui.max_rect().intersect(ui.clip_rect());
+                    ui.set_clip_rect(clip);
+                    self.panel_body(ui, a);
+                });
             } else {
                 // panourile laterale nu au voie sa impinga viewport-ul: continutul lat se deruleaza
                 egui::ScrollArea::horizontal().id_salt(("side_scroll", d.idx())).auto_shrink([false, false]).show(ui, |ui| self.panel_body(ui, a));
@@ -2466,8 +2488,74 @@ impl App {
                 }
             }
         }
+        // section box ca in Revit: cate o sageata pe fiecare fata; tragi de ea si fata se muta pe axa ei
+        let mut handle_hover: Option<usize> = None;
+        if self.section.enabled && self.section.mode == SectionMode::Box && self.report_job.is_none() {
+            let vpm = params.view_proj;
+            let (a, b) = (Vec3::from(self.section.bmin), Vec3::from(self.section.bmax));
+            let c = (a + b) * 0.5;
+            let size = (b - a).max_element().max(0.1);
+            for k in 0..6 {
+                let (ax, s) = (k / 2, if k % 2 == 0 { -1.0f32 } else { 1.0 });
+                let mut fc = c;
+                fc[ax] = if s < 0.0 { a[ax] } else { b[ax] };
+                let mut e = Vec3::ZERO;
+                e[ax] = s;
+                let (Some(p0), Some(p1)) = (to_screen(&vpm, rect, fc), to_screen(&vpm, rect, fc + e * size * 0.06)) else { continue };
+                let hovered = hover.map_or(false, |h| h.distance(p0) < 11.0 || h.distance(p1) < 11.0);
+                if hovered && self.box_drag.is_none() {
+                    handle_hover = Some(k);
+                }
+                let active = self.box_drag == Some(k) || (hovered && self.box_drag.is_none());
+                let col = if active { Color32::from_rgb(255, 160, 40) } else { Color32::from_rgb(60, 140, 255) };
+                // sageata: tija + varf, cu un punct pe fata
+                let d = (p1 - p0).normalized();
+                let tip = p0 + d * 26.0;
+                if d.x.is_finite() {
+                    painter.line_segment([p0, tip], Stroke::new(3.0_f32, col));
+                    let n = EV::new(-d.y, d.x);
+                    painter.add(egui::Shape::convex_polygon(vec![tip + d * 10.0, tip + n * 6.0, tip - n * 6.0], col, Stroke::new(1.0_f32, Color32::WHITE)));
+                }
+                painter.circle(p0, 5.0, col, Stroke::new(1.2_f32, Color32::WHITE));
+            }
+            if let Some(k) = handle_hover.or(self.box_drag) {
+                let _ = k;
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+            }
+        }
+        if resp.drag_started_by(egui::PointerButton::Primary) && handle_hover.is_some() {
+            self.box_drag = handle_hover;
+        }
+        if let Some(k) = self.box_drag {
+            if resp.dragged_by(egui::PointerButton::Primary) {
+                let (ax, minf) = (k / 2, k % 2 == 0);
+                let (a, b) = (Vec3::from(self.section.bmin), Vec3::from(self.section.bmax));
+                let mut fc = (a + b) * 0.5;
+                fc[ax] = if minf { a[ax] } else { b[ax] };
+                let mut e = Vec3::ZERO;
+                e[ax] = 1.0;
+                // cati pixeli are 1 m pe axa, pe ecran: miscarea mouse-ului proiectata pe directia axei
+                if let (Some(s0), Some(s1)) = (to_screen(&params.view_proj, rect, fc), to_screen(&params.view_proj, rect, fc + e)) {
+                    let sv = s1 - s0;
+                    let ppm = sv.length();
+                    if ppm > 1e-3 {
+                        let dm = resp.drag_delta().dot(sv / ppm) / ppm;
+                        if minf {
+                            self.section.bmin[ax] = (self.section.bmin[ax] + dm).min(self.section.bmax[ax] - 0.01);
+                        } else {
+                            self.section.bmax[ax] = (self.section.bmax[ax] + dm).max(self.section.bmin[ax] + 0.01);
+                        }
+                        self.section_level = None;
+                    }
+                }
+            }
+            if resp.drag_stopped() || !resp.dragged() {
+                self.box_drag = None;
+            }
+        }
+        let handle_drag = self.box_drag.is_some() || (handle_hover.is_some() && resp.drag_started_by(egui::PointerButton::Primary));
         // selectie cu fereastra (unealta Window): tragerea cu butonul stang deseneaza dreptunghiul
-        let box_tool = self.tool == Tool::Window;
+        let box_tool = self.tool == Tool::Window && !handle_drag;
         if box_tool {
             if resp.drag_started_by(egui::PointerButton::Primary) {
                 self.box_start = resp.interact_pointer_pos().map(|p| [p.x, p.y]);
@@ -2496,7 +2584,7 @@ impl App {
                 self.box_start = None;
             }
         }
-        let walk = self.nav == NavMode::Walk && red_tool.is_none() && !box_tool;
+        let walk = self.nav == NavMode::Walk && red_tool.is_none() && !box_tool && !handle_drag;
         if walk && resp.drag_started_by(egui::PointerButton::Primary) && !mods.shift {
             self.walk_drag = resp.interact_pointer_pos().map(|p| [p.x, p.y]);
         }
@@ -2521,7 +2609,7 @@ impl App {
         if red_tool.is_some() {
             // primary drag deseneaza; doar middle / right navigheaza
         }
-        if !walk && ((red_tool.is_none() && !box_tool && resp.drag_started_by(egui::PointerButton::Primary)) || resp.drag_started_by(egui::PointerButton::Middle)) {
+        if !walk && ((red_tool.is_none() && !box_tool && !handle_drag && resp.drag_started_by(egui::PointerButton::Primary)) || resp.drag_started_by(egui::PointerButton::Middle)) {
             self.pivot = None;
             if let Some(p) = resp.interact_pointer_pos() {
                 let (o, d) = self.cam.ray(uv(p), aspect);
@@ -2532,7 +2620,7 @@ impl App {
             }
         }
         let delta = resp.drag_delta();
-        if (walk || red_tool.is_some() || box_tool) && resp.dragged_by(egui::PointerButton::Primary) && !mods.shift {
+        if (walk || red_tool.is_some() || box_tool || handle_drag) && resp.dragged_by(egui::PointerButton::Primary) && !mods.shift {
             // handled above
         } else if resp.dragged_by(egui::PointerButton::Primary) && !mods.shift && self.nav == NavMode::Pan {
             // modul Pan: modelul urmeaza mouse-ul
@@ -3077,6 +3165,29 @@ impl App {
                         let txt = RichText::new(icon).size(16.0);
                         ui.add_enabled(enabled, egui::Button::new(txt).selected(on).frame(on)).on_hover_text(tip).clicked()
                     };
+                    // selectie: clic / fereastra
+                    if b(ui, "👆", "Select (click an item · Ctrl+click adds)", self.tool == Tool::Select && self.nav == NavMode::Orbit, true) {
+                        self.cur_measure.clear();
+                        self.tool = Tool::Select;
+                        self.nav = NavMode::Orbit;
+                    }
+                    if b(ui, "⬚", "Window selection: drag left -> right = inside, right -> left = touching (Ctrl adds)", self.tool == Tool::Window, true) {
+                        self.cur_measure.clear();
+                        self.tool = if self.tool == Tool::Window { Tool::Select } else { Tool::Window };
+                    }
+                    // vizibilitate
+                    let sel: Vec<ElemId> = self.selected.iter().copied().collect();
+                    if b(ui, "🚫", "Hide the selected items (H)", false, !sel.is_empty()) {
+                        self.apply(Action::Hide(sel.clone()));
+                    }
+                    if b(ui, "◎", "Hide unselected - show only the selection (I)", false, !sel.is_empty()) {
+                        self.apply(Action::Isolate(sel.clone()));
+                    }
+                    if b(ui, "👁", "Unhide all", false, !self.hidden.is_empty()) {
+                        self.apply(Action::ShowAll);
+                        self.clash_focus = None;
+                    }
+                    ui.separator();
                     let orbit = self.nav == NavMode::Orbit && self.tool == Tool::Select;
                     if b(ui, "🔄", "Orbit (drag to rotate around the point under the cursor)", orbit, true) {
                         self.nav = NavMode::Orbit;
@@ -3130,15 +3241,11 @@ impl App {
                         let s: Vec<ElemId> = self.selected.iter().copied().collect();
                         self.apply(Action::Focus(s));
                     }
-                    if b(ui, "⬚", "Fit Section: section box around the selection", false, has) {
+                    if b(ui, "▣", "Fit Section: section box around the selection", false, has) {
                         self.section_to_selection();
                     }
                     if self.section.enabled && b(ui, "✂", "Turn sectioning off", true, true) {
                         self.section.enabled = false;
-                    }
-                    if !self.hidden.is_empty() && b(ui, "👁", &format!("Unhide all ({} hidden)", self.hidden.len()), false, true) {
-                        self.apply(Action::ShowAll);
-                        self.clash_focus = None;
                     }
                     ui.separator();
                     let (ic, tip) = if self.cam.ortho { ("⬚", "Orthographic - click for perspective") } else { ("🔭", "Perspective - click for orthographic") };
@@ -6603,10 +6710,10 @@ fn thousands(n: usize) -> String {
 /// big ribbon button: icon on top, label below
 fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled: bool) -> egui::Response {
     let enabled = enabled && ui.is_enabled();
-    let font = FontId::proportional(10.5);
+    let font = FontId::proportional(12.0);
     let tw = ui.fonts(|f| f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE).size().x);
     let w = (tw + 10.0).max(40.0);
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 42.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 44.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let vis = ui.style().interact_selectable(&resp, on);
     let p = ui.painter();
     if on || (enabled && resp.hovered()) {
@@ -6614,7 +6721,7 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
         p.rect(rect.shrink(1.0), 4.0, fill, if on { egui::Stroke::new(1.0_f32, accent()) } else { egui::Stroke::NONE });
     }
     let col = if !enabled { ui.visuals().weak_text_color().gamma_multiply(0.6) } else if on { accent() } else { ui.visuals().text_color() };
-    p.text(rect.center_top() + egui::vec2(0.0, 14.0), Align2::CENTER_CENTER, icon, FontId::proportional(17.0), col);
+    p.text(rect.center_top() + egui::vec2(0.0, 14.0), Align2::CENTER_CENTER, icon, FontId::proportional(18.0), col);
     p.text(rect.center_bottom() - egui::vec2(0.0, 8.0), Align2::CENTER_CENTER, label, font, col);
     if enabled {
         resp.on_hover_text(tip)
@@ -6637,7 +6744,7 @@ fn rgroup(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui)) {
         let w = r.rect.width();
         ui.allocate_ui_with_layout(egui::vec2(w, 11.0), egui::Layout::top_down(egui::Align::Center), |ui| {
             ui.set_width(w);
-            ui.label(RichText::new(title).size(9.5).weak());
+            ui.label(RichText::new(title).size(10.5).weak());
         });
     });
     ui.separator();

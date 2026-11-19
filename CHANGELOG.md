@@ -3,6 +3,16 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.15.1 - 2026-11-19
+- **Plant 3D / AutoCAD**: comenzile de referință apar acum (înainte nu erau înregistrate) și au butoane în tab-ul
+  ManageBIM › Reference: **Attach / Reload / Detach Reference**.
+- **Revit Reference** compact și rapid: o plasă netedă pe culoare (fără muchiile triunghiurilor, fără grup), fixată (pin);
+  Load / Reload / Unload ca înainte.
+- Bara de navigare: **Select, Window, Hide, Hide Unselected, Unhide All**.
+- **Section box ca în Revit**: săgeți pe fiecare față - tragi de ele și fața se mută; **Model box** (Viewpoint › Sectioning)
+  pune cutia în jurul întregului model, **Fit Section** în jurul elementelor selectate.
+- Bara de panouri de jos se trage liber în sus / în jos (mâner vizibil); font mai mare în ribbon și pe filele panourilor.
+
 ## 0.15.0 - 2026-11-19
 - **Panouri profesionale**: fiecare zonă (stânga / dreapta / jos) are 📌 **auto-hide** - devine o bandă subțire cu
   file, panoul apare peste model când îl atingi și se ascunde singur; **View › Auto-hide** pentru toate, **Hide panels

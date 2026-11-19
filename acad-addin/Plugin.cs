@@ -7,6 +7,8 @@ using AcApp = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
 [assembly: ExtensionApplication(typeof(ManageBIM.Acad.Plugin))]
 [assembly: CommandClass(typeof(ManageBIM.Acad.Commands))]
+// comenzile de referinta (MBREFERENCE / MBREFRELOAD / MBREFUNLOAD): fara linia asta AutoCAD / Plant 3D nu le vede
+[assembly: CommandClass(typeof(ManageBIM.Acad.RefCommands))]
 
 namespace ManageBIM.Acad
 {
@@ -71,6 +73,30 @@ namespace ManageBIM.Acad
                 Image = Icons.Small(),
             });
             tab.Panels.Add(new RibbonPanel { Source = src });
+            // referinte din ManageBIM (.mbref): atasare / reincarcare / detasare, ca la XREF
+            var refs = new RibbonPanelSource { Title = "Reference" };
+            foreach (var (text, cmd, tip) in new[]
+            {
+                ("Attach\nReference", "_.MBREFERENCE ", "Attach a model from ManageBIM (Output › Reference, .mbref) as 3D meshes on a locked layer"),
+                ("Reload\nReference", "_.MBREFRELOAD ", "Reload a ManageBIM reference after updating the .mbref file in ManageBIM"),
+                ("Detach\nReference", "_.MBREFUNLOAD ", "Remove a ManageBIM reference (its meshes and layer)"),
+            })
+            {
+                refs.Items.Add(new RibbonButton
+                {
+                    Text = text,
+                    ShowText = true,
+                    ShowImage = true,
+                    Size = RibbonItemSize.Large,
+                    Orientation = System.Windows.Controls.Orientation.Vertical,
+                    CommandParameter = cmd,
+                    CommandHandler = new SendCommand(),
+                    ToolTip = tip,
+                    LargeImage = Icons.Large(),
+                    Image = Icons.Small(),
+                });
+            }
+            tab.Panels.Add(new RibbonPanel { Source = refs });
             ribbon.Tabs.Add(tab);
         }
     }

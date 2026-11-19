@@ -1005,6 +1005,8 @@ pub struct App {
     pub box_start: Option<[f32; 2]>,
     /// exportul IFC: doar selectia (true) sau tot ce e vizibil
     pub ifc_selection: bool,
+    /// fata section box-ului trasa acum (0..5: -X +X -Y +Y -Z +Z)
+    pub box_drag: Option<usize>,
     /// ultimul import de axe din DWG / DXF: fisierul, straturile cu linii, stratul folosit
     pub grid_import: Option<(String, Vec<(String, usize)>, String)>,
     /// generatorul de axe (originea si directia se pot alege cu clic in model)
@@ -1220,6 +1222,7 @@ impl App {
             relocate_selection: false,
             box_start: None,
             ifc_selection: false,
+            box_drag: None,
             grid_import: None,
             grid_gen: GridGen::default(),
             grid_pick: 0,
