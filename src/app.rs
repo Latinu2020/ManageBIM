@@ -722,6 +722,8 @@ pub struct ProjectFile {
     pub title_block: Option<crate::pdf::TitleBlock>,
     #[serde(default)]
     pub vp_folders: Vec<String>,
+    #[serde(default)]
+    pub overlays: Vec<CadOverlay>,
 }
 
 /// Un nivel de grupare al arborelui de selectie: proprietatea (categorie, nume) dupa care se grupeaza.
@@ -853,6 +855,7 @@ pub enum Purpose {
     ExportWeb,
     ExportAsBuilt,
     ExportSectionCad,
+    ImportOverlay,
     ImportCheckRules,
     ExportCheckRules,
     ExportIds,
@@ -1080,6 +1083,9 @@ pub struct App {
     pub vp_folders: Vec<String>,
     pub vp_filter: Option<String>,
     pub vp_rename_pending: Option<(String, String)>,
+    /// desene 2D suprapuse peste model si fereastra lor
+    pub overlays: Vec<CadOverlay>,
+    pub overlay_open: bool,
     /// cartusul planselor (PDF / DWG) si fereastra lui de editare
     pub title_block: crate::pdf::TitleBlock,
     pub title_block_open: bool,
@@ -1330,6 +1336,8 @@ impl App {
             vp_folders: Vec::new(),
             vp_filter: None,
             vp_rename_pending: None,
+            overlays: Vec::new(),
+            overlay_open: false,
             title_block: Default::default(),
             title_block_open: false,
             box_drag: None,
@@ -2692,6 +2700,7 @@ impl App {
     }
 
     pub fn reset(&mut self) {
+        self.overlays.clear();
         // istoricul vizualizarii se refera la elementele modelelor de acum
         self.hist.clear();
         self.hist_pos = 0;
@@ -4739,6 +4748,7 @@ impl App {
             check_rules: self.check_rules.clone(),
             title_block: Some(self.title_block.clone()),
             vp_folders: self.vp_folders.clone(),
+            overlays: self.overlays.clone(),
         }
     }
 
@@ -4861,6 +4871,14 @@ impl App {
         self.check_rules = pf.check_rules;
         self.title_block = pf.title_block.unwrap_or_default();
         self.vp_folders = pf.vp_folders;
+        // desenele 2D se recitesc din fisierele lor
+        let mut ovs = pf.overlays;
+        for ov in &mut ovs {
+            if let Err(e) = self.load_overlay_segs(ov) {
+                self.log.push(format!("Overlay {}: {e}", ov.name));
+            }
+        }
+        self.overlays = ovs;
         self.vp_folder_cur.clear();
         self.check_results = None;
         self.check_sel = None;
@@ -5210,6 +5228,7 @@ impl App {
             Purpose::ExportWeb => self.export_web(&path),
             Purpose::ExportAsBuilt => self.export_asbuilt_xlsx(&path),
             Purpose::ExportSectionCad => self.export_section_cad(&path),
+            Purpose::ImportOverlay => self.import_overlay(&path),
             Purpose::ImportCheckRules => self.import_check_rules(&path),
             Purpose::ExportCheckRules => self.export_check_rules(&path),
             Purpose::ExportIds => self.export_ids(&path),
@@ -5479,6 +5498,7 @@ impl App {
                 Purpose::ExportWeb => d.set_title("Web viewer (HTML)").add_filter("Web page", &["html"]).set_file_name("model.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportAsBuilt => d.set_title("As-built report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("as_built.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportSectionCad => d.set_title("Section cut (DWG / DXF)").add_filter("AutoCAD DWG (2018)", &["dwg"]).add_filter("DXF", &["dxf"]).set_file_name("section.dwg").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ImportOverlay => d.set_title("2D drawing to overlay on the model").add_filter("DWG / DXF", &["dwg", "dxf"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportCheckRules => d.set_title("Import IDS or rules").add_filter("IDS / ManageBIM rules", &["ids", "xml", "mbrules", "json"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCheckRules => d.set_title("Save rules").add_filter("ManageBIM rules", &["mbrules"]).set_file_name("rules.mbrules").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportIds => d.set_title("Export IDS (buildingSMART)").add_filter("IDS 1.0", &["ids"]).set_file_name("requirements.ids").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5580,6 +5600,7 @@ impl App {
                 Purpose::ExportWeb => "model.html".into(),
                 Purpose::ExportAsBuilt => "as_built.xlsx".into(),
                 Purpose::ExportSectionCad => "section.dwg".into(),
+                Purpose::ImportOverlay => String::new(),
                 Purpose::ImportCheckRules => String::new(),
                 Purpose::ExportCheckRules => "rules.mbrules".into(),
                 Purpose::ExportIds => "requirements.ids".into(),
@@ -6724,6 +6745,35 @@ impl App {
 
 
 
+
+    // ------------------------------------------------------------ suprapunere DWG / DXF 2D peste model
+
+    /// Adauga un desen 2D (plan de arhitectura, de instalatii...) la cota nivelului curent (sau 0).
+    pub fn import_overlay(&mut self, path: &str) {
+        let z = self.section_level.and_then(|i| self.scene_grids().levels.get(i).map(|l| l.1)).unwrap_or(0.0);
+        let mut ov = CadOverlay { name: crate::file_name(path), path: path.to_string(), z, dx: 0.0, dy: 0.0, rot_deg: 0.0, visible: true, color: [255, 120, 60], opacity: 0.85, segs: Default::default() };
+        match self.load_overlay_segs(&mut ov) {
+            Ok(n) => {
+                self.toast(format!("{} added as 2D overlay: {n} lines at {:+.2} m (Sections › DWG Overlay to move it)", ov.name, z));
+                self.overlays.push(ov);
+                self.overlay_open = true;
+            }
+            Err(e) => self.error(format!("{}: {e}", crate::file_name(path))),
+        }
+    }
+
+    /// (re)citeste liniile desenului, in coordonatele scenei (relative la origine)
+    pub fn load_overlay_segs(&self, ov: &mut CadOverlay) -> Result<usize, String> {
+        let (lines, _) = crate::formats::cad_lines(&ov.path)?;
+        if lines.is_empty() {
+            return Err("no lines in the drawing".into());
+        }
+        let o = self.origin_f64();
+        let segs: Vec<[f32; 4]> = lines.iter().map(|(_, p)| [(p[0] - o.x) as f32, (p[1] - o.y) as f32, (p[2] - o.x) as f32, (p[3] - o.y) as f32]).collect();
+        let n = segs.len();
+        ov.segs = Arc::new(segs);
+        Ok(n)
+    }
     // ------------------------------------------------------------ Undo / Redo al vizualizarii
 
     /// semnatura ieftina a starii vizualizarii (selectie, ascunse, sectiune, camera oprita)
@@ -7457,4 +7507,39 @@ pub struct ViewSnap {
     pub hidden: Arc<HashSet<ElemId>>,
     pub section: Section,
     pub cam: Camera,
+}
+
+/// Un desen 2D (DWG / DXF) asezat peste model la o cota, cu deplasare si rotatie.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct CadOverlay {
+    pub name: String,
+    pub path: String,
+    /// cota (m, coordonate locale ale scenei)
+    pub z: f32,
+    /// deplasare (m) si rotatie (grade, in jurul originii scenei)
+    #[serde(default)]
+    pub dx: f32,
+    #[serde(default)]
+    pub dy: f32,
+    #[serde(default)]
+    pub rot_deg: f32,
+    #[serde(default = "yes_bool")]
+    pub visible: bool,
+    #[serde(default = "overlay_color")]
+    pub color: [u8; 3],
+    #[serde(default = "overlay_opacity")]
+    pub opacity: f32,
+    /// liniile (x1, y1, x2, y2) in coordonatele scenei; recitite din fisier la deschiderea proiectului
+    #[serde(skip)]
+    pub segs: Arc<Vec<[f32; 4]>>,
+}
+
+fn yes_bool() -> bool {
+    true
+}
+fn overlay_color() -> [u8; 3] {
+    [255, 120, 60]
+}
+fn overlay_opacity() -> f32 {
+    0.85
 }

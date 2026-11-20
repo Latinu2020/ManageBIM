@@ -1644,6 +1644,9 @@ impl App {
             if rbtn(ui, "✏", "Title Block", "Edit the title block, the sheet format (A3 - A0) and the scale", self.title_block_open, true).clicked() {
                 self.title_block_open = !self.title_block_open;
             }
+            if rbtn(ui, "🗺", "DWG Overlay", "Lay a 2D drawing (DWG / DXF) over the model at a level: compare the plan with the model", self.overlay_open, true).clicked() {
+                self.overlay_open = !self.overlay_open;
+            }
         });
         // acces rapid: nivelul, sus / jos, box de nivel sau taietura de plan
         let levels = self.scene_grids().levels;
@@ -3094,6 +3097,10 @@ impl App {
                     }
                 }
             }
+        }
+        // desenele 2D suprapuse (DWG / DXF)
+        if !self.overlays.is_empty() && self.report_job.is_none() {
+            self.draw_overlays(&painter, rect, &params.view_proj);
         }
         // section box ca in Revit: cate o sageata pe fiecare fata; tragi de ea si fata se muta pe axa ei
         let mut handle_hover: Option<usize> = None;
@@ -7166,6 +7173,7 @@ impl App {
 
     fn windows(&mut self, ctx: &egui::Context) {
         self.manual_window(ctx);
+        self.overlay_window(ctx);
         self.title_block_window(ctx);
         self.command_palette(ctx);
         self.asbuilt_window(ctx);
@@ -7190,6 +7198,7 @@ impl App {
                 Purpose::ExportWeb => "Web viewer (HTML)",
                 Purpose::ExportAsBuilt => "As-built report (Excel)",
                 Purpose::ExportSectionCad => "Section cut (DWG / DXF)",
+                Purpose::ImportOverlay => "DWG overlay",
                 Purpose::ImportCheckRules => "Import IDS or rules",
                 Purpose::ExportCheckRules => "Save rules",
                 Purpose::ExportIds => "Export IDS",
@@ -8238,6 +8247,7 @@ fn commands() -> Vec<Cmd> {
             a.request_path(Purpose::ExportSectionCad);
         }),
         c!("Title block & sheet format", "Sections", "✏", "cartus format a3 a2 a1 a0 scara editare", |a| a.title_block_open = true),
+        c!("DWG overlay (2D drawing over the model)", "Sections", "🗺", "suprapunere plan dwg dxf 2d", |a| a.overlay_open = true),
         // ---- panouri
         c!("Selection Tree", "Panels", "🌲", "arbore", |a| a.open_panel(Panel::Tree)),
         c!("Properties", "Panels", "ℹ", "proprietati", |a| a.open_panel(Panel::Properties)),
@@ -8922,5 +8932,114 @@ impl App {
         let short = name.rsplit('/').next().unwrap_or("").to_string();
         // il redenumesti imediat
         self.vp_rename_pending = Some((name, short));
+    }
+}
+
+impl App {
+    /// Desenele 2D suprapuse: linii proiectate peste model (deasupra lui, ca un plan pe masa).
+    fn draw_overlays(&self, painter: &egui::Painter, rect: Rect, vp: &glam::Mat4) {
+        let mut budget = 300_000usize;
+        for ov in self.overlays.iter().filter(|o| o.visible) {
+            let col = Color32::from_rgba_unmultiplied(ov.color[0], ov.color[1], ov.color[2], (ov.opacity.clamp(0.05, 1.0) * 255.0) as u8);
+            let (s, c) = ov.rot_deg.to_radians().sin_cos();
+            let tr = |x: f32, y: f32| Vec3::new(x * c - y * s + ov.dx, x * s + y * c + ov.dy, ov.z);
+            for g in ov.segs.iter() {
+                if budget == 0 {
+                    return;
+                }
+                budget -= 1;
+                if let (Some(a), Some(b)) = (to_screen(vp, rect, tr(g[0], g[1])), to_screen(vp, rect, tr(g[2], g[3]))) {
+                    painter.line_segment([a, b], Stroke::new(1.2_f32, col));
+                }
+            }
+        }
+    }
+
+    /// Fereastra suprapunerilor DWG / DXF: vizibilitate, cota (nivel), deplasare, rotatie, culoare.
+    fn overlay_window(&mut self, ctx: &egui::Context) {
+        if !self.overlay_open {
+            return;
+        }
+        let mut open = true;
+        let mut remove = None;
+        let mut reload = None;
+        let mut add = false;
+        let levels = self.scene_grids().levels;
+        egui::Window::new(crate::theme::icon_job("📐", "DWG overlay", 14.0, ctx.style().visuals.text_color()))
+            .id(egui::Id::new("overlay_win"))
+            .open(&mut open)
+            .default_width(440.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.label(RichText::new("2D drawings (DWG / DXF) laid over the model at a level - to compare the plan with the model.").small().weak());
+                add = ui.button("➕ Add DWG / DXF…").clicked();
+                ui.separator();
+                if self.overlays.is_empty() {
+                    ui.label(RichText::new("No drawings yet.").weak());
+                }
+                for (i, ov) in self.overlays.iter_mut().enumerate() {
+                    egui::Frame::none().fill(card_fill(ui.visuals())).rounding(7.0).inner_margin(8.0).show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.checkbox(&mut ov.visible, RichText::new(&ov.name).strong());
+                            ui.label(RichText::new(format!("{} lines", ov.segs.len())).small().weak());
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.small_button("🗑").on_hover_text("Remove").clicked() {
+                                    remove = Some(i);
+                                }
+                                if ui.small_button("⟳").on_hover_text("Read the drawing again (after it was changed)").clicked() {
+                                    reload = Some(i);
+                                }
+                            });
+                        });
+                        egui::Grid::new(("ov_grid", i)).num_columns(4).spacing([8.0, 4.0]).show(ui, |ui| {
+                            ui.label("Level");
+                            let cur = levels.iter().find(|l| (l.1 - ov.z).abs() < 1e-3).map(|l| l.0.clone()).unwrap_or_else(|| "custom".into());
+                            egui::ComboBox::from_id_salt(("ov_lvl", i)).width(120.0).selected_text(cur).show_ui(ui, |ui| {
+                                for l in &levels {
+                                    if ui.selectable_label((l.1 - ov.z).abs() < 1e-3, format!("{}  {:+.2}", l.0, l.1)).clicked() {
+                                        ov.z = l.1;
+                                    }
+                                }
+                            });
+                            ui.label("Z");
+                            ui.add(egui::DragValue::new(&mut ov.z).speed(0.01).suffix(" m"));
+                            ui.end_row();
+                            ui.label("Move X");
+                            ui.add(egui::DragValue::new(&mut ov.dx).speed(0.01).suffix(" m"));
+                            ui.label("Move Y");
+                            ui.add(egui::DragValue::new(&mut ov.dy).speed(0.01).suffix(" m"));
+                            ui.end_row();
+                            ui.label("Rotate");
+                            ui.add(egui::DragValue::new(&mut ov.rot_deg).speed(0.1).suffix("°"));
+                            ui.label("Colour");
+                            ui.horizontal(|ui| {
+                                ui.color_edit_button_srgb(&mut ov.color);
+                                ui.add(egui::Slider::new(&mut ov.opacity, 0.1..=1.0).show_value(false));
+                            });
+                            ui.end_row();
+                        });
+                    });
+                    ui.add_space(4.0);
+                }
+            });
+        if !open {
+            self.overlay_open = false;
+        }
+        if let Some(i) = remove {
+            self.overlays.remove(i);
+        }
+        if let Some(i) = reload {
+            let mut ov = self.overlays[i].clone();
+            match self.load_overlay_segs(&mut ov) {
+                Ok(n) => {
+                    self.overlays[i] = ov;
+                    self.toast(format!("Overlay reloaded: {n} lines"));
+                }
+                Err(e) => self.error(e),
+            }
+        }
+        if add {
+            self.request_path(Purpose::ImportOverlay);
+        }
     }
 }

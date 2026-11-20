@@ -1556,59 +1556,7 @@ fn mtext_plain(s: &str) -> String {
 /// Citeste axele dintr-un DWG / DXF: liniile stratului de axe (ghicit dupa nume, sau `layer`) si eticheta de la
 /// capatul fiecarei linii (textul / atributul din bula cea mai apropiata). Segmentele cu aceeasi eticheta se unesc.
 pub fn grids_from_cad(path: &str, layer: Option<&str>) -> Result<CadGrids, String> {
-    let text = dxf_text_of(path)?;
-    let lines: Vec<&str> = text.lines().collect();
-    let mut pairs: Vec<(i32, String)> = Vec::with_capacity(lines.len() / 2);
-    for k in (0..lines.len().saturating_sub(1)).step_by(2) {
-        if let Ok(c) = lines[k].trim().parse::<i32>() {
-            pairs.push((c, lines[k + 1].trim_end().to_string()));
-        }
-    }
-    let mut insunits = 0i64;
-    let mut entities: Vec<Ent> = Vec::new();
-    let mut blocks: HashMap<String, (DVec3, Vec<Ent>)> = HashMap::new();
-    let mut i = 0;
-    while i < pairs.len() {
-        if pairs[i] == (0, "SECTION".to_string()) && i + 1 < pairs.len() {
-            let name = pairs[i + 1].1.clone();
-            i += 2;
-            match name.as_str() {
-                "HEADER" => {
-                    while i < pairs.len() && pairs[i] != (0, "ENDSEC".to_string()) {
-                        if pairs[i] == (9, "$INSUNITS".to_string()) && i + 1 < pairs.len() {
-                            insunits = pairs[i + 1].1.trim().parse().unwrap_or(0);
-                        }
-                        i += 1;
-                    }
-                }
-                "BLOCKS" => {
-                    while i < pairs.len() && pairs[i] != (0, "ENDSEC".to_string()) {
-                        if pairs[i] == (0, "BLOCK".to_string()) {
-                            let mut hdr = Ent::default();
-                            i += 1;
-                            while i < pairs.len() && pairs[i].0 != 0 {
-                                hdr.codes.push(pairs[i].clone());
-                                i += 1;
-                            }
-                            let (ents, j) = dxf_entities(&pairs, i);
-                            i = j;
-                            if let Some(n) = hdr.s(2) {
-                                blocks.insert(n.to_string(), (hdr.p(10), ents));
-                            }
-                        }
-                        i += 1;
-                    }
-                }
-                "ENTITIES" => {
-                    let (ents, j) = dxf_entities(&pairs, i);
-                    entities = ents;
-                    i = j;
-                }
-                _ => {}
-            }
-        }
-        i += 1;
-    }
+    let (insunits, entities, blocks) = dxf_doc(path)?;
     // linii (LINE, LWPOLYLINE cu 2 varfuri) pe strat; etichete: TEXT / MTEXT / ATTRIB si TEXT din blocuri (bule)
     let mut segs: Vec<(String, glam::DVec2, glam::DVec2)> = Vec::new();
     let mut tags: Vec<(String, glam::DVec2)> = Vec::new();
@@ -1811,4 +1759,167 @@ pub fn backup_path(path: &Path) -> PathBuf {
     let mut s = path.as_os_str().to_owned();
     s.push(".bak");
     PathBuf::from(s)
+}
+
+/// Citeste un DXF (sau DWG convertit): unitatile ($INSUNITS), entitatile si blocurile.
+fn dxf_doc(path: &str) -> Result<(i64, Vec<Ent>, HashMap<String, (DVec3, Vec<Ent>)>), String> {
+    let text = dxf_text_of(path)?;
+    let lines: Vec<&str> = text.lines().collect();
+    let mut pairs: Vec<(i32, String)> = Vec::with_capacity(lines.len() / 2);
+    for k in (0..lines.len().saturating_sub(1)).step_by(2) {
+        if let Ok(c) = lines[k].trim().parse::<i32>() {
+            pairs.push((c, lines[k + 1].trim_end().to_string()));
+        }
+    }
+    let mut insunits = 0i64;
+    let mut entities: Vec<Ent> = Vec::new();
+    let mut blocks: HashMap<String, (DVec3, Vec<Ent>)> = HashMap::new();
+    let mut i = 0;
+    while i < pairs.len() {
+        if pairs[i] == (0, "SECTION".to_string()) && i + 1 < pairs.len() {
+            let name = pairs[i + 1].1.clone();
+            i += 2;
+            match name.as_str() {
+                "HEADER" => {
+                    while i < pairs.len() && pairs[i] != (0, "ENDSEC".to_string()) {
+                        if pairs[i] == (9, "$INSUNITS".to_string()) && i + 1 < pairs.len() {
+                            insunits = pairs[i + 1].1.trim().parse().unwrap_or(0);
+                        }
+                        i += 1;
+                    }
+                }
+                "BLOCKS" => {
+                    while i < pairs.len() && pairs[i] != (0, "ENDSEC".to_string()) {
+                        if pairs[i] == (0, "BLOCK".to_string()) {
+                            let mut hdr = Ent::default();
+                            i += 1;
+                            while i < pairs.len() && pairs[i].0 != 0 {
+                                hdr.codes.push(pairs[i].clone());
+                                i += 1;
+                            }
+                            let (ents, j) = dxf_entities(&pairs, i);
+                            i = j;
+                            if let Some(n) = hdr.s(2) {
+                                blocks.insert(n.to_string(), (hdr.p(10), ents));
+                            }
+                        }
+                        i += 1;
+                    }
+                }
+                "ENTITIES" => {
+                    let (ents, j) = dxf_entities(&pairs, i);
+                    entities = ents;
+                    i = j;
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    Ok((insunits, entities, blocks))
+}
+
+/// Desen 2D (DWG / DXF) ca linii in metri: LINE, LWPOLYLINE / POLYLINE (si inchise), ARC, CIRCLE, ELLIPSE,
+/// blocuri (INSERT, si imbricate). Intoarce (strat, x1, y1, x2, y2) si scara aplicata (unitati -> m).
+pub fn cad_lines(path: &str) -> Result<(Vec<(String, [f64; 4])>, f64), String> {
+    let (insunits, entities, blocks) = dxf_doc(path)?;
+    let mut out: Vec<(String, [f64; 4])> = Vec::new();
+    fn arc(c: glam::DVec2, r: f64, a0: f64, a1: f64) -> Vec<glam::DVec2> {
+        let mut sweep = a1 - a0;
+        while sweep <= 0.0 {
+            sweep += std::f64::consts::TAU;
+        }
+        let n = ((sweep / std::f64::consts::TAU) * 48.0).ceil().max(4.0) as usize;
+        (0..=n).map(|k| {
+            let a = a0 + sweep * k as f64 / n as f64;
+            c + glam::DVec2::new(a.cos(), a.sin()) * r
+        }).collect()
+    }
+    fn emit(ents: &[Ent], blocks: &HashMap<String, (DVec3, Vec<Ent>)>, xf: &dyn Fn(glam::DVec2) -> glam::DVec2, layer_in: Option<&str>, out: &mut Vec<(String, [f64; 4])>, depth: u32) {
+        if depth > 6 || out.len() > 2_000_000 {
+            return;
+        }
+        fn seg(out: &mut Vec<(String, [f64; 4])>, xf: &dyn Fn(glam::DVec2) -> glam::DVec2, lay: &str, pts: &[glam::DVec2], closed: bool) {
+            for w in pts.windows(2) {
+                let (a, b) = (xf(w[0]), xf(w[1]));
+                out.push((lay.to_string(), [a.x, a.y, b.x, b.y]));
+            }
+            if closed && pts.len() > 2 {
+                let (a, b) = (xf(pts[pts.len() - 1]), xf(pts[0]));
+                out.push((lay.to_string(), [a.x, a.y, b.x, b.y]));
+            }
+        }
+        let push = |out: &mut Vec<(String, [f64; 4])>, lay: &str, pts: &[glam::DVec2], closed: bool| seg(out, xf, lay, pts, closed);
+        for e in ents {
+            // stratul "0" din blocuri ia stratul INSERT-ului
+            let own = e.s(8).unwrap_or("0");
+            let lay = if own == "0" { layer_in.unwrap_or("0") } else { own };
+            match e.ty.as_str() {
+                "LINE" => push(out, lay, &[e.p(10).truncate(), e.p(11).truncate()], false),
+                "LWPOLYLINE" => {
+                    let (xs, ys) = (e.all_f(10), e.all_f(20));
+                    let pts: Vec<glam::DVec2> = xs.iter().zip(ys.iter()).map(|(x, y)| glam::DVec2::new(*x, *y)).collect();
+                    push(out, lay, &pts, e.i(70).unwrap_or(0) & 1 == 1);
+                }
+                "CIRCLE" => {
+                    let pts = arc(e.p(10).truncate(), e.f(40).unwrap_or(0.0), 0.0, std::f64::consts::TAU);
+                    push(out, lay, &pts, false);
+                }
+                "ARC" => {
+                    let pts = arc(e.p(10).truncate(), e.f(40).unwrap_or(0.0), e.f(50).unwrap_or(0.0).to_radians(), e.f(51).unwrap_or(360.0).to_radians());
+                    push(out, lay, &pts, false);
+                }
+                "ELLIPSE" => {
+                    let c = e.p(10).truncate();
+                    let maj = e.p(11).truncate();
+                    let ratio = e.f(40).unwrap_or(1.0);
+                    let (t0, mut t1) = (e.f(41).unwrap_or(0.0), e.f(42).unwrap_or(std::f64::consts::TAU));
+                    if t1 <= t0 {
+                        t1 += std::f64::consts::TAU;
+                    }
+                    let min = glam::DVec2::new(-maj.y, maj.x) * ratio;
+                    let n = 48;
+                    let pts: Vec<glam::DVec2> = (0..=n).map(|k| {
+                        let t = t0 + (t1 - t0) * k as f64 / n as f64;
+                        c + maj * t.cos() + min * t.sin()
+                    }).collect();
+                    push(out, lay, &pts, false);
+                }
+                "INSERT" => {
+                    if let Some((base, sub)) = e.s(2).and_then(|n| blocks.get(n)) {
+                        let ip = e.p(10);
+                        let (sx, sy) = (e.f(41).unwrap_or(1.0), e.f(42).unwrap_or(1.0));
+                        let rot = e.f(50).unwrap_or(0.0).to_radians();
+                        let base = *base;
+                        let (s, c) = rot.sin_cos();
+                        let inner = move |p: glam::DVec2| {
+                            let q = glam::DVec2::new((p.x - base.x) * sx, (p.y - base.y) * sy);
+                            glam::DVec2::new(ip.x + q.x * c - q.y * s, ip.y + q.x * s + q.y * c)
+                        };
+                        let chained = |p: glam::DVec2| xf(inner(p));
+                        emit(sub, blocks, &chained, Some(lay), out, depth + 1);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    emit(&entities, &blocks, &|p| p, None, &mut out, 0);
+    let scale = match insunits {
+        1 => 0.0254,
+        2 => 0.3048,
+        4 => 0.001,
+        5 => 0.01,
+        6 => 1.0,
+        _ => {
+            let ext = out.iter().map(|s| (s.1[0] - s.1[2]).abs().max((s.1[1] - s.1[3]).abs())).fold(0.0, f64::max);
+            if ext > 1000.0 { 0.001 } else { 1.0 }
+        }
+    };
+    for s in &mut out {
+        for v in &mut s.1 {
+            *v *= scale;
+        }
+    }
+    Ok((out, scale))
 }

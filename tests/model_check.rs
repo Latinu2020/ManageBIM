@@ -597,3 +597,19 @@ fn ids_export_round_trip() {
     assert!(back[1].applicability.is_empty(), "no conditions = every element");
     assert_eq!(back[1].requirements, b.requirements);
 }
+
+#[test]
+fn dwg_overlay_reads_lines_and_circles() {
+    let grids = vec![bimrust::app::UserGrid { name: "A".into(), a: [0.0, 0.0], b: [0.0, 20.0] }];
+    let p = std::path::Path::new("target").join("overlay_test.dxf");
+    std::fs::write(&p, bimrust::app::grid_dxf(&grids, 0.5)).unwrap();
+    let (lines, scale) = bimrust::formats::cad_lines(&p.to_string_lossy()).unwrap();
+    assert_eq!(scale, 1.0, "drawing in metres");
+    // 1 linie de axa + 2 bule (cercuri) tesselate
+    assert!(lines.len() > 1 + 2 * 40, "{} segments", lines.len());
+    assert!(lines.iter().any(|(l, s)| l == "GRID" && (s[3] - 20.0).abs() < 1e-9));
+    // un DWG scris de noi se citeste la fel
+    let dwg = bimrust::formats::dxf_to_dwg_native(&p.to_string_lossy()).unwrap();
+    let (l2, _) = bimrust::formats::cad_lines(&dwg).unwrap();
+    assert_eq!(l2.len(), lines.len());
+}
