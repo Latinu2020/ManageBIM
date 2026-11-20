@@ -269,3 +269,65 @@ impl CompareFile {
         (r, missing)
     }
 }
+
+// ====================================================================== pe parametri
+
+/// O proprietate schimbata pe un element (partea B); `old` / `new` goale = adaugata / stearsa.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParamChange {
+    pub id: ElemId,
+    /// "Grup / Nume" (sau "Name" pentru numele elementului)
+    pub param: String,
+    pub old: String,
+    pub new: String,
+}
+
+/// Toate proprietatile schimbate intre perechile potrivite (A -> B), una pe rand.
+pub fn param_changes(ma: &Model, mb: &Model, r: &CompareResult) -> Vec<ParamChange> {
+    let mut out = Vec::new();
+    let mut pairs: Vec<(&ElemId, &ElemId)> = r.matched_a.iter().collect();
+    pairs.sort();
+    for (ia, ib) in pairs {
+        let (Some(a), Some(b)) = (ma.elements.get(ia.e as usize), mb.elements.get(ib.e as usize)) else { continue };
+        if a.name != b.name {
+            out.push(ParamChange { id: *ib, param: "Name".into(), old: a.name.clone(), new: b.name.clone() });
+        }
+        let key = |e: &Element| -> BTreeMap<String, String> { e.props.iter().filter(|p| !VOLATILE.contains(&p.name.as_str())).map(|p| (format!("{} / {}", p.group, p.name), p.value.clone())).collect() };
+        let (pa, pb) = (key(a), key(b));
+        for (k, va) in &pa {
+            match pb.get(k) {
+                Some(vb) if vb != va => out.push(ParamChange { id: *ib, param: k.clone(), old: va.clone(), new: vb.clone() }),
+                None => out.push(ParamChange { id: *ib, param: k.clone(), old: va.clone(), new: String::new() }),
+                _ => {}
+            }
+        }
+        for (k, vb) in &pb {
+            if !pa.contains_key(k) {
+                out.push(ParamChange { id: *ib, param: k.clone(), old: String::new(), new: vb.clone() });
+            }
+        }
+    }
+    out
+}
+
+/// Parametrii schimbati, cu numarul de elemente afectate (cei mai frecventi primii).
+pub fn param_summary(ch: &[ParamChange]) -> Vec<(String, usize)> {
+    let mut m: BTreeMap<&str, std::collections::BTreeSet<ElemId>> = BTreeMap::new();
+    for c in ch {
+        m.entry(c.param.as_str()).or_default().insert(c.id);
+    }
+    let mut v: Vec<(String, usize)> = m.into_iter().map(|(k, s)| (k.to_string(), s.len())).collect();
+    v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    v
+}
+
+/// Raport CSV pe parametri (Excel): GUID; Element; Tip; Parametru; Valoare veche; Valoare noua.
+pub fn param_csv(ch: &[ParamChange], mb: &Model) -> String {
+    let q = |s: &str| if s.contains(';') || s.contains('"') || s.contains('\n') { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() };
+    let mut s = String::from("\u{feff}GUID;Element;Type;Parameter;Old value;New value\n");
+    for c in ch {
+        let (g, n, t) = mb.elements.get(c.id.e as usize).map(|e| (e.guid.as_str(), e.name.as_str(), e.ifc_type.as_str())).unwrap_or(("", "", ""));
+        s.push_str(&format!("{};{};{};{};{};{}\n", q(g), q(n), q(t), q(&c.param), q(&c.old), q(&c.new)));
+    }
+    s
+}

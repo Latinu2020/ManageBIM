@@ -356,6 +356,8 @@ pub enum SelKind {
     Model,
     Set,
     Type,
+    /// o disciplina (Structure, Architecture, MEP - HVAC...), recunoscuta din tipul IFC si numele modelului
+    Discipline,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -371,6 +373,7 @@ impl Selector {
             SelKind::Model => format!("Model: {}", self.value),
             SelKind::Set => format!("Set: {}", self.value),
             SelKind::Type => format!("Type: {}", self.value),
+            SelKind::Discipline => format!("Discipline: {}", self.value),
         }
     }
 }
@@ -506,9 +509,101 @@ pub struct ClashTest {
     pub last_run: String,
     #[serde(default)]
     pub rules: ClashRules,
+    /// pragurile de gravitate (mm): sub primul = Minor, intre = Major, peste al doilea = Critical
+    #[serde(default = "sev_default")]
+    pub sev_mm: [f32; 2],
+}
+
+fn sev_default() -> [f32; 2] {
+    [10.0, 50.0]
+}
+
+/// Gravitatea unui clash, dupa patrundere (hard) sau cat de aproape sunt elementele (clearance).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]
+pub enum Severity {
+    Critical,
+    Major,
+    Minor,
+}
+
+impl Severity {
+    pub const ALL: [Severity; 3] = [Severity::Critical, Severity::Major, Severity::Minor];
+    pub fn label(self) -> &'static str {
+        match self {
+            Severity::Critical => "Critical",
+            Severity::Major => "Major",
+            Severity::Minor => "Minor",
+        }
+    }
+    pub fn color(self) -> [u8; 3] {
+        match self {
+            Severity::Critical => [230, 60, 60],
+            Severity::Major => [245, 150, 35],
+            Severity::Minor => [235, 205, 70],
+        }
+    }
 }
 
 impl ClashTest {
+    /// Gravitatea unui rezultat: hard = patrunderea (mm) fata de praguri; clearance = cat din distanta
+    /// ceruta lipseste (atingere = Critical); duplicate = Critical.
+    pub fn severity(&self, dist: f32) -> Severity {
+        severity_of(self.ty, self.tol_mm, self.sev_mm, dist)
+    }
+}
+
+/// ca `ClashTest::severity`, fara testul intreg (tipul, toleranta si pragurile).
+pub fn severity_of(ty: ClashType, tol_mm: f32, sev_mm: [f32; 2], dist: f32) -> Severity {
+    {
+        let [lo, hi] = sev_mm;
+        match ty {
+            ClashType::Duplicates => Severity::Critical,
+            ClashType::Hard => {
+                let pen = (-dist * 1000.0).max(0.0);
+                if pen >= hi {
+                    Severity::Critical
+                } else if pen >= lo {
+                    Severity::Major
+                } else {
+                    Severity::Minor
+                }
+            }
+            ClashType::Clearance => {
+                let gap = dist * 1000.0;
+                if gap <= 0.0 {
+                    Severity::Critical
+                } else if gap < tol_mm * 0.5 {
+                    Severity::Major
+                } else {
+                    Severity::Minor
+                }
+            }
+        }
+    }
+}
+
+impl ClashTest {
+    /// Teste gata facute (sabloane): (nume, descriere, test). Disciplinele se recunosc automat.
+    pub fn templates() -> Vec<(&'static str, &'static str, ClashTest)> {
+        let d = |v: &str| Selector { kind: SelKind::Discipline, value: v.to_string() };
+        let all = || Selector { kind: SelKind::All, value: String::new() };
+        let mk = |name: &str, a: Selector, b: Selector, ty: ClashType, tol: f32, sev: [f32; 2]| {
+            let mut t = ClashTest::new(name.to_string());
+            (t.a, t.b, t.ty, t.tol_mm, t.sev_mm) = (a, b, ty, tol, sev);
+            t
+        };
+        vec![
+            ("Structure vs HVAC (hard)", "Ducts through beams, columns, slabs - 10 mm tolerance; Critical over 50 mm", mk("Structure vs HVAC", d("Structure"), d("MEP - HVAC"), ClashType::Hard, 10.0, [10.0, 50.0])),
+            ("Structure vs Plumbing (hard)", "Pipes through the structure - 10 mm tolerance", mk("Structure vs Plumbing", d("Structure"), d("MEP - Plumbing"), ClashType::Hard, 10.0, [10.0, 50.0])),
+            ("Structure vs Electrical (hard)", "Cable trays through the structure - 10 mm tolerance", mk("Structure vs Electrical", d("Structure"), d("MEP - Electrical"), ClashType::Hard, 10.0, [10.0, 50.0])),
+            ("Architecture vs HVAC (hard)", "Walls, doors, ceilings vs ducts - 25 mm tolerance (small touches ignored)", mk("Architecture vs HVAC", d("Architecture"), d("MEP - HVAC"), ClashType::Hard, 25.0, [25.0, 100.0])),
+            ("Structure vs Architecture (hard)", "Walls and doors cutting into beams and columns - 20 mm", mk("Structure vs Architecture", d("Structure"), d("Architecture"), ClashType::Hard, 20.0, [20.0, 80.0])),
+            ("HVAC vs Plumbing (clearance 50 mm)", "Ducts and pipes need 50 mm for insulation and installation", mk("HVAC vs Plumbing clearance", d("MEP - HVAC"), d("MEP - Plumbing"), ClashType::Clearance, 50.0, [10.0, 50.0])),
+            ("Electrical vs Plumbing (clearance 100 mm)", "Cables and trays kept 100 mm away from water pipes", mk("Electrical vs Plumbing clearance", d("MEP - Electrical"), d("MEP - Plumbing"), ClashType::Clearance, 100.0, [10.0, 50.0])),
+            ("Duplicates (all models)", "The same element modelled twice", mk("Duplicates", all(), all(), ClashType::Duplicates, 1.0, [10.0, 50.0])),
+        ]
+    }
+
     pub fn new(name: String) -> ClashTest {
         ClashTest {
             name,
@@ -520,6 +615,7 @@ impl ClashTest {
             results: Vec::new(),
             last_run: String::new(),
             rules: ClashRules::default(),
+            sev_mm: sev_default(),
         }
     }
     pub fn count(&self, s: ClashStatus) -> usize {
@@ -718,6 +814,9 @@ pub struct ProjectFile {
     pub qto: Option<crate::qto::QtoSetup>,
     #[serde(default)]
     pub check_rules: Vec<crate::check::Rule>,
+    /// parametrii adaugati de utilizator pe elemente
+    #[serde(default)]
+    pub user_params: Vec<UserParam>,
     #[serde(default)]
     pub title_block: Option<crate::pdf::TitleBlock>,
     #[serde(default)]
@@ -890,6 +989,8 @@ pub enum Purpose {
     ExportCompare,
     ImportCompare,
     ExportCompareCsv,
+    ExportCompareParamsCsv,
+    ExportQuickChecksCsv,
     ExportTree,
     ImportTree,
     ExportQtoXlsx,
@@ -1211,6 +1312,17 @@ pub struct App {
     pub profile_map: Option<HashMap<ElemId, u16>>,
     /// Compare: rezultat + afisare in 3D + modelele alese (A = vechi, B = nou) + toleranta (mm)
     pub compare: Option<crate::compare::CompareResult>,
+    /// proprietatile schimbate (compare pe parametri) si filtrul listei
+    pub compare_params: Vec<crate::compare::ParamChange>,
+    /// verificarile rapide (fara IDS)
+    pub quick_checks: Vec<crate::check::QuickCheck>,
+    /// legenda colorarii dupa parametru in vederea 3D
+    pub profile_legend: bool,
+    /// parametrii adaugati de utilizator (salvati in proiect) si campurile din panoul Properties
+    pub user_params: Vec<UserParam>,
+    pub up_name: String,
+    pub up_value: String,
+    pub compare_param_pick: Option<String>,
     pub compare_on: bool,
     pub compare_pick: (Option<usize>, Option<usize>),
     pub compare_tol: f32,
@@ -1436,6 +1548,13 @@ impl App {
             profile: Default::default(),
             profile_map: None,
             compare: None,
+            compare_params: Vec::new(),
+            quick_checks: Vec::new(),
+            profile_legend: true,
+            user_params: Vec::new(),
+            up_name: String::new(),
+            up_value: String::new(),
+            compare_param_pick: None,
             compare_on: false,
             compare_pick: (None, None),
             compare_tol: 1.0,
@@ -1792,6 +1911,7 @@ impl App {
                 .collect(),
             SelKind::Set => self.sets.iter().find(|x| x.name == s.value).map(|x| self.resolve_set(x)).unwrap_or_default(),
             SelKind::Type => self.all_ids().into_iter().filter(|id| self.elem(*id).map_or(false, |(_, e)| e.ifc_type == s.value)).collect(),
+            SelKind::Discipline => self.all_ids().into_iter().filter(|id| self.elem(*id).map_or(false, |(m, e)| crate::clash_smart::discipline_of(e, &m.name).label() == s.value)).collect(),
         }
     }
 
@@ -2432,12 +2552,55 @@ impl App {
             ma.name, mb.name, c[0], c[1], c[2], c[3], c[4], t.elapsed().as_secs_f64() * 1e3
         ));
         self.compare = Some(r);
+        self.refresh_compare_params();
         self.compare_on = true;
         self.colors_dirty = true;
     }
 
+    /// Verificarile rapide de calitate (fara reguli IDS) pe toate modelele incarcate.
+    pub fn run_quick_checks(&mut self) {
+        let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
+        if models.is_empty() {
+            return self.error("Open a model first.");
+        }
+        let refs: Vec<(usize, &Model)> = models.iter().map(|(i, m)| (*i, m.as_ref())).collect();
+        let t = Instant::now();
+        self.quick_checks = crate::check::quick_checks(&refs);
+        let bad = self.quick_checks.iter().filter(|q| !q.result.failed.is_empty()).count();
+        self.toast(format!("Quick checks: {bad} of {} found problems ({:.0} ms)", self.quick_checks.len(), t.elapsed().as_secs_f64() * 1e3));
+    }
+
+    /// Raport CSV al verificarilor rapide: verificare; GUID; element; tip; nivel; motiv.
+    pub fn quick_checks_csv(&self) -> String {
+        let q = |s: &str| if s.contains(';') || s.contains('"') { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() };
+        let mut s = String::from("{feff}Check;GUID;Element;Type;Level;Reason
+");
+        for c in &self.quick_checks {
+            for (id, why) in &c.result.failed {
+                if let Some((_, e)) = self.elem(*id) {
+                    s.push_str(&format!("{};{};{};{};{};{}
+", q(c.name), q(&e.guid), q(&e.name), q(&e.ifc_type), q(&e.storey), q(why)));
+                }
+            }
+        }
+        s
+    }
+
+    /// Recalculeaza lista proprietatilor schimbate dupa un Compare.
+    pub fn refresh_compare_params(&mut self) {
+        self.compare_param_pick = None;
+        self.compare_params = match &self.compare {
+            Some(r) => match (self.models.get(r.a).cloned().flatten(), self.models.get(r.b).cloned().flatten()) {
+                (Some(ma), Some(mb)) => crate::compare::param_changes(&ma, &mb, r),
+                _ => Vec::new(),
+            },
+            None => Vec::new(),
+        };
+    }
+
     pub fn compare_clear(&mut self) {
         self.compare = None;
+        self.compare_params.clear();
         self.compare_on = false;
         self.colors_dirty = true;
     }
@@ -2704,6 +2867,7 @@ impl App {
     }
 
     pub fn reset(&mut self) {
+        self.user_params.clear();
         self.overlays.clear();
         // istoricul vizualizarii se refera la elementele modelelor de acum
         self.hist.clear();
@@ -2809,6 +2973,8 @@ impl App {
                     if let Some(n) = note {
                         self.log.push(n);
                     }
+                    // parametrii adaugati de utilizator (din proiect)
+                    let m = self.with_user_params(m);
                     let first = self.loaded_models().next().is_none();
                     while self.base_models.len() <= job.slot {
                         self.base_models.push(None);
@@ -3210,7 +3376,7 @@ impl App {
             h.push_str(&format!("<span>{}: <b>{}</b></span>", s.label(), test.count(s)));
         }
         h.push_str(&format!("<span>Total: <b>{}</b></span></p>", test.results.len()));
-        h.push_str("<table><tr><th>Group</th><th>Name</th><th>Status</th><th>Distance (m)</th><th>Item A</th><th>Type A</th><th>Item B</th><th>Type B</th><th>Level</th><th>Location (grid / level)</th><th>Point X,Y,Z (local)</th><th>Found</th><th>Assigned to</th><th>Comment</th></tr>");
+        h.push_str("<table><tr><th>Group</th><th>Name</th><th>Status</th><th>Severity</th><th>Distance (m)</th><th>Item A</th><th>Type A</th><th>Item B</th><th>Type B</th><th>Level</th><th>Location (grid / level)</th><th>Point X,Y,Z (local)</th><th>Found</th><th>Assigned to</th><th>Comment</th></tr>");
         let grids = self.scene_grids();
         let mut order: Vec<&ClashResult> = test.results.iter().collect();
         order.sort_by_key(|r| (r.group.is_empty(), r.group.clone()));
@@ -3218,10 +3384,12 @@ impl App {
             let gl = grid_location_in(&grids, Vec3::from(r.point));
             let (ta, la, sa) = self.elem(r.a).map(|(m, e)| (e.ifc_type.clone(), format!("{} [{}]", e.name, m.name), e.storey.clone())).unwrap_or_default();
             let (tb, lb) = self.elem(r.b).map(|(m, e)| (e.ifc_type.clone(), format!("{} [{}]", e.name, m.name))).unwrap_or_default();
+            let sv = test.severity(r.dist);
+            let sc = sv.color();
             let c = r.status.color();
             h.push_str(&format!(
-                "<tr><td>{}</td><td>{}</td><td class=\"s\" style=\"color:rgb({},{},{})\">{}</td><td>{:.3}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.2}, {:.2}, {:.2}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
-                esc(&r.group), esc(&r.name), c[0], c[1], c[2], r.status.label(), r.dist, esc(&la), esc(&ta), esc(&lb), esc(&tb), esc(&sa), esc(&gl),
+                "<tr><td>{}</td><td>{}</td><td class=\"s\" style=\"color:rgb({},{},{})\">{}</td><td style=\"color:rgb({},{},{})\">{}</td><td>{:.3}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.2}, {:.2}, {:.2}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                esc(&r.group), esc(&r.name), c[0], c[1], c[2], r.status.label(), sc[0], sc[1], sc[2], sv.label(), r.dist, esc(&la), esc(&ta), esc(&lb), esc(&tb), esc(&sa), esc(&gl),
                 r.point[0], r.point[1], r.point[2], esc(&r.found), esc(&r.assigned), esc(&r.comment)
             ));
         }
@@ -3232,7 +3400,7 @@ impl App {
     pub fn clash_report_csv(&self, t: usize) -> String {
         let test = &self.clash_tests[t];
         let q = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
-        let mut s = String::from("\u{feff}Group;Name;Status;Distance_m;ItemA;TypeA;ModelA;GuidA;ItemB;TypeB;ModelB;GuidB;Level;Location;X;Y;Z;Found;AssignedTo;Comment\n");
+        let mut s = String::from("\u{feff}Group;Name;Status;Severity;Distance_m;ItemA;TypeA;ModelA;GuidA;ItemB;TypeB;ModelB;GuidB;Level;Location;X;Y;Z;Found;AssignedTo;Comment\n");
         let grids = self.scene_grids();
         let mut order: Vec<&ClashResult> = test.results.iter().collect();
         order.sort_by_key(|r| (r.group.is_empty(), r.group.clone()));
@@ -3795,6 +3963,26 @@ impl App {
         self.lod_moved.elapsed().as_secs_f32() < 0.35
     }
 
+    /// triunghiurile tuturor modelelor incarcate (scenele foarte mari sar umbrele cat timp camera se misca)
+    pub fn scene_tris(&self) -> usize {
+        self.loaded_models().map(|(_, m)| m.pos.len() / 3).sum()
+    }
+
+    /// Sfera care cuprinde modelele vizibile (fara nori de puncte), pentru harta de umbre.
+    pub fn shadow_sphere(&self) -> glam::Vec4 {
+        let mut bb = crate::model::Aabb::EMPTY;
+        for (_, m) in self.loaded_models() {
+            if m.cloud.is_none() && m.aabb.is_valid() {
+                bb.union(&m.aabb);
+            }
+        }
+        if !bb.is_valid() {
+            return glam::Vec4::ZERO;
+        }
+        let c = bb.center();
+        glam::Vec4::new(c.x, c.y, c.z, (bb.size().length() * 0.5).max(1.0))
+    }
+
     pub fn frame_params(&self, aspect: f32) -> FrameParams {
         let bb = self.scene_aabb();
         let proj = self.cam.proj(aspect, &bb);
@@ -3804,7 +3992,7 @@ impl App {
         for (i, p) in pl.iter().take(6).enumerate() {
             planes[i] = *p;
         }
-        FrameParams { view_proj: vp, eye: self.cam.eye(), planes, nplanes: pl.len().min(6) as i32, sun: self.render.sun_dir(), light: self.render.light(), point_size: self.point_size, caps: self.section_caps, ao: if self.settings.visual_style == crate::render::VisualStyle::Wireframe { 0.0 } else { self.render.ao }, edges: if self.settings.visual_style == crate::render::VisualStyle::Concept { self.render.edges.max(0.9) } else { self.render.edges }, style: self.settings.visual_style, depth_k: [proj.z_axis.z, proj.w_axis.z, if self.cam.ortho { 1.0 } else { 0.0 }, proj.y_axis.y] }
+        FrameParams { view_proj: vp, eye: self.cam.eye(), planes, nplanes: pl.len().min(6) as i32, sun: self.render.sun_dir(), light: self.render.light(), point_size: self.point_size, caps: self.section_caps, ao: if self.settings.visual_style == crate::render::VisualStyle::Wireframe { 0.0 } else { self.render.ao }, edges: if self.settings.visual_style == crate::render::VisualStyle::Concept { self.render.edges.max(0.9) } else { self.render.edges }, style: self.settings.visual_style, depth_k: [proj.z_axis.z, proj.w_axis.z, if self.cam.ortho { 1.0 } else { 0.0 }, proj.y_axis.y], shadows: self.render.shadows && self.settings.visual_style != crate::render::VisualStyle::Wireframe && !(self.lod_moving() && self.scene_tris() > 2_000_000), scene: self.shadow_sphere() }
     }
 
     // ------------------------------------------------------------------ viewpoints
@@ -4750,6 +4938,7 @@ impl App {
             profile: if self.profile.rules.is_empty() { None } else { Some(self.profile.clone()) },
             qto: Some(self.qto.clone()),
             check_rules: self.check_rules.clone(),
+            user_params: self.user_params.clone(),
             title_block: Some(self.title_block.clone()),
             vp_folders: self.vp_folders.clone(),
             overlays: self.overlays.clone(),
@@ -4873,6 +5062,14 @@ impl App {
         self.profile_map = None;
         self.qto = pf.qto.unwrap_or_default();
         self.check_rules = pf.check_rules;
+        self.user_params = pf.user_params;
+        // modelele deja incarcate primesc parametrii acum (cele care vin dupa, la incarcare)
+        let slots: Vec<usize> = self.loaded_models().map(|(i, _)| i).collect();
+        if !self.user_params.is_empty() {
+            for s in slots {
+                self.refresh_user_params(s);
+            }
+        }
         self.title_block = pf.title_block.unwrap_or_default();
         self.vp_folders = pf.vp_folders;
         // desenele 2D se recitesc din fisierele lor
@@ -5049,6 +5246,40 @@ impl App {
         self.render_job = Some(RenderJob { anim: self.cur_anim, frame: 0, frames, fps, ss, w: w * ss, h: h * ss, tx: Some(tx), done: drx, path, waiting: false, started: Instant::now(), saved_sel });
     }
 
+    /// Ce se scrie pe imaginile / cadrele exportate: (titlu, randuri culoare + text, jos).
+    /// 4D: data simularii si sarcinile in lucru (sus); Appearance Profiler: legenda culorilor (jos).
+    pub fn image_overlays(&self) -> Vec<(String, Vec<([u8; 4], String)>, bool)> {
+        let mut out = Vec::new();
+        if self.render.overlay_4d && self.sim_view() && !self.tasks.is_empty() {
+            let day = self.sim_day.floor() as i32;
+            let col = |k: timeline::TaskKind| match k {
+                timeline::TaskKind::Construct => timeline::COL_CONSTRUCT,
+                timeline::TaskKind::Demolish => timeline::COL_DEMOLISH,
+                timeline::TaskKind::Temporary => timeline::COL_TEMP,
+            };
+            let active: Vec<&timeline::Task> = self.tasks.iter().filter(|t| t.start <= day && day <= t.end).collect();
+            let mut rows: Vec<([u8; 4], String)> = active.iter().take(6).map(|t| (col(t.kind), format!("{}  ({} - {})", t.name, timeline::fmt_date(t.start), timeline::fmt_date(t.end)))).collect();
+            if active.len() > 6 {
+                rows.push(([120, 120, 120, 255], format!("+ {} more tasks", active.len() - 6)));
+            }
+            if rows.is_empty() {
+                rows = [timeline::TaskKind::Construct, timeline::TaskKind::Demolish, timeline::TaskKind::Temporary].into_iter().map(|k| (col(k), k.label().to_string())).collect();
+            }
+            let (s, e) = self.sim_range().unwrap_or((day, day));
+            let pct = if e > s { ((day - s) as f32 / (e - s) as f32 * 100.0).clamp(0.0, 100.0) } else { 100.0 };
+            out.push((format!("4D  {}   ({pct:.0}%)", timeline::fmt_date(day)), rows, false));
+        }
+        if self.render.legend_on_images && self.profile.active && !self.profile.rules.is_empty() {
+            let vis: Vec<&crate::profiler::ProfileRule> = self.profile.rules.iter().filter(|r| r.visible).collect();
+            let mut rows: Vec<([u8; 4], String)> = vis.iter().take(14).map(|r| (r.color, if r.count > 0 { format!("{}  ({})", r.label, r.count) } else { r.label.clone() })).collect();
+            if vis.len() > 14 {
+                rows.push(([120, 120, 120, 255], format!("+ {} more", vis.len() - 14)));
+            }
+            out.push((self.profile.prop.clone(), rows, true));
+        }
+        out
+    }
+
     pub fn cancel_render(&mut self) {
         if let Some(j) = self.render_job.as_mut() {
             j.frames = j.frame;
@@ -5060,6 +5291,14 @@ impl App {
     pub fn render_step(&mut self) {
         let captured = self.renderer.lock().unwrap_or_else(|e| e.into_inner()).captured.take();
         if let Some(r) = captured {
+            // data 4D si legendele (pe imagini si pe fiecare cadru video)
+            let overlay = self.image_overlays();
+            let r = r.map(|mut f| {
+                for (title, rows, bottom) in &overlay {
+                    f.draw_legend(title, rows, *bottom);
+                }
+                f
+            });
             if let Some(p) = self.still_path.take() {
                 match r {
                     Ok(f) => {
@@ -5159,22 +5398,33 @@ impl App {
         match std::fs::read(path) {
             Ok(b) => {
                 let text = String::from_utf8_lossy(&b).to_string();
-                let (mut tasks, errs) = timeline::parse_csv(&text);
+                // MS Project / Primavera P6 (XML) sau CSV
+                let (mut tasks, errs, what) = if text.trim_start_matches('\u{feff}').trim_start().starts_with('<') {
+                    match timeline::parse_schedule_xml(&text) {
+                        Ok(r) => r,
+                        Err(e) => return self.error(e),
+                    }
+                } else {
+                    let (t, e) = timeline::parse_csv(&text);
+                    (t, e, "CSV")
+                };
                 let n = tasks.len();
                 for t in tasks.iter_mut() {
                     t.elems = self.rule_elems(&t.rule);
                 }
+                let tasks_linked = tasks.iter().filter(|t| !t.elems.is_empty()).count();
                 self.tasks.extend(tasks);
                 if let Some((s, _)) = self.sim_range() {
                     self.sim_day = s as f32;
                 }
                 self.invalidate_sim();
-                self.toast(format!("Imported {n} tasks from CSV."));
+                let linked = tasks_linked;
+                self.toast(format!("Imported {n} tasks from {what} ({linked} linked to elements)."));
                 for e in errs {
                     self.log.push(e);
                 }
             }
-            Err(e) => self.error(format!("Cannot read the CSV: {e}")),
+            Err(e) => self.error(format!("Cannot read the schedule: {e}")),
         }
     }
 
@@ -5389,6 +5639,23 @@ impl App {
                 }
                 Err(e) => self.error(e),
             },
+            Purpose::ExportQuickChecksCsv => {
+                let p = with_ext(&path, "csv");
+                match std::fs::write(&p, self.quick_checks_csv()) {
+                    Ok(()) => self.toast(format!("Quick checks report saved: {}", crate::file_name(&p))),
+                    Err(e) => self.error(format!("Cannot write the file: {e}")),
+                }
+            }
+            Purpose::ExportCompareParamsCsv => {
+                let Some(r) = &self.compare else { return self.error("Run Compare first.") };
+                let Some(mb) = self.models.get(r.b).cloned().flatten() else { return self.error("Compare: the models are no longer loaded.") };
+                let p = with_ext(&path, "csv");
+                let n = self.compare_params.len();
+                match std::fs::write(&p, crate::compare::param_csv(&self.compare_params, &mb)) {
+                    Ok(()) => self.toast(format!("Parameter changes saved ({n} rows): {}", crate::file_name(&p))),
+                    Err(e) => self.error(format!("Cannot write the file: {e}")),
+                }
+            }
             Purpose::ExportCompare | Purpose::ExportCompareCsv => {
                 let Some(r) = &self.compare else { return self.error("Run Compare first.") };
                 let (Some(ma), Some(mb)) = (self.models.get(r.a).cloned().flatten(), self.models.get(r.b).cloned().flatten()) else { return self.error("Compare: the models are no longer loaded.") };
@@ -5422,6 +5689,7 @@ impl App {
                 let note = if missing > 0 { format!(" {missing} items from the file were not found in these models.") } else { String::new() };
                 self.toast(format!("Comparison imported ({} → {}, {}).{note}", f.a_name, f.b_name, f.created));
                 self.compare = Some(r);
+                self.refresh_compare_params();
                 self.compare_on = true;
                 self.colors_dirty = true;
                 self.open_panel(Panel::Compare);
@@ -5515,7 +5783,7 @@ impl App {
                 Purpose::ExportClashBcf => d.set_title("Export clashes as BCF").add_filter("BIM Collaboration Format", &["bcf", "bcfzip"]).set_file_name("clashes.bcf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashNavis => d.set_title("Export clashes as Navisworks viewpoints").add_filter("Navisworks viewpoints XML", &["xml"]).set_file_name("clashes_viewpoints.xml").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportBcf => d.set_title("Import BCF issues").add_filter("BIM Collaboration Format", &["bcf", "bcfzip"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
-                Purpose::ImportTasksCsv => d.set_title("Import CSV Schedule").add_filter("CSV", &["csv", "txt"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ImportTasksCsv => d.set_title("Import Schedule (CSV, MS Project, Primavera)").add_filter("Schedule", &["csv", "txt", "xml"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportTasksCsv => d.set_title("Export CSV Schedule").add_filter("CSV", &["csv"]).set_file_name("schedule.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVideo => {
                     let ext = self.render.format.ext();
@@ -5559,6 +5827,8 @@ impl App {
                 Purpose::ExportCompare => d.set_title("Save comparison").add_filter("ManageBIM comparison", &["bimcmp"]).set_file_name("comparison.bimcmp").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportCompare => d.set_title("Open comparison").add_filter("ManageBIM comparison", &["bimcmp", "json"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCompareCsv => d.set_title("Comparison report (CSV)").add_filter("CSV", &["csv"]).set_file_name("comparison.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportQuickChecksCsv => d.set_title("Quick checks report (CSV)").add_filter("CSV", &["csv"]).set_file_name("quick_checks.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportCompareParamsCsv => d.set_title("Parameter changes (CSV)").add_filter("CSV", &["csv"]).set_file_name("parameter_changes.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportTree => d.set_title("Export tree layout").add_filter("ManageBIM tree layout", &["bimtree"]).set_file_name("tree.bimtree").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportTree => d.set_title("Import tree layout").add_filter("ManageBIM tree layout", &["bimtree", "json"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportQtoXlsx => {
@@ -5626,6 +5896,8 @@ impl App {
                 Purpose::ExportProfile => "profile.bimprofile".into(),
                 Purpose::ExportCompare => "comparison.bimcmp".into(),
                 Purpose::ExportCompareCsv => "comparison.csv".into(),
+                Purpose::ExportCompareParamsCsv => "parameter_changes.csv".into(),
+                Purpose::ExportQuickChecksCsv => "quick_checks.csv".into(),
                 Purpose::ExportTree => "tree.bimtree".into(),
                 Purpose::ExportQtoXlsx => "quantities.xlsx".into(),
                 Purpose::ExportQtoCsv => "quantities.csv".into(),
@@ -7905,4 +8177,122 @@ fn overlay_color() -> [u8; 3] {
 }
 fn overlay_opacity() -> f32 {
     0.85
+}
+
+// ====================================================================== parametri adaugati de utilizator
+
+/// Un parametru adaugat in ManageBIM unui element (ex. elemente fara date din DWG / OBJ / STEP),
+/// salvat in proiect si aplicat la fiecare incarcare: model (numele fisierului) + GUID (sau #index).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UserParam {
+    pub model: String,
+    pub key: String,
+    pub name: String,
+    pub value: String,
+}
+
+/// grupul proprietatilor adaugate de utilizator
+pub const USER_GROUP: &str = "User";
+
+/// cheia unui element: GUID-ul sau "#index" cand nu are GUID
+pub fn user_key(e: &Element, idx: usize) -> String {
+    if e.guid.trim().is_empty() { format!("#{idx}") } else { e.guid.clone() }
+}
+
+/// Scrie parametrii utilizatorului in proprietatile modelului (grupul "User" se reface de la zero).
+pub fn apply_user_params(m: &mut Model, params: &[UserParam]) {
+    let mine: Vec<&UserParam> = params.iter().filter(|p| p.model == m.name).collect();
+    let had = m.elements.iter().any(|e| e.props.iter().any(|p| p.group == USER_GROUP));
+    if mine.is_empty() && !had {
+        return;
+    }
+    let mut by_key: HashMap<&str, Vec<&UserParam>> = HashMap::new();
+    for p in &mine {
+        by_key.entry(p.key.as_str()).or_default().push(p);
+    }
+    for (i, e) in m.elements.iter_mut().enumerate() {
+        e.props.retain(|p| p.group != USER_GROUP);
+        let k = user_key(e, i);
+        if let Some(v) = by_key.get(k.as_str()) {
+            for p in v {
+                e.props.push(crate::model::Prop { group: USER_GROUP.into(), name: p.name.clone(), value: p.value.clone() });
+            }
+        }
+    }
+}
+
+impl App {
+    /// Modelul incarcat, cu parametrii utilizatorului aplicati (copie doar daca modelul e partajat).
+    pub fn with_user_params(&self, mut m: Arc<Model>) -> Arc<Model> {
+        if !self.user_params.iter().any(|p| p.model == m.name) {
+            return m;
+        }
+        match Arc::get_mut(&mut m) {
+            Some(mm) => apply_user_params(mm, &self.user_params),
+            None => {
+                let mut c = m.clone_model();
+                apply_user_params(&mut c, &self.user_params);
+                m = Arc::new(c);
+            }
+        }
+        m
+    }
+
+    /// Reaplica parametrii pe modelul din slot (fara reincarcare si fara a retrimite geometria).
+    fn refresh_user_params(&mut self, slot: usize) {
+        let base = self.base_models.get_mut(slot).and_then(|b| b.take());
+        let cur = self.models.get_mut(slot).and_then(|c| c.take());
+        let same = matches!((&base, &cur), (Some(a), Some(b)) if Arc::ptr_eq(a, b));
+        let patch = |m: Option<Arc<Model>>, params: &[UserParam]| -> Option<Arc<Model>> {
+            let mut m = m?;
+            match Arc::get_mut(&mut m) {
+                Some(mm) => apply_user_params(mm, params),
+                None => {
+                    let mut c = m.clone_model();
+                    apply_user_params(&mut c, params);
+                    m = Arc::new(c);
+                }
+            }
+            Some(m)
+        };
+        if same {
+            drop(cur);
+            let b = patch(base, &self.user_params);
+            self.models[slot] = b.clone();
+            self.base_models[slot] = b;
+        } else {
+            let b = patch(base, &self.user_params);
+            let c = patch(cur, &self.user_params);
+            if slot < self.base_models.len() {
+                self.base_models[slot] = b;
+            }
+            self.models[slot] = c;
+        }
+        self.profile_map = None;
+        self.colors_dirty = true;
+    }
+
+    /// Adauga / schimba un parametru pe elementele date (valoare goala = sterge parametrul).
+    pub fn set_user_param(&mut self, ids: &[ElemId], name: &str, value: &str) -> usize {
+        let name = name.trim();
+        if name.is_empty() {
+            return 0;
+        }
+        let mut slots: BTreeSet<usize> = BTreeSet::new();
+        let mut n = 0;
+        for id in ids {
+            let Some((m, e)) = self.elem(*id) else { continue };
+            let (model, key) = (m.name.clone(), user_key(e, id.e as usize));
+            self.user_params.retain(|p| !(p.model == model && p.key == key && p.name.eq_ignore_ascii_case(name)));
+            if !value.trim().is_empty() {
+                self.user_params.push(UserParam { model, key, name: name.to_string(), value: value.trim().to_string() });
+            }
+            slots.insert(id.m as usize);
+            n += 1;
+        }
+        for s in slots {
+            self.refresh_user_params(s);
+        }
+        n
+    }
 }

@@ -62,7 +62,15 @@ pub struct Renderer {
     ao_vao: Option<glow::VertexArray>,
     /// ceva n-a mers (FBO incomplet etc.): desenare normala pana la repornire
     pub ao_failed: bool,
+    /// umbre: programul de adancime, FBO + textura de adancime, si matricea / parametrii cadrului curent
+    sprog: Option<glow::Program>,
+    shadow_fbo: Option<(glow::Framebuffer, glow::Texture)>,
+    shadow_state: Option<(Mat4, f32, f32)>,
+    shadow_failed: bool,
 }
+
+/// marimea hartii de umbre (pixeli)
+const SHADOW_SIZE: i32 = 2048;
 
 struct AoTargets {
     w: i32,
@@ -106,6 +114,9 @@ pub struct FrameParams {
     pub depth_k: [f32; 4],
     /// stilul de afisare
     pub style: VisualStyle,
+    /// umbre aruncate de soare + sfera care cuprinde scena (centru, raza) pentru harta de umbre
+    pub shadows: bool,
+    pub scene: Vec4,
 }
 
 const VS_P: &str = r#"
@@ -136,6 +147,36 @@ void main() {
         if (dot(u_planes[i].xyz, v_pos) > u_planes[i].w) discard;
     }
     o_col = vec4(min(v_col.rgb * u_exposure, vec3(1.0)), 1.0);
+}
+"#;
+
+const VS_S: &str = r#"
+layout(location=0) in vec3 a_pos;
+layout(location=2) in vec4 a_col;
+uniform mat4 u_vp;
+out vec3 v_pos;
+out float v_a;
+void main() {
+    v_pos = a_pos;
+    v_a = a_col.a;
+    gl_Position = u_vp * vec4(a_pos, 1.0);
+}
+"#;
+
+// pasul de umbra: doar adancimea; sectiunile si elementele transparente / ascunse nu arunca umbre
+const FS_S: &str = r#"
+in vec3 v_pos;
+in float v_a;
+uniform vec4 u_planes[6];
+uniform int u_nplanes;
+out vec4 o_col;
+void main() {
+    for (int i = 0; i < 6; i++) {
+        if (i >= u_nplanes) break;
+        if (dot(u_planes[i].xyz, v_pos) > u_planes[i].w) discard;
+    }
+    if (v_a < 0.6) discard;
+    o_col = vec4(1.0);
 }
 "#;
 
@@ -173,6 +214,26 @@ uniform int u_caps;
 uniform sampler2DArray u_tex;
 uniform int u_style;   // 0 realist, 1 umbrit (fara texturi), 2 concept (alb mat), 3 wireframe
 out vec4 o_col;
+uniform sampler2D u_shadow;
+uniform mat4 u_svp;
+uniform vec4 u_sp;     // x = marimea unui texel in lume, y = adancimea totala (m), z = umbre pornite
+
+// 1 = in lumina, 0 = in umbra (3x3 PCF: margini moi)
+float shadow_at(vec3 p, vec3 n) {
+    if (u_sp.z < 0.5) return 1.0;
+    float nl = max(dot(n, u_sun), 0.0);
+    vec3 q = p + n * u_sp.x * (1.5 + 2.0 * (1.0 - nl));
+    vec4 s = u_svp * vec4(q, 1.0);
+    vec3 c = s.xyz / s.w * 0.5 + 0.5;
+    if (c.x <= 0.0 || c.x >= 1.0 || c.y <= 0.0 || c.y >= 1.0 || c.z >= 1.0) return 1.0;
+    float bias = 0.015 / u_sp.y;
+    vec2 t = vec2(1.0) / vec2(textureSize(u_shadow, 0));
+    float lit = 0.0;
+    for (int y = -1; y <= 1; y++)
+        for (int x = -1; x <= 1; x++)
+            lit += (c.z - bias <= texture(u_shadow, c.xy + vec2(float(x), float(y)) * t).r) ? 1.0 : 0.0;
+    return lit / 9.0;
+}
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
@@ -272,13 +333,17 @@ void main() {
         base = texture(u_tex, vec3(uv, float(pt - 16))).rgb;
     } else if (pt > 0) base = pattern(pt, base, v_pos, n, 0.05 + v_mat.w * 4.0);
     float head = abs(dot(n, vd));
-    float sun = max(dot(n, u_sun), 0.0);
+    float shv = shadow_at(v_pos, n);
+    if (u_sp.w > 0.5) { o_col = vec4(vec3(shv), 1.0); return; }
+    float sun = max(dot(n, u_sun), 0.0) * shv;
     float sky = 0.5 + 0.5 * n.z;
     // ambient emisferic (cer rece, sol cald) + soare cald + lumina de umplere din partea opusa soarelui
     vec3 amb = mix(vec3(0.90, 0.86, 0.80), vec3(0.94, 0.97, 1.04), sky);
     vec3 fdir = normalize(vec3(-u_sun.x, -u_sun.y, 0.45));
     float fill = max(dot(n, fdir), 0.0);
     vec3 k = amb * (0.21 + 0.14 * sky) * u_light.y + vec3(1.02, 0.99, 0.94) * (0.30 * sun * u_light.z) + vec3(0.31 * head + 0.07 * fill * u_light.y);
+    // umbra aruncata: fetele intoarse spre soare dar acoperite devin vizibil mai inchise (ca afara, unde soarele domina)
+    k *= mix(1.0, mix(0.62, 1.0, shv), smoothstep(0.0, 0.25, dot(n, u_sun)) * step(0.5, u_sp.z));
     // un luciu mic pentru orice material (suprafetele nu mai par plate / de hartie)
     float gloss = u_style == 0 ? max(v_mat.y, 0.07) : (u_style == 2 ? 0.0 : 0.07);
     float metal = u_style == 0 ? v_mat.z : 0.0;
@@ -289,7 +354,7 @@ void main() {
         return;
     }
     vec3 h = normalize(u_sun + vd);
-    float spec = pow(max(dot(n, h), 0.0), mix(12.0, 160.0, gloss)) * gloss;
+    float spec = pow(max(dot(n, h), 0.0), mix(12.0, 160.0, gloss)) * gloss * shv;
     float rim = pow(1.0 - head, 4.0) * gloss * 0.35;
     vec3 sc = mix(vec3(1.0), base, metal);
     vec3 c = base * k * (1.0 - 0.35 * metal) + sc * (spec * 0.85 + rim) + metal * base * 0.22 * sky;
@@ -321,7 +386,7 @@ void main() {
 
 impl Renderer {
     pub fn new() -> Renderer {
-        Renderer { lists: None, prog: None, meshes: HashMap::new(), pprog: None, points: HashMap::new(), aoprog: None, ao_targets: Vec::new(), ao_vao: None, ao_failed: false, pending: Vec::new(), error: None, capture: None, captured: None, fbo: None, tex: None }
+        Renderer { lists: None, prog: None, meshes: HashMap::new(), pprog: None, points: HashMap::new(), aoprog: None, ao_targets: Vec::new(), ao_vao: None, ao_failed: false, sprog: None, shadow_fbo: None, shadow_state: None, shadow_failed: false, pending: Vec::new(), error: None, capture: None, captured: None, fbo: None, tex: None }
     }
 
     unsafe fn init(&mut self, gl: &glow::Context) {
@@ -358,6 +423,8 @@ impl Renderer {
         let hdr_ao = if gl.version().is_embedded { "#version 300 es\nprecision highp float;\nprecision highp sampler2D;\n" } else { header };
         self.aoprog = compile_program(gl, hdr_ao, VS_AO, FS_AO).ok();
         self.ao_vao = gl.create_vertex_array().ok();
+        // umbre: fara ele, desenarea ramane cea obisnuita
+        self.sprog = compile_program(gl, header, VS_S, FS_S).ok();
         self.upload_textures(gl, &[vec![200u8; (crate::materials::TEX_SIZE * crate::materials::TEX_SIZE * 4) as usize]]);
     }
 
@@ -492,6 +559,7 @@ impl Renderer {
             return;
         }
         let lists = self.lists.take();
+        self.shadow_state = if p.shadows { self.shadow_pass(gl, p, lists.as_ref()) } else { None };
         let wire = p.style == VisualStyle::Wireframe;
         if wire {
             gl.polygon_mode(glow::FRONT_AND_BACK, glow::LINE);
@@ -536,6 +604,21 @@ impl Renderer {
         gl.active_texture(glow::TEXTURE1);
         gl.bind_texture(glow::TEXTURE_2D_ARRAY, self.tex);
         gl.uniform_1_i32(gl.get_uniform_location(prog, "u_tex").as_ref(), 1);
+        // harta de umbre pe unitatea 4
+        match (self.shadow_state, self.shadow_fbo) {
+            (Some((svp, texel, range)), Some((_, stex))) => {
+                gl.active_texture(glow::TEXTURE4);
+                gl.bind_texture(glow::TEXTURE_2D, Some(stex));
+                gl.uniform_1_i32(gl.get_uniform_location(prog, "u_shadow").as_ref(), 4);
+                gl.uniform_matrix_4_f32_slice(gl.get_uniform_location(prog, "u_svp").as_ref(), false, &svp.to_cols_array());
+                gl.uniform_4_f32(gl.get_uniform_location(prog, "u_sp").as_ref(), texel, range, 1.0, if std::env::var_os("MB_SHADOW_DEBUG").is_some() { 1.0 } else { 0.0 });
+            }
+            _ => {
+                gl.uniform_1_i32(gl.get_uniform_location(prog, "u_shadow").as_ref(), 4);
+                gl.uniform_4_f32(gl.get_uniform_location(prog, "u_sp").as_ref(), 1.0, 1.0, 0.0, 0.0);
+            }
+        }
+        gl.active_texture(glow::TEXTURE1);
         // pasul 1: opac
         gl.disable(glow::BLEND);
         gl.uniform_1_i32(u_pass.as_ref(), 0);
@@ -581,6 +664,9 @@ impl Renderer {
         }
         gl.depth_mask(true);
         gl.bind_vertex_array(None);
+        gl.active_texture(glow::TEXTURE4);
+        gl.bind_texture(glow::TEXTURE_2D, None);
+        gl.active_texture(glow::TEXTURE1);
         gl.bind_texture(glow::TEXTURE_2D_ARRAY, None);
         gl.active_texture(glow::TEXTURE0);
         gl.disable(glow::DEPTH_TEST);
@@ -628,6 +714,10 @@ impl Renderer {
             gl.depth_mask(true);
             gl.color_mask(true, true, true, true);
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+            // umbrele pentru tot modelul (captura nu foloseste listele vederii)
+            self.shadow_state = if req.params.shadows { self.shadow_pass(gl, &req.params, None) } else { None };
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fb));
+            gl.viewport(0, 0, w as i32, h as i32);
             // capturile (randari / video) deseneaza tot modelul, la calitate maxima (si cu SSAO)
             if !(req.params.ao > 0.0 && self.draw_ao(gl, &req.params, None)) {
                 gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fb));
@@ -812,6 +902,88 @@ impl Renderer {
         gl.active_texture(glow::TEXTURE0);
         gl.use_program(None);
         true
+    }
+
+    /// Harta de umbre a soarelui: adancimea scenei vazuta din directia soarelui (proiectie ortografica
+    /// care cuprinde sfera scenei). Intoarce matricea luminii, marimea unui texel in lume si adancimea totala;
+    /// None daca nu se poate (atunci fara umbre).
+    unsafe fn shadow_pass(&mut self, gl: &glow::Context, p: &FrameParams, lists: Option<&HashMap<u32, DrawList>>) -> Option<(Mat4, f32, f32)> {
+        let sprog = self.sprog?;
+        if self.shadow_failed || p.scene.w <= 0.0 || p.sun.z <= 0.02 {
+            return None;
+        }
+        if self.shadow_fbo.is_none() {
+            let t = gl.create_texture().ok()?;
+            gl.bind_texture(glow::TEXTURE_2D, Some(t));
+            gl.tex_image_2d(glow::TEXTURE_2D, 0, glow::DEPTH_COMPONENT24 as i32, SHADOW_SIZE, SHADOW_SIZE, 0, glow::DEPTH_COMPONENT, glow::UNSIGNED_INT, None);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
+            gl.bind_texture(glow::TEXTURE_2D, None);
+            let f = gl.create_framebuffer().ok()?;
+            let prev = gl.get_parameter_framebuffer(glow::FRAMEBUFFER_BINDING);
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(f));
+            gl.framebuffer_texture_2d(glow::FRAMEBUFFER, glow::DEPTH_ATTACHMENT, glow::TEXTURE_2D, Some(t), 0);
+            gl.draw_buffers(&[glow::NONE]);
+            gl.read_buffer(glow::NONE);
+            let ok = gl.check_framebuffer_status(glow::FRAMEBUFFER) == glow::FRAMEBUFFER_COMPLETE;
+            gl.bind_framebuffer(glow::FRAMEBUFFER, prev);
+            if !ok {
+                gl.delete_framebuffer(f);
+                gl.delete_texture(t);
+                self.shadow_failed = true;
+                return None;
+            }
+            self.shadow_fbo = Some((f, t));
+        }
+        let (fbo, _) = self.shadow_fbo?;
+        // lumina: ortografica pe directia soarelui, cuprinde sfera scenei
+        let c = Vec3::new(p.scene.x, p.scene.y, p.scene.z);
+        let r = p.scene.w;
+        let dir = p.sun.normalize();
+        let up = if dir.z.abs() > 0.99 { Vec3::Y } else { Vec3::Z };
+        let view = Mat4::look_at_rh(c + dir * r * 2.0, c, up);
+        let proj = Mat4::orthographic_rh_gl(-r, r, -r, r, r * 0.9, r * 3.1);
+        let svp = proj * view;
+        let prev_fb = gl.get_parameter_framebuffer(glow::FRAMEBUFFER_BINDING);
+        let mut vp = [0i32; 4];
+        gl.get_parameter_i32_slice(glow::VIEWPORT, &mut vp);
+        let scissor = gl.is_enabled(glow::SCISSOR_TEST);
+        gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+        gl.viewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
+        gl.disable(glow::SCISSOR_TEST);
+        gl.disable(glow::BLEND);
+        gl.enable(glow::DEPTH_TEST);
+        gl.depth_func(glow::LEQUAL);
+        gl.depth_mask(true);
+        gl.clear_depth_f32(1.0);
+        gl.clear(glow::DEPTH_BUFFER_BIT);
+        gl.disable(glow::CULL_FACE);
+        // un mic decalaj de adancime: fara "acnee" pe suprafetele luminate
+        gl.enable(glow::POLYGON_OFFSET_FILL);
+        gl.polygon_offset(1.5, 2.0);
+        gl.use_program(Some(sprog));
+        gl.uniform_matrix_4_f32_slice(gl.get_uniform_location(sprog, "u_vp").as_ref(), false, &svp.to_cols_array());
+        let mut pl = [0f32; 24];
+        for (i, v) in p.planes.iter().enumerate() {
+            pl[i * 4..i * 4 + 4].copy_from_slice(&v.to_array());
+        }
+        gl.uniform_4_f32_slice(gl.get_uniform_location(sprog, "u_planes").as_ref(), &pl);
+        gl.uniform_1_i32(gl.get_uniform_location(sprog, "u_nplanes").as_ref(), p.nplanes);
+        for (slot, m) in &self.meshes {
+            gl.bind_vertex_array(Some(m.vao));
+            draw_ranges(gl, m.count, lists.and_then(|l| l.get(slot)).map(|d| &d.all));
+        }
+        gl.bind_vertex_array(None);
+        gl.disable(glow::POLYGON_OFFSET_FILL);
+        gl.use_program(None);
+        gl.bind_framebuffer(glow::FRAMEBUFFER, prev_fb);
+        gl.viewport(vp[0], vp[1], vp[2], vp[3]);
+        if scissor {
+            gl.enable(glow::SCISSOR_TEST);
+        }
+        Some((svp, 2.0 * r / SHADOW_SIZE as f32, r * 2.2))
     }
 
     /// Tintele SSAO pentru marimea data (cel mult doua: fereastra + randare), create la nevoie.

@@ -772,6 +772,7 @@ impl App {
         let mut dirty = false;
         ui.horizontal_wrapped(|ui| {
             dirty |= ui.checkbox(&mut self.profile.active, RichText::new("Show colours").strong()).changed();
+            ui.checkbox(&mut self.profile_legend, "Legend").on_hover_text("Show the colour legend in the 3D view (also drawn on images and videos - Render options)");
             ui.label("Elements without a rule:");
             egui::ComboBox::from_id_salt("prof_unm").selected_text(self.profile.unmatched.label()).show_ui(ui, |ui| {
                 for u in Unmatched::ALL {
@@ -1094,6 +1095,42 @@ impl App {
         if run {
             self.run_check();
         }
+        // ---- verificari rapide, fara reguli
+        ui.horizontal(|ui| {
+            if ui.button(RichText::new("⚡ Quick checks").strong()).on_hover_text("No IDS needed: elements without level, name, classification, material or geometry, duplicates, duplicate GUIDs").clicked() {
+                self.run_quick_checks();
+            }
+            if ui.add_enabled(!self.quick_checks.is_empty(), egui::Button::new("📊 CSV…")).on_hover_text("Every element found by the quick checks, with the reason").clicked() {
+                self.request_path(Purpose::ExportQuickChecksCsv);
+            }
+            if !self.quick_checks.is_empty() && ui.button("✖").on_hover_text("Clear the quick check results").clicked() {
+                self.quick_checks.clear();
+            }
+        });
+        if !self.quick_checks.is_empty() {
+            let mut sel: Option<Vec<ElemId>> = None;
+            egui::Grid::new("quick_checks").striped(true).num_columns(3).show(ui, |ui| {
+                for q in &self.quick_checks {
+                    let n = q.result.failed.len();
+                    let (txt, col) = if n == 0 { ("✔", Color32::from_rgb(70, 190, 110)) } else { ("✖", Color32::from_rgb(235, 85, 85)) };
+                    ui.label(RichText::new(txt).color(col));
+                    ui.label(q.name).on_hover_text(q.about);
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(format!("{n} / {}", q.result.checked)).strong());
+                        if n > 0 && ui.small_button("Select").clicked() {
+                            let mut ids: Vec<ElemId> = q.result.failed.iter().map(|f| f.0).collect();
+                            ids.dedup();
+                            sel = Some(ids);
+                        }
+                    });
+                    ui.end_row();
+                }
+            });
+            if let Some(ids) = sel {
+                self.apply(Action::Select(ids, false));
+            }
+            ui.separator();
+        }
         if self.check_rules.is_empty() {
             ui.add_space(8.0);
             ui.label(RichText::new("No rules yet. Import a buildingSMART IDS file, add the ⭐ starter rules or create a ➕ New rule (e.g. \"every IfcDoor has Pset_DoorCommon.FireRating\"), then press ▶ Run check.").weak());
@@ -1360,6 +1397,7 @@ impl App {
         let n_changes = r.changes.len();
         let mut acts: Vec<Action> = Vec::new();
         let mut new_set: Option<(String, Vec<ElemId>)> = None;
+        let mut acts2: Vec<Action> = Vec::new();
         let mut dirty = false;
         ui.horizontal(|ui| {
             dirty |= ui.checkbox(&mut self.compare_on, RichText::new("Show results in 3D").strong()).changed();
@@ -1404,6 +1442,52 @@ impl App {
                 }
             });
         });
+        // ---- compare pe parametri: ce proprietate s-a schimbat, pe cate elemente, vechi -> nou
+        if !self.compare_params.is_empty() {
+            let summary = crate::compare::param_summary(&self.compare_params);
+            ui.add_space(6.0);
+            egui::CollapsingHeader::new(RichText::new(format!("Changed parameters ({})", summary.len())).strong()).id_salt("cmp_params").default_open(true).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Click a parameter: its elements are selected and the old → new values listed.").weak().small());
+                    if ui.button("📊 Parameter CSV…").on_hover_text("One row per element and changed parameter: GUID, element, type, parameter, old value, new value").clicked() {
+                        self.request_path(Purpose::ExportCompareParamsCsv);
+                    }
+                });
+                ui.columns(2, |cols| {
+                    egui::ScrollArea::vertical().id_salt("cmp_plist").max_height(220.0).auto_shrink([false, true]).show(&mut cols[0], |ui| {
+                        for (p, n) in summary.iter().take(500) {
+                            let on = self.compare_param_pick.as_deref() == Some(p.as_str());
+                            if ui.selectable_label(on, format!("{p}   ({n})")).clicked() {
+                                self.compare_param_pick = if on { None } else { Some(p.clone()) };
+                                if !on {
+                                    let mut ids: Vec<ElemId> = self.compare_params.iter().filter(|c| &c.param == p).map(|c| c.id).collect();
+                                    ids.dedup();
+                                    acts2.push(Action::Select(ids, false));
+                                }
+                            }
+                        }
+                    });
+                    let ui = &mut cols[1];
+                    if let Some(p) = self.compare_param_pick.clone() {
+                        let rows: Vec<(ElemId, String, String)> = self.compare_params.iter().filter(|c| c.param == p).take(1000).map(|c| (c.id, c.old.clone(), c.new.clone())).collect();
+                        egui::ScrollArea::vertical().id_salt("cmp_pvals").max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
+                            for (id, o, n) in rows {
+                                let nm = self.elem(id).map(|x| x.1.name.clone()).unwrap_or_default();
+                                let o = if o.is_empty() { "(none)".to_string() } else { o };
+                                let n = if n.is_empty() { "(removed)".to_string() } else { n };
+                                if ui.selectable_label(self.selected.contains(&id), format!("{nm}:  {o}  →  {n}")).clicked() {
+                                    acts2.push(Action::Select(vec![id], false));
+                                    acts2.push(Action::Focus(vec![id]));
+                                }
+                            }
+                        });
+                    }
+                });
+            });
+        }
+        for a in acts2 {
+            self.apply(a);
+        }
         for a in acts {
             self.apply(a);
         }
@@ -1839,7 +1923,8 @@ impl App {
             if rbtn(ui, "📤", "Schedule", "Export the TimeLiner schedule (CSV)", false, true).clicked() {
                 self.request_path(Purpose::ExportTasksCsv);
             }
-            if rbtn(ui, "📥", "Schedule", "Import a TimeLiner schedule (CSV)", false, true).clicked() {
+            if rbtn(ui, "📥", "Schedule", "Import a TimeLiner schedule: CSV, MS Project XML or Primavera P6 XML.
+Link tasks to elements with [Level=Level 1;Type=IfcSlab] at the end of the task name (or Text1 in MS Project).", false, true).clicked() {
                 self.request_path(Purpose::ImportTasksCsv);
             }
             if rbtn(ui, "📦", "BIMC", "Export .bimc caches next to the models", false, true).clicked() {
@@ -3111,6 +3196,7 @@ impl App {
         // desenele 2D suprapuse (DWG / DXF)
         if !self.overlays.is_empty() && self.report_job.is_none() {
             self.draw_overlays(&painter, rect, &params.view_proj);
+            self.draw_profile_legend(&painter, rect);
         }
         // section box ca in Revit: cate o sageata pe fiecare fata; tragi de ea si fata se muta pe axa ei
         let mut handle_hover: Option<usize> = None;
@@ -4745,6 +4831,33 @@ impl App {
                 self.min_distance_selected();
             }
         });
+        // parametri proprii: pentru elemente fara date (DWG, OBJ, STEP...) sau informatii de coordonare
+        egui::CollapsingHeader::new(format!("➕ Add parameter ({} selected)", sel.len())).id_salt("user_params").default_open(false).show(ui, |ui| {
+            ui.label(RichText::new("Written on every selected element, saved with the project, visible in Find, Profiler, Model Checker and IFC export (group \"User\").").small().weak());
+            ui.horizontal(|ui| {
+                ui.add(egui::TextEdit::singleline(&mut self.up_name).hint_text("Name (e.g. Status)").desired_width(130.0));
+                ui.add(egui::TextEdit::singleline(&mut self.up_value).hint_text("Value (empty = remove)").desired_width(150.0));
+                if ui.add_enabled(!self.up_name.trim().is_empty(), egui::Button::new("Apply")).clicked() {
+                    let (n, v) = (self.up_name.clone(), self.up_value.clone());
+                    let k = self.set_user_param(&sel, &n, &v);
+                    self.toast(if v.trim().is_empty() { format!("Parameter \"{n}\" removed from {k} elements") } else { format!("Parameter \"{n}\" = \"{v}\" set on {k} elements") });
+                }
+            });
+            // nume folosite deja (click = completeaza)
+            let mut names: Vec<String> = self.user_params.iter().map(|p| p.name.clone()).collect();
+            names.sort();
+            names.dedup();
+            if !names.is_empty() {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("Used:").small().weak());
+                    for n in names.iter().take(20) {
+                        if ui.small_button(n).clicked() {
+                            self.up_name = n.clone();
+                        }
+                    }
+                });
+            }
+        });
         // aspect
         egui::CollapsingHeader::new("Appearance override").default_open(false).show(ui, |ui| {
             let mut c = Color32::from_rgba_unmultiplied(self.override_color[0], self.override_color[1], self.override_color[2], 255);
@@ -4889,6 +5002,12 @@ impl App {
             egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                 ui.selectable_value(s, Selector { kind: SelKind::All, value: String::new() }, "All elements");
                 ui.separator();
+                for dsc in ["Structure", "Architecture", "MEP - HVAC", "MEP - Plumbing", "MEP - Electrical"] {
+                    let v = Selector { kind: SelKind::Discipline, value: dsc.to_string() };
+                    let l = v.label();
+                    ui.selectable_value(s, v, l);
+                }
+                ui.separator();
                 for (_, m) in self.loaded_models() {
                     let v = Selector { kind: SelKind::Model, value: m.name.clone() };
                     let l = v.label();
@@ -4929,6 +5048,28 @@ impl App {
                         self.cur_result = None;
                         self.sel_results.clear();
                     }
+                    ui.menu_button("📋", |ui| {
+                        ui.label(RichText::new("Add a ready-made test").strong());
+                        for (name, about, t) in ClashTest::templates() {
+                            if ui.button(name).on_hover_text(about).clicked() {
+                                self.clash_tests.push(t);
+                                self.cur_test = self.clash_tests.len() - 1;
+                                self.cur_result = None;
+                                self.sel_results.clear();
+                                ui.close_menu();
+                            }
+                        }
+                        ui.separator();
+                        if ui.button("All of the above").clicked() {
+                            self.clash_tests.extend(ClashTest::templates().into_iter().map(|t| t.2));
+                            self.cur_test = self.clash_tests.len() - 1;
+                            self.cur_result = None;
+                            self.sel_results.clear();
+                            ui.close_menu();
+                        }
+                    })
+                    .response
+                    .on_hover_text("Test templates: Structure vs MEP, clearances, duplicates - disciplines are recognised automatically");
                     if ui.add_enabled(self.clash_tests.len() > 1, egui::Button::new("🗑").small()).on_hover_text("Delete test").clicked() {
                         self.clash_tests.remove(self.cur_test);
                         self.cur_test = 0;
@@ -4976,6 +5117,13 @@ impl App {
                     });
                     ui.label("Tolerance");
                     ui.add(egui::DragValue::new(&mut test.tol_mm).range(0.0..=5000.0).speed(1.0).suffix(" mm"));
+                    if test.ty == ClashType::Hard {
+                        ui.label("Major / Critical from").on_hover_text("Severity by penetration depth: under the first value = Minor, between = Major, over the second = Critical");
+                        ui.add(egui::DragValue::new(&mut test.sev_mm[0]).range(0.0..=1000.0).speed(1.0).suffix(" mm"));
+                        ui.add(egui::DragValue::new(&mut test.sev_mm[1]).range(0.0..=5000.0).speed(1.0).suffix(" mm"));
+                        test.sev_mm[1] = test.sev_mm[1].max(test.sev_mm[0]);
+                    }
+                    self.clash_tests[ti].sev_mm = test.sev_mm;
                     if let Some(job) = &self.clash_job {
                         ui.add(egui::ProgressBar::new(job.prog.frac()).desired_width(160.0).show_percentage());
                         if ui.button("Cancel").clicked() {
@@ -5273,6 +5421,8 @@ impl App {
         let mut clicked: Option<Row> = None;
         let mut toggle: Option<String> = None;
         let mut rename: Option<(String, String)> = None;
+        let (sty, stol, ssev) = (self.clash_tests[ti].ty, self.clash_tests[ti].tol_mm, self.clash_tests[ti].sev_mm);
+        let sev_of = |d: f32| crate::app::severity_of(sty, stol, ssev, d);
         let test = &mut self.clash_tests[ti];
         let mh = (ui.available_height() - 26.0).max(60.0);
         TableBuilder::new(ui)
@@ -5284,7 +5434,7 @@ impl App {
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
             .column(Column::initial(230.0).clip(true))
             .column(Column::exact(92.0))
-            .column(Column::exact(66.0))
+            .column(Column::exact(86.0))
             .column(Column::initial(200.0).clip(true))
             .column(Column::initial(200.0).clip(true))
             .column(Column::initial(90.0).clip(true))
@@ -5388,7 +5538,10 @@ impl App {
                                 });
                             });
                             row.col(|ui| {
-                                ui.label(format!("{:.3}", r.dist));
+                                let sv = sev_of(r.dist);
+                                let c = sv.color();
+                                ui.label(RichText::new("●").color(Color32::from_rgb(c[0], c[1], c[2]))).on_hover_text(sv.label());
+                                ui.label(format!("{:.0} mm", r.dist * 1000.0)).on_hover_text(format!("{} - {}", sv.label(), if r.dist < 0.0 { format!("penetration {:.0} mm", -r.dist * 1000.0) } else { format!("gap {:.0} mm", r.dist * 1000.0) }));
                             });
                             row.col(|ui| {
                                 ui.label(RichText::new(&labels[i].0).color(pal.elem_a));
@@ -5532,7 +5685,8 @@ impl App {
                 self.invalidate_sim();
             }
             ui.separator();
-            if ui.button("Import CSV").on_hover_text("Columns: Name;Start;End;Type;Rule — dates YYYY-MM-DD or DD.MM.YYYY").clicked() {
+            if ui.button("Import…").on_hover_text("CSV (Name;Start;End;Type;Rule - dates YYYY-MM-DD or DD.MM.YYYY), MS Project XML or Primavera P6 XML.
+In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of its name.").clicked() {
                 self.request_path(Purpose::ImportTasksCsv);
             }
             if ui.button("Export CSV").clicked() {
@@ -7065,6 +7219,8 @@ impl App {
                         self.request_path(Purpose::RenderImage);
                     }
                     ui.checkbox(&mut self.render.show_frame, "Show frame").on_hover_text("Show the frame of the rendered image in the view (aspect of the chosen resolution) - turn it on to compose the shot");
+                    ui.checkbox(&mut self.render.overlay_4d, "4D date & legend").on_hover_text("On images and videos of a 4D simulation: the date, the progress and the tasks in work (coloured like the simulation)");
+                    ui.checkbox(&mut self.render.legend_on_images, "Colour legend").on_hover_text("When colouring by parameter (Appearance Profiler) is on, its legend is drawn on images and videos");
                 });
                 if can {
                     ui.label(RichText::new(format!("{frames} frames at {}×{}", self.render.width, self.render.height)).weak().small());
@@ -7216,7 +7372,7 @@ impl App {
                 Purpose::ExportCheckBcf => "Model check issues (BCF)",
                 Purpose::ExportClashNavis => "Export clashes as Navisworks viewpoints",
                 Purpose::ImportBcf => "Import BCF issues",
-                Purpose::ImportTasksCsv => "Import CSV Schedule",
+                Purpose::ImportTasksCsv => "Import Schedule (CSV, MS Project XML, Primavera P6 XML)",
                 Purpose::ExportTasksCsv => "Export CSV Schedule",
                 Purpose::ExportCache(_) => "Export ManageBIM Cache (.bimc)",
                 Purpose::ExportSets => "Export Sets",
@@ -7242,6 +7398,8 @@ impl App {
                 Purpose::ExportCompare => "Save Comparison",
                 Purpose::ImportCompare => "Open Comparison",
                 Purpose::ExportCompareCsv => "Comparison report (CSV)",
+                Purpose::ExportCompareParamsCsv => "Parameter changes (CSV)",
+                Purpose::ExportQuickChecksCsv => "Quick checks report (CSV)",
                 Purpose::ExportTree => "Export Tree Layout",
                 Purpose::ImportTree => "Import Tree Layout",
                 Purpose::ExportQtoXlsx => "Export Quantities (Excel)",
@@ -7652,12 +7810,57 @@ impl App {
                     ui.label("Sun intensity");
                     changed |= ui.add(egui::Slider::new(&mut self.render.sun_power, 0.0..=3.0).fixed_decimals(2)).changed();
                     ui.end_row();
-                    ui.label("Sun azimuth");
-                    changed |= ui.add(egui::Slider::new(&mut self.render.sun_az, -180.0..=180.0).suffix("°")).changed();
+                    ui.label("Shadows").on_hover_text("Shadows cast by the sun (3D view, images and videos)");
+                    changed |= ui.checkbox(&mut self.render.shadows, "Cast shadows").changed();
                     ui.end_row();
-                    ui.label("Sun height");
-                    changed |= ui.add(egui::Slider::new(&mut self.render.sun_el, 5.0..=90.0).suffix("°")).changed();
+                    ui.label("Sun position");
+                    changed |= ui.checkbox(&mut self.render.sun_from_time, "From date, time and location").on_hover_text("Real sun position (shadow studies): date, local time, latitude / longitude and the project north").changed();
                     ui.end_row();
+                    if self.render.sun_from_time {
+                        ui.label("Date");
+                        ui.horizontal(|ui| {
+                            changed |= ui.add(egui::TextEdit::singleline(&mut self.render.sun_date).desired_width(90.0).hint_text("YYYY-MM-DD")).changed();
+                            for (lbl, d) in [("21 Mar", "-03-21"), ("21 Jun", "-06-21"), ("21 Dec", "-12-21")] {
+                                if ui.small_button(lbl).clicked() {
+                                    let y = self.render.sun_date.get(..4).unwrap_or("2026").to_string();
+                                    self.render.sun_date = format!("{y}{d}");
+                                    changed = true;
+                                }
+                            }
+                        });
+                        ui.end_row();
+                        ui.label("Local time");
+                        let h = self.render.sun_hour;
+                        changed |= ui.add(egui::Slider::new(&mut self.render.sun_hour, 4.0..=21.0).step_by(0.25).custom_formatter(|v, _| format!("{:02}:{:02}", v as u32, ((v.fract()) * 60.0).round() as u32))).changed();
+                        let _ = h;
+                        ui.end_row();
+                        ui.label("Latitude / longitude");
+                        ui.horizontal(|ui| {
+                            changed |= ui.add(egui::DragValue::new(&mut self.render.lat).range(-89.0..=89.0).speed(0.05).suffix("°")).changed();
+                            changed |= ui.add(egui::DragValue::new(&mut self.render.lon).range(-180.0..=180.0).speed(0.05).suffix("°")).changed();
+                        });
+                        ui.end_row();
+                        ui.label("Time zone / North");
+                        ui.horizontal(|ui| {
+                            changed |= ui.add(egui::DragValue::new(&mut self.render.tz).range(-12.0..=14.0).speed(0.25).prefix("UTC+")).on_hover_text("Romania: +2 in winter, +3 in summer").changed();
+                            changed |= ui.add(egui::DragValue::new(&mut self.render.north_deg).range(-180.0..=180.0).speed(0.5).suffix("°")).on_hover_text("Project north: angle of true north from the model +Y axis (counter-clockwise)").changed();
+                        });
+                        ui.end_row();
+                        if changed {
+                            self.render.update_sun();
+                        }
+                        let (az, el) = crate::timeline::parse_date(&self.render.sun_date).map(|d| crate::anim::sun_position(d, self.render.sun_hour, self.render.tz, self.render.lat, self.render.lon)).unwrap_or((0.0, 0.0));
+                        ui.label("");
+                        ui.label(RichText::new(if el < 0.0 { format!("Sun below the horizon ({el:.0}°)") } else { format!("Sun: azimuth {az:.0}° from north, {el:.0}° high") }).small().weak());
+                        ui.end_row();
+                    } else {
+                        ui.label("Sun azimuth");
+                        changed |= ui.add(egui::Slider::new(&mut self.render.sun_az, -180.0..=180.0).suffix("°")).changed();
+                        ui.end_row();
+                        ui.label("Sun height");
+                        changed |= ui.add(egui::Slider::new(&mut self.render.sun_el, 5.0..=90.0).suffix("°")).changed();
+                        ui.end_row();
+                    }
                     ui.label("Contact shadows").on_hover_text("Ambient occlusion (SSAO): soft shadows in corners and where elements meet");
                     changed |= ui.add(egui::Slider::new(&mut self.render.ao, 0.0..=1.0).fixed_decimals(2)).changed();
                     ui.end_row();
@@ -8956,6 +9159,32 @@ impl App {
 
 impl App {
     /// Desenele 2D suprapuse: linii proiectate peste model (deasupra lui, ca un plan pe masa).
+    /// Legenda colorarii dupa parametru (Appearance Profiler) in coltul stanga-jos al vederii.
+    fn draw_profile_legend(&self, painter: &egui::Painter, rect: Rect) {
+        if !self.profile.active || self.profile.rules.is_empty() || !self.profile_legend {
+            return;
+        }
+        let vis: Vec<&crate::profiler::ProfileRule> = self.profile.rules.iter().filter(|r| r.visible).take(14).collect();
+        let more = self.profile.rules.iter().filter(|r| r.visible).count().saturating_sub(vis.len());
+        let font = FontId::proportional(12.0);
+        let line = 18.0;
+        let w = vis.iter().map(|r| painter.layout_no_wrap(format!("{}  ({})", r.label, r.count), font.clone(), Color32::WHITE).size().x).fold(painter.layout_no_wrap(self.profile.prop.clone(), FontId::proportional(13.0), Color32::WHITE).size().x, f32::max) + 40.0;
+        let h = 12.0 + line * (vis.len() as f32 + 1.2 + if more > 0 { 1.0 } else { 0.0 });
+        let r = Rect::from_min_size(egui::pos2(rect.left() + 12.0, rect.bottom() - h - 70.0), egui::vec2(w.min(rect.width() * 0.45), h));
+        painter.rect_filled(r, 8.0, Color32::from_rgba_unmultiplied(18, 20, 26, 205));
+        let mut y = r.top() + 8.0;
+        painter.text(egui::pos2(r.left() + 10.0, y), Align2::LEFT_TOP, &self.profile.prop, FontId::proportional(13.0), Color32::WHITE);
+        y += line * 1.2;
+        for ru in &vis {
+            painter.rect_filled(Rect::from_min_size(egui::pos2(r.left() + 10.0, y + 2.0), egui::vec2(12.0, 12.0)), 3.0, Color32::from_rgb(ru.color[0], ru.color[1], ru.color[2]));
+            painter.text(egui::pos2(r.left() + 28.0, y), Align2::LEFT_TOP, format!("{}  ({})", ru.label, ru.count), font.clone(), Color32::from_gray(230));
+            y += line;
+        }
+        if more > 0 {
+            painter.text(egui::pos2(r.left() + 28.0, y), Align2::LEFT_TOP, format!("+ {more} more"), font, Color32::from_gray(160));
+        }
+    }
+
     fn draw_overlays(&self, painter: &egui::Painter, rect: Rect, vp: &glam::Mat4) {
         let mut budget = 300_000usize;
         for ov in self.overlays.iter().filter(|o| o.visible) {

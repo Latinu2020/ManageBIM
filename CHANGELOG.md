@@ -3,6 +3,17 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.24.0 - 2026-11-20
+- **Compare pe parametri**: lista parametrilor schimbați între două versiuni ale modelului, cu numărul de elemente; click pe un parametru = selectează elementele și arată valoarea veche → nouă. Raport CSV (GUID, element, tip, parametru, vechi, nou).
+- **Verificări rapide fără IDS** (Model Checker › ⚡ Quick checks): elemente fără nivel, fără nume, fără clasificare, fără material, fără geometrie, geometrie degenerată, duplicate (același tip și aceeași geometrie în același loc), GUID dublat. Select pe fiecare verificare și raport CSV.
+- **Colorare după parametru cu legendă**: legenda Appearance Profiler apare în vederea 3D și se desenează pe imaginile și videoclipurile exportate.
+- **Umbre după poziția soarelui**: umbre aruncate (shadow map, margini moi) în vedere, imagini și video; soarele după dată, oră, latitudine / longitudine, fus orar și nordul proiectului (Lighting › „From date, time and location”), cu scurtături pentru 21 martie / iunie / decembrie.
+- **Import planificare din MS Project (XML) și Primavera P6 (XML)**, pe lângă CSV. Legarea de elemente: `[Level=Level 1;Type=IfcSlab]` la sfârșitul numelui activității (sau câmpul Text1 în MS Project); activitățile sumar se sar.
+- **Video 4D cu dată și legendă**: pe fiecare cadru apare data simulării, progresul și activitățile în lucru, colorate ca în simulare (Render › „4D date & legend”).
+- **Clash pe niveluri de gravitate**: Critical / Major / Minor după pătrundere (praguri pe test) sau distanță (clearance), afișate în listă și în rapoartele HTML / CSV. **Șabloane de teste** (📋): Structură vs HVAC / Instalații / Electrice, Arhitectură vs HVAC, distanțe minime între instalații, duplicate. Selecție nouă „Discipline” (Structure, Architecture, MEP...) recunoscută automat.
+- **Parametri adăugați pe elemente** (Properties › „Add parameter”): pentru elemente fără date (DWG, OBJ, STEP...) sau informații de coordonare; se salvează în proiect, apar în Find, Profiler, Model Checker și exportul IFC (grupul „User”).
+- **Test pe scene mari**: 382 500 elemente / 5,9 milioane triunghiuri — construire 0,2 s, clash 0,05 s, verificări rapide 1 s, ~24 FPS cu umbre; la scene de peste 2 milioane de triunghiuri umbrele se opresc cât timp camera se mișcă.
+
 ## 0.23.0 - 2026-11-20
 - **Planuri 2D complete din secțiuni** (Cut to DWG / Cut on Sheet): hașură ANSI31 pe pereți, stâlpi, plăci, grinzi tăiate; etichete (numărul ușilor și ferestrelor, tipul pereților) fără suprapuneri; axe cu bule și lanțuri de cote între axe plus cota totală; pe secțiuni verticale: liniile de nivel cu cotă și axele tăiate. Mărimile textelor sunt în mm de hârtie, după scara planșei. Se poate opri din Title Block („Complete 2D drawing”).
 - **Interfața în limba română** (EN / RO): View › Language, meniul File sau Ctrl+K „Language”. Se traduc filele, grupele și butoanele ribbon-ului, tooltip-urile frecvente, titlurile panourilor și meniul File; alegerea se salvează.

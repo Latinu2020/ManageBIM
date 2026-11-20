@@ -157,6 +157,48 @@ pub struct RenderSettings {
     /// chenarul de incadrare al randarii in vizualizare (implicit oprit)
     #[serde(default)]
     pub show_frame: bool,
+    /// pe video / imagini 4D: data simularii si legenda (Construct / Demolish / Temporary)
+    #[serde(default = "yes")]
+    pub overlay_4d: bool,
+    /// pe imagini: legenda Appearance Profiler (colorare dupa parametru)
+    #[serde(default = "yes")]
+    pub legend_on_images: bool,
+    /// umbre aruncate de soare (shadow map)
+    #[serde(default = "yes")]
+    pub shadows: bool,
+    /// soarele dupa data, ora si locatie (altfel azimut / elevatie manuale)
+    #[serde(default)]
+    pub sun_from_time: bool,
+    #[serde(default = "lat_default")]
+    pub lat: f32,
+    #[serde(default = "lon_default")]
+    pub lon: f32,
+    /// fusul orar (ore fata de UTC, ex. 3 = Romania vara)
+    #[serde(default = "tz_default")]
+    pub tz: f32,
+    #[serde(default = "date_default")]
+    pub sun_date: String,
+    #[serde(default = "hour_default")]
+    pub sun_hour: f32,
+    /// unghiul nordului proiectului fata de +Y (grade, in sens trigonometric)
+    #[serde(default)]
+    pub north_deg: f32,
+}
+
+fn lat_default() -> f32 {
+    44.43
+}
+fn lon_default() -> f32 {
+    26.10
+}
+fn tz_default() -> f32 {
+    3.0
+}
+fn date_default() -> String {
+    "2026-06-21".into()
+}
+fn hour_default() -> f32 {
+    14.0
 }
 
 fn ao_default() -> f32 {
@@ -195,8 +237,48 @@ impl RenderSettings {
 
 impl Default for RenderSettings {
     fn default() -> Self {
-        RenderSettings { width: 1920, height: 1080, fps: 30, quality: 92, supersample: true, background: Background::Theme, format: VideoFormat::Mp4, sun_az: sun_az(), sun_el: sun_el(), exposure: 1.0, ambient: 1.0, sun_power: 1.0, ao: ao_default(), edges: edges_default(), show_frame: false }
+        RenderSettings { width: 1920, height: 1080, fps: 30, quality: 92, supersample: true, background: Background::Theme, format: VideoFormat::Mp4, sun_az: sun_az(), sun_el: sun_el(), exposure: 1.0, ambient: 1.0, sun_power: 1.0, ao: ao_default(), edges: edges_default(), show_frame: false, overlay_4d: true, legend_on_images: true, shadows: true, sun_from_time: false, lat: lat_default(), lon: lon_default(), tz: tz_default(), sun_date: date_default(), sun_hour: hour_default(), north_deg: 0.0 }
     }
 }
 
 pub const RESOLUTIONS: [(u32, u32, &str); 5] = [(1280, 720, "HD 720p"), (1920, 1080, "Full HD 1080p"), (2560, 1440, "QHD 1440p"), (3840, 2160, "4K UHD"), (1080, 1080, "Square 1080")];
+
+/// Pozitia soarelui (algoritmul NOAA simplificat, precizie ~0.5 grade) pentru o data (zile de la 1970-01-01),
+/// ora locala, fusul orar si coordonatele geografice. Intoarce (azimut de la Nord in sensul acelor de ceasornic,
+/// elevatie deasupra orizontului), in grade.
+pub fn sun_position(day: i32, hour_local: f32, tz: f32, lat: f32, lon: f32) -> (f32, f32) {
+    let (lat, lon) = (lat as f64, lon as f64);
+    // zile juliene de la J2000.0
+    let jd = day as f64 + 2440587.5 + (hour_local as f64 - tz as f64) / 24.0;
+    let n = jd - 2451545.0;
+    let g = (357.529 + 0.98560028 * n).to_radians();
+    let q = 280.459 + 0.98564736 * n;
+    let l = (q + 1.915 * g.sin() + 0.020 * (2.0 * g).sin()).to_radians();
+    let e = (23.439 - 0.00000036 * n).to_radians();
+    let dec = (e.sin() * l.sin()).asin();
+    let ra = (e.cos() * l.sin()).atan2(l.cos());
+    // timpul sideral la Greenwich -> unghiul orar local
+    let gmst = (18.697374558 + 24.06570982441908 * n).rem_euclid(24.0);
+    let ha = ((gmst * 15.0 + lon).to_radians() - ra).rem_euclid(std::f64::consts::TAU);
+    let latr = lat.to_radians();
+    let el = (latr.sin() * dec.sin() + latr.cos() * dec.cos() * ha.cos()).asin();
+    let az = (-ha.sin()).atan2(dec.tan() * latr.cos() - latr.sin() * ha.cos());
+    (az.to_degrees().rem_euclid(360.0) as f32, el.to_degrees() as f32)
+}
+
+impl RenderSettings {
+    /// Daca soarele e dupa data / ora / locatie: actualizeaza azimutul si elevatia folosite de randare
+    /// (azimutul din scena = de la +X, in sens trigonometric; nordul proiectului = +Y rotit cu `north_deg`).
+    pub fn update_sun(&mut self) {
+        if !self.sun_from_time {
+            return;
+        }
+        let Some(day) = crate::timeline::parse_date(&self.sun_date) else { return };
+        let (az_n, el) = sun_position(day, self.sun_hour, self.tz, self.lat, self.lon);
+        // de la Nord in sens orar -> de la +X in sens trigonometric (Nord = +Y = 90 grade)
+        let a = (90.0 - az_n + self.north_deg).rem_euclid(360.0);
+        self.sun_az = if a > 180.0 { a - 360.0 } else { a };
+        // sub orizont: lumina ramane razanta (fara umbre aberante de jos in sus)
+        self.sun_el = el.max(2.0);
+    }
+}

@@ -771,3 +771,106 @@ pub fn write_ids(rules: &[Rule], title: &str, date: &str) -> String {
     s.push_str("  </ids:specifications>\n</ids:ids>\n");
     s
 }
+
+// ====================================================================== verificari rapide (fara IDS)
+
+/// O verificare rapida a calitatii modelului, fara reguli: nume, descriere, rezultat.
+pub struct QuickCheck {
+    pub name: &'static str,
+    pub about: &'static str,
+    pub result: RuleResult,
+}
+
+/// tipurile spatiale / de organizare nu au nevoie de nivel, material, geometrie
+fn is_spatial(t: &str) -> bool {
+    let t = t.to_lowercase();
+    ["ifcproject", "ifcsite", "ifcbuilding", "ifcbuildingstorey", "ifcspace", "ifczone", "ifcgroup", "ifcsystem", "ifcopening", "ifcannotation", "ifcgrid", "ifcvirtual"].iter().any(|k| t.starts_with(k))
+}
+
+/// Verificari de calitate fara IDS, pe toate modelele (nu se aplica norilor de puncte):
+/// fara nivel, fara nume, fara clasificare, fara material, fara geometrie, geometrie degenerata,
+/// duplicate (acelasi tip si aceeasi geometrie in acelasi loc), GUID dublat.
+pub fn quick_checks(models: &[(usize, &Model)]) -> Vec<QuickCheck> {
+    use std::collections::HashMap;
+    let mut no_level = RuleResult::default();
+    let mut no_name = RuleResult::default();
+    let mut no_class = RuleResult::default();
+    let mut no_mat = RuleResult::default();
+    let mut no_geom = RuleResult::default();
+    let mut tiny = RuleResult::default();
+    let mut dups = RuleResult::default();
+    let mut guid = RuleResult::default();
+    for (mi, m) in models {
+        if m.cloud.is_some() {
+            continue;
+        }
+        let mut by_guid: HashMap<&str, Vec<u32>> = HashMap::new();
+        // cheia de duplicat: tip + nr. triunghiuri + aabb rotunjit la mm
+        let mut by_shape: HashMap<(String, u32, [i64; 6]), Vec<u32>> = HashMap::new();
+        for (ei, e) in m.elements.iter().enumerate() {
+            let id = ElemId { m: *mi as u32, e: ei as u32 };
+            if !e.guid.is_empty() {
+                by_guid.entry(e.guid.as_str()).or_default().push(ei as u32);
+            }
+            if is_spatial(&e.ifc_type) {
+                continue;
+            }
+            let has = |f: &dyn Fn(&crate::model::Prop) -> bool| e.props.iter().any(|p| f(p) && !p.value.trim().is_empty());
+            no_level.checked += 1;
+            if e.storey.trim().is_empty() && !has(&|p| p.name.eq_ignore_ascii_case("Level") || p.name.eq_ignore_ascii_case("Storey")) {
+                no_level.failed.push((id, "No level / storey".into()));
+            }
+            no_name.checked += 1;
+            let n = e.name.trim();
+            if n.is_empty() || n.eq_ignore_ascii_case(&e.ifc_type) || n.chars().all(|c| c.is_ascii_digit()) {
+                no_name.failed.push((id, if n.is_empty() { "Empty name".into() } else { format!("Generic name \"{n}\"") }));
+            }
+            no_class.checked += 1;
+            if !has(&|p| p.group.to_lowercase().contains("classification") || p.name.to_lowercase().contains("classification") || p.name.eq_ignore_ascii_case("Uniclass") || p.name.eq_ignore_ascii_case("OmniClass") || p.name.eq_ignore_ascii_case("Assembly Code")) {
+                no_class.failed.push((id, "No classification".into()));
+            }
+            no_geom.checked += 1;
+            if e.tri_count == 0 {
+                no_geom.failed.push((id, "No geometry".into()));
+                continue;
+            }
+            no_mat.checked += 1;
+            if !has(&|p| p.group.to_lowercase().contains("material") || p.name.to_lowercase().contains("material")) {
+                no_mat.failed.push((id, "No material".into()));
+            }
+            tiny.checked += 1;
+            let s = e.aabb.size();
+            if s.max_element() < 0.002 {
+                tiny.failed.push((id, format!("Degenerate geometry ({:.1} mm)", s.max_element() * 1000.0)));
+            }
+            dups.checked += 1;
+            let r = |v: f32| (v as f64 * 1000.0).round() as i64;
+            let k = (e.ifc_type.clone(), e.tri_count, [r(e.aabb.min.x), r(e.aabb.min.y), r(e.aabb.min.z), r(e.aabb.max.x), r(e.aabb.max.y), r(e.aabb.max.z)]);
+            by_shape.entry(k).or_default().push(ei as u32);
+        }
+        for v in by_shape.values().filter(|v| v.len() > 1) {
+            for &e in v {
+                dups.failed.push((ElemId { m: *mi as u32, e }, format!("Duplicate: {} identical elements in the same place", v.len())));
+            }
+        }
+        guid.checked += m.elements.len();
+        for (g, v) in by_guid.iter().filter(|(_, v)| v.len() > 1) {
+            for &e in v {
+                guid.failed.push((ElemId { m: *mi as u32, e }, format!("GUID {g} used {} times", v.len())));
+            }
+        }
+    }
+    for r in [&mut dups, &mut guid] {
+        r.failed.sort_by_key(|f| f.0);
+    }
+    vec![
+        QuickCheck { name: "Without level", about: "Elements not assigned to a level / storey", result: no_level },
+        QuickCheck { name: "Without name", about: "Empty, numeric-only or generic names (same as the IFC type)", result: no_name },
+        QuickCheck { name: "Without classification", about: "No Uniclass / OmniClass / other classification", result: no_class },
+        QuickCheck { name: "Without material", about: "Elements with geometry but no material", result: no_mat },
+        QuickCheck { name: "Without geometry", about: "Building elements with no 3D geometry", result: no_geom },
+        QuickCheck { name: "Degenerate geometry", about: "Elements smaller than 2 mm", result: tiny },
+        QuickCheck { name: "Duplicates", about: "Same type and identical geometry in the same place (copied twice)", result: dups },
+        QuickCheck { name: "Duplicate GUID", about: "The same IFC GlobalId on more than one element in a model", result: guid },
+    ]
+}

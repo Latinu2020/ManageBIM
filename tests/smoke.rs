@@ -232,3 +232,25 @@ fn plan_preview() {
         std::fs::write(std::path::Path::new("target").join(format!("{name}.svg")), svg).unwrap();
     }
 }
+
+/// Previzualizare (manuala): proiect demo cu sectiune pe nivel si soare jos, pentru verificarea umbrelor
+/// (cargo test -- --ignored shadow_preview_project; MB_OUT = calea .bimr).
+#[test]
+#[ignore]
+fn shadow_preview_project() {
+    let out = std::env::var("MB_OUT").expect("MB_OUT");
+    let root = std::env::temp_dir().join(format!("mb_sh_{}", std::process::id()));
+    std::fs::create_dir_all(root.join("a")).unwrap();
+    std::fs::create_dir_all(root.join("l")).unwrap();
+    std::env::set_var("APPDATA", root.join("a"));
+    std::env::set_var("LOCALAPPDATA", root.join("l"));
+    let mut app = App::new(vec![]);
+    app.open_demo();
+    wait(&mut app);
+    app.section_level_box(0);
+    app.render.sun_az = 210.0 - 360.0;
+    app.render.sun_el = 28.0;
+    app.render.shadows = std::env::var("MB_NOSHADOW").is_err();
+    app.save_project(&out);
+    assert!(std::path::Path::new(&out).is_file());
+}

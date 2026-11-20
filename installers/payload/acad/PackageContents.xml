@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ApplicationPackage SchemaVersion="1.0" AutodeskProduct="AutoCAD" ProductType="Application"
     Name="ManageBIM Exporter" Description="Export AutoCAD 3D models to ManageBIM .bimc" Author="ManageBIM"
-    AppVersion="0.23.0" ProductCode="{8E4A2C61-5B7D-4F0E-9C23-7A1D5E3B9F42}" UpgradeCode="{2F9C7B13-6D4E-4A85-B1E0-3C8A9D2F7E56}">
+    AppVersion="0.24.0" ProductCode="{8E4A2C61-5B7D-4F0E-9C23-7A1D5E3B9F42}" UpgradeCode="{2F9C7B13-6D4E-4A85-B1E0-3C8A9D2F7E56}">
   <CompanyDetails Name="ManageBIM" />
   <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R24.0" />
   <Components Description="AutoCAD 2021-2024">

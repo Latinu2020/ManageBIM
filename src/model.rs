@@ -341,6 +341,13 @@ pub struct PointCloud {
 }
 
 impl Model {
+    /// Copie completa (geometria inclusa) - doar cand modelul e folosit si in alta parte si trebuie modificat.
+    pub fn clone_model(&self) -> Model {
+        Model { name: self.name.clone(), path: self.path.clone(), elements: self.elements.clone(), pos: self.pos.clone(), tri_color: self.tri_color.clone(), aabb: self.aabb, info: self.info.clone(), warnings: self.warnings.clone(), cloud: self.cloud.clone() }
+    }
+}
+
+impl Model {
     pub fn from_raw(raw: RawModel, name: String, path: String, origin: DVec3) -> Model {
         use rayon::prelude::*;
         // conversie + BVH pe element, in paralel

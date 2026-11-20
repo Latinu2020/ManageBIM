@@ -348,3 +348,84 @@ pub fn convert_mp4(path: &Path) -> Result<(), String> {
         Err(format!("ffmpeg failed - the AVI was kept: {}", tmp.display()))
     }
 }
+
+// ====================================================================== text si casete pe cadre (data 4D, legenda)
+
+fn overlay_font() -> &'static ab_glyph::FontRef<'static> {
+    static F: std::sync::OnceLock<ab_glyph::FontRef<'static>> = std::sync::OnceLock::new();
+    F.get_or_init(|| ab_glyph::FontRef::try_from_slice(include_bytes!("../assets/fonts/Inter-Regular.ttf")).expect("Inter font"))
+}
+
+impl Frame {
+    /// amesteca o culoare RGBA (alpha 0-255) in pixelul (x, y)
+    fn blend(&mut self, x: i32, y: i32, c: [u8; 4], cov: f32) {
+        if x < 0 || y < 0 || x >= self.w as i32 || y >= self.h as i32 {
+            return;
+        }
+        let a = (c[3] as f32 / 255.0) * cov.clamp(0.0, 1.0);
+        let i = ((y as u32 * self.w + x as u32) * 4) as usize;
+        for k in 0..3 {
+            let d = self.rgba[i + k] as f32;
+            self.rgba[i + k] = (d + (c[k] as f32 - d) * a).round() as u8;
+        }
+    }
+
+    /// dreptunghi plin (semi-transparent daca alpha < 255)
+    pub fn fill_rect(&mut self, x: i32, y: i32, w: i32, h: i32, c: [u8; 4]) {
+        for yy in y.max(0)..(y + h).min(self.h as i32) {
+            for xx in x.max(0)..(x + w).min(self.w as i32) {
+                self.blend(xx, yy, c, 1.0);
+            }
+        }
+    }
+
+    /// latimea unui text la inaltimea `px`
+    pub fn text_width(s: &str, px: f32) -> f32 {
+        use ab_glyph::{Font, ScaleFont};
+        let f = overlay_font().as_scaled(px);
+        s.chars().map(|ch| f.h_advance(f.glyph_id(ch))).sum()
+    }
+
+    /// text cu Inter (antialiasing); (x, y) = coltul stanga-sus
+    pub fn draw_text(&mut self, x: f32, y: f32, px: f32, c: [u8; 4], s: &str) {
+        use ab_glyph::{Font, ScaleFont};
+        let font = overlay_font();
+        let f = font.as_scaled(px);
+        let mut pen = x;
+        let base = y + f.ascent();
+        for ch in s.chars() {
+            let id = f.glyph_id(ch);
+            let g = id.with_scale_and_position(px, ab_glyph::point(pen, base));
+            pen += f.h_advance(id);
+            if let Some(o) = font.outline_glyph(g) {
+                let b = o.px_bounds();
+                o.draw(|gx, gy, cov| self.blend(b.min.x as i32 + gx as i32, b.min.y as i32 + gy as i32, c, cov));
+            }
+        }
+    }
+
+    /// Caseta cu titlu si randuri (patrat de culoare + text) in coltul stanga-sus sau stanga-jos.
+    /// Marimea se adapteaza la inaltimea cadrului (lizibila la 720p si la 4K).
+    pub fn draw_legend(&mut self, title: &str, rows: &[([u8; 4], String)], bottom: bool) {
+        let px = (self.h as f32 / 42.0).clamp(12.0, 48.0);
+        let pad = px * 0.6;
+        let line = px * 1.45;
+        let sw = px * 0.9;
+        let w = rows.iter().map(|r| Frame::text_width(&r.1, px) + sw + pad).fold(Frame::text_width(title, px * 1.1), f32::max) + 2.0 * pad;
+        let h = pad * 2.0 + line * (rows.len() as f32 + if title.is_empty() { 0.0 } else { 1.1 });
+        let x0 = pad * 1.5;
+        let y0 = if bottom { self.h as f32 - h - pad * 1.5 } else { pad * 1.5 };
+        self.fill_rect(x0 as i32, y0 as i32, w as i32, h as i32, [20, 22, 28, 190]);
+        let mut y = y0 + pad;
+        if !title.is_empty() {
+            self.draw_text(x0 + pad, y, px * 1.1, [255, 255, 255, 255], title);
+            y += line * 1.1;
+        }
+        for (c, label) in rows {
+            let off = (line - sw) / 2.0 - px * 0.12;
+            self.fill_rect((x0 + pad) as i32, (y + off) as i32, sw as i32, sw as i32, [c[0], c[1], c[2], 255]);
+            self.draw_text(x0 + pad + sw + pad * 0.6, y, px, [235, 235, 240, 255], label);
+            y += line;
+        }
+    }
+}

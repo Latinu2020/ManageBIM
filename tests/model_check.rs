@@ -720,3 +720,116 @@ fn romanian_interface_toggle() {
     set_romanian(false);
     assert_eq!(tr("Sections"), "Sections");
 }
+
+/// Parametri adaugati de utilizator: scrisi in grupul "User", inlocuiti, stersi; cheia = GUID sau #index.
+#[test]
+fn user_params_apply_replace_and_remove() {
+    use bimrust::app::{apply_user_params, user_key, UserParam};
+    let raw = bimrust::load_any("tests/data/wall_opening.ifc", &|_, _| {}).expect("ifc");
+    let mut m = bimrust::model::Model::from_raw(raw, "wall.ifc".into(), "tests/data/wall_opening.ifc".into(), glam::DVec3::ZERO);
+    let k0 = user_key(&m.elements[0], 0);
+    let p = |name: &str, value: &str| UserParam { model: "wall.ifc".into(), key: k0.clone(), name: name.into(), value: value.into() };
+    apply_user_params(&mut m, &[p("Status", "Approved"), p("Zone", "Z1"), UserParam { model: "other.ifc".into(), ..p("Status", "x") }]);
+    let user: Vec<(String, String)> = m.elements[0].props.iter().filter(|q| q.group == "User").map(|q| (q.name.clone(), q.value.clone())).collect();
+    assert_eq!(user, vec![("Status".to_string(), "Approved".to_string()), ("Zone".to_string(), "Z1".to_string())]);
+    assert!(m.elements.iter().skip(1).all(|e| e.props.iter().all(|q| q.group != "User")));
+    // a doua aplicare reface grupul (nu dubleaza), lista goala il sterge
+    apply_user_params(&mut m, &[p("Status", "Rejected")]);
+    assert_eq!(m.elements[0].props.iter().filter(|q| q.group == "User").count(), 1);
+    apply_user_params(&mut m, &[]);
+    assert!(m.elements[0].props.iter().all(|q| q.group != "User"));
+}
+
+/// Gravitatea clash-urilor si sabloanele de teste.
+#[test]
+fn clash_severity_and_templates() {
+    use bimrust::app::{severity_of, ClashTest, SelKind, Severity};
+    use bimrust::clash::ClashType;
+    let s = |d: f32| severity_of(ClashType::Hard, 10.0, [10.0, 50.0], d);
+    assert_eq!(s(-0.005), Severity::Minor);
+    assert_eq!(s(-0.020), Severity::Major);
+    assert_eq!(s(-0.080), Severity::Critical);
+    let c = |d: f32| severity_of(ClashType::Clearance, 50.0, [10.0, 50.0], d);
+    assert_eq!(c(0.0), Severity::Critical);
+    assert_eq!(c(0.010), Severity::Major);
+    assert_eq!(c(0.040), Severity::Minor);
+    let t = ClashTest::templates();
+    assert!(t.len() >= 6);
+    assert!(t.iter().any(|(_, _, x)| x.ty == ClashType::Clearance && x.a.kind == SelKind::Discipline));
+}
+
+/// Verificari rapide: duplicatul si GUID-ul dublat se gasesc, elementele normale trec.
+#[test]
+fn quick_checks_find_duplicates() {
+    let raw = bimrust::load_any("tests/data/wall_opening.ifc", &|_, _| {}).expect("ifc");
+    let mut m = bimrust::model::Model::from_raw(raw, "w.ifc".into(), "w".into(), glam::DVec3::ZERO);
+    let n = m.elements.len();
+    // acelasi element copiat (acelasi GUID, aceeasi geometrie)
+    let e = m.elements.iter().find(|e| e.tri_count > 0).unwrap().clone();
+    m.elements.push(e);
+    let res = bimrust::check::quick_checks(&[(0, &m)]);
+    let get = |name: &str| res.iter().find(|q| q.name == name).unwrap();
+    assert_eq!(get("Duplicates").result.failed.len(), 2);
+    assert_eq!(get("Duplicate GUID").result.failed.len(), 2);
+    assert_eq!(get("Duplicate GUID").result.checked, n + 1);
+}
+
+/// Planificari MS Project / Primavera P6 (XML) si pozitia soarelui.
+#[test]
+fn schedule_xml_and_sun_position() {
+    let msp = r#"<?xml version="1.0"?><Project xmlns="http://schemas.microsoft.com/project"><Tasks>
+      <Task><UID>0</UID><Name>Project</Name><Summary>1</Summary><Start>2026-03-02T08:00:00</Start><Finish>2026-04-30T17:00:00</Finish></Task>
+      <Task><UID>1</UID><Name>Slab L1 [Level=Level 1;Type=IfcSlab]</Name><Summary>0</Summary><Start>2026-03-02T08:00:00</Start><Finish>2026-03-13T17:00:00</Finish></Task>
+      <Task><UID>2</UID><Name>Demolish shed</Name><Start>2026-03-16T08:00:00</Start><Finish>2026-03-18T17:00:00</Finish>
+        <ExtendedAttribute><FieldID>188743731</FieldID><Value>Name=Shed</Value></ExtendedAttribute></Task>
+    </Tasks></Project>"#;
+    let (t, w, f) = bimrust::timeline::parse_schedule_xml(msp).unwrap();
+    assert_eq!(f, "MS Project");
+    assert!(w.is_empty(), "{w:?}");
+    assert_eq!(t.len(), 2, "summary task skipped");
+    assert_eq!(t[0].name, "Slab L1");
+    assert_eq!(t[0].rule, "Level=Level 1;Type=IfcSlab");
+    assert_eq!(bimrust::timeline::fmt_date(t[0].start), "2026-03-02");
+    assert_eq!(bimrust::timeline::fmt_date(t[0].end), "2026-03-13");
+    assert_eq!(t[1].rule, "Name=Shed");
+    assert_eq!(t[1].kind, bimrust::timeline::TaskKind::Demolish);
+    let p6 = r#"<APIBusinessObjects><Project><Name>P</Name>
+      <Activity><Id>A1000</Id><Name>Columns L0</Name><PlannedStartDate>2026-05-04T08:00:00</PlannedStartDate><PlannedFinishDate>2026-05-08T17:00:00</PlannedFinishDate></Activity>
+      <Activity><Id>A1010</Id><Name>No dates</Name></Activity>
+    </Project></APIBusinessObjects>"#;
+    let (t, w, f) = bimrust::timeline::parse_schedule_xml(p6).unwrap();
+    assert_eq!(f, "Primavera P6");
+    assert_eq!(t.len(), 1);
+    assert_eq!(w.len(), 1);
+    assert!(bimrust::timeline::parse_schedule_xml("<Other/>").is_err());
+    // Bucuresti, 21 iunie, 13:20 ora de vara (~ amiaza solara): soarele la sud, ~69 grade
+    let day = bimrust::timeline::parse_date("2026-06-21").unwrap();
+    let (az, el) = bimrust::anim::sun_position(day, 13.3, 3.0, 44.43, 26.10);
+    assert!((az - 180.0).abs() < 4.0, "azimuth {az}");
+    assert!((el - 69.0).abs() < 1.5, "elevation {el}");
+    // 21 decembrie la amiaza: jos (~22 grade)
+    let (_, el) = bimrust::anim::sun_position(bimrust::timeline::parse_date("2026-12-21").unwrap(), 12.3, 2.0, 44.43, 26.10);
+    assert!((el - 22.0).abs() < 1.5, "winter elevation {el}");
+}
+
+/// Compare pe parametri: proprietatile schimbate, cu valorile vechi si noi, grupate pe parametru.
+#[test]
+fn compare_lists_changed_parameters() {
+    let raw = bimrust::load_any("tests/data/wall_opening.ifc", &|_, _| {}).expect("ifc");
+    let a = bimrust::model::Model::from_raw(raw, "a.ifc".into(), "a".into(), glam::DVec3::ZERO);
+    let raw = bimrust::load_any("tests/data/wall_opening.ifc", &|_, _| {}).expect("ifc");
+    let mut b = bimrust::model::Model::from_raw(raw, "b.ifc".into(), "b".into(), glam::DVec3::ZERO);
+    let i = b.elements.iter().position(|e| !e.props.is_empty() && !e.guid.is_empty()).unwrap();
+    let old = b.elements[i].props[0].value.clone();
+    b.elements[i].props[0].value = "CHANGED".into();
+    b.elements[i].props.push(bimrust::model::Prop { group: "Pset_X".into(), name: "New".into(), value: "1".into() });
+    let r = bimrust::compare::compare(&a, 0, &b, 1, 1.0);
+    let ch = bimrust::compare::param_changes(&a, &b, &r);
+    assert_eq!(ch.len(), 2, "{ch:?}");
+    assert!(ch.iter().any(|c| c.old == old && c.new == "CHANGED"));
+    assert!(ch.iter().any(|c| c.param == "Pset_X / New" && c.old.is_empty() && c.new == "1"));
+    let sum = bimrust::compare::param_summary(&ch);
+    assert_eq!(sum.len(), 2);
+    let csv = bimrust::compare::param_csv(&ch, &b);
+    assert!(csv.contains("CHANGED") && csv.lines().count() == 3);
+}

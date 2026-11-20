@@ -182,3 +182,94 @@ pub fn parse_csv(text: &str) -> (Vec<Task>, Vec<String>) {
     }
     (tasks, errs)
 }
+
+// ====================================================================== MS Project / Primavera P6 (XML)
+
+fn local_name(n: &str) -> &str {
+    n.rsplit(':').next().unwrap_or(n)
+}
+
+fn child_text<'a>(n: &'a crate::e57::Node, name: &str) -> Option<&'a str> {
+    n.kids.iter().find(|k| local_name(&k.name) == name).map(|k| k.text.trim()).filter(|t| !t.is_empty())
+}
+
+/// Data dintr-un camp XML ("2026-01-05T08:00:00" sau "2026-01-05").
+fn xml_date(s: &str) -> Option<i32> {
+    parse_date(s.get(..10).unwrap_or(s))
+}
+
+/// Regula de legare la elemente scrisa la sfarsitul numelui, intre paranteze drepte:
+/// "Turnare placa L1 [Level=Level 1;Type=IfcSlab]" -> ("Turnare placa L1", "Level=Level 1;Type=IfcSlab").
+pub fn split_rule(name: &str) -> (String, String) {
+    let t = name.trim();
+    if t.ends_with(']') {
+        if let Some(i) = t.rfind('[') {
+            return (t[..i].trim().to_string(), t[i + 1..t.len() - 1].trim().to_string());
+        }
+    }
+    (t.to_string(), String::new())
+}
+
+/// Planificare din MS Project (XML, „Save As > XML”) sau Primavera P6 (XML export).
+/// Activitatile sumar (MS Project) se sar. Regula de legare: [regula] la sfarsitul numelui,
+/// sau campul Text1 (MS Project) / Notes; tipul (Construct / Demolish / Temporary): campul Text2 sau numele.
+/// Intoarce sarcinile, avertismentele si formatul recunoscut.
+pub fn parse_schedule_xml(text: &str) -> Result<(Vec<Task>, Vec<String>, &'static str), String> {
+    let root = crate::e57::parse_xml(text.trim_start_matches('\u{feff}')).map_err(|_| "This is not a valid XML file.".to_string())?;
+    let root = if root.name.is_empty() { root.kids.into_iter().find(|k| !k.name.starts_with('?')).ok_or("Empty XML file.")? } else { root };
+    let mut tasks = Vec::new();
+    let mut warn = Vec::new();
+    let mut push = |name: &str, start: Option<&str>, end: Option<&str>, rule: Option<&str>, kind: Option<&str>, warn: &mut Vec<String>| {
+        let (s, e) = (start.and_then(xml_date), end.and_then(xml_date));
+        let (Some(s), Some(e)) = (s, e) else {
+            warn.push(format!("{name}: no start / finish date - skipped"));
+            return;
+        };
+        let (clean, bracket) = split_rule(name);
+        let rule = if !bracket.is_empty() { bracket } else { rule.unwrap_or("").trim().to_string() };
+        let kind = TaskKind::parse(kind.unwrap_or_else(|| if clean.to_lowercase().contains("demol") { "demolish" } else if clean.to_lowercase().contains("temp") { "temporary" } else { "" }));
+        tasks.push(Task { name: clean, start: s, end: e.max(s), kind, rule, elems: Vec::new() });
+    };
+    match local_name(&root.name) {
+        "Project" => {
+            // MS Project: Project / Tasks / Task
+            let ext = |t: &crate::e57::Node, field: &str| -> Option<String> {
+                t.kids.iter().filter(|k| local_name(&k.name) == "ExtendedAttribute").find(|k| child_text(k, "FieldID") == Some(field)).and_then(|k| child_text(k, "Value").map(|s| s.to_string()))
+            };
+            let Some(list) = root.kids.iter().find(|k| local_name(&k.name) == "Tasks") else { return Err("MS Project XML without <Tasks>.".into()) };
+            for t in list.kids.iter().filter(|k| local_name(&k.name) == "Task") {
+                let Some(name) = child_text(t, "Name") else { continue };
+                if child_text(t, "Summary") == Some("1") || child_text(t, "IsNull") == Some("1") {
+                    continue;
+                }
+                // Text1 = 188743731, Text2 = 188743734
+                let rule = ext(t, "188743731").or_else(|| child_text(t, "Notes").map(|s| s.to_string()));
+                let kind = ext(t, "188743734");
+                push(name, child_text(t, "Start"), child_text(t, "Finish"), rule.as_deref(), kind.as_deref(), &mut warn);
+            }
+            Ok((tasks, warn, "MS Project"))
+        }
+        "APIBusinessObjects" => {
+            // Primavera P6: APIBusinessObjects / Project / Activity (sau Activity direct)
+            let mut acts: Vec<&crate::e57::Node> = Vec::new();
+            fn walk<'a>(n: &'a crate::e57::Node, out: &mut Vec<&'a crate::e57::Node>) {
+                for k in &n.kids {
+                    if local_name(&k.name) == "Activity" {
+                        out.push(k);
+                    } else if matches!(local_name(&k.name), "Project" | "BaselineProject") {
+                        walk(k, out);
+                    }
+                }
+            }
+            walk(&root, &mut acts);
+            for a in acts {
+                let Some(name) = child_text(a, "Name") else { continue };
+                let start = child_text(a, "PlannedStartDate").or(child_text(a, "StartDate"));
+                let end = child_text(a, "PlannedFinishDate").or(child_text(a, "FinishDate"));
+                push(name, start, end, None, None, &mut warn);
+            }
+            Ok((tasks, warn, "Primavera P6"))
+        }
+        o => Err(format!("Unknown schedule XML (root <{o}>): use MS Project XML or Primavera P6 XML.")),
+    }
+}

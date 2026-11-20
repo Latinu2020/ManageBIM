@@ -87,7 +87,7 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 - **Point clouds** — E57 and LAS, density and point size control, one item per scan.
 - **Selection Tree** (group by any property, category colours, counts), **Property Tree**, **Find Items** with condition chips, selection and search **sets**, **Select Same Type / Category**.
 - **Navigation** like Navisworks — orbit, pan, walk with gravity and collision, ViewCube, walk paths, viewpoints, animations; adaptive LOD on large models.
-- **Visual styles** — Realistic, Shaded, Concept, Wireframe; fine edges, soft contact shadows, PBR material library (`.zip` packs from freepbr.com, ambientCG…).
+- **Visual styles** — Realistic, Shaded, Concept, Wireframe; fine edges, soft contact shadows, **sun shadows by date, time and location**, PBR material library (`.zip` packs from freepbr.com, ambientCG…).
 - **Command palette** (Ctrl+K) — every command and every element name, in one search box.
 - **Interface in English or Romanian** (View › Language).
 - **Undo / Redo** of the view (Ctrl+Z / Ctrl+Y) and **DWG / DXF overlay**: lay a 2D drawing over the model at a level.
@@ -96,13 +96,14 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 <details open>
 <summary><b>Coordination</b></summary>
 
-- **Clash Detective** — hard and clearance tests, **smart rules** (normal connections ignored, responsible discipline assigned automatically, grouping by system), rules, grouping by level / grid location / type, status tracking between runs, **clash matrix** per pair of models; HTML, CSV, BCF and Navisworks reports.
-- **Model Checker** — rules or **buildingSMART IDS 1.0** files (import **and export**): properties, attributes, classifications, materials; exact values, lists, patterns, ranges, optional / prohibited, **unique values** (duplicate marks, GUIDs). Excel and BCF reports.
+- **Clash Detective** — hard and clearance tests with **severity levels** (Critical / Major / Minor) and **ready-made templates** by discipline (Structure vs MEP, clearances, duplicates), **smart rules** (normal connections ignored, responsible discipline assigned automatically, grouping by system), rules, grouping by level / grid location / type, status tracking between runs, **clash matrix** per pair of models; HTML, CSV, BCF and Navisworks reports.
+- **Model Checker** — rules or **buildingSMART IDS 1.0** files (import **and export**): properties, attributes, classifications, materials; exact values, lists, patterns, ranges, optional / prohibited, **unique values** (duplicate marks, GUIDs). Excel and BCF reports. **Quick checks without IDS**: no level, name, classification, material or geometry, duplicates, duplicate GUIDs.
 - **Live Link** — the selection follows **Revit** and **Navisworks** both ways (matched by UniqueId / IFC GUID).
 - **As-built check** — the model against the point cloud: built, partial, missing, not scanned; colours on the model and an Excel report.
 - **Sections** — boxes with stretch arrows (like Revit), planes, **sections by level** from the status bar, filled cuts.
 - **Grids and levels** — from IFC, from DWG / DXF, or created in the app; clash locations like **“C-4 / Level 2”**.
-- **Measure** with snapping, **relocate** models (point to point, rotate, align to a face), **compare** model versions, **TimeLiner** 4D and **quantities**.
+- **Measure** with snapping, **relocate** models (point to point, rotate, align to a face), **compare** model versions (geometry and **parameter by parameter**, old → new), **TimeLiner** 4D (CSV, **MS Project** and **Primavera P6** XML; videos with date and legend) and **quantities**.
+- **Colour by parameter** with a legend in the view and on images / videos; **add parameters** to elements that have no data (saved with the project, exported to IFC).
 </details>
 
 <details open>
