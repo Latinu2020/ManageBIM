@@ -855,6 +855,7 @@ pub enum Purpose {
     ExportSectionCad,
     ImportCheckRules,
     ExportCheckRules,
+    ExportIds,
     ExportCheckXlsx,
     ExportCheckBcf,
     ExportGrids,
@@ -5211,6 +5212,7 @@ impl App {
             Purpose::ExportSectionCad => self.export_section_cad(&path),
             Purpose::ImportCheckRules => self.import_check_rules(&path),
             Purpose::ExportCheckRules => self.export_check_rules(&path),
+            Purpose::ExportIds => self.export_ids(&path),
             Purpose::ExportCheckXlsx => self.export_check_xlsx(&path),
             Purpose::ExportCheckBcf => self.export_check_bcf(&path),
             Purpose::SharedFolder => {
@@ -5479,6 +5481,7 @@ impl App {
                 Purpose::ExportSectionCad => d.set_title("Section cut (DWG / DXF)").add_filter("AutoCAD DWG (2018)", &["dwg"]).add_filter("DXF", &["dxf"]).set_file_name("section.dwg").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportCheckRules => d.set_title("Import IDS or rules").add_filter("IDS / ManageBIM rules", &["ids", "xml", "mbrules", "json"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCheckRules => d.set_title("Save rules").add_filter("ManageBIM rules", &["mbrules"]).set_file_name("rules.mbrules").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportIds => d.set_title("Export IDS (buildingSMART)").add_filter("IDS 1.0", &["ids"]).set_file_name("requirements.ids").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCheckXlsx => d.set_title("Model check report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("model_check.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCheckBcf => d.set_title("Model check issues (BCF)").add_filter("BCF", &["bcf", "bcfzip"]).set_file_name("model_check.bcf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportGridsCad => d.set_title("Import grid axes from DWG / DXF").add_filter("DWG / DXF", &["dwg", "dxf"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5579,6 +5582,7 @@ impl App {
                 Purpose::ExportSectionCad => "section.dwg".into(),
                 Purpose::ImportCheckRules => String::new(),
                 Purpose::ExportCheckRules => "rules.mbrules".into(),
+                Purpose::ExportIds => "requirements.ids".into(),
                 Purpose::ExportCheckXlsx => "model_check.xlsx".into(),
                 Purpose::ExportCheckBcf => "model_check.bcf".into(),
                 Purpose::ExportClashNavis => "clashes_viewpoints.xml".into(),
@@ -7196,6 +7200,19 @@ impl App {
         }
     }
 
+
+    /// Regulile Model Checker ca fisier buildingSMART IDS 1.0.
+    pub fn export_ids(&mut self, path: &str) {
+        if self.check_rules.is_empty() {
+            return self.error("No rules to export.");
+        }
+        let p = with_ext(path, "ids");
+        let title = self.project_path.as_ref().map(|p| model_label(&crate::file_name(p))).unwrap_or_else(|| "ManageBIM requirements".into());
+        match std::fs::write(&p, crate::check::write_ids(&self.check_rules, &title, &now_string())) {
+            Ok(()) => self.toast(format!("{} specifications exported as IDS 1.0: {}", self.check_rules.len(), crate::file_name(&p))),
+            Err(e) => self.error(format!("Cannot write {p}: {e}")),
+        }
+    }
     pub fn export_check_rules(&mut self, path: &str) {
         let p = with_ext(path, "mbrules");
         match serde_json::to_string_pretty(&self.check_rules).map_err(|e| e.to_string()).and_then(|s| std::fs::write(&p, s).map_err(|e| e.to_string())) {

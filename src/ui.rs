@@ -1068,6 +1068,9 @@ impl App {
             if ui.add_enabled(!self.check_rules.is_empty(), egui::Button::new("💾 Save rules…")).on_hover_text("Save the rules (.mbrules) to reuse them on other projects. The rules are also saved with the project.").clicked() {
                 self.request_path(Purpose::ExportCheckRules);
             }
+            if ui.add_enabled(!self.check_rules.is_empty(), egui::Button::new("📤 Export IDS…")).on_hover_text("Save the rules as a buildingSMART IDS 1.0 file - for Solibri, BIMcollab, usBIM, ifctester or the design team").clicked() {
+                self.request_path(Purpose::ExportIds);
+            }
             ui.separator();
             let has = self.check_results.is_some();
             if ui.add_enabled(has, egui::Button::new("📊 Excel…")).on_hover_text("Report: summary per rule + every failing element with the reason").clicked() {
@@ -7189,6 +7192,7 @@ impl App {
                 Purpose::ExportSectionCad => "Section cut (DWG / DXF)",
                 Purpose::ImportCheckRules => "Import IDS or rules",
                 Purpose::ExportCheckRules => "Save rules",
+                Purpose::ExportIds => "Export IDS",
                 Purpose::ExportCheckXlsx => "Model check report (Excel)",
                 Purpose::ExportCheckBcf => "Model check issues (BCF)",
                 Purpose::ExportClashNavis => "Export clashes as Navisworks viewpoints",
@@ -8272,6 +8276,7 @@ fn commands() -> Vec<Cmd> {
         }),
         c!("Run model check", "Coordination", "✔", "verifica reguli", |a| a.run_check()),
         c!("Import IDS…", "Coordination", "📥", "ids buildingsmart", |a| a.request_path(Purpose::ImportCheckRules)),
+        c!("Export IDS…", "Coordination", "📤", "ids buildingsmart export cerinte", |a| a.request_path(Purpose::ExportIds)),
         c!("Clash matrix (Excel)…", "Coordination", "▦", "matrice clash", |a| a.request_path(Purpose::ExportClashMatrix)),
         // ---- ajutor
         c!("User manual", "Help", "❓", "manual ajutor help documentatie", |a| a.manual_open = true),

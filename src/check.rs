@@ -409,7 +409,8 @@ fn ids_value(n: Option<&crate::e57::Node>) -> Value {
             return Value::OneOf(enums);
         }
         if let Some(p) = r.kids.iter().find(|k| local(&k.name) == "pattern").and_then(attr) {
-            return Value::Pattern(p);
+            // ".*" = orice valoare
+            return if p == ".*" { Value::Any } else { Value::Pattern(p) };
         }
         let get = |names: &[&str]| r.kids.iter().find(|k| names.contains(&local(&k.name))).and_then(attr).and_then(|s| s.trim().parse::<f64>().ok());
         let (min, max) = (get(&["minInclusive", "minExclusive"]), get(&["maxInclusive", "maxExclusive"]));
@@ -474,6 +475,10 @@ pub fn parse_ids(xml: &str, source: &str) -> Result<(Vec<Rule>, Vec<String>), St
                     None => warn.push(format!("{}: <{}> is not checked yet (ignored)", r.name, local(&f.name))),
                 }
             }
+        }
+        // "orice entitate IFC" (asa scriem regulile fara conditii) = fara conditii
+        if r.applicability.len() == 1 && r.applicability[0].kind == Kind::Entity && r.applicability[0].name == Value::Pattern("IFC.*".into()) && r.applicability[0].value.is_any() {
+            r.applicability.clear();
         }
         rules.push(r);
     }
@@ -676,4 +681,93 @@ fn rep(a: &Re, lo: usize, hi: usize, s: &[char], i: usize, k: &mut dyn FnMut(usi
         }
     }
     lo == 0 && k(i)
+}
+
+// ===================================================================== IDS 1.0: export
+
+fn x(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+/// <ids:simpleValue> sau <xs:restriction> pentru o restrictie; `upper` = nume de entitati IFC (litere mari)
+fn ids_value_xml(v: &Value, upper: bool) -> String {
+    let t = |s: &str| if upper { x(&s.trim().to_ascii_uppercase()) } else { x(s.trim()) };
+    match v {
+        Value::Any => "<xs:restriction base=\"xs:string\"><xs:pattern value=\".*\"/></xs:restriction>".into(),
+        Value::OneOf(l) if l.len() == 1 => format!("<ids:simpleValue>{}</ids:simpleValue>", t(&l[0])),
+        Value::OneOf(l) => format!("<xs:restriction base=\"xs:string\">{}</xs:restriction>", l.iter().map(|s| format!("<xs:enumeration value=\"{}\"/>", t(s))).collect::<String>()),
+        Value::Pattern(p) => format!("<xs:restriction base=\"xs:string\"><xs:pattern value=\"{}\"/></xs:restriction>", x(p)),
+        Value::Range { min, max } => {
+            let mut s = String::from("<xs:restriction base=\"xs:double\">");
+            if let Some(a) = min {
+                s.push_str(&format!("<xs:minInclusive value=\"{a}\"/>"));
+            }
+            if let Some(b) = max {
+                s.push_str(&format!("<xs:maxInclusive value=\"{b}\"/>"));
+            }
+            s.push_str("</xs:restriction>");
+            s
+        }
+    }
+}
+
+fn ids_facet_xml(f: &Facet, requirement: bool) -> String {
+    let card = if requirement && f.kind != Kind::Entity {
+        format!(
+            " cardinality=\"{}\"",
+            match f.card {
+                Card::Required => "required",
+                Card::Optional => "optional",
+                Card::Prohibited => "prohibited",
+            }
+        )
+    } else {
+        String::new()
+    };
+    let val = |tag: &str, v: &Value, upper: bool| if v.is_any() { String::new() } else { format!("<ids:{tag}>{}</ids:{tag}>", ids_value_xml(v, upper)) };
+    match f.kind {
+        Kind::Entity => format!("<ids:entity><ids:name>{}</ids:name>{}</ids:entity>", ids_value_xml(&f.name, true), val("predefinedType", &f.value, true)),
+        Kind::Attribute => format!("<ids:attribute{card}><ids:name>{}</ids:name>{}</ids:attribute>", ids_value_xml(&f.name, false), val("value", &f.value, false)),
+        Kind::Property => format!(
+            "<ids:property{card}><ids:propertySet>{}</ids:propertySet><ids:baseName>{}</ids:baseName>{}</ids:property>",
+            ids_value_xml(&f.set, false),
+            ids_value_xml(&f.name, false),
+            val("value", &f.value, false)
+        ),
+        Kind::Classification => format!("<ids:classification{card}>{}{}</ids:classification>", val("value", &f.value, false), val("system", &f.set, false)),
+        Kind::Material => format!("<ids:material{card}>{}</ids:material>", val("value", &f.value, false)),
+    }
+}
+
+/// Regulile ca fisier buildingSMART IDS 1.0 (se deschide in Solibri, BIMcollab Zoom, usBIM, ifctester...).
+/// Cerintele "unique" nu exista in IDS: sunt notate in descrierea specificatiei.
+pub fn write_ids(rules: &[Rule], title: &str, date: &str) -> String {
+    let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ids:ids xmlns:ids=\"http://standards.buildingsmart.org/IDS\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://standards.buildingsmart.org/IDS http://standards.buildingsmart.org/IDS/1.0/ids.xsd\">\n");
+    s.push_str(&format!("  <ids:info>\n    <ids:title>{}</ids:title>\n    <ids:date>{}</ids:date>\n    <ids:description>Exported from ManageBIM Model Checker</ids:description>\n  </ids:info>\n  <ids:specifications>\n", x(title), x(date.get(..10).unwrap_or(date))));
+    for r in rules {
+        let mut desc = r.description.clone();
+        let uniq: Vec<String> = r.requirements.iter().filter(|f| f.unique).map(|f| f.describe()).collect();
+        if !uniq.is_empty() {
+            if !desc.is_empty() {
+                desc.push_str(" | ");
+            }
+            desc.push_str(&format!("Unique values (ManageBIM): {}", uniq.join("; ")));
+        }
+        s.push_str(&format!("    <ids:specification name=\"{}\" ifcVersion=\"IFC2X3 IFC4 IFC4X3_ADD2\"{}>\n", x(&r.name), if desc.is_empty() { String::new() } else { format!(" description=\"{}\"", x(&desc)) }));
+        s.push_str("      <ids:applicability minOccurs=\"0\" maxOccurs=\"unbounded\">\n");
+        if r.applicability.is_empty() {
+            // IDS cere cel putin o conditie: "orice element" = orice entitate
+            s.push_str("        <ids:entity><ids:name><xs:restriction base=\"xs:string\"><xs:pattern value=\"IFC.*\"/></xs:restriction></ids:name></ids:entity>\n");
+        }
+        for f in &r.applicability {
+            s.push_str(&format!("        {}\n", ids_facet_xml(f, false)));
+        }
+        s.push_str("      </ids:applicability>\n      <ids:requirements>\n");
+        for f in &r.requirements {
+            s.push_str(&format!("        {}\n", ids_facet_xml(f, true)));
+        }
+        s.push_str("      </ids:requirements>\n    </ids:specification>\n");
+    }
+    s.push_str("  </ids:specifications>\n</ids:ids>\n");
+    s
 }

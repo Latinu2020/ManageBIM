@@ -570,3 +570,30 @@ fn ifc_systems_classifications_and_georeference() {
     let res = run(&[r], &[(0, &m)]);
     assert_eq!((res[0].checked, res[0].failed.len()), (1, 0));
 }
+
+#[test]
+fn ids_export_round_trip() {
+    use bimrust::check::{parse_ids, write_ids, Card, Facet, Kind, Rule, Value};
+    let mut a = Rule::new("Doors fire rating & <width>");
+    a.description = "Doors need a fire rating".into();
+    a.applicability.push(Facet::entity(&["IfcDoor"]));
+    a.requirements.push(Facet::property("Pset_DoorCommon", "FireRating", Value::OneOf(vec!["EI30".into(), "EI60".into()])));
+    a.requirements.push(Facet { kind: Kind::Property, set: Value::one("Qto_DoorBaseQuantities"), name: Value::one("Width"), value: Value::Range { min: Some(0.8), max: Some(2.0) }, card: Card::Optional, unique: false });
+    a.requirements.push(Facet::attribute("Name", Value::Pattern("D-[0-9]+".into())));
+    let mut b = Rule::new("Everything classified");
+    b.requirements.push(Facet { kind: Kind::Classification, set: Value::one("Uniclass 2015"), value: Value::Any, card: Card::Required, ..Default::default() });
+    b.requirements.push(Facet { kind: Kind::Property, set: Value::Any, name: Value::one("Prohibited"), value: Value::Any, card: Card::Prohibited, unique: false });
+    let xml = write_ids(&[a.clone(), b.clone()], "Test", "2026-11-20 10:00");
+    assert!(xml.contains("<ids:simpleValue>IFCDOOR</ids:simpleValue>"), "entity names upper case");
+    assert!(xml.contains("&amp; &lt;width&gt;"), "escaped");
+    let (back, warn) = parse_ids(&xml, "x.ids").unwrap();
+    assert!(warn.is_empty(), "{warn:?}");
+    assert_eq!(back.len(), 2);
+    assert_eq!(back[0].name, a.name);
+    assert_eq!(back[0].description, a.description);
+    assert_eq!(back[0].applicability[0].name, Value::OneOf(vec!["IFCDOOR".into()]));
+    assert_eq!(back[0].requirements[1..], a.requirements[1..]);
+    assert_eq!(back[0].requirements[0].value, a.requirements[0].value);
+    assert!(back[1].applicability.is_empty(), "no conditions = every element");
+    assert_eq!(back[1].requirements, b.requirements);
+}
