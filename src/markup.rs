@@ -540,6 +540,8 @@ pub struct NwView {
     /// (autor, text, data ISO, stare Navisworks: new / active / approved / resolved)
     pub comments: Vec<(String, String, String, &'static str)>,
     pub redlines: Vec<Redline>,
+    /// folderul de Saved Viewpoints ("A/B" = subfolder); gol = radacina
+    pub folder: String,
 }
 
 /// Stare ManageBIM -> stare comentariu Navisworks
@@ -745,8 +747,11 @@ pub fn navis_viewpoints_xml(views: &[NwView], units: &str) -> String {
     let k = 1.0 / NW_UNITS.iter().find(|u| u.0 == units).map(|u| u.1).unwrap_or(1.0);
     let units = if NW_UNITS.iter().any(|u| u.0 == units) { units } else { "m" };
     let sc = |p: [f64; 3]| [p[0] * k, p[1] * k, p[2] * k];
-    let mut s = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<exchange xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"http://download.autodesk.com/us/navisworks/schemas/nw-exchange-12.0.xsd\" units=\"{units}\" filename=\"\" filepath=\"\">\n<viewpoints>\n");
+    let mut head = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<exchange xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"http://download.autodesk.com/us/navisworks/schemas/nw-exchange-12.0.xsd\" units=\"{units}\" filename=\"\" filepath=\"\">\n<viewpoints>\n");
+    // fiecare <view> separat; apoi asezate in <viewfolder> dupa folderul lor
+    let mut parts: Vec<(String, String)> = Vec::new();
     for v in views {
+        let mut s = String::new();
         let q = nw_quaternion(v.fwd, v.up);
         let (proj, height) = match v.ortho_height {
             Some(h) => ("ortho", h * k),
@@ -795,9 +800,36 @@ pub fn navis_viewpoints_xml(views: &[NwView], units: &str) -> String {
             s.push_str("</redlines>\n");
         }
         s.push_str("</view>\n");
+        parts.push((v.folder.trim_matches('/').to_string(), s));
     }
-    s.push_str("</viewpoints>\n</exchange>\n");
-    s
+    emit_folder(&mut head, &parts, "");
+    head.push_str("</viewpoints>\n</exchange>\n");
+    head
+}
+
+/// viewpoint-urile din folderul `path`, apoi subfolderele lui ca <viewfolder> (in ordinea aparitiei)
+fn emit_folder(out: &mut String, parts: &[(String, String)], path: &str) {
+    for (f, xml) in parts {
+        if f == path {
+            out.push_str(xml);
+        }
+    }
+    let mut children: Vec<String> = Vec::new();
+    for (f, _) in parts {
+        let rest = if path.is_empty() { Some(f.as_str()).filter(|f| !f.is_empty()) } else { f.strip_prefix(path).and_then(|r| r.strip_prefix('/')) };
+        if let Some(r) = rest {
+            let child = r.split('/').next().unwrap_or(r).to_string();
+            if !children.contains(&child) {
+                children.push(child);
+            }
+        }
+    }
+    for c in children {
+        let p = if path.is_empty() { c.clone() } else { format!("{path}/{c}") };
+        out.push_str(&format!("<viewfolder name=\"{}\" guid=\"{}\">\n", esc(&c), new_guid()));
+        emit_folder(out, parts, &p);
+        out.push_str("</viewfolder>\n");
+    }
 }
 
 // ---------------------------------------------------------------------------- Navisworks viewpoints XML: import
@@ -899,7 +931,9 @@ pub fn parse_navis_viewpoints(xml: &str, aspect: f32) -> Result<Vec<NwView>, Str
     };
     let sc = |p: [f64; 3]| [p[0] * k, p[1] * k, p[2] * k];
     let mut out = Vec::new();
-    // <view> poate sta si in <viewfolder>: cautam toate aparitiile "<view " / "<view>"
+    // <view> poate sta si in <viewfolder> (si subfoldere): calea folderului la fiecare pozitie din fisier
+    let folders = folder_events(xml);
+    let folder_at = |pos: usize| folders.iter().rev().find(|(p, _)| *p <= pos).map(|(_, f)| f.clone()).unwrap_or_default();
     let mut rest = xml;
     while let Some(i) = rest.find("<view") {
         let after = rest.as_bytes().get(i + 5).copied().unwrap_or(b'x');
@@ -907,6 +941,7 @@ pub fn parse_navis_viewpoints(xml: &str, aspect: f32) -> Result<Vec<NwView>, Str
             rest = &rest[i + 5..];
             continue;
         }
+        let folder = folder_at(xml.len() - rest.len() + i);
         let Some((open, body)) = xml_elem(&rest[i..], "view") else { break };
         rest = &rest[i + open.len() + body.len()..];
         let Some((vp_open, vp)) = xml_elem(body, "viewpoint") else { continue };
@@ -934,6 +969,7 @@ pub fn parse_navis_viewpoints(xml: &str, aspect: f32) -> Result<Vec<NwView>, Str
             section_box: None,
             comments: Vec::new(),
             redlines: Vec::new(),
+            folder,
         };
         if let Some((cs_open, cs)) = xml_elem(body, "clipplaneset") {
             if xml_attr(cs_open, "mode").as_deref() == Some("box") && xml_attr(cs_open, "enabled").as_deref() != Some("0") {
@@ -1084,4 +1120,35 @@ pub fn parse_bcf(data: Vec<u8>) -> Result<Vec<BcfTopic>, String> {
         return Err("No BCF topics in this file.".into());
     }
     Ok(out)
+}
+
+/// (pozitie, calea folderului de acolo incolo) la fiecare <viewfolder ...> si </viewfolder> din fisier
+fn folder_events(xml: &str) -> Vec<(usize, String)> {
+    let mut ev = Vec::new();
+    let mut stack: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < xml.len() {
+        let open = xml[i..].find("<viewfolder").map(|p| p + i);
+        let close = xml[i..].find("</viewfolder>").map(|p| p + i);
+        match (open, close) {
+            (Some(o), c) if c.map_or(true, |c| o < c) => {
+                let end = xml[o..].find('>').map(|p| p + o).unwrap_or(xml.len());
+                let tag = &xml[o..end];
+                stack.push(xml_attr(tag, "name").unwrap_or_else(|| "Folder".into()));
+                // <viewfolder .../> gol: se inchide imediat
+                if tag.ends_with('/') {
+                    stack.pop();
+                }
+                ev.push((o, stack.join("/")));
+                i = end + 1;
+            }
+            (_, Some(c)) => {
+                stack.pop();
+                ev.push((c, stack.join("/")));
+                i = c + 13;
+            }
+            _ => break,
+        }
+    }
+    ev
 }

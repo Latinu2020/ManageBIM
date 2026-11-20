@@ -64,8 +64,11 @@ namespace ManageBIM.Navis
                     var sv = new SavedViewpoint(doc.CurrentViewpoint.CreateCopy()) { DisplayName = it.Name };
                     string body = $"Status: {it.Status}" + (string.IsNullOrEmpty(it.Priority) ? "" : $" | Priority: {it.Priority}") + (string.IsNullOrEmpty(it.Assigned) ? "" : $" | Assigned to: {it.Assigned}") + (string.IsNullOrEmpty(it.Text) ? "" : "\n" + it.Text);
                     sv.Comments.Add(new Comment(body, StatusOf(it.Status)));
-                    doc.SavedViewpoints.AddCopy(sv);
-                    if (it.Lines.Count + it.Texts.Count > 0 && AddRedlines(doc, it)) marked++;
+                    // folderul din ManageBIM (si subfolderele "A/B") devine folder de Saved Viewpoints
+                    GroupItem folder = EnsureFolder(doc, it.Folder);
+                    if (folder != null) doc.SavedViewpoints.InsertCopy(folder, folder.Children.Count, sv);
+                    else doc.SavedViewpoints.AddCopy(sv);
+                    if (it.Lines.Count + it.Texts.Count > 0 && AddRedlines(doc, it, folder)) marked++;
                     if (box) ClearBox(doc);
                     ok++;
                 }
@@ -117,15 +120,43 @@ namespace ManageBIM.Navis
         /// </summary>
         private static int jsonVariant = -1;
 
-        private static bool AddRedlines(Document doc, MbIssue it)
+        /// <summary>Folderul (si subfolderele, separate prin /) din Saved Viewpoints; creat daca lipseste.</summary>
+        private static GroupItem EnsureFolder(Document doc, string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            GroupItem parent = doc.SavedViewpoints.RootItem;
+            foreach (string seg in path.Split('/'))
+            {
+                string name = seg.Trim();
+                if (name.Length == 0) continue;
+                GroupItem found = Find(parent, name);
+                if (found == null)
+                {
+                    doc.SavedViewpoints.InsertCopy(parent, parent.Children.Count, new FolderItem { DisplayName = name });
+                    found = Find(parent, name);
+                }
+                if (found == null) return null;
+                parent = found;
+            }
+            return parent;
+        }
+
+        private static GroupItem Find(GroupItem parent, string name)
+        {
+            foreach (SavedItem c in parent.Children)
+                if (c is GroupItem g && !(c is SavedViewpoint) && c.DisplayName == name) return g;
+            return null;
+        }
+
+        private static bool AddRedlines(Document doc, MbIssue it, GroupItem folder)
         {
             try
             {
                 object view = doc.ActiveView;
                 var trySet = view?.GetType().GetMethod("TrySetRedlines", new[] { typeof(string) });
                 if (trySet == null) return false;
-                // viewpoint-ul adaugat ultimul devine cel curent (redline-urile se salveaza in el)
-                var items = doc.SavedViewpoints.Value;
+                // viewpoint-ul adaugat ultimul (in folderul lui) devine cel curent (redline-urile se salveaza in el)
+                var items = folder != null ? folder.Children : doc.SavedViewpoints.Value;
                 if (items.Count == 0) return false;
                 var last = items[items.Count - 1];
                 var cur = doc.SavedViewpoints.GetType().GetProperty("CurrentSavedViewpoint");

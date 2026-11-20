@@ -2036,7 +2036,7 @@ impl App {
         ctx.request_repaint();
         match phase {
             0 => {
-                let i = self.report_job.as_ref().unwrap().idx;
+                let i = self.report_job.as_ref().map(|j| j.list.get(j.idx).copied().unwrap_or(0)).unwrap_or(0);
                 self.restore_viewpoint(i);
                 let j = self.report_job.as_mut().unwrap();
                 j.phase = 1;
@@ -2076,9 +2076,9 @@ impl App {
                     }
                     let (rgb, w2, h2) = crate::markup::downscale_rgb(&rgb, cw, ch, 1600);
                     let png = crate::markup::encode_png(&rgb, w2, h2);
-                    let i = self.report_job.as_ref().unwrap().idx;
+                    let i = self.report_job.as_ref().map(|j| j.list.get(j.idx).copied().unwrap_or(0)).unwrap_or(0);
                     let item = self.report_item(i, png, w2, h2);
-                    let n = self.viewpoints.len();
+                    let n = self.report_job.as_ref().map(|j| j.list.len()).unwrap_or(0);
                     let j = self.report_job.as_mut().unwrap();
                     j.items.push(item);
                     j.idx += 1;
@@ -5714,6 +5714,9 @@ impl App {
             if ui.button("📷 Save Current View").clicked() {
                 self.save_viewpoint();
             }
+            if ui.button("📁 New folder").on_hover_text("A folder for viewpoints / markups (inside the current folder). Drag viewpoints onto it; its ⋯ menu exports only its content.").clicked() {
+                self.vp_new_folder();
+            }
             ui.separator();
             ui.label("Export:");
             let can = !self.viewpoints.is_empty();
@@ -5754,35 +5757,7 @@ impl App {
         let w = ui.available_width();
         ui.horizontal_top(|ui| {
             ui.allocate_ui_with_layout(EV::new((w * 0.36).max(220.0), ui.available_height()), egui::Layout::top_down(egui::Align::Min), |ui| {
-                egui::ScrollArea::vertical().id_salt("vp_list").auto_shrink([false, false]).show(ui, |ui| {
-                    for (i, v) in self.viewpoints.iter().enumerate() {
-                        let col = match v.issue.status.as_str() {
-                            "Open" => Color32::from_rgb(239, 68, 68),
-                            "In Progress" => Color32::from_rgb(245, 158, 11),
-                            "Resolved" => Color32::from_rgb(34, 197, 94),
-                            _ => Color32::GRAY,
-                        };
-                        ui.horizontal(|ui| {
-                            let (r, _) = ui.allocate_exact_size(EV::splat(10.0), Sense::hover());
-                            ui.painter().circle_filled(r.center(), 4.5, col);
-                            let mut t = format!("{}. {}", i + 1, v.name);
-                            if !v.redlines.is_empty() {
-                                t.push_str(&format!("  ✏{}", v.redlines.len()));
-                            }
-                            if !v.comments.is_empty() {
-                                t.push_str(&format!("  💬{}", v.comments.len()));
-                            }
-                            let r = ui.selectable_label(self.vp_sel == i, t);
-                            if r.clicked() {
-                                self.vp_sel = i;
-                                restore = Some(i);
-                            }
-                            if r.double_clicked() {
-                                restore = Some(i);
-                            }
-                        });
-                    }
-                });
+                self.vp_tree_ui(ui, &mut restore);
             });
             ui.separator();
             ui.vertical(|ui| {
@@ -8701,5 +8676,246 @@ impl App {
         if let Some(p) = export {
             self.request_path(p);
         }
+    }
+}
+
+impl App {
+    /// Lista viewpoint-urilor pe foldere: tragi un viewpoint pe un folder; meniul ⋯ al folderului exporta doar
+    /// continutul lui (BCF, PDF, Excel, HTML, Navisworks XML cu foldere).
+    fn vp_tree_ui(&mut self, ui: &mut egui::Ui, restore: &mut Option<usize>) {
+        let folders = self.vp_all_folders();
+        let mut move_to: Option<(usize, String)> = None;
+        let mut act: Option<(String, &'static str)> = None;
+        let rename_id = egui::Id::new("vp_folder_rename");
+        let mut renaming: Option<(String, String)> = ui.data(|d| d.get_temp(rename_id));
+        if let Some(p) = self.vp_rename_pending.take() {
+            renaming = Some(p);
+        }
+        let status_col = |s: &str| match s {
+            "Open" => Color32::from_rgb(239, 68, 68),
+            "In Progress" => Color32::from_rgb(245, 158, 11),
+            "Resolved" => Color32::from_rgb(34, 197, 94),
+            _ => Color32::GRAY,
+        };
+        egui::ScrollArea::vertical().id_salt("vp_list").auto_shrink([false, false]).show(ui, |ui| {
+            // ---- un rand de viewpoint (se poate trage)
+            let item = |ui: &mut egui::Ui, i: usize, depth: usize, this: &mut App, restore: &mut Option<usize>, move_to: &mut Option<(usize, String)>| {
+                let v = &this.viewpoints[i];
+                let col = status_col(&v.issue.status);
+                let mut t = format!("{}. {}", i + 1, v.name);
+                if !v.redlines.is_empty() {
+                    t.push_str(&format!("  ✏{}", v.redlines.len()));
+                }
+                if !v.comments.is_empty() {
+                    t.push_str(&format!("  💬{}", v.comments.len()));
+                }
+                let sel = this.vp_sel == i;
+                let r = ui
+                    .dnd_drag_source(egui::Id::new(("vp_drag", i)), i, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.add_space(depth as f32 * 14.0);
+                            let (r, _) = ui.allocate_exact_size(EV::splat(10.0), Sense::hover());
+                            ui.painter().circle_filled(r.center(), 4.5, col);
+                            ui.selectable_label(sel, t).on_hover_text("Click: go to the viewpoint · drag it onto a folder")
+                        })
+                        .inner
+                    })
+                    .inner;
+                if r.clicked() {
+                    this.vp_sel = i;
+                    *restore = Some(i);
+                }
+                r.context_menu(|ui| {
+                    ui.label(RichText::new("Move to folder").small().weak());
+                    if ui.button("(no folder)").clicked() {
+                        *move_to = Some((i, String::new()));
+                        ui.close_menu();
+                    }
+                    for f in &folders {
+                        if ui.button(format!("📁 {f}")).clicked() {
+                            *move_to = Some((i, f.clone()));
+                            ui.close_menu();
+                        }
+                    }
+                });
+            };
+            // ---- antetul unui folder: tinta de plasare + meniu
+            let header = |ui: &mut egui::Ui, f: &str, label: &str, depth: usize, count: usize, this: &mut App, act: &mut Option<(String, &'static str)>, renaming: &mut Option<(String, String)>, move_to: &mut Option<(usize, String)>| -> bool {
+                let cur = this.vp_folder_cur == f;
+                let open_id = egui::Id::new(("vp_folder_open", f));
+                let mut open: bool = ui.data(|d| d.get_temp(open_id)).unwrap_or(true);
+                let (_, dropped) = ui.dnd_drop_zone::<usize, ()>(egui::Frame::none(), |ui| {
+                    ui.horizontal(|ui| {
+                        ui.add_space(depth as f32 * 14.0);
+                        if !f.is_empty() && ui.add(egui::Button::new(if open { "▾" } else { "▸" }).frame(false)).clicked() {
+                            open = !open;
+                        }
+                        if let Some((old, buf)) = renaming.as_mut().filter(|(o, _)| o == f) {
+                            let te = ui.add(egui::TextEdit::singleline(buf).desired_width(150.0));
+                            te.request_focus();
+                            if ui.input(|i| i.key_pressed(Key::Enter)) {
+                                *act = Some((format!("{old}\u{1}{buf}"), "rename_done"));
+                            }
+                            if ui.input(|i| i.key_pressed(Key::Escape)) {
+                                *act = Some((String::new(), "rename_cancel"));
+                            }
+                        } else {
+                            let col = if cur { accent() } else { ui.visuals().text_color() };
+                            let r = ui.add(egui::Button::new(crate::theme::icon_job(if f.is_empty() { "📋" } else { "📁" }, &format!("{label}  ({count})"), 13.0, col)).frame(false));
+                            if r.clicked() {
+                                this.vp_folder_cur = f.to_string();
+                            }
+                            r.on_hover_text(if f.is_empty() { "All viewpoints without a folder - drop here to take one out of its folder" } else { "Click: new viewpoints go into this folder · drop viewpoints here" });
+                        }
+                        if !f.is_empty() {
+                            ui.menu_button("⋯", |ui| {
+                                for (lbl, key) in [
+                                    ("➕ New subfolder", "sub"),
+                                    ("✏ Rename", "rename"),
+                                    ("🗑 Delete folder (keeps the viewpoints)", "delete"),
+                                    ("📤 Export folder: BCF…", "bcf"),
+                                    ("📄 Export folder: PDF sheets…", "pdf"),
+                                    ("📊 Export folder: Excel…", "xlsx"),
+                                    ("📄 Export folder: HTML report…", "html"),
+                                    ("🧭 Export folder: Navisworks XML…", "navis"),
+                                ] {
+                                    if ui.button(lbl).clicked() {
+                                        *act = Some((f.to_string(), key));
+                                        ui.close_menu();
+                                    }
+                                }
+                            });
+                        }
+                    });
+                });
+                if let Some(i) = dropped {
+                    *move_to = Some((*i, f.to_string()));
+                }
+                ui.data_mut(|d| d.insert_temp(open_id, open));
+                open
+            };
+            // radacina: viewpoint-urile fara folder
+            let root_n = self.viewpoints.iter().filter(|v| v.folder.is_empty()).count();
+            header(ui, "", "No folder", 0, root_n, self, &mut act, &mut renaming, &mut move_to);
+            for i in 0..self.viewpoints.len() {
+                if self.viewpoints[i].folder.is_empty() {
+                    item(ui, i, 1, self, restore, &mut move_to);
+                }
+            }
+            // folderele (sortate: parintii inaintea copiilor); cele din folderele inchise nu se arata
+            let mut closed: Vec<String> = Vec::new();
+            for f in &folders {
+                if closed.iter().any(|c| f.starts_with(&format!("{c}/"))) {
+                    continue;
+                }
+                let depth = f.matches('/').count();
+                let label = f.rsplit('/').next().unwrap_or(f).to_string();
+                let n = self.viewpoints.iter().filter(|v| v.folder == *f || v.folder.starts_with(&format!("{f}/"))).count();
+                let open = header(ui, f, &label, depth, n, self, &mut act, &mut renaming, &mut move_to);
+                if !open {
+                    closed.push(f.clone());
+                    continue;
+                }
+                for i in 0..self.viewpoints.len() {
+                    if self.viewpoints[i].folder == *f {
+                        item(ui, i, depth + 1, self, restore, &mut move_to);
+                    }
+                }
+            }
+        });
+        if let Some((i, f)) = move_to {
+            if let Some(v) = self.viewpoints.get_mut(i) {
+                v.folder = f;
+            }
+        }
+        if let Some((f, key)) = act {
+            let export = |this: &mut App, p: Purpose| {
+                this.vp_filter = Some(f.clone());
+                this.request_path(p);
+            };
+            match key {
+                "sub" => {
+                    let mut k = 1;
+                    let mut name = format!("{f}/New folder");
+                    while self.vp_all_folders().contains(&name) {
+                        k += 1;
+                        name = format!("{f}/New folder {k}");
+                    }
+                    self.vp_folders.push(name.clone());
+                    renaming = Some((name.clone(), name.rsplit('/').next().unwrap_or("").to_string()));
+                }
+                "rename" => renaming = Some((f.clone(), f.rsplit('/').next().unwrap_or(&f).to_string())),
+                "rename_cancel" => renaming = None,
+                "rename_done" => {
+                    if let Some((old, new)) = f.split_once('\u{1}') {
+                        let new = new.trim().replace('/', "-");
+                        if !new.is_empty() {
+                            let parent = old.rsplit_once('/').map(|(p, _)| format!("{p}/")).unwrap_or_default();
+                            let target = format!("{parent}{new}");
+                            let re = |s: &str| -> Option<String> {
+                                if s == old {
+                                    Some(target.clone())
+                                } else {
+                                    s.strip_prefix(&format!("{old}/")).map(|rest| format!("{target}/{rest}"))
+                                }
+                            };
+                            for v in &mut self.viewpoints {
+                                if let Some(n) = re(&v.folder) {
+                                    v.folder = n;
+                                }
+                            }
+                            for x in &mut self.vp_folders {
+                                if let Some(n) = re(x) {
+                                    *x = n;
+                                }
+                            }
+                            if let Some(n) = re(&self.vp_folder_cur) {
+                                self.vp_folder_cur = n;
+                            }
+                        }
+                    }
+                    renaming = None;
+                }
+                "delete" => {
+                    // viewpoint-urile urca in folderul parinte
+                    let parent = f.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
+                    for v in &mut self.viewpoints {
+                        if v.folder == f || v.folder.starts_with(&format!("{f}/")) {
+                            v.folder = parent.clone();
+                        }
+                    }
+                    self.vp_folders.retain(|x| x != &f && !x.starts_with(&format!("{f}/")));
+                    if self.vp_folder_cur == f {
+                        self.vp_folder_cur = parent;
+                    }
+                }
+                "bcf" => export(self, Purpose::ExportBcf),
+                "pdf" => export(self, Purpose::ExportVpPdf),
+                "xlsx" => export(self, Purpose::ExportVpXlsx),
+                "html" => export(self, Purpose::ExportVpHtml),
+                "navis" => export(self, Purpose::ExportNavisXml),
+                _ => {}
+            }
+        }
+        ui.data_mut(|d| match renaming {
+            Some(r) => d.insert_temp(rename_id, r),
+            None => d.remove::<(String, String)>(rename_id),
+        });
+    }
+
+    /// folder nou la radacina (sau in folderul curent)
+    fn vp_new_folder(&mut self) {
+        let base = if self.vp_folder_cur.is_empty() { String::new() } else { format!("{}/", self.vp_folder_cur) };
+        let mut k = 1;
+        let mut name = format!("{base}New folder");
+        while self.vp_all_folders().contains(&name) {
+            k += 1;
+            name = format!("{base}New folder {k}");
+        }
+        self.vp_folders.push(name.clone());
+        self.vp_folder_cur = name.clone();
+        let short = name.rsplit('/').next().unwrap_or("").to_string();
+        // il redenumesti imediat
+        self.vp_rename_pending = Some((name, short));
     }
 }

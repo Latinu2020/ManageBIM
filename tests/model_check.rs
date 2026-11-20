@@ -497,3 +497,36 @@ fn smart_clash_kinds_joints_and_responsible() {
     assert_eq!(responsible(d("IfcWall", "Wall"), d("IfcColumn", "Column")), Some(Discipline::Architecture));
     assert_eq!(system_of(&el("P", "IfcPipe", &[("Mechanical", "System Name", "Supply Water 1")])).as_deref(), Some("Supply Water 1"));
 }
+
+#[test]
+fn navisworks_xml_keeps_viewpoint_folders() {
+    use bimrust::markup::{navis_viewpoints_xml, parse_navis_viewpoints, NwView};
+    let view = |name: &str, folder: &str| NwView {
+        name: name.into(),
+        guid: bimrust::markup::new_guid(),
+        eye: [10.0, 5.0, 3.0],
+        fwd: [1.0, 0.0, 0.0],
+        up: [0.0, 0.0, 1.0],
+        fov_deg: 50.0,
+        ortho_height: None,
+        aspect: 1.6,
+        focal: 10.0,
+        near: 0.1,
+        far: 1000.0,
+        scene_min: [0.0; 3],
+        scene_max: [30.0; 3],
+        section_box: None,
+        comments: Vec::new(),
+        redlines: Vec::new(),
+        folder: folder.into(),
+    };
+    let views = vec![view("root view", ""), view("L2 duct", "Level 2/MEP"), view("L2 wall", "Level 2"), view("L1", "Level 1")];
+    let xml = navis_viewpoints_xml(&views, "m");
+    assert_eq!(xml.matches("<viewfolder ").count(), 3, "Level 2, Level 2/MEP, Level 1");
+    let back = parse_navis_viewpoints(&xml, 1.6).unwrap();
+    let f = |n: &str| back.iter().find(|v| v.name == n).map(|v| v.folder.clone()).unwrap();
+    assert_eq!(f("root view"), "");
+    assert_eq!(f("L2 duct"), "Level 2/MEP");
+    assert_eq!(f("L2 wall"), "Level 2");
+    assert_eq!(f("L1"), "Level 1");
+}

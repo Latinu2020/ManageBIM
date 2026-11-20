@@ -646,6 +646,9 @@ pub struct Viewpoint {
     /// masuratorile (cote) vizibile cand s-a salvat viewpoint-ul
     #[serde(default)]
     pub measures: Vec<Measure>,
+    /// folderul (si subfolderele, "Nivel 2/Instalatii"); gol = radacina
+    #[serde(default)]
+    pub folder: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -717,6 +720,8 @@ pub struct ProjectFile {
     pub check_rules: Vec<crate::check::Rule>,
     #[serde(default)]
     pub title_block: Option<crate::pdf::TitleBlock>,
+    #[serde(default)]
+    pub vp_folders: Vec<String>,
 }
 
 /// Un nivel de grupare al arborelui de selectie: proprietatea (categorie, nume) dupa care se grupeaza.
@@ -804,6 +809,8 @@ pub struct ReportJob {
     pub saved_section: Section,
     pub saved_hidden: HashSet<ElemId>,
     pub saved_vp: Option<usize>,
+    /// viewpoint-urile exportate (toate sau doar cele dintr-un folder)
+    pub list: Vec<usize>,
 }
 
 pub fn png_rgb(png_data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
@@ -1067,6 +1074,11 @@ pub struct App {
     pub hist: Vec<ViewSnap>,
     pub hist_pos: usize,
     pub hist_sig: u64,
+    /// folderele de viewpoints: cel curent (unde intra viewpoint-urile noi), cele create goale, filtrul de export
+    pub vp_folder_cur: String,
+    pub vp_folders: Vec<String>,
+    pub vp_filter: Option<String>,
+    pub vp_rename_pending: Option<(String, String)>,
     /// cartusul planselor (PDF / DWG) si fereastra lui de editare
     pub title_block: crate::pdf::TitleBlock,
     pub title_block_open: bool,
@@ -1313,6 +1325,10 @@ impl App {
             hist: Vec::new(),
             hist_pos: 0,
             hist_sig: 0,
+            vp_folder_cur: String::new(),
+            vp_folders: Vec::new(),
+            vp_filter: None,
+            vp_rename_pending: None,
             title_block: Default::default(),
             title_block_open: false,
             box_drag: None,
@@ -2485,6 +2501,9 @@ impl App {
         for v in &self.viewpoints {
             let c = v.cam;
             s.push_str(&format!("VIEW\t{}\t{}\t{}\t{}\t{}\n", clean(&v.name), clean(&v.issue.status), clean(&v.issue.guid), clean(&v.issue.priority), clean(&v.issue.assigned)));
+            if !v.folder.is_empty() {
+                s.push_str(&format!("FLD\t{}\n", clean(&v.folder)));
+            }
             s.push_str(&format!(
                 "CAM\t{}\t{}\t{}\t{:.4}\t{:.6}\n",
                 v3(self.world(c.eye())),
@@ -3791,6 +3810,8 @@ impl App {
             comments: Vec::new(),
             selected,
             measures: self.measures.clone(),
+            // viewpoint-urile noi intra in folderul ales in panou
+            folder: self.vp_folder_cur.clone(),
         });
         self.active_vp = Some(self.viewpoints.len() - 1);
         self.vp_sel = self.viewpoints.len() - 1;
@@ -3838,13 +3859,50 @@ impl App {
         }
     }
 
+
+    /// viewpoint-ul intra in exportul curent? (toate, sau doar folderul ales si subfolderele lui)
+    pub fn vp_in_scope(&self, i: usize) -> bool {
+        let Some(v) = self.viewpoints.get(i) else { return false };
+        match &self.vp_filter {
+            None => true,
+            Some(f) => v.folder == *f || v.folder.starts_with(&format!("{f}/")),
+        }
+    }
+
+    /// toate folderele (cele cu viewpoints si cele create goale), sortate
+    pub fn vp_all_folders(&self) -> Vec<String> {
+        let mut f: Vec<String> = self.vp_folders.clone();
+        for v in &self.viewpoints {
+            // si folderele parinte ("A/B" -> "A")
+            let mut p = String::new();
+            for seg in v.folder.split('/').filter(|s| !s.is_empty()) {
+                if !p.is_empty() {
+                    p.push('/');
+                }
+                p.push_str(seg);
+                if !f.contains(&p) {
+                    f.push(p.clone());
+                }
+            }
+        }
+        f.sort();
+        f.dedup();
+        f
+    }
     pub fn start_report(&mut self, kind: u8, path: &str) {
         if self.viewpoints.is_empty() {
             self.error("No viewpoints to export - save a viewpoint (with markups) first.");
             return;
         }
+        let list: Vec<usize> = (0..self.viewpoints.len()).filter(|i| self.vp_in_scope(*i)).collect();
+        if list.is_empty() {
+            self.vp_filter = None;
+            self.error("The folder has no viewpoints.");
+            return;
+        }
         let hidden = self.hidden.clone();
-        self.report_job = Some(ReportJob { kind, path: path.to_string(), idx: 0, phase: 0, wait: 0, items: Vec::new(), saved_cam: self.cam, saved_section: self.section.clone(), saved_hidden: hidden, saved_vp: self.active_vp });
+        self.report_job = Some(ReportJob { kind, path: path.to_string(), idx: 0, phase: 0, wait: 0, items: Vec::new(), saved_cam: self.cam, saved_section: self.section.clone(), saved_hidden: hidden, saved_vp: self.active_vp, list });
+        self.vp_filter = None;
         self.toast("Capturing viewpoints for the report…");
     }
 
@@ -3925,6 +3983,9 @@ impl App {
         let views: Vec<crate::markup::NwView> = self
             .viewpoints
             .iter()
+            .enumerate()
+            .filter(|(i, _)| self.vp_in_scope(*i))
+            .map(|(_, v)| v)
             .map(|v| {
                 let c = v.cam;
                 let (near, far) = c.clip(&bb);
@@ -3960,9 +4021,11 @@ impl App {
                     section_box,
                     comments,
                     redlines: v.redlines.clone(),
+                    folder: v.folder.clone(),
                 }
             })
             .collect();
+        self.vp_filter = None;
         let n_red: usize = views.iter().map(|v| v.redlines.len()).sum();
         let units = self.navis_units();
         match std::fs::write(&path, crate::markup::navis_viewpoints_xml(&views, &units)) {
@@ -4179,6 +4242,7 @@ impl App {
                 section_box: Some(sbox),
                 comments: vec![(user.clone(), desc, now.clone(), if status == "New" { "new" } else { "active" })],
                 redlines: Vec::new(),
+                folder: "Clash Detective".into(),
             })
             .collect();
         let path = if path.to_lowercase().ends_with(".xml") { path.to_string() } else { format!("{path}.xml") };
@@ -4338,6 +4402,7 @@ impl App {
                 comments: t.comments,
                 selected,
                 measures: Vec::new(),
+                folder: "BCF".into(),
             });
             n += 1;
         }
@@ -4424,7 +4489,7 @@ impl App {
                 issue.guid = v.guid.clone();
             }
             nred += v.redlines.len();
-            self.viewpoints.push(Viewpoint { name: v.name, cam, section, hidden: Vec::new(), comment, redlines: v.redlines, issue, comments, selected: Vec::new(), measures: Vec::new() });
+            self.viewpoints.push(Viewpoint { name: v.name, cam, section, hidden: Vec::new(), comment, redlines: v.redlines, issue, comments, selected: Vec::new(), measures: Vec::new(), folder: v.folder });
             n += 1;
         }
         self.open_panel(crate::layout::Panel::Viewpoints);
@@ -4672,6 +4737,7 @@ impl App {
             qto: Some(self.qto.clone()),
             check_rules: self.check_rules.clone(),
             title_block: Some(self.title_block.clone()),
+            vp_folders: self.vp_folders.clone(),
         }
     }
 
@@ -4793,6 +4859,8 @@ impl App {
         self.qto = pf.qto.unwrap_or_default();
         self.check_rules = pf.check_rules;
         self.title_block = pf.title_block.unwrap_or_default();
+        self.vp_folders = pf.vp_folders;
+        self.vp_folder_cur.clear();
         self.check_results = None;
         self.check_sel = None;
         self.qto_result = None;

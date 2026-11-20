@@ -12,7 +12,7 @@ namespace ManageBIM
     /// </summary>
     internal sealed class MbIssue
     {
-        public string Name = "", Status = "", Guid = "", Priority = "", Assigned = "", Text = "";
+        public string Name = "", Status = "", Guid = "", Priority = "", Assigned = "", Text = "", Folder = "";
         public double[] Eye = new double[3], Fwd = { 1, 0, 0 }, Up = { 0, 0, 1 };
         public double FovDeg = 50, OrthoHeight;
         public double[] BoxMin, BoxMax;
@@ -93,6 +93,9 @@ namespace ManageBIM
                         break;
                     case "TXT":
                         if (cur != null && t.Length > 1) cur.Text = Un(t[1]);
+                        break;
+                    case "FLD":
+                        if (cur != null && t.Length > 1) cur.Folder = Un(t[1]);
                         break;
                     case "RED":
                         if (cur != null && t.Length >= 4)
