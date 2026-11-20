@@ -455,3 +455,28 @@ fn atomic_write_keeps_backup_and_never_half_files() {
     // niciun fisier temporar ramas
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
 }
+
+#[test]
+fn undo_redo_restores_selection_and_visibility() {
+    use bimrust::model::ElemId;
+    let mut app = bimrust::app::App::new(Vec::new());
+    let a = ElemId { m: 0, e: 1 };
+    let b = ElemId { m: 0, e: 2 };
+    // camera oprita de mult: istoricul inregistreaza imediat
+    app.lod_moved = std::time::Instant::now() - std::time::Duration::from_secs(5);
+    app.history_tick(false);
+    app.selected.insert(a);
+    app.history_tick(false);
+    app.hidden.insert(b);
+    app.history_tick(false);
+    assert!(app.can_undo());
+    app.undo_view();
+    assert!(app.hidden.is_empty() && app.selected.contains(&a));
+    app.undo_view();
+    assert!(app.selected.is_empty());
+    assert!(!app.can_undo());
+    app.redo_view();
+    app.redo_view();
+    assert!(app.hidden.contains(&b));
+    assert!(!app.can_redo());
+}

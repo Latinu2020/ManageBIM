@@ -159,6 +159,9 @@ impl eframe::App for App {
             ctx.request_repaint_after(std::time::Duration::from_millis(300));
         }
         self.section_follow_tick();
+        // istoricul vizualizarii (Undo / Redo)
+        let pointer_down = ctx.input(|i| i.pointer.any_down());
+        self.history_tick(pointer_down);
         self.float_windows(ctx);
         self.windows(ctx);
         self.tools_window(ctx);
@@ -249,6 +252,18 @@ impl App {
         }
         if typing {
             return;
+        }
+        // Undo / Redo al vizualizarii: selectie, ascunse, sectiune, camera
+        let (kz, ky) = ctx.input(|i| (i.key_pressed(Key::Z), i.key_pressed(Key::Y)));
+        if ctrl && kz {
+            if ctx.input(|i| i.modifiers.shift) {
+                self.redo_view();
+            } else {
+                self.undo_view();
+            }
+        }
+        if ctrl && ky {
+            self.redo_view();
         }
         if ctrl && a {
             if ctx.input(|i| i.modifiers.shift) {
@@ -3797,6 +3812,14 @@ impl App {
                             let (r, _) = ui.allocate_exact_size(EV::new(8.0, 28.0), Sense::hover());
                             ui.painter().line_segment([r.center_top() + EV::new(0.0, 5.0), r.center_bottom() - EV::new(0.0, 5.0)], Stroke::new(1.0_f32, Color32::from_white_alpha(28)));
                         };
+                        // ---- inapoi / inainte (selectie, vizibilitate, sectiune, camera)
+                        if big(ui, "⟲", "Undo", "Undo view: selection, hidden items, section and camera (Ctrl+Z)", false, self.can_undo()) {
+                            self.undo_view();
+                        }
+                        if big(ui, "⟳", "Redo", "Redo view (Ctrl+Y)", false, self.can_redo()) {
+                            self.redo_view();
+                        }
+                        sep(ui);
                         // ---- selectie
                         if big(ui, "👆", "Select", "Select (click an item · Ctrl+click adds)", self.tool == Tool::Select && self.nav == NavMode::Orbit, true) {
                             self.cur_measure.clear();
@@ -8157,6 +8180,8 @@ fn commands() -> Vec<Cmd> {
             a.apply(Action::Select(all, false));
         }),
         c!("Clear selection", "Select", "🔲", "deselecteaza", |a| a.clear_selection()),
+        c!("Undo view", "Select", "⟲", "inapoi anuleaza ctrl+z selectie ascunse camera", |a| a.undo_view()),
+        c!("Redo view", "Select", "⟳", "refa inainte ctrl+y", |a| a.redo_view()),
         c!("Select same type", "Select", "⧉", "similar acelasi tip ctrl+shift+a", |a| a.select_similar(true)),
         c!("Select same category", "Select", "▦", "similar aceeasi categorie", |a| a.select_similar(false)),
         c!("Window selection", "Select", "⬚", "fereastra dreptunghi", |a| a.tool = Tool::Window),

@@ -1041,6 +1041,10 @@ pub struct App {
     pub manual_q: String,
     /// Cut to DWG: pe plansa A3 cu cartus (altfel 2D in Model space)
     pub cad_sheet: bool,
+    /// istoricul vizualizarii (Undo / Redo): starile, pozitia curenta, semnatura ultimei stari
+    pub hist: Vec<ViewSnap>,
+    pub hist_pos: usize,
+    pub hist_sig: u64,
     /// cartusul planselor (PDF / DWG) si fereastra lui de editare
     pub title_block: crate::pdf::TitleBlock,
     pub title_block_open: bool,
@@ -1284,6 +1288,9 @@ impl App {
             manual_page: 0,
             manual_q: String::new(),
             cad_sheet: false,
+            hist: Vec::new(),
+            hist_pos: 0,
+            hist_sig: 0,
             title_block: Default::default(),
             title_block_open: false,
             box_drag: None,
@@ -1819,6 +1826,9 @@ impl App {
             Action::RemoveModel(slot) => {
                 let name = self.models.get(slot).and_then(|m| m.as_ref()).map(|m| m.name.clone()).unwrap_or_default();
                 self.remove_model(slot);
+                self.hist.clear();
+                self.hist_pos = 0;
+                self.hist_sig = 0;
                 self.refresh_caches();
                 self.toast(format!("Removed from the project: {name} (the file is not deleted)."));
             }
@@ -2640,6 +2650,10 @@ impl App {
     }
 
     pub fn reset(&mut self) {
+        // istoricul vizualizarii se refera la elementele modelelor de acum
+        self.hist.clear();
+        self.hist_pos = 0;
+        self.hist_sig = 0;
         self.bimd_path = None;
         self.blank_project = false;
         {
@@ -6576,6 +6590,89 @@ impl App {
 
 
 
+
+    // ------------------------------------------------------------ Undo / Redo al vizualizarii
+
+    /// semnatura ieftina a starii vizualizarii (selectie, ascunse, sectiune, camera oprita)
+    fn view_sig(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mix = |acc: u64, id: &ElemId| acc ^ ((id.m as u64) << 32 | id.e as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let sel = self.selected.iter().fold(0u64, mix);
+        let hid = self.hidden.iter().fold(0u64, mix);
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (self.selected.len(), sel, self.hidden.len(), hid).hash(&mut h);
+        (self.section.enabled, self.section.mode == SectionMode::Box).hash(&mut h);
+        for v in self.section.bmin.iter().chain(self.section.bmax.iter()) {
+            ((v * 100.0).round() as i64).hash(&mut h);
+        }
+        for p in &self.section.planes {
+            (p.enabled, p.dir, (p.offset * 100.0).round() as i64).hash(&mut h);
+        }
+        let e = self.cam.eye();
+        for v in [e.x, e.y, e.z, self.cam.yaw * 100.0, self.cam.pitch * 100.0, self.cam.focus] {
+            ((v * 20.0).round() as i64).hash(&mut h);
+        }
+        self.cam.ortho.hash(&mut h);
+        h.finish()
+    }
+
+    /// Apelat la fiecare cadru: cand starea s-a schimbat si camera s-a oprit, o pune in istoric.
+    pub fn history_tick(&mut self, pointer_down: bool) {
+        if pointer_down || self.cam_anim.is_some() || self.lod_moved.elapsed().as_secs_f32() < 0.35 {
+            return;
+        }
+        let sig = self.view_sig();
+        if sig == self.hist_sig {
+            return;
+        }
+        self.hist_sig = sig;
+        let snap = ViewSnap { selected: self.selected.clone(), hidden: Arc::new(self.hidden.clone()), section: self.section.clone(), cam: self.cam };
+        self.hist.truncate(self.hist_pos + 1);
+        self.hist.push(snap);
+        if self.hist.len() > 60 {
+            self.hist.remove(0);
+        }
+        self.hist_pos = self.hist.len() - 1;
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.hist_pos > 0 && !self.hist.is_empty()
+    }
+    pub fn can_redo(&self) -> bool {
+        self.hist_pos + 1 < self.hist.len()
+    }
+
+    /// Ctrl+Z: starea anterioara (selectie, vizibilitate, sectiune, camera)
+    pub fn undo_view(&mut self) {
+        if self.can_undo() {
+            self.hist_pos -= 1;
+            self.restore_snap();
+        }
+    }
+
+    /// Ctrl+Y: inainte
+    pub fn redo_view(&mut self) {
+        if self.can_redo() {
+            self.hist_pos += 1;
+            self.restore_snap();
+        }
+    }
+
+    fn restore_snap(&mut self) {
+        let Some(s) = self.hist.get(self.hist_pos).cloned() else { return };
+        self.selected = s.selected;
+        self.primary = self.selected.iter().next().copied();
+        self.hidden = (*s.hidden).clone();
+        self.section = s.section;
+        self.fly_to(s.cam);
+        self.colors_dirty = true;
+        // starea refacuta nu se mai inregistreaza o data
+        let mut tmp = self.cam;
+        std::mem::swap(&mut tmp, &mut self.cam);
+        self.cam = s.cam;
+        self.hist_sig = self.view_sig();
+        self.cam = tmp;
+    }
     // ------------------------------------------------------------ stil de afisare, proiect demo
 
     /// Shaded / Realistic / Concept / Wireframe (pastrat in setari).
@@ -7205,4 +7302,13 @@ pub fn cut_sheet_dxf(segs: &[(String, [f64; 4])], tb: &crate::pdf::TitleBlock, p
     // plansa e in milimetri
     let dxf = dxf.replacen("$INSUNITS\n70\n6\n", "$INSUNITS\n70\n4\n", 1);
     (dxf, scale)
+}
+
+/// O stare a vizualizarii in istoricul Undo / Redo.
+#[derive(Clone)]
+pub struct ViewSnap {
+    pub selected: BTreeSet<ElemId>,
+    pub hidden: Arc<HashSet<ElemId>>,
+    pub section: Section,
+    pub cam: Camera,
 }
