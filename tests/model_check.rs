@@ -142,7 +142,7 @@ fn pbr_pack_names_and_roles() {
 #[ignore]
 fn export_sample_web_viewer() {
     // cache-ul .bimc (cu golurile pentru ferestre deja taiate), daca exista; altfel IFC-ul
-    let p = if std::path::Path::new("samples/Block_A_Architecture_Structure.ifc.bimc").is_file() { "samples/Block_A_Architecture_Structure.ifc.bimc" } else { "samples/Block_A_Architecture_Structure.ifc" };
+    let p = "samples/Block_A_Architecture_Structure.ifc";
     let raw = bimrust::load_any(p, &|_, _| {}).unwrap();
     let m = bimrust::build_model(raw, p, glam::DVec3::ZERO);
     let items: Vec<(&Model, &Element)> = m.elements.iter().filter(|e| e.tri_count > 0).map(|e| (&m, e)).collect();
@@ -529,4 +529,44 @@ fn navisworks_xml_keeps_viewpoint_folders() {
     assert_eq!(f("L2 duct"), "Level 2/MEP");
     assert_eq!(f("L2 wall"), "Level 2");
     assert_eq!(f("L1"), "Level 1");
+}
+
+#[test]
+fn ifc_openings_are_cut_from_walls() {
+    let raw = bimrust::load_any("tests/data/wall_opening.ifc", &|_, _| {}).unwrap();
+    let m = bimrust::build_model(raw, "tests/data/wall_opening.ifc", glam::DVec3::ZERO);
+    let wall = m.elements.iter().find(|e| e.name == "Wall 1").expect("wall");
+    let o = m.aabb.min; // modelul e recentrat: coordonatele relative la origine
+    let _ = o;
+    // niciun triunghi al peretelui nu trece prin interiorul golului (x 1.9..3.1, z 0.9..2.3, in coordonate locale relative)
+    let tris = wall.tri_start as usize..(wall.tri_start + wall.tri_count) as usize;
+    assert!(wall.tri_count > 12, "the wall is cut (a plain box has 12 triangles), got {}", wall.tri_count);
+    // aria fetei din fata (normala -Y) scade cu aria golului: 5 x 3 - 1.2 x 1.4
+    let mut front = 0.0f32;
+    for t in tris {
+        let (a, b, c) = (m.pos[t * 3], m.pos[t * 3 + 1], m.pos[t * 3 + 2]);
+        let n = (b - a).cross(c - a);
+        if n.y.abs() > 0.99 * n.length() && n.y < 0.0 {
+            front += n.length() * 0.5;
+        }
+    }
+    assert!((front - (15.0 - 1.68)).abs() < 0.01, "front face area {front}");
+}
+
+#[test]
+fn ifc_systems_classifications_and_georeference() {
+    let raw = bimrust::load_any("tests/data/wall_opening.ifc", &|_, _| {}).unwrap();
+    let m = bimrust::build_model(raw, "tests/data/wall_opening.ifc", glam::DVec3::ZERO);
+    let wall = m.elements.iter().find(|e| e.name == "Wall 1").unwrap();
+    let prop = |g: &str, n: &str| wall.props.iter().find(|p| p.group == g && p.name == n).map(|p| p.value.clone());
+    assert_eq!(prop("Systems", "System").as_deref(), Some("Supply Air 1"));
+    assert_eq!(prop("Classification", "Uniclass 2015").as_deref(), Some("EF_25_10"));
+    assert!(m.info.iter().any(|(k, v)| k == "Georeference" && v.contains("E 500000.000") && v.contains("EPSG:3844")));
+    // IDS: clasificarea si sistemul se verifica direct
+    use bimrust::check::{run, Facet, Kind, Rule, Value};
+    let mut r = Rule::new("walls classified");
+    r.applicability.push(Facet::entity(&["IfcWall"]));
+    r.requirements.push(Facet { kind: Kind::Classification, set: Value::one("Uniclass 2015"), value: Value::Pattern("EF_.*".into()), ..Default::default() });
+    let res = run(&[r], &[(0, &m)]);
+    assert_eq!((res[0].checked, res[0].failed.len()), (1, 0));
 }

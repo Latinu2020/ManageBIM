@@ -63,10 +63,62 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
             parent.entry(e).or_insert(o);
         }
     }
+    // sisteme / zone / grupuri (IfcRelAssignsToGroup): element -> (fel, nume)
+    let mut groups: HashMap<u32, Vec<(String, String)>> = HashMap::new();
+    for &r in f.of_type("IFCRELASSIGNSTOGROUP").iter().chain(f.of_type("IFCRELASSIGNSTOGROUPBYFACTOR").iter()) {
+        let a = f.args(r);
+        let Some(g) = a.get(6).and_then(|v| v.as_ref()) else { continue };
+        let gname = f.args(g).get(2).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if gname.is_empty() {
+            continue;
+        }
+        let lt = f.ty(g).to_ascii_lowercase();
+        let gty = if lt.contains("system") { "System" } else if lt.contains("zone") { "Zone" } else { "Group" }.to_string();
+        for o in a.get(4).map(|v| v.as_list()).unwrap_or(&[]) {
+            if let Some(o) = o.as_ref() {
+                groups.entry(o).or_default().push((gty.clone(), gname.clone()));
+            }
+        }
+    }
+    // clasificari (Uniclass, OmniClass...): element -> (sistem, cod, nume)
+    let mut classes: HashMap<u32, Vec<(String, String, String)>> = HashMap::new();
+    for &r in f.of_type("IFCRELASSOCIATESCLASSIFICATION") {
+        let a = f.args(r);
+        let Some(cr) = a.get(5).and_then(|v| v.as_ref()) else { continue };
+        if f.ty(cr) != "IFCCLASSIFICATIONREFERENCE" {
+            continue;
+        }
+        let ca = f.args(cr);
+        let code = ca.get(1).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let cname = ca.get(2).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        // sistemul: urcam prin ReferencedSource pana la IfcClassification
+        let mut system = String::new();
+        let mut src = ca.get(3).and_then(|v| v.as_ref());
+        for _ in 0..8 {
+            let Some(s) = src else { break };
+            let sa = f.args(s);
+            if f.ty(s) == "IFCCLASSIFICATION" {
+                system = sa.get(3).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                break;
+            }
+            src = sa.get(3).and_then(|v| v.as_ref());
+        }
+        if system.is_empty() {
+            system = "Classification".into();
+        }
+        for o in a.get(4).map(|v| v.as_list()).unwrap_or(&[]) {
+            if let Some(o) = o.as_ref() {
+                classes.entry(o).or_default().push((system.clone(), code.clone(), cname.clone()));
+            }
+        }
+    }
+    // golurile fiecarui element-gazda (pereti, placi...): se scad din geometria lui
+    let mut voids: HashMap<u32, Vec<u32>> = HashMap::new();
     for &r in f.of_type("IFCRELVOIDSELEMENT") {
         let a = f.args(r);
         if let (Some(e), Some(o)) = (a.get(4).and_then(|v| v.as_ref()), a.get(5).and_then(|v| v.as_ref())) {
             parent.entry(o).or_insert(e);
+            voids.entry(e).or_default().push(o);
         }
     }
     let mut psets: HashMap<u32, Vec<u32>> = HashMap::new();
@@ -149,7 +201,7 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
     // --- geometrie in paralel: bucati ordonate de elemente, fiecare cu propriul Ctx (cache-uri locale),
     //     rezultatele se lipesc in aceeasi ordine -> indexii elementelor raman identici cu varianta seriala
     let styles = std::mem::take(c.styles.to_mut());
-    let sh = Shared { parent: &parent, psets: &psets, types: &types, materials: &materials, mat_colors: &mat_colors, scale, scale_m };
+    let sh = Shared { parent: &parent, psets: &psets, types: &types, materials: &materials, mat_colors: &mat_colors, voids: &voids, groups: &groups, classes: &classes, scale, scale_m };
     let total = product_ids.len().max(1);
     let done = AtomicUsize::new(0);
     let chunk = (product_ids.len() / (rayon::current_num_threads() * 8).max(1)).max(16);
@@ -197,6 +249,25 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
         info.push(("Source application".into(), a.get(2).and_then(|v| v.as_str()).unwrap_or("").to_string()));
     }
     info.push(("STEP entities".into(), f.ents.len().to_string()));
+    // georeferentiere IFC4 (IfcMapConversion): coordonatele proiectului in sistemul cartografic
+    if let Some(&mc) = f.of_type("IFCMAPCONVERSION").first() {
+        let a = f.args(mc);
+        let num = |i: usize| a.get(i).and_then(|v| v.as_f64());
+        let (e, n, h) = (num(2).unwrap_or(0.0), num(3).unwrap_or(0.0), num(4).unwrap_or(0.0));
+        let rot = match (num(5), num(6)) {
+            (Some(x), Some(y)) => y.atan2(x).to_degrees(),
+            _ => 0.0,
+        };
+        let crs = a.get(1).and_then(|v| v.as_ref()).and_then(|c| f.args(c).first().and_then(|v| v.as_str()).map(|s| s.to_string())).unwrap_or_default();
+        info.push(("Georeference".into(), format!("E {e:.3}  N {n:.3}  H {h:.3}  rotation {rot:.4}°{}", if crs.is_empty() { String::new() } else { format!("  ({crs})") })));
+    }
+    let n_sys: usize = groups.values().map(|v| v.len()).sum();
+    if n_sys > 0 {
+        info.push(("Systems / groups".into(), format!("{} assignments", n_sys)));
+    }
+    if !classes.is_empty() {
+        info.push(("Classified elements".into(), classes.len().to_string()));
+    }
     // axe (IfcGrid) si niveluri (IfcBuildingStorey) in coordonate reale (metri): afisare in 3D si locatia clash-urilor.
     // Se pastreaza in `info` (cheile cu "~" nu se afiseaza) ca sa ajunga si in cache-ul .bimc.
     let mut grids: Vec<(String, [f64; 3], [f64; 3])> = Vec::new();
@@ -259,6 +330,9 @@ struct Shared<'a> {
     types: &'a HashMap<u32, u32>,
     materials: &'a HashMap<u32, u32>,
     mat_colors: &'a HashMap<u32, [u8; 4]>,
+    voids: &'a HashMap<u32, Vec<u32>>,
+    groups: &'a HashMap<u32, Vec<(String, String)>>,
+    classes: &'a HashMap<u32, Vec<(String, String, String)>>,
     scale: f64,
     scale_m: DMat4,
 }
@@ -293,6 +367,30 @@ fn make_element(c: &mut Ctx, sh: &Shared, id: u32) -> Option<RawElement> {
         }
         tris.push(p);
         colors.push(col.unwrap_or(def_col));
+    }
+    // --- golurile (usi, ferestre, treceri): scazute din geometria gazdei
+    if let Some(ops) = sh.voids.get(&id) {
+        for &op in ops {
+            let oa = f.args(op);
+            let (Some(orep), Some(opl)) = (oa.get(6).and_then(|v| v.as_ref()), oa.get(5).and_then(|v| v.as_ref())) else { continue };
+            let oxf = sh.scale_m * c.placement(opl, 0);
+            let ot: Vec<[DVec3; 3]> = c.product_tris(orep).iter().map(|(t, _)| [oxf.transform_point3(t[0]), oxf.transform_point3(t[1]), oxf.transform_point3(t[2])]).collect();
+            if !subtract_convex(&mut tris, &mut colors, &ot) {
+                c.warn.insert("Some openings are not convex and were not cut from their walls.".into());
+            }
+        }
+        // bucatile foarte mici ramase dupa taiere
+        let keep: Vec<bool> = tris.iter().map(|p| (p[1] - p[0]).cross(p[2] - p[0]).length_squared() >= 1e-18).collect();
+        let mut k = 0;
+        tris.retain(|_| {
+            k += 1;
+            keep[k - 1]
+        });
+        let mut k = 0;
+        colors.retain(|_| {
+            k += 1;
+            keep[k - 1]
+        });
     }
     if tris.is_empty() {
         return None;
@@ -364,6 +462,23 @@ fn make_element(c: &mut Ctx, sh: &Shared, id: u32) -> Option<RawElement> {
     if let Some(list) = sh.psets.get(&id) {
         for ps in list {
             c.read_pset(*ps, &mut props, "");
+        }
+    }
+    // sistemele / zonele: "System" = primul sistem (folosit la gruparea clash-urilor si in Model Checker)
+    if let Some(gs) = sh.groups.get(&id) {
+        for (gty, gname) in gs {
+            props.push(Prop { group: "Systems".into(), name: gty.clone(), value: gname.clone() });
+        }
+    }
+    // clasificarile: grupul "Classification", numele = sistemul, valoarea = codul
+    if let Some(cs) = sh.classes.get(&id) {
+        for (system, code, cname) in cs {
+            if !code.is_empty() {
+                props.push(Prop { group: "Classification".into(), name: system.clone(), value: code.clone() });
+            }
+            if !cname.is_empty() {
+                props.push(Prop { group: "Classification".into(), name: format!("{system} name"), value: cname.clone() });
+            }
         }
     }
     Some(RawElement {
@@ -1704,4 +1819,73 @@ pub fn pretty_type(upper: &str) -> String {
     } else {
         upper.to_string()
     }
+}
+
+/// Scade un gol convex (dat ca triunghiuri in coordonate reale) din triunghiurile gazdei: fiecare triunghi
+/// e taiat cu planele golului (partea din afara fiecarui plan ramane, ce e in interiorul tuturor dispare).
+/// Intoarce false daca golul nu e convex (atunci gazda ramane neatinsa).
+pub fn subtract_convex(tris: &mut Vec<[DVec3; 3]>, colors: &mut Vec<[u8; 4]>, opening: &[[DVec3; 3]]) -> bool {
+    if opening.len() < 4 {
+        return true;
+    }
+    let verts: Vec<DVec3> = opening.iter().flat_map(|t| t.iter().copied()).collect();
+    let (mut lo, mut hi) = (DVec3::splat(f64::MAX), DVec3::splat(f64::MIN));
+    for v in &verts {
+        lo = lo.min(*v);
+        hi = hi.max(*v);
+    }
+    let size = (hi - lo).length().max(1e-6);
+    let eps = size * 1e-6;
+    let c = verts.iter().copied().sum::<DVec3>() / verts.len() as f64;
+    // planele golului, orientate spre exterior (centrul e in interior)
+    let mut planes: Vec<(DVec3, f64)> = Vec::new();
+    for t in opening {
+        let n = (t[1] - t[0]).cross(t[2] - t[0]);
+        if n.length_squared() < 1e-24 {
+            continue;
+        }
+        let mut n = n.normalize();
+        let mut d = n.dot(t[0]);
+        if n.dot(c) - d > 0.0 {
+            n = -n;
+            d = -d;
+        }
+        if !planes.iter().any(|(m, e)| m.dot(n) > 0.99999 && (e - d).abs() < eps * 10.0) {
+            planes.push((n, d));
+        }
+    }
+    if planes.len() < 4 || planes.len() > 64 {
+        return false;
+    }
+    // convex: toate varfurile golului sunt in interiorul (sau pe) fiecarui plan
+    if verts.iter().any(|v| planes.iter().any(|(n, d)| n.dot(*v) - d > eps * 100.0 + size * 1e-4)) {
+        return false;
+    }
+    let (blo, bhi) = (lo - DVec3::splat(eps), hi + DVec3::splat(eps));
+    let mut out_t = Vec::with_capacity(tris.len());
+    let mut out_c = Vec::with_capacity(colors.len());
+    for (t, col) in tris.iter().zip(colors.iter()) {
+        let (tlo, thi) = (t[0].min(t[1]).min(t[2]), t[0].max(t[1]).max(t[2]));
+        if thi.x < blo.x || tlo.x > bhi.x || thi.y < blo.y || tlo.y > bhi.y || thi.z < blo.z || tlo.z > bhi.z {
+            out_t.push(*t);
+            out_c.push(*col);
+            continue;
+        }
+        // ce e in afara planului k (si in interiorul planelor de dinainte) ramane
+        let mut remaining: Vec<Tri> = vec![(*t, Some(*col))];
+        for (n, d) in &planes {
+            let o = *n * *d;
+            for (p, cc) in clip_tris(remaining.clone(), o, *n) {
+                out_t.push(p);
+                out_c.push(cc.unwrap_or(*col));
+            }
+            remaining = clip_tris(remaining, o, -*n);
+            if remaining.is_empty() {
+                break;
+            }
+        }
+    }
+    *tris = out_t;
+    *colors = out_c;
+    true
 }
