@@ -57,9 +57,12 @@ canvas{width:100%;height:100%;display:block;touch-action:none}
   <button id="bIso" title="Show only the selected item (I)" disabled>Isolate</button>
   <button id="bAll" title="Show everything (A)">Show all</button>
   <button id="bXray" title="See-through view (X)">X-ray</button>
+  <button id="bCut" title="Horizontal section: cut the model at a height (C)">Section</button>
+  <input id="cutZ" type="range" min="0" max="1000" value="1000" title="Section height" style="width:120px;display:none">
+  <button id="bMeasure" title="Measure the distance between two points on the model (M)">Measure</button>
 </header>
 <aside class="side" id="tree"><input type="search" id="q" placeholder="🔍 Search name, type, GUID"><div id="list"></div></aside>
-<main id="view"><canvas id="c"></canvas><div id="load">Loading model…</div><div id="status"></div></main>
+<main id="view"><canvas id="c"></canvas><canvas id="ov" style="position:absolute;inset:0;pointer-events:none"></canvas><div id="load">Loading model…</div><div id="status"></div></main>
 <aside class="side" id="props"><div class="weak">Click an item in the model to see its properties.<br><br>Left drag: orbit · Right / middle drag or Shift: pan · Wheel: zoom · Double-click: zoom to item</div></aside>
 </div>
 <script>
@@ -108,8 +111,8 @@ void main(){float f=texelFetch(flags,ivec2(int(id%4096u),int(id/4096u)),0).r;vf=
 const FS=`#version 300 es
 precision highp float;
 in vec3 wp;flat in vec4 vc;flat in uint vid;flat in float vf;
-uniform int pass;uniform vec3 eye;uniform float xray;out vec4 o;
-void main(){float a=vc.a*(xray>0.5&&vf<0.9?0.18:1.);
+uniform int pass;uniform vec3 eye;uniform float xray;uniform float clipZ;out vec4 o;
+void main(){if(wp.z>clipZ)discard;float a=vc.a*(xray>0.5&&vf<0.9?0.18:1.);
  if(pass==0&&a<0.99)discard; if(pass==1&&a>=0.99)discard;
  vec3 n=normalize(cross(dFdx(wp),dFdy(wp)));vec3 v=normalize(eye-wp);if(dot(n,v)<0.)n=-n;
  float l=0.42+0.38*max(dot(n,normalize(vec3(0.35,0.25,0.9))),0.)+0.25*max(dot(n,v),0.);
@@ -117,8 +120,8 @@ void main(){float a=vc.a*(xray>0.5&&vf<0.9?0.18:1.);
  o=vec4(col,a);}`;
 const PVS=VS;
 const PFS=`#version 300 es
-precision highp float;flat in uint vid;flat in float vf;flat in vec4 vc;uniform float xray;out vec4 o;
-void main(){if(xray>0.5&&vf<0.9)discard;uint v=vid+1u;o=vec4(float(v&255u),float((v>>8)&255u),float((v>>16)&255u),255.)/255.;}`;
+precision highp float;in vec3 wp;flat in uint vid;flat in float vf;flat in vec4 vc;uniform float xray;uniform float clipZ;out vec4 o;
+void main(){if(wp.z>clipZ)discard;if(xray>0.5&&vf<0.9)discard;uint v=vid+1u;o=vec4(float(v&255u),float((v>>8)&255u),float((v>>16)&255u),255.)/255.;}`;
 
 function sh(t,s){const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(x);return x;}
 function mk(v,f){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,v));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw gl.getProgramInfoLog(p);return p;}
@@ -161,11 +164,12 @@ function render(){
   // fundal: gradient prin CSS al canvas-ului
   gl.useProgram(prog);gl.bindVertexArray(vao);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,flagsTex);
   gl.uniformMatrix4fv(gl.getUniformLocation(prog,"mvp"),false,mvp(w,h));gl.uniform1i(gl.getUniformLocation(prog,"flags"),0);
-  gl.uniform3fv(gl.getUniformLocation(prog,"eye"),eye());gl.uniform1f(gl.getUniformLocation(prog,"xray"),xray?1:0);
+  gl.uniform3fv(gl.getUniformLocation(prog,"eye"),eye());gl.uniform1f(gl.getUniformLocation(prog,"xray"),xray?1:0);gl.uniform1f(gl.getUniformLocation(prog,"clipZ"),clipZ);
   gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);
   gl.disable(gl.BLEND);gl.depthMask(true);gl.uniform1i(gl.getUniformLocation(prog,"pass"),0);gl.drawArrays(gl.TRIANGLES,0,vc);
   gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);gl.uniform1i(gl.getUniformLocation(prog,"pass"),1);gl.drawArrays(gl.TRIANGLES,0,vc);
   gl.depthMask(true);
+  drawOverlay();
 }
 function pick(x,y){
   const c=$("c"),dpr=c.width/c.clientWidth,w=c.width,h=c.height;
@@ -174,7 +178,7 @@ function pick(x,y){
   gl.bindFramebuffer(gl.FRAMEBUFFER,pickFbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,pickTex,0);gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,pickDepth);
   gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.disable(gl.BLEND);
   gl.useProgram(pickProg);gl.bindVertexArray(vao);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,flagsTex);
-  gl.uniformMatrix4fv(gl.getUniformLocation(pickProg,"mvp"),false,mvp(w,h));gl.uniform1i(gl.getUniformLocation(pickProg,"flags"),0);gl.uniform1f(gl.getUniformLocation(pickProg,"xray"),xray?1:0);
+  gl.uniformMatrix4fv(gl.getUniformLocation(pickProg,"mvp"),false,mvp(w,h));gl.uniform1i(gl.getUniformLocation(pickProg,"flags"),0);gl.uniform1f(gl.getUniformLocation(pickProg,"xray"),xray?1:0);gl.uniform1f(gl.getUniformLocation(pickProg,"clipZ"),clipZ);
   gl.drawArrays(gl.TRIANGLES,0,vc);
   const px=new Uint8Array(4);gl.readPixels(Math.round(x*dpr),Math.round(h-y*dpr),1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);draw();
@@ -192,7 +196,7 @@ cv.addEventListener("pointermove",e=>{if(!drag)return;const dx=e.clientX-drag.x,
   if(drag.b===0&&!drag.s){cam.yaw-=dx*0.006;cam.pitch=Math.max(-1.55,Math.min(1.55,cam.pitch+dy*0.006));}
   else{const e2=eye(),f=nz(sub(cam.t,e2)),r=nz(cr(f,[0,0,1])),u=cr(r,f),k=cam.d*0.0016;for(let i=0;i<3;i++)cam.t[i]+=-r[i]*dx*k+u[i]*dy*k;}
   draw();});
-cv.addEventListener("pointerup",e=>{const d=drag;drag=null;if(d&&!d.moved&&d.b===0){const r=cv.getBoundingClientRect();select(pick(e.clientX-r.left,e.clientY-r.top),true);}});
+cv.addEventListener("pointerup",e=>{const d=drag;drag=null;if(d&&!d.moved&&d.b===0){const r=cv.getBoundingClientRect();const px=e.clientX-r.left,py=e.clientY-r.top;if(measuring)measureAt(px,py);else select(pick(px,py),true);}});
 cv.addEventListener("dblclick",e=>{const r=cv.getBoundingClientRect();const id=pick(e.clientX-r.left,e.clientY-r.top);if(id>=0){select(id,true);frame(boxOf([id]));}});
 cv.addEventListener("wheel",e=>{e.preventDefault();cam.d*=Math.pow(1.0015,e.deltaY);cam.d=Math.max(0.05,Math.min(cam.d,diag*20+100));draw();},{passive:false});
 
@@ -219,7 +223,7 @@ $("bAll").onclick=()=>{for(let i=0;i<meta.elems.length;i++)if(flags[i]===0)flags
 $("bHide").onclick=()=>{if(sel>=0){setVis([sel],false);select(-1);}};
 $("bIso").onclick=()=>{if(sel<0)return;for(let i=0;i<meta.elems.length;i++)if(i!==sel)flags[i]=0;upFlags();refreshEyes();frame(boxOf([sel]));};
 $("bXray").onclick=()=>{xray=!xray;$("bXray").style.borderColor=xray?"var(--accent)":"";draw();};
-addEventListener("keydown",e=>{if(e.target.tagName==="INPUT")return;const k=e.key.toLowerCase();if(k==="f")fit();else if(k==="h")$("bHide").click();else if(k==="i")$("bIso").click();else if(k==="a")$("bAll").click();else if(k==="x")$("bXray").click();else if(k==="escape")select(-1);});
+addEventListener("keydown",e=>{if(e.target.tagName==="INPUT")return;const k=e.key.toLowerCase();if(k==="f")fit();else if(k==="h")$("bHide").click();else if(k==="i")$("bIso").click();else if(k==="a")$("bAll").click();else if(k==="x")$("bXray").click();else if(k==="c")$("bCut").click();else if(k==="m")$("bMeasure").click();else if(k==="escape"){if(measuring)$("bMeasure").click();else select(-1);}});
 
 // ---------- arbore: model › tip › elemente
 let groups=[];
@@ -255,6 +259,32 @@ $("list").addEventListener("click",ev=>{
   if(r.dataset.e!==undefined)select(+r.dataset.e,false);
 });
 $("list").addEventListener("dblclick",ev=>{const r=ev.target.closest(".row");if(r&&r.dataset.e!==undefined){const i=+r.dataset.e;if(flags[i]===0)setVis([i],true);select(i,false);frame(boxOf([i]));}});
+// ---------- sectiune pe inaltime si masurare
+let clipZ=1e9,cutOn=false,measuring=false,mpts=[],zr=null,ranges=null;
+function zRange(){if(zr)return zr;let a=1e30,b=-1e30;for(let i=2;i<pos.length;i+=3){if(pos[i]<a)a=pos[i];if(pos[i]>b)b=pos[i];}zr=[a,b];return zr;}
+function setCut(){const s=+$("cutZ").value/1000,[a,b]=zRange();clipZ=cutOn?a+(b-a)*s:1e9;draw();}
+$("bCut").onclick=()=>{cutOn=!cutOn;$("cutZ").style.display=cutOn?"":"none";$("bCut").style.borderColor=cutOn?"var(--accent)":"";if(cutOn&&+$("cutZ").value>=1000)$("cutZ").value=600;setCut();};
+$("cutZ").addEventListener("input",setCut);
+$("bMeasure").onclick=()=>{measuring=!measuring;mpts=[];$("bMeasure").style.borderColor=measuring?"var(--accent)":"";$("status").textContent=measuring?"Measure: click two points on the model (Esc to stop)":"";draw();};
+// varfurile fiecarui element sunt consecutive in fisier: inceput / numar
+function elemRanges(){if(ranges)return ranges;const n=meta.elems.length,s=new Int32Array(n).fill(-1),c=new Int32Array(n);for(let v=0;v<ids.length;v++){const e=ids[v];if(s[e]<0)s[e]=v;c[e]++;}ranges=[s,c];return ranges;}
+function rayAt(x,y){const c=$("c"),w=c.clientWidth,h=c.clientHeight,e=eye(),f=nz(sub(cam.t,e)),r=nz(cr(f,[0,0,1])),u=cr(r,f),t=Math.tan(0.4),nx=(2*x/w-1)*t*(w/h),ny=(1-2*y/h)*t;return[e,nz([f[0]+r[0]*nx+u[0]*ny,f[1]+r[1]*nx+u[1]*ny,f[2]+r[2]*nx+u[2]*ny])];}
+function measureAt(x,y){
+  const id=pick(x,y);if(id<0)return;const[s,c]=elemRanges();const[o,d]=rayAt(x,y);let best=1e30;
+  for(let v=s[id];v<s[id]+c[id];v+=3){const a=[pos[v*3],pos[v*3+1],pos[v*3+2]],b=[pos[v*3+3],pos[v*3+4],pos[v*3+5]],q=[pos[v*3+6],pos[v*3+7],pos[v*3+8]];
+    const e1=sub(b,a),e2=sub(q,a),p=cr(d,e2),det=dot(e1,p);if(Math.abs(det)<1e-12)continue;const iv=1/det,tv=sub(o,a),uu=dot(tv,p)*iv;if(uu<0||uu>1)continue;const qq=cr(tv,e1),vv=dot(d,qq)*iv;if(vv<0||uu+vv>1)continue;const t=dot(e2,qq)*iv;if(t>0&&t<best)best=t;}
+  if(best>=1e30)return;const pt=[o[0]+d[0]*best,o[1]+d[1]*best,o[2]+d[2]*best];if(pt[2]>clipZ)return;
+  if(mpts.length>=2)mpts=[];mpts.push(pt);
+  if(mpts.length===2){const L=Math.hypot(...sub(mpts[1],mpts[0])),dz=Math.abs(mpts[1][2]-mpts[0][2]);$("status").textContent=`Distance ${L.toFixed(3)} m   ·   ΔZ ${dz.toFixed(3)} m   ·   click again for a new measurement`;}
+  draw();
+}
+function drawOverlay(){
+  const ov=$("ov"),c=$("c");if(ov.width!==c.width||ov.height!==c.height){ov.width=c.width;ov.height=c.height;}const g=ov.getContext("2d");g.clearRect(0,0,ov.width,ov.height);if(!mpts.length)return;
+  const M=mvp(c.width,c.height),pr=p=>{const x=M[0]*p[0]+M[4]*p[1]+M[8]*p[2]+M[12],y=M[1]*p[0]+M[5]*p[1]+M[9]*p[2]+M[13],w=M[3]*p[0]+M[7]*p[1]+M[11]*p[2]+M[15];return w<=0?null:[(x/w*0.5+0.5)*c.width,(1-(y/w*0.5+0.5))*c.height];};
+  const s=mpts.map(pr);g.strokeStyle="#ffcf3d";g.fillStyle="#ffcf3d";g.lineWidth=2*(window.devicePixelRatio||1);
+  if(s.length===2&&s[0]&&s[1]){g.beginPath();g.moveTo(...s[0]);g.lineTo(...s[1]);g.stroke();const L=Math.hypot(...sub(mpts[1],mpts[0]));g.font=`${13*(window.devicePixelRatio||1)}px system-ui`;g.fillText(L.toFixed(3)+" m",(s[0][0]+s[1][0])/2+8,(s[0][1]+s[1][1])/2-8);}
+  for(const q of s)if(q){g.beginPath();g.arc(q[0],q[1],4*(window.devicePixelRatio||1),0,7);g.fill();}
+}
 cv.style.background="linear-gradient(#0c0d10,#22252c)";
 load().catch(e=>{$("load").textContent="Cannot open the model: "+e;console.error(e);});
 </script>

@@ -55,7 +55,7 @@ fn rules_find_missing_and_wrong_values() {
     r.applicability.push(Facet::entity(&["IFCWALL"]));
     r.requirements.push(Facet::property("Pset_WallCommon", "FireRating", Value::Pattern(r"EI\d+".into())));
     let mut no_name = Rule::new("prohibited");
-    no_name.requirements.push(Facet { kind: Kind::Property, set: Value::Any, name: Value::one("FireRating"), value: Value::Any, card: Card::Prohibited });
+    no_name.requirements.push(Facet { kind: Kind::Property, set: Value::Any, name: Value::one("FireRating"), value: Value::Any, card: Card::Prohibited, unique: false });
     let res = run(&[r, no_name], &[(0, &m)]);
     assert_eq!(res[0].checked, 3, "only walls are checked");
     assert_eq!(res[0].failed.len(), 2);
@@ -264,4 +264,22 @@ fn sheet_dwg_uses_paper_scale_and_title_block() {
     assert_eq!(bimrust::app::cut_sheet_dxf(&segs, &tb, "x", "t", "d").1, 50);
     tb.scale = 200;
     assert_eq!(bimrust::app::cut_sheet_dxf(&segs, &tb, "x", "t", "d").1, 200);
+}
+
+#[test]
+fn unique_requirement_flags_duplicates() {
+    let m = model(vec![
+        el("D1", "IfcDoor", &[("Identity", "Mark", "101")]),
+        el("D2", "IfcDoor", &[("Identity", "Mark", "102")]),
+        el("D3", "IfcDoor", &[("Identity", "Mark", "101")]),
+    ]);
+    let mut r = Rule::new("unique marks");
+    r.applicability.push(Facet::entity(&["IfcDoor"]));
+    let mut f = Facet::property("", "Mark", Value::Any);
+    f.unique = true;
+    r.requirements.push(f);
+    let res = run(&[r], &[(0, &m)]);
+    assert_eq!(res[0].checked, 3);
+    assert_eq!(res[0].failed.len(), 2, "D1 and D3 share Mark 101");
+    assert!(res[0].failed.iter().all(|(_, w)| w.contains("not unique")));
 }

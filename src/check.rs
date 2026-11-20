@@ -140,6 +140,9 @@ pub struct Facet {
     pub value: Value,
     #[serde(default)]
     pub card: Card,
+    /// valoarea trebuie sa fie unica intre elementele verificate (ex. Mark, GlobalId, numar de usa)
+    #[serde(default)]
+    pub unique: bool,
 }
 
 impl Facet {
@@ -147,7 +150,7 @@ impl Facet {
         Facet { kind: Kind::Entity, name: Value::OneOf(types.iter().map(|s| s.to_string()).collect()), ..Default::default() }
     }
     pub fn property(set: &str, name: &str, value: Value) -> Facet {
-        Facet { kind: Kind::Property, set: Value::one(set), name: Value::one(name), value, card: Card::Required }
+        Facet { kind: Kind::Property, set: Value::one(set), name: Value::one(name), value, card: Card::Required, unique: false }
     }
     pub fn attribute(name: &str, value: Value) -> Facet {
         Facet { kind: Kind::Attribute, name: Value::one(name), value, card: Card::Required, ..Default::default() }
@@ -170,6 +173,7 @@ impl Facet {
             Card::Optional => " (optional)",
             Card::Prohibited => " (must NOT exist)",
         };
+        let card = if self.unique { format!("{card} (unique)") } else { card.to_string() };
         match self.kind {
             Kind::Entity => format!("type {nm}{}", if self.value.is_any() { String::new() } else { format!(" ({})", self.value.describe()) }),
             Kind::Attribute => format!("attribute {nm}{val}{card}"),
@@ -328,6 +332,10 @@ pub fn run(rules: &[Rule], models: &[(usize, &Model)]) -> Vec<RuleResult> {
             if !r.enabled {
                 return res;
             }
+            // cerintele "unic": valoare -> elementele care o au (a doua trecere, dupa ce le stim pe toate)
+            let uniq: Vec<&Facet> = r.requirements.iter().filter(|f| f.unique && f.kind != Kind::Entity).collect();
+            let mut seen: Vec<std::collections::HashMap<String, Vec<ElemId>>> = vec![Default::default(); uniq.len()];
+            let mut fails: std::collections::BTreeMap<ElemId, Vec<String>> = Default::default();
             for (mi, m) in models {
                 for (ei, e) in m.elements.iter().enumerate() {
                     // nori de puncte / elemente fara date nu se verifica
@@ -337,13 +345,29 @@ pub fn run(rules: &[Rule], models: &[(usize, &Model)]) -> Vec<RuleResult> {
                     if !r.applies(e) {
                         continue;
                     }
+                    let id = ElemId { m: *mi as u32, e: ei as u32 };
                     res.checked += 1;
                     let why = r.check(e);
                     if !why.is_empty() {
-                        res.failed.push((ElemId { m: *mi as u32, e: ei as u32 }, why.join("; ")));
+                        fails.entry(id).or_default().extend(why);
+                    }
+                    for (k, f) in uniq.iter().enumerate() {
+                        if let Some(v) = f.found(e).first() {
+                            seen[k].entry(v.trim().to_string()).or_default().push(id);
+                        }
                     }
                 }
             }
+            for (k, f) in uniq.iter().enumerate() {
+                for (v, ids) in &seen[k] {
+                    if ids.len() > 1 {
+                        for id in ids {
+                            fails.entry(*id).or_default().push(format!("{} '{v}' is not unique ({} elements have it)", f.describe_short(), ids.len()));
+                        }
+                    }
+                }
+            }
+            res.failed = fails.into_iter().map(|(id, w)| (id, w.join("; "))).collect();
             res
         })
         .collect()
@@ -355,7 +379,7 @@ pub fn starter_rules() -> Vec<Rule> {
     a.requirements.push(Facet::attribute("Name", Value::Any));
     let mut b = Rule::new("Walls have a fire rating");
     b.applicability.push(Facet::entity(&["IfcWall", "IfcWallStandardCase", "Walls"]));
-    b.requirements.push(Facet { kind: Kind::Property, set: Value::Any, name: Value::OneOf(vec!["FireRating".into(), "Fire Rating".into()]), value: Value::Any, card: Card::Required });
+    b.requirements.push(Facet { kind: Kind::Property, set: Value::Any, name: Value::OneOf(vec!["FireRating".into(), "Fire Rating".into()]), value: Value::Any, card: Card::Required, unique: false });
     let mut c = Rule::new("Doors have IsExternal");
     c.applicability.push(Facet::entity(&["IfcDoor", "Doors"]));
     c.requirements.push(Facet::property("Pset_DoorCommon", "IsExternal", Value::OneOf(vec!["TRUE".into(), "FALSE".into()])));
@@ -414,11 +438,11 @@ fn ids_card(n: &crate::e57::Node) -> Card {
 fn ids_facet(n: &crate::e57::Node) -> Option<Facet> {
     let card = ids_card(n);
     Some(match local(&n.name) {
-        "entity" => Facet { kind: Kind::Entity, name: ids_value(kid(n, "name")), value: ids_value(kid(n, "predefinedType")), set: Value::Any, card },
-        "attribute" => Facet { kind: Kind::Attribute, name: ids_value(kid(n, "name")), value: ids_value(kid(n, "value")), set: Value::Any, card },
-        "property" => Facet { kind: Kind::Property, set: ids_value(kid(n, "propertySet")), name: ids_value(kid(n, "baseName").or_else(|| kid(n, "name"))), value: ids_value(kid(n, "value")), card },
-        "classification" => Facet { kind: Kind::Classification, set: ids_value(kid(n, "system")), name: Value::Any, value: ids_value(kid(n, "value")), card },
-        "material" => Facet { kind: Kind::Material, set: Value::Any, name: Value::Any, value: ids_value(kid(n, "value")), card },
+        "entity" => Facet { kind: Kind::Entity, name: ids_value(kid(n, "name")), value: ids_value(kid(n, "predefinedType")), set: Value::Any, card, unique: false },
+        "attribute" => Facet { kind: Kind::Attribute, name: ids_value(kid(n, "name")), value: ids_value(kid(n, "value")), set: Value::Any, card, unique: false },
+        "property" => Facet { kind: Kind::Property, set: ids_value(kid(n, "propertySet")), name: ids_value(kid(n, "baseName").or_else(|| kid(n, "name"))), value: ids_value(kid(n, "value")), card, unique: false },
+        "classification" => Facet { kind: Kind::Classification, set: ids_value(kid(n, "system")), name: Value::Any, value: ids_value(kid(n, "value")), card, unique: false },
+        "material" => Facet { kind: Kind::Material, set: Value::Any, name: Value::Any, value: ids_value(kid(n, "value")), card, unique: false },
         _ => return None,
     })
 }

@@ -3354,7 +3354,7 @@ impl App {
     /// Salveaza materialul ales in biblioteca ta (disponibil in orice proiect).
     pub fn save_material_to_library(&mut self, i: usize) {
         let Some(m) = self.materials.get(i).cloned() else { return };
-        match crate::materials::save_to_user_library(&[m.clone()]) {
+        match crate::materials::save_to_user_library(std::slice::from_ref(&m)) {
             Ok(_) => self.toast(format!("\"{}\" saved to your material library.", m.name)),
             Err(e) => self.error(format!("Cannot save the material library: {e}")),
         }
@@ -5074,8 +5074,8 @@ impl App {
             }
             Purpose::ExportCache(slot) => self.export_cache(slot, &path),
             Purpose::ExportVideo => self.start_render_job(&path),
-            Purpose::ImportTextures => self.import_texture_materials(&[path.clone()]),
-            Purpose::ImportPbr | Purpose::ImportPbrFolder => self.import_pbr_packs(&[path.clone()]),
+            Purpose::ImportTextures => self.import_texture_materials(std::slice::from_ref(&path)),
+            Purpose::ImportPbr | Purpose::ImportPbrFolder => self.import_pbr_packs(std::slice::from_ref(&path)),
             Purpose::ExportVpHtml => self.start_report(0, &path),
             Purpose::ExportVpXlsx => self.start_report(1, &path),
             Purpose::ExportVpPdf => self.start_report(3, &path),

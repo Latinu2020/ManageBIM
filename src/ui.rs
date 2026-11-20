@@ -7286,7 +7286,8 @@ impl App {
                     _ => {}
                 }
             }
-        }        if self.show_clash_matrix {
+        }
+        if self.show_clash_matrix {
             let mut open = true;
             let m = self.clash_matrix();
             let mut export = false;
@@ -8033,6 +8034,9 @@ fn facet_editor(ui: &mut egui::Ui, f: &mut crate::check::Facet, salt: impl std::
                         }
                     }
                 });
+                if matches!(f.kind, Kind::Property | Kind::Attribute) {
+                    ch |= ui.checkbox(&mut f.unique, "unique").on_hover_text("The value must be unique among the checked elements (e.g. Mark, door number, GlobalId) - duplicates fail").changed();
+                }
             }
             if ui.small_button("✖").on_hover_text("Remove").clicked() {
                 rm = true;
@@ -8290,8 +8294,14 @@ impl App {
         hits.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
         hits.truncate(12);
         // elemente din model cu numele cautat (selectie + zoom)
+        // cautarea in elemente se face o singura data pe text (nu la fiecare cadru): rezultatul e tinut in memorie
+        let cache_id = egui::Id::new("palette_elems");
+        let cached: Option<(String, Vec<(ElemId, String, String)>)> = ctx.data(|d| d.get_temp(cache_id));
         let mut elems: Vec<(ElemId, String, String)> = Vec::new();
-        if q.len() >= 2 {
+        if let Some((cq, v)) = cached.filter(|(cq, _)| *cq == q) {
+            let _ = cq;
+            elems = v;
+        } else if q.len() >= 2 {
             'outer: for (mi, m) in self.loaded_models() {
                 for (ei, e) in m.elements.iter().enumerate() {
                     if e.name.to_lowercase().contains(&q) || e.guid.to_lowercase() == q {
@@ -8303,6 +8313,7 @@ impl App {
                 }
             }
         }
+        ctx.data_mut(|d| d.insert_temp(cache_id, (q.clone(), elems.clone())));
         let total = hits.len() + elems.len();
         if self.palette_sel >= total.max(1) {
             self.palette_sel = total.saturating_sub(1);
