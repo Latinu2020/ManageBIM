@@ -2893,7 +2893,8 @@ impl App {
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let nb = if self.settings.nav_bar { "Hide the navigation bar" } else { "Show the navigation bar" };
-                    if ui.small_button(if self.settings.nav_bar { "🧭" } else { "🧭 ✖" }).on_hover_text(nb).clicked() {
+                    let nav_icon = RichText::new(egui_phosphor::regular::COMPASS).font(crate::theme::icon_font(14.0)).color(if self.settings.nav_bar { accent() } else { ui.visuals().weak_text_color() });
+                    if ui.add(egui::Button::new(nav_icon).frame(false)).on_hover_text(nb).clicked() {
                         self.settings.nav_bar = !self.settings.nav_bar;
                         self.settings.save();
                     }
@@ -4511,16 +4512,9 @@ impl App {
                     .max_height((ui.available_height() - 70.0).max(60.0))
                     .show(ui, |ui| Self::rule_rows(ui, "find", &mut self.find_rules, &self.prop_index, true))
                     .inner;
+                // "+ Condition" si "Find All" sunt sus, la chip-uri; aici raman OR, Clear si seturile
                 ui.horizontal_wrapped(|ui| {
-                    if ui.button("➕ Condition").clicked() {
-                        let last = self.find_rules.last().cloned();
-                        let r = match last {
-                            Some(l) if !l.group.is_empty() => SearchRule::new(&l.group, &l.field, SearchOp::Equals, "", false),
-                            _ => SearchRule::new(ITEM_CAT, "IFC Type", SearchOp::Equals, "", false),
-                        };
-                        self.find_rules.push(r);
-                    }
-                    if ui.button("➕ OR Condition").clicked() {
+                    if ui.button("➕ OR Condition").on_hover_text("Start an OR block: items matching either block are found").clicked() {
                         let last = self.find_rules.last().cloned();
                         let r = match last {
                             Some(l) if !l.group.is_empty() => SearchRule::new(&l.group, &l.field, SearchOp::Equals, "", true),
@@ -4528,9 +4522,7 @@ impl App {
                         };
                         self.find_rules.push(r);
                     }
-                    ui.separator();
-                    let go = ui.add(egui::Button::new(RichText::new("🔍 Find All").strong().color(Color32::WHITE)).fill(accent())).clicked();
-                    if go || enter || chip_go {
+                    if enter || chip_go {
                         let r = self.find_scoped(&self.find_rules.clone(), self.find_in_selection);
                         self.find_count = Some(r.len());
                         self.apply(Action::Select(r, false));

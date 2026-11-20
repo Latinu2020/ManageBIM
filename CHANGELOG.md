@@ -3,6 +3,17 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.20.0 - 2026-11-20
+
+- **Paleta de comenzi Ctrl+K** (si campul „Search or Ctrl+K” din dreapta sus): peste 70 de comenzi cu cautare aproximativa (si cuvinte in romana: „sectiune”, „planse”, „cartus”...), navigare cu sagetile + Enter; scrii numele unui element si il selecteaza cu zoom.
+- **Stiluri de afisare** (View / Render › Visual Style si Ctrl+K): **Realistic** (materiale, texturi), **Shaded** (culorile din fisier), **Concept** (macheta alba, mata, margini accentuate), **Wireframe**; stilul ramane salvat.
+- **Cut to DWG**: implicit **2D in Model space** la coordonatele reale; nou **Cut on Sheet** - pe plansa **A3 / A2 / A1 / A0**, la scara automata sau fixa (1:20 - 1:5000), cu chenar si cartus.
+- **Editorul de cartus** (Sections / Viewpoint › Title Block): firma, proiect, beneficiar, desenat, verificat, prefixul numarului de plansa, revizie, note, formatul foii si scara - salvat in proiect, folosit de plansele PDF si de DWG. Plansele PDF respecta formatul ales.
+- **Manual integrat** (Help › Manual): 14 capitole cu cautare. **Proiect demo** (Help › Demo, si pe pagina de start): Block A cu arhitectura + structura, instalatii si planificarea 4D.
+- **Model Checker**: cerinta noua **„unique”** - valoarea trebuie sa fie unica (Mark, numar de usa, GlobalId); duplicatele apar ca erori.
+- **Viewer web**: **sectiune pe inaltime** (glisor) si **masurare** intre doua puncte (tastele C si M).
+- Verificare completa a codului (clippy: corectitudine, cod suspect, performanta) si corecturi; cautarea din paleta e memorata; Find Items fara butoane dublate; iconita vectoriala pentru bara de navigare.
+
 ## 0.19.0 - 2026-11-20
 
 - **Interfata**: font **Inter** (OFL) si **iconite vectoriale Phosphor** (MIT) in locul emoji-urilor - ribbon, bara de navigare, titlurile panourilor.

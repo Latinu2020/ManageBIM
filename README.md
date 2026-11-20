@@ -7,9 +7,9 @@
 Open IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP, FBX and point clouds together, run clash detection,
 manage issues and markups, and send the results back to Revit and Navisworks.
 
-[![Download](https://img.shields.io/badge/Download-ManageBIM%200.19.0%20for%20Windows-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.19.0.exe)
+[![Download](https://img.shields.io/badge/Download-ManageBIM%200.20.0%20for%20Windows-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.20.0.exe)
 
-![Version](https://img.shields.io/badge/version-0.19.0-blue) ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20x64-0078d4) ![Language](https://img.shields.io/badge/built%20with-Rust-b7410e) ![Admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a) ![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/badge/version-0.20.0-blue) ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20x64-0078d4) ![Language](https://img.shields.io/badge/built%20with-Rust-b7410e) ![Admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ![ManageBIM main window](docs/images/main-window.png)
 
@@ -19,7 +19,7 @@ manage issues and markups, and send the results back to Revit and Navisworks.
 
 ## Download and install
 
-1. Download **[ManageBIM-Setup-0.19.0.exe](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.19.0.exe)** (about 40 MB).
+1. Download **[ManageBIM-Setup-0.20.0.exe](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.20.0.exe)** (about 40 MB).
 2. Run it and follow the wizard: **Welcome › Components › Install › Finish**.
    - Installs for the current Windows user only - **no administrator rights needed**.
    - Pick the add-ins for the programs found on the PC (Revit, AutoCAD / Plant 3D, Navisworks).
@@ -27,7 +27,7 @@ manage issues and markups, and send the results back to Revit and Navisworks.
 3. Start ManageBIM from the Start Menu or the Desktop shortcut.
 
 > The installer is not digitally signed yet. If Windows SmartScreen asks, choose *More info › Run anyway*.
-> Silent install: `ManageBIM-Setup-0.19.0.exe /S` (add `/NoAddins` for the application only).
+> Silent install: `ManageBIM-Setup-0.20.0.exe /S` (add `/NoAddins` for the application only).
 
 <div align="center">
 <img src="docs/images/installer.png" width="420" alt="Installer"> &nbsp; <img src="docs/images/start-page.png" width="420" alt="Start page">
@@ -50,7 +50,8 @@ manage issues and markups, and send the results back to Revit and Navisworks.
 - **Web viewer export**: one self-contained .html file (3D WebGL view, model tree, search, properties, hide / isolate, X-ray) - opens offline in any browser, nothing to install.
 - **Live Link**: selection sync with **Revit** and **Navisworks**, both ways (matched by UniqueId / IFC GUID).
 - **As-built check**: model vs point cloud (E57 / LAS) - built, partial, missing, not scanned; colours and Excel report.
-- **PDF sheets** from viewpoints (A3 with title block) and **section cut export to DWG / DXF** (plan at +1.20 m or section plane, one layer per type).
+- **PDF sheets** from viewpoints and **section cut export to DWG / DXF** - 2D in model space, or on an **A3 / A2 / A1 / A0 sheet** at a standard scale with an editable **title block**.
+- **Command palette (Ctrl+K)**, **visual styles** (Realistic, Shaded, Concept, Wireframe), an **integrated manual** and a **demo project**.
 - **Grids and levels**: from IFC, from **DWG / DXF**, or created in the app (generator, alignment by picking points in the model). Clash locations like **"C-4 / Level 2"**. Export grids to **DXF / DWG**.
 - **Sectioning**: planes and boxes with **stretch arrows on every face (like Revit)**, model box / box around the selection, **sections by level** (level box, plan cut, only-this-level, PgUp / PgDn), filled cut faces, transparent section plane.
 - **Measuring** with snapping to vertices, edge midpoints and edges; dimensions saved with viewpoints.
