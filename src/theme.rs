@@ -89,6 +89,9 @@ pub struct Settings {
     /// zoom pe selectia venita din Revit / Navisworks
     #[serde(default = "yes")]
     pub sync_follow: bool,
+    /// stilul de afisare al modelului
+    #[serde(default)]
+    pub visual_style: crate::render::VisualStyle,
     /// bara de navigare plutitoare din vizualizarea 3D
     #[serde(default = "yes")]
     pub nav_bar: bool,
@@ -119,7 +122,7 @@ fn default_walk() -> f32 {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, nav_bar: true, units_mm: false, navis_units: auto() }
+        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto() }
     }
 }
 

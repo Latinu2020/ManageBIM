@@ -693,6 +693,8 @@ pub struct ProjectFile {
     pub qto: Option<crate::qto::QtoSetup>,
     #[serde(default)]
     pub check_rules: Vec<crate::check::Rule>,
+    #[serde(default)]
+    pub title_block: Option<crate::pdf::TitleBlock>,
 }
 
 /// Un nivel de grupare al arborelui de selectie: proprietatea (categorie, nume) dupa care se grupeaza.
@@ -1029,6 +1031,19 @@ pub struct App {
     pub asbuilt_show: bool,
     pub asbuilt_painted: Vec<ElemId>,
     pub asbuilt_filter: Option<crate::asbuilt::Status>,
+    /// paleta de comenzi (Ctrl+K)
+    pub palette_open: bool,
+    pub palette_q: String,
+    pub palette_sel: usize,
+    /// manualul integrat
+    pub manual_open: bool,
+    pub manual_page: usize,
+    pub manual_q: String,
+    /// Cut to DWG: pe plansa A3 cu cartus (altfel 2D in Model space)
+    pub cad_sheet: bool,
+    /// cartusul planselor (PDF / DWG) si fereastra lui de editare
+    pub title_block: crate::pdf::TitleBlock,
+    pub title_block_open: bool,
     /// fata section box-ului trasa acum (0..5: -X +X -Y +Y -Z +Z)
     pub box_drag: Option<usize>,
     pub show_clash_matrix: bool,
@@ -1262,6 +1277,15 @@ impl App {
             asbuilt_show: false,
             asbuilt_painted: Vec::new(),
             asbuilt_filter: None,
+            palette_open: false,
+            palette_q: String::new(),
+            palette_sel: 0,
+            manual_open: false,
+            manual_page: 0,
+            manual_q: String::new(),
+            cad_sheet: false,
+            title_block: Default::default(),
+            title_block_open: false,
             box_drag: None,
             show_clash_matrix: false,
             grid_import: None,
@@ -3672,7 +3696,7 @@ impl App {
         for (i, p) in pl.iter().take(6).enumerate() {
             planes[i] = *p;
         }
-        FrameParams { view_proj: vp, eye: self.cam.eye(), planes, nplanes: pl.len().min(6) as i32, sun: self.render.sun_dir(), light: self.render.light(), point_size: self.point_size, caps: self.section_caps, ao: self.render.ao, edges: self.render.edges, depth_k: [proj.z_axis.z, proj.w_axis.z, if self.cam.ortho { 1.0 } else { 0.0 }, proj.y_axis.y] }
+        FrameParams { view_proj: vp, eye: self.cam.eye(), planes, nplanes: pl.len().min(6) as i32, sun: self.render.sun_dir(), light: self.render.light(), point_size: self.point_size, caps: self.section_caps, ao: if self.settings.visual_style == crate::render::VisualStyle::Wireframe { 0.0 } else { self.render.ao }, edges: if self.settings.visual_style == crate::render::VisualStyle::Concept { self.render.edges.max(0.9) } else { self.render.edges }, style: self.settings.visual_style, depth_k: [proj.z_axis.z, proj.w_axis.z, if self.cam.ortho { 1.0 } else { 0.0 }, proj.y_axis.y] }
     }
 
     // ------------------------------------------------------------------ viewpoints
@@ -3783,7 +3807,7 @@ impl App {
                     .collect();
                 crate::markup::xlsx_report(&project, &job.items, &thumbs)
             }
-            3 => crate::pdf::sheets(&project, &job.items, &now_string()),
+            3 => crate::pdf::sheets(&project, &job.items, &now_string(), &self.title_block),
             _ => crate::markup::bcf_zip(&project, &job.items),
         };
         match std::fs::write(&path, data) {
@@ -4572,6 +4596,7 @@ impl App {
             profile: if self.profile.rules.is_empty() { None } else { Some(self.profile.clone()) },
             qto: Some(self.qto.clone()),
             check_rules: self.check_rules.clone(),
+            title_block: Some(self.title_block.clone()),
         }
     }
 
@@ -4681,6 +4706,7 @@ impl App {
         self.profile_map = None;
         self.qto = pf.qto.unwrap_or_default();
         self.check_rules = pf.check_rules;
+        self.title_block = pf.title_block.unwrap_or_default();
         self.check_results = None;
         self.check_sel = None;
         self.qto_result = None;
@@ -5927,7 +5953,20 @@ impl App {
         let dwg = path.to_lowercase().ends_with(".dwg");
         let dxf_path = if dwg { std::path::Path::new(path).with_extension("dxf").to_string_lossy().to_string() } else { with_ext(path, "dxf") };
         let n = segs.len();
-        if let Err(e) = std::fs::write(&dxf_path, cut_dxf(&segs)) {
+        // implicit: 2D in Model space, coordonate reale (m); optional: pe plansa A3 cu cartus, la scara
+        let content = if self.cad_sheet {
+            let level = self.section_level.and_then(|i| self.scene_grids().levels.get(i).map(|l| l.0.clone()));
+            let title = match (axis, level) {
+                (2, Some(l)) => format!("Plan - {l}"),
+                (2, None) => "Plan".to_string(),
+                _ => "Section".to_string(),
+            };
+            let project = self.project_path.as_ref().map(|p| model_label(&crate::file_name(p))).unwrap_or_else(|| "ManageBIM".into());
+            cut_sheet_dxf(&segs, &self.title_block, &project, &title, &now_string()).0
+        } else {
+            cut_dxf(&segs)
+        };
+        if let Err(e) = std::fs::write(&dxf_path, content) {
             return self.error(format!("Cannot write {dxf_path}: {e}"));
         }
         let what = match axis {
@@ -6517,6 +6556,52 @@ impl App {
     }
 
 
+
+    // ------------------------------------------------------------ stil de afisare, proiect demo
+
+    /// Shaded / Realistic / Concept / Wireframe (pastrat in setari).
+    pub fn set_visual_style(&mut self, s: crate::render::VisualStyle) {
+        self.settings.visual_style = s;
+        self.settings.save();
+        if s == crate::render::VisualStyle::Realistic && !self.materials_on {
+            // realist = cu materialele / texturile atribuite
+            self.materials_on = true;
+            self.materials_changed();
+        }
+        self.toast(format!("Visual style: {}", s.label()));
+    }
+
+    /// Proiectul demo (Block A: arhitectura + structura, instalatii, planificare 4D): fisierele sunt in
+    /// aplicatie, se scriu in %LOCALAPPDATA%\ManageBIM\Demo si se deschid ca un proiect obisnuit.
+    pub fn open_demo(&mut self) {
+        const FILES: [(&str, &[u8]); 3] = [
+            ("Block_A_Architecture_Structure.ifc", include_bytes!("../samples/Block_A_Architecture_Structure.ifc")),
+            ("Block_A_MEP.ifc", include_bytes!("../samples/Block_A_MEP.ifc")),
+            ("Block_A_schedule_4D.csv", include_bytes!("../samples/Block_A_schedule_4D.csv")),
+        ];
+        let Some(dir) = std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("ManageBIM").join("Demo")) else {
+            return self.error("LOCALAPPDATA is not set.");
+        };
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            return self.error(format!("Cannot create {}: {e}", dir.display()));
+        }
+        for (n, b) in FILES {
+            let p = dir.join(n);
+            // nu rescriem fisierele demo (utilizatorul poate lucra pe ele)
+            if !p.exists() {
+                if let Err(e) = std::fs::write(&p, b) {
+                    return self.error(format!("Cannot write {}: {e}", p.display()));
+                }
+            }
+        }
+        self.show_start = false;
+        self.open_path(&dir.join(FILES[0].0).to_string_lossy(), false);
+        self.open_path(&dir.join(FILES[1].0).to_string_lossy(), true);
+        self.handle_path(Purpose::ImportTasksCsv, dir.join(FILES[2].0).to_string_lossy().to_string());
+        self.manual_open = true;
+        self.manual_page = 0;
+        self.toast("Demo project: Block A (architecture + structure, MEP, 4D schedule). Try Clash Detective, TimeLiner, Model Checker and the command palette (Ctrl+K).");
+    }
     // ------------------------------------------------------------ As-built: model fata de norul de puncte
 
     /// Compara modelele (fara nori) cu toti norii de puncte incarcati.
@@ -7031,4 +7116,73 @@ pub fn cut_dxf(segs: &[(String, [f64; 4])]) -> String {
     }
     s.push_str("0\nENDSEC\n0\nEOF\n");
     s
+}
+
+
+/// Liniile taieturii puse pe o plansa (A3 / A2 / A1 / A0, milimetri) la scara aleasa sau automata
+/// (cea mai mare scara standard la care incape), cu chenar si cartusul editabil.
+/// `segs` sunt in metri (coordonate reale). Intoarce DXF-ul si scara (1:N).
+pub fn cut_sheet_dxf(segs: &[(String, [f64; 4])], tb: &crate::pdf::TitleBlock, project: &str, title: &str, date: &str) -> (String, u32) {
+    let (sw, sh) = crate::pdf::paper_mm(&tb.paper);
+    const MARGIN: f64 = 10.0;
+    const TB_W: f64 = 185.0;
+    const TB_H: f64 = 48.0;
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for (_, p) in segs {
+        x0 = x0.min(p[0]).min(p[2]);
+        y0 = y0.min(p[1]).min(p[3]);
+        x1 = x1.max(p[0]).max(p[2]);
+        y1 = y1.max(p[1]).max(p[3]);
+    }
+    let (w, h) = ((x1 - x0).max(0.01), (y1 - y0).max(0.01));
+    // zona de desen: foaia fara margini si fara banda cartusului
+    let (aw, ah) = (sw - 2.0 * MARGIN - 10.0, sh - 2.0 * MARGIN - TB_H - 10.0);
+    let scale = if tb.scale > 0 { tb.scale } else { crate::pdf::SCALES.into_iter().find(|n| w * 1000.0 / *n as f64 <= aw && h * 1000.0 / *n as f64 <= ah).unwrap_or(10000) };
+    let k = 1000.0 / scale as f64;
+    let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    let (ox, oy) = (MARGIN + 5.0 + aw / 2.0, MARGIN + TB_H + 5.0 + ah / 2.0);
+    let mut out: Vec<(String, [f64; 4])> = segs.iter().map(|(l, p)| (l.clone(), [ox + (p[0] - cx) * k, oy + (p[1] - cy) * k, ox + (p[2] - cx) * k, oy + (p[3] - cy) * k])).collect();
+    let mut line = |a: f64, b: f64, c: f64, d: f64| out.push(("SHEET".to_string(), [a, b, c, d]));
+    let rect = |l: &mut dyn FnMut(f64, f64, f64, f64), a: f64, b: f64, c: f64, d: f64| {
+        l(a, b, c, b);
+        l(c, b, c, d);
+        l(c, d, a, d);
+        l(a, d, a, b);
+    };
+    rect(&mut line, 0.0, 0.0, sw, sh);
+    rect(&mut line, MARGIN, MARGIN, sw - MARGIN, sh - MARGIN);
+    // cartusul: dreapta jos, 185 x 48 mm - firma / proiect | titlu | desenat, verificat | data, rev | scara | nr
+    let (tx, ty) = (sw - MARGIN - TB_W, MARGIN);
+    let r = sw - MARGIN;
+    rect(&mut line, tx, ty, r, ty + TB_H);
+    line(tx, ty + 34.0, r, ty + 34.0);
+    line(tx, ty + 22.0, r, ty + 22.0);
+    line(tx, ty + 11.0, r, ty + 11.0);
+    line(tx + 120.0, ty, tx + 120.0, ty + 22.0);
+    line(tx + 150.0, ty, tx + 150.0, ty + 22.0);
+    let mut dxf = cut_dxf(&out);
+    let txt = |x: f64, y: f64, hgt: f64, s: &str| format!("0\nTEXT\n8\nSHEET_TEXT\n10\n{x:.2}\n20\n{y:.2}\n30\n0.0\n40\n{hgt:.2}\n1\n{}\n", s.replace('\n', " "));
+    let or = |s: &str, d: &str| if s.trim().is_empty() { d.to_string() } else { s.trim().to_string() };
+    let mut t = String::new();
+    if !tb.company.trim().is_empty() {
+        t.push_str(&txt(tx + 3.0, ty + 43.0, 2.5, &tb.company.to_uppercase()));
+    }
+    t.push_str(&txt(tx + 3.0, ty + 37.0, 4.5, tb.project_or(project)));
+    if !tb.client.trim().is_empty() {
+        t.push_str(&txt(tx + 120.0, ty + 43.0, 2.5, &format!("Client: {}", tb.client)));
+    }
+    t.push_str(&txt(tx + 3.0, ty + 26.0, 4.0, title));
+    t.push_str(&txt(tx + 3.0, ty + 15.0, 2.5, &format!("Drawn: {}    Checked: {}", or(&tb.drawn, "-"), or(&tb.checked, "-"))));
+    t.push_str(&txt(tx + 3.0, ty + 4.0, 2.5, &format!("Date: {}    {}", date.get(..10).unwrap_or(date), or(&tb.notes, "ManageBIM"))));
+    t.push_str(&txt(tx + 122.0, ty + 15.0, 2.2, "SCALE"));
+    t.push_str(&txt(tx + 122.0, ty + 4.0, 3.5, &format!("1:{scale}")));
+    t.push_str(&txt(tx + 152.0, ty + 15.0, 2.2, &format!("REV {}", or(&tb.revision, "-"))));
+    t.push_str(&txt(tx + 152.0, ty + 3.5, 4.5, &format!("{}01", tb.number_prefix)));
+    t.push_str(&txt(MARGIN + 3.0, MARGIN + 3.0, 2.2, &format!("{} - 1:{scale}", tb.paper)));
+    if let Some(p) = dxf.rfind("0\nENDSEC\n0\nEOF") {
+        dxf.insert_str(p, &t);
+    }
+    // plansa e in milimetri
+    let dxf = dxf.replacen("$INSUNITS\n70\n6\n", "$INSUNITS\n70\n4\n", 1);
+    (dxf, scale)
 }

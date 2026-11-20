@@ -104,6 +104,8 @@ pub struct FrameParams {
     /// margini fine (0 = oprite; altfel taria)
     pub edges: f32,
     pub depth_k: [f32; 4],
+    /// stilul de afisare
+    pub style: VisualStyle,
 }
 
 const VS_P: &str = r#"
@@ -169,6 +171,7 @@ uniform vec3 u_sun;
 uniform vec3 u_light;
 uniform int u_caps;
 uniform sampler2DArray u_tex;
+uniform int u_style;   // 0 realist, 1 umbrit (fara texturi), 2 concept (alb mat), 3 wireframe
 out vec4 o_col;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -256,6 +259,9 @@ void main() {
     }
     vec3 base = v_col.rgb;
     int pt = int(v_mat.x * 255.0 + 0.5);
+    // stilurile fara materiale: culorile din fisier (umbrit) sau aproape alb, mat (concept)
+    if (u_style == 1 || u_style == 3) pt = 0;
+    if (u_style == 2) { pt = 0; base = mix(base, vec3(0.94, 0.94, 0.92), 0.78); }
     if (pt >= 16) {
         vec3 an = abs(n);
         vec2 uv;
@@ -274,8 +280,14 @@ void main() {
     float fill = max(dot(n, fdir), 0.0);
     vec3 k = amb * (0.21 + 0.14 * sky) * u_light.y + vec3(1.02, 0.99, 0.94) * (0.30 * sun * u_light.z) + vec3(0.31 * head + 0.07 * fill * u_light.y);
     // un luciu mic pentru orice material (suprafetele nu mai par plate / de hartie)
-    float gloss = max(v_mat.y, 0.07);
-    float metal = v_mat.z;
+    float gloss = u_style == 0 ? max(v_mat.y, 0.07) : (u_style == 2 ? 0.0 : 0.07);
+    float metal = u_style == 0 ? v_mat.z : 0.0;
+    if (u_style == 2) {
+        // concept: lumina moale, fara reflexii (ca un macheta din carton)
+        vec3 cc = base * (0.62 + 0.30 * head + 0.10 * sky + 0.08 * sun) * u_light.x;
+        o_col = vec4(min(cc, vec3(1.0)) * a, a);
+        return;
+    }
     vec3 h = normalize(u_sun + vd);
     float spec = pow(max(dot(n, h), 0.0), mix(12.0, 160.0, gloss)) * gloss;
     float rim = pow(1.0 - head, 4.0) * gloss * 0.35;
@@ -462,11 +474,19 @@ impl Renderer {
             return;
         }
         let lists = self.lists.take();
-        if !((p.ao > 0.0 || p.edges > 0.0) && self.draw_ao(gl, p, lists.as_ref())) {
+        let wire = p.style == VisualStyle::Wireframe;
+        if wire {
+            gl.polygon_mode(glow::FRONT_AND_BACK, glow::LINE);
+        }
+        if wire || !((p.ao > 0.0 || p.edges > 0.0) && self.draw_ao(gl, p, lists.as_ref())) {
             gl.clear_depth_f32(1.0);
             gl.depth_mask(true);
             gl.clear(glow::DEPTH_BUFFER_BIT);
             self.draw(gl, p, lists.as_ref());
+        }
+        if wire {
+            // egui deseneaza cu triunghiuri pline dupa noi
+            gl.polygon_mode(glow::FRONT_AND_BACK, glow::FILL);
         }
         self.lists = lists;
         if let Some(req) = self.capture.take() {
@@ -493,6 +513,7 @@ impl Renderer {
         gl.uniform_4_f32_slice(gl.get_uniform_location(prog, "u_planes").as_ref(), &pl);
         gl.uniform_1_i32(gl.get_uniform_location(prog, "u_nplanes").as_ref(), p.nplanes);
         gl.uniform_1_i32(gl.get_uniform_location(prog, "u_caps").as_ref(), p.caps as i32);
+        gl.uniform_1_i32(gl.get_uniform_location(prog, "u_style").as_ref(), p.style.code());
         let u_pass = gl.get_uniform_location(prog, "u_pass");
         gl.active_texture(glow::TEXTURE1);
         gl.bind_texture(glow::TEXTURE_2D_ARRAY, self.tex);
@@ -900,6 +921,40 @@ unsafe fn draw_ranges(gl: &glow::Context, total: i32, ranges: Option<&Vec<(i32, 
                 let n = count.min(total - first);
                 gl.draw_arrays(glow::TRIANGLES, first, n - n % 3);
             }
+        }
+    }
+}
+
+/// Stilul de afisare al modelului (ca in Navisworks / Revit).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum VisualStyle {
+    /// materiale, texturi, reflexii, umbre de contact
+    #[default]
+    Realistic,
+    /// culorile din fisier, lumina, fara texturi
+    Shaded,
+    /// macheta: aproape alb, mat, margini accentuate
+    Concept,
+    /// doar muchiile triunghiurilor
+    Wireframe,
+}
+
+impl VisualStyle {
+    pub const ALL: [VisualStyle; 4] = [VisualStyle::Realistic, VisualStyle::Shaded, VisualStyle::Concept, VisualStyle::Wireframe];
+    pub fn label(self) -> &'static str {
+        match self {
+            VisualStyle::Realistic => "Realistic",
+            VisualStyle::Shaded => "Shaded",
+            VisualStyle::Concept => "Concept",
+            VisualStyle::Wireframe => "Wireframe",
+        }
+    }
+    pub fn code(self) -> i32 {
+        match self {
+            VisualStyle::Realistic => 0,
+            VisualStyle::Shaded => 1,
+            VisualStyle::Concept => 2,
+            VisualStyle::Wireframe => 3,
         }
     }
 }

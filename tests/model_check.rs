@@ -228,7 +228,7 @@ fn pdf_sheets_are_written() {
         image_w: w,
         image_h: h,
     };
-    let pdf = bimrust::pdf::sheets("Block A", std::slice::from_ref(&it), "2026-11-20");
+    let pdf = bimrust::pdf::sheets("Block A", std::slice::from_ref(&it), "2026-11-20", &bimrust::pdf::TitleBlock::default());
     assert!(pdf.starts_with(b"%PDF-1.4"));
     assert!(pdf.ends_with(b"%%EOF\n"));
     let s = String::from_utf8_lossy(&pdf);
@@ -246,4 +246,22 @@ fn section_cut_dxf_has_layers_and_lines() {
     assert!(d.contains("\nLAYER\n2\nWalls\n") && d.contains("\nLAYER\n2\nIfcDoor\n"));
     assert!(d.trim_end().ends_with("EOF"));
     assert_eq!(bimrust::app::cad_layer("Ifc/Wall:*"), "Ifc_Wall__");
+}
+
+#[test]
+fn sheet_dwg_uses_paper_scale_and_title_block() {
+    let segs = vec![("Walls".to_string(), [0.0, 0.0, 30.0, 0.0]), ("Walls".to_string(), [30.0, 0.0, 30.0, 18.0])];
+    let mut tb = bimrust::pdf::TitleBlock::default();
+    tb.company = "Acme Engineering".into();
+    tb.project = "Block A".into();
+    // A3: 30 x 18 m incape la 1:100 (300 x 180 mm)
+    let (d, s) = bimrust::app::cut_sheet_dxf(&segs, &tb, "x", "Plan - Level 1", "2026-11-20 10:00");
+    assert_eq!(s, 100);
+    assert!(d.contains("ACME ENGINEERING") && d.contains("Block A") && d.contains("1:100"));
+    assert!(d.contains("$INSUNITS\n70\n4\n"), "sheet in millimetres");
+    // A1 incape la o scara mai mare (1:50); scara fixa e respectata
+    tb.paper = "A1".into();
+    assert_eq!(bimrust::app::cut_sheet_dxf(&segs, &tb, "x", "t", "d").1, 50);
+    tb.scale = 200;
+    assert_eq!(bimrust::app::cut_sheet_dxf(&segs, &tb, "x", "t", "d").1, 200);
 }

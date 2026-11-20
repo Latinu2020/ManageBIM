@@ -231,6 +231,12 @@ impl App {
         if ctrl && f {
             self.open_panel(Panel::Find);
         }
+        // paleta de comenzi (merge si cand scrii intr-un camp)
+        if ctrl && ctx.input(|i| i.key_pressed(Key::K)) {
+            self.palette_open = !self.palette_open;
+            self.palette_q.clear();
+            self.palette_sel = 0;
+        }
         // F5 = Refresh modelele modificate, Ctrl+F5 = reincarca tot
         if ctx.input(|i| i.key_pressed(Key::F5)) {
             self.refresh_models(ctrl);
@@ -513,6 +519,11 @@ impl App {
                     let chip = egui::Button::new(RichText::new(self.settings.theme.label()).size(11.5).color(ui.visuals().text_color())).fill(ui.visuals().window_fill).stroke(Stroke::NONE).rounding(7.0);
                     if ui.add(chip).on_hover_text(format!("Theme: {} - click for {}", self.settings.theme.label(), nt.label())).clicked() {
                         self.set_theme(nt);
+                    }
+                    // cautarea / paleta de comenzi (ca in redesign: "Search or Ctrl+K")
+                    let sb = egui::Button::new(crate::theme::icon_job("🔍", "Search or Ctrl+K", 12.0, ui.visuals().weak_text_color())).fill(ui.visuals().extreme_bg_color).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(200.0, 22.0));
+                    if ui.add(sb).on_hover_text("Command palette: type a command (clash, section, pdf, theme...) or an element name").clicked() {
+                        self.palette_open = true;
                     }
                     ui.label(RichText::new("ManageBIM").strong().color(accent()));
                     if let Some(p) = &self.project_path {
@@ -1605,7 +1616,15 @@ impl App {
             }
             self.panel_btn(ui, Panel::Section, "⚙", "Planes", "Section planes & box");
             if rbtn(ui, "📐", "Cut to DWG", "Export the cut of the current section as 2D lines (DWG / DXF), one layer per element type:\nlevel section = plan cut at +1.20 m (like Revit plans), section plane = that plane (elevation / section).\nDWG needs the free ODA File Converter; otherwise a DXF is saved.", false, self.section.enabled).clicked() {
+                self.cad_sheet = false;
                 self.request_path(Purpose::ExportSectionCad);
+            }
+            if rbtn(ui, "📄", "Cut on Sheet", "The same cut placed on a drawing sheet (A3 / A2 / A1 / A0) at a standard scale, with frame and the title block (edit it with Title Block)", false, self.section.enabled).clicked() {
+                self.cad_sheet = true;
+                self.request_path(Purpose::ExportSectionCad);
+            }
+            if rbtn(ui, "✏", "Title Block", "Edit the title block, the sheet format (A3 - A0) and the scale", self.title_block_open, true).clicked() {
+                self.title_block_open = !self.title_block_open;
             }
         });
         // acces rapid: nivelul, sus / jos, box de nivel sau taietura de plan
@@ -1675,6 +1694,7 @@ impl App {
     }
 
     fn ribbon_render(&mut self, ui: &mut egui::Ui) {
+        self.style_group(ui);
         rgroup(ui, "Presentation", |ui| {
             let on = self.panel_shown(Panel::Render) && self.render_subtab == 0;
             if rbtn(ui, "🎬", "Animation", "Camera animations & video export", on, true).clicked() {
@@ -1807,7 +1827,26 @@ impl App {
         });
     }
 
+    /// Stilul de afisare: Realistic / Shaded / Concept / Wireframe
+    fn style_group(&mut self, ui: &mut egui::Ui) {
+        rgroup(ui, "Visual Style", |ui| {
+            use crate::render::VisualStyle as V;
+            let cur = self.settings.visual_style;
+            for (s, icon, tip) in [
+                (V::Realistic, "☀", "Materials, textures, reflections, contact shadows"),
+                (V::Shaded, "◆", "The model colours with light and shadow, no textures"),
+                (V::Concept, "✏", "Study model: white, matte, strong edges - good for presentations and reviews"),
+                (V::Wireframe, "▦", "Triangle edges only - see through the model"),
+            ] {
+                if rbtn(ui, icon, s.label(), tip, cur == s, true).clicked() && cur != s {
+                    self.set_visual_style(s);
+                }
+            }
+        });
+    }
+
     fn ribbon_view(&mut self, ui: &mut egui::Ui) {
+        self.style_group(ui);
         // ferestrele si optiunile in meniuri derulante: ribbon-ul pastreaza aceeasi inaltime pe toate tab-urile
         rgroup(ui, "Windows", |ui| {
             let open_n = crate::layout::ALL_PANELS.iter().filter(|p| self.settings.layout.is_open(**p)).count();
@@ -1941,6 +1980,15 @@ impl App {
         rgroup(ui, "Help", |ui| {
             if rbtn(ui, "🖱", "Controls", "Mouse & keyboard navigation", false, true).clicked() {
                 self.show_help = true;
+            }
+            if rbtn(ui, "📄", "Manual", "The ManageBIM manual: every feature, step by step, with search", self.manual_open, true).clicked() {
+                self.manual_open = !self.manual_open;
+            }
+            if rbtn(ui, "🏗", "Demo", "Open the demo project (Block A: architecture + structure, MEP, 4D schedule)", false, true).clicked() {
+                self.open_demo();
+            }
+            if rbtn(ui, "≡", "Commands", "Command palette (Ctrl+K): type what you want to do", self.palette_open, true).clicked() {
+                self.palette_open = true;
             }
             if rbtn(ui, "❓", "About", "About ManageBIM", false, true).clicked() {
                 self.show_about = true;
@@ -2094,6 +2142,9 @@ impl App {
             if rbtn(ui, "📄", "PDF Sheets", "One A3 sheet per viewpoint: large image, description, comments and a title block (project, viewpoint, status, date, sheet number)", false, can).clicked() {
                 self.request_path(Purpose::ExportVpPdf);
             }
+            if rbtn(ui, "✏", "Title Block", "Edit the title block and the sheet format (A3 - A0) used by the PDF sheets", self.title_block_open, true).clicked() {
+                self.title_block_open = !self.title_block_open;
+            }
             if rbtn(ui, "📤", "BCF", "BCF 2.1 issues (Revit, Navisworks, Solibri, BIMcollab, ACC...)", false, can).clicked() {
                 self.request_path(Purpose::ExportBcf);
             }
@@ -2198,8 +2249,15 @@ impl App {
                     act = Some(StartAction::Close);
                 }
             }
+            ui.add_space(4.0);
+            if ui.add(big("🏗  Demo project")).on_hover_text("Block A: architecture + structure, MEP and a 4D schedule - try every feature").clicked() {
+                self.open_demo();
+            }
+            if ui.add(big("❓  Manual")).on_hover_text("The ManageBIM manual, with search").clicked() {
+                self.manual_open = true;
+            }
             ui.add_space(16.0);
-            ui.label(RichText::new("or drag files into the window").small().color(pal.overlay_weak));
+            ui.label(RichText::new("or drag files into the window  ·  Ctrl+K: commands").small().color(pal.overlay_weak));
             // recuperare dupa o inchidere neasteptata
             if let Some((_, orig, when)) = self.autosave.recover.clone() {
                 ui.add_space(20.0);
@@ -7072,6 +7130,9 @@ impl App {
     }
 
     fn windows(&mut self, ctx: &egui::Context) {
+        self.manual_window(ctx);
+        self.title_block_window(ctx);
+        self.command_palette(ctx);
         self.asbuilt_window(ctx);
         if let Some(pr) = &mut self.prompt {
             let mut ok = false;
@@ -8036,4 +8097,539 @@ fn cat_color(label: &str) -> Color32 {
     }
     let c = crate::profiler::palette(h as usize % 12);
     Color32::from_rgb(c[0], c[1], c[2])
+}
+
+// ===================================================================== paleta de comenzi (Ctrl+K)
+
+/// O comanda din paleta: nume, categorie, iconita, cuvinte cheie (si in romana), actiunea.
+struct Cmd {
+    name: &'static str,
+    cat: &'static str,
+    icon: &'static str,
+    keys: &'static str,
+    run: fn(&mut App),
+}
+
+fn commands() -> Vec<Cmd> {
+    macro_rules! c {
+        ($name:expr, $cat:expr, $icon:expr, $keys:expr, $run:expr) => {
+            Cmd { name: $name, cat: $cat, icon: $icon, keys: $keys, run: $run }
+        };
+    }
+    vec![
+        // ---- fisier / proiect
+        c!("Open model…", "File", "📂", "deschide open ifc rvt nwd dwg e57", |a| a.request_path(Purpose::OpenModel { append: false })),
+        c!("Append model…", "File", "➕", "adauga append federate", |a| a.request_path(Purpose::OpenModel { append: true })),
+        c!("Open project…", "File", "📁", "proiect bimr", |a| a.request_path(Purpose::OpenProject)),
+        c!("Save project", "File", "💾", "salveaza save ctrl+s", |a| match a.project_path.clone() {
+            Some(p) => a.save_project(&p),
+            None => a.request_path(Purpose::SaveProject),
+        }),
+        c!("Save project as…", "File", "💾", "salveaza ca save as", |a| a.request_path(Purpose::SaveProject)),
+        c!("New project", "File", "📄", "nou new", |a| a.new_project()),
+        c!("Publish project (.bimd)…", "File", "📦", "publica nwd bimd", |a| a.request_path(Purpose::PublishBimd)),
+        c!("Refresh changed models", "File", "⟳", "reincarca refresh f5", |a| a.refresh_models(false)),
+        c!("Start page", "File", "🏠", "pagina start recente recent", |a| a.show_start = true),
+        // ---- selectie
+        c!("Select all", "Select", "⬚", "selecteaza tot ctrl+a", |a| {
+            let all = a.all_ids();
+            a.apply(Action::Select(all, false));
+        }),
+        c!("Clear selection", "Select", "🔲", "deselecteaza", |a| a.clear_selection()),
+        c!("Select same type", "Select", "⧉", "similar acelasi tip ctrl+shift+a", |a| a.select_similar(true)),
+        c!("Select same category", "Select", "▦", "similar aceeasi categorie", |a| a.select_similar(false)),
+        c!("Window selection", "Select", "⬚", "fereastra dreptunghi", |a| a.tool = Tool::Window),
+        c!("Hide selected", "Visibility", "🚫", "ascunde hide h", |a| {
+            let s: Vec<ElemId> = a.selected.iter().copied().collect();
+            a.apply(Action::Hide(s));
+        }),
+        c!("Isolate selected (hide unselected)", "Visibility", "◎", "izoleaza isolate i", |a| {
+            let s: Vec<ElemId> = a.selected.iter().copied().collect();
+            a.apply(Action::Isolate(s));
+        }),
+        c!("Unhide all", "Visibility", "👁", "arata tot show all", |a| a.apply(Action::ShowAll)),
+        c!("Focus on selection", "View", "🎯", "zoom selectie f", |a| {
+            let s: Vec<ElemId> = a.selected.iter().copied().collect();
+            a.apply(Action::Focus(s));
+        }),
+        // ---- vizualizare
+        c!("Fit all", "View", "⛶", "zoom extents tot modelul", |a| {
+            let bb = a.scene_aabb();
+            let mut t = a.cam;
+            t.fit(&bb);
+            a.fly_to(t);
+        }),
+        c!("Home view", "View", "🏠", "acasa home", |a| a.go_home()),
+        c!("Perspective / orthographic", "View", "🔭", "ortho perspectiva", |a| a.cam.ortho = !a.cam.ortho),
+        c!("Visual style: Shaded", "View", "◆", "stil umbrit shaded", |a| a.set_visual_style(crate::render::VisualStyle::Shaded)),
+        c!("Visual style: Realistic", "View", "☀", "stil realist materiale texturi realistic", |a| a.set_visual_style(crate::render::VisualStyle::Realistic)),
+        c!("Visual style: Concept", "View", "✏", "stil conceptual alb margini concept hidden line", |a| a.set_visual_style(crate::render::VisualStyle::Concept)),
+        c!("Visual style: Wireframe", "View", "▦", "stil fir de sarma wireframe", |a| a.set_visual_style(crate::render::VisualStyle::Wireframe)),
+        c!("Theme: Studio", "View", "◆", "tema", |a| a.set_theme(Theme::Studio)),
+        c!("Theme: Dark", "View", "🌙", "tema intunecata", |a| a.set_theme(Theme::Dark)),
+        c!("Theme: Light", "View", "☀", "tema luminoasa", |a| a.set_theme(Theme::Light)),
+        c!("Theme: Tokyo Night", "View", "🌃", "tema", |a| a.set_theme(Theme::TokyoNight)),
+        c!("Theme: Nord", "View", "❄", "tema", |a| a.set_theme(Theme::Nord)),
+        c!("Ribbon: Full / Compact / Mini", "View", "≡", "ribbon panglica marime", |a| {
+            a.settings.ribbon_mode = a.settings.ribbon_mode.next();
+            a.settings.save();
+        }),
+        c!("Hide / show all panels (F11)", "View", "🗔", "panouri ecran complet", |a| a.settings.layout.hide_all = !a.settings.layout.hide_all),
+        // ---- navigare / unelte
+        c!("Orbit", "Navigate", "🔄", "roteste", |a| {
+            a.nav = NavMode::Orbit;
+            a.tool = Tool::Select;
+        }),
+        c!("Pan", "Navigate", "✋", "deplaseaza", |a| a.nav = NavMode::Pan),
+        c!("Walk", "Navigate", "🚶", "mers plimbare", |a| a.nav = NavMode::Walk),
+        c!("Measure point to point", "Review", "📏", "masoara distanta", |a| a.tool = Tool::Measure(MeasureKind::PointToPoint)),
+        c!("Markup (cloud)", "Review", "✏", "redline nor adnotare", |a| a.tool = Tool::Redline(crate::markup::RedKind::Cloud)),
+        // ---- sectiuni
+        c!("Section box around selection", "Sections", "⬚", "sectiune selectie box", |a| a.section_to_selection()),
+        c!("Section off", "Sections", "✂", "opreste sectiunea", |a| a.section.enabled = false),
+        c!("Section cut to DWG / DXF (2D in model)…", "Sections", "📐", "taietura plan autocad dwg dxf export model space", |a| {
+            a.cad_sheet = false;
+            a.request_path(Purpose::ExportSectionCad);
+        }),
+        c!("Section cut on sheet (DWG)…", "Sections", "📄", "plansa cartus a3 a2 a1 scara dwg", |a| {
+            a.cad_sheet = true;
+            a.request_path(Purpose::ExportSectionCad);
+        }),
+        c!("Title block & sheet format", "Sections", "✏", "cartus format a3 a2 a1 a0 scara editare", |a| a.title_block_open = true),
+        // ---- panouri
+        c!("Selection Tree", "Panels", "🌲", "arbore", |a| a.open_panel(Panel::Tree)),
+        c!("Properties", "Panels", "ℹ", "proprietati", |a| a.open_panel(Panel::Properties)),
+        c!("Find Items", "Panels", "🔍", "cauta gaseste ctrl+f", |a| a.open_panel(Panel::Find)),
+        c!("Sets", "Panels", "📋", "seturi", |a| a.open_panel(Panel::Sets)),
+        c!("Clash Detective", "Coordination", "⚠", "clash coliziuni", |a| a.open_panel(Panel::Clash)),
+        c!("Model Checker (rules / IDS)", "Coordination", "✔", "verificare reguli ids", |a| a.open_panel(Panel::Check)),
+        c!("TimeLiner", "Coordination", "📅", "4d planificare", |a| a.open_panel(Panel::TimeLiner)),
+        c!("Viewpoints & issues", "Review", "📷", "vederi issue", |a| a.open_panel(Panel::Viewpoints)),
+        c!("Quantification", "Analyze", "📊", "cantitati qto", |a| a.open_panel(Panel::Quantities)),
+        c!("Compare versions", "Analyze", "⚖", "compara diferente", |a| a.open_panel(Panel::Compare)),
+        c!("Appearance Profiler", "Analyze", "🎨", "culori dupa proprietate", |a| a.open_panel(Panel::Profiler)),
+        c!("Scan vs Model (as-built)", "Analyze", "☁", "nor de puncte as built scanare", |a| a.asbuilt_open = true),
+        c!("Coordinates / move model", "Analyze", "📐", "muta roteste relocare", |a| a.open_panel(Panel::Coords)),
+        c!("Render & materials", "Render", "🎬", "randare materiale lumina", |a| a.open_panel(Panel::Render)),
+        // ---- export / share
+        c!("Export IFC4…", "Export", "🏗", "ifc export", |a| {
+            a.ifc_selection = false;
+            a.request_path(Purpose::ExportIfc);
+        }),
+        c!("Web viewer (HTML)…", "Share", "🌐", "web html browser", |a| {
+            a.web_selection = !a.selected.is_empty();
+            a.request_path(Purpose::ExportWeb);
+        }),
+        c!("PDF sheets from viewpoints…", "Export", "📄", "planse pdf", |a| a.request_path(Purpose::ExportVpPdf)),
+        c!("Viewpoints report (HTML)…", "Export", "📄", "raport", |a| a.request_path(Purpose::ExportVpHtml)),
+        c!("Viewpoints report (Excel)…", "Export", "📊", "raport excel", |a| a.request_path(Purpose::ExportVpXlsx)),
+        c!("Issues to BCF…", "Export", "📤", "bcf issue", |a| a.request_path(Purpose::ExportBcf)),
+        c!("Import BCF…", "Export", "📥", "bcf import", |a| a.request_path(Purpose::ImportBcf)),
+        c!("Reference for Revit / AutoCAD…", "Share", "🔗", "mbref referinta", |a| a.request_path(Purpose::ExportReference)),
+        c!("Render image…", "Render", "🖼", "imagine png", |a| a.request_path(Purpose::RenderImage)),
+        // ---- coordonare
+        c!("Live Link: sync selection on / off", "Coordination", "🔗", "revit navisworks sincronizare selectie", |a| {
+            let on = !a.settings.sync_selection;
+            a.set_sync(on);
+        }),
+        c!("Run model check", "Coordination", "✔", "verifica reguli", |a| a.run_check()),
+        c!("Import IDS…", "Coordination", "📥", "ids buildingsmart", |a| a.request_path(Purpose::ImportCheckRules)),
+        c!("Clash matrix (Excel)…", "Coordination", "▦", "matrice clash", |a| a.request_path(Purpose::ExportClashMatrix)),
+        // ---- ajutor
+        c!("User manual", "Help", "❓", "manual ajutor help documentatie", |a| a.manual_open = true),
+        c!("Open demo project", "Help", "🏗", "demo exemplu proiect", |a| a.open_demo()),
+    ]
+}
+
+/// potrivire "fuzzy": toate literele cautarii, in ordine; scor mai mare pentru cuvinte intregi / inceputuri
+fn fuzzy(q: &str, text: &str) -> Option<i32> {
+    if q.is_empty() {
+        return Some(0);
+    }
+    let t = text.to_lowercase();
+    let mut score = 0;
+    for w in q.split_whitespace() {
+        if let Some(p) = t.find(w) {
+            score += 100 - (p as i32).min(60) + if p == 0 || t.as_bytes().get(p - 1) == Some(&b' ') { 40 } else { 0 };
+            continue;
+        }
+        // subsecventa
+        let mut it = t.chars();
+        let mut gaps = 0;
+        for c in w.chars() {
+            let mut found = false;
+            for x in it.by_ref() {
+                if x == c {
+                    found = true;
+                    break;
+                }
+                gaps += 1;
+            }
+            if !found {
+                return None;
+            }
+        }
+        score += 30 - gaps.min(29);
+    }
+    Some(score)
+}
+
+impl App {
+    /// Paleta de comenzi: Ctrl+K (sau clic pe "Search or Ctrl+K"), scrii, Enter.
+    fn command_palette(&mut self, ctx: &egui::Context) {
+        if !self.palette_open {
+            return;
+        }
+        let cmds = commands();
+        let q = self.palette_q.trim().to_lowercase();
+        let mut hits: Vec<(i32, usize)> = cmds
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| fuzzy(&q, &format!("{} {} {}", c.name, c.cat, c.keys)).map(|s| (s + if fuzzy(&q, c.name).is_some() { 50 } else { 0 }, i)))
+            .collect();
+        hits.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        hits.truncate(12);
+        // elemente din model cu numele cautat (selectie + zoom)
+        let mut elems: Vec<(ElemId, String, String)> = Vec::new();
+        if q.len() >= 2 {
+            'outer: for (mi, m) in self.loaded_models() {
+                for (ei, e) in m.elements.iter().enumerate() {
+                    if e.name.to_lowercase().contains(&q) || e.guid.to_lowercase() == q {
+                        elems.push((ElemId { m: mi as u32, e: ei as u32 }, e.name.clone(), e.ifc_type.clone()));
+                        if elems.len() >= 6 {
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+        }
+        let total = hits.len() + elems.len();
+        if self.palette_sel >= total.max(1) {
+            self.palette_sel = total.saturating_sub(1);
+        }
+        let (up, down, enter, esc) = ctx.input(|i| (i.key_pressed(Key::ArrowUp), i.key_pressed(Key::ArrowDown), i.key_pressed(Key::Enter), i.key_pressed(Key::Escape)));
+        if up {
+            self.palette_sel = self.palette_sel.saturating_sub(1);
+        }
+        if down && self.palette_sel + 1 < total {
+            self.palette_sel += 1;
+        }
+        let mut chosen: Option<usize> = if enter && total > 0 { Some(self.palette_sel) } else { None };
+        let screen = ctx.screen_rect();
+        let w = 560.0_f32.min(screen.width() - 40.0);
+        // fundal estompat; clic in afara inchide
+        let bg = egui::Area::new(egui::Id::new("palette_bg")).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
+            let (r, resp) = ui.allocate_exact_size(screen.size(), Sense::click());
+            ui.painter().rect_filled(r, 0.0, Color32::from_black_alpha(90));
+            resp.clicked()
+        });
+        let mut close = esc || bg.inner;
+        egui::Area::new(egui::Id::new("palette")).order(egui::Order::Tooltip).fixed_pos(Pos2::new(screen.center().x - w / 2.0, screen.top() + 90.0)).show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).rounding(12.0).inner_margin(10.0).show(ui, |ui| {
+                ui.set_width(w);
+                let te = ui.add(egui::TextEdit::singleline(&mut self.palette_q).hint_text("Type a command or an element name…  (↑ ↓ Enter, Esc)").desired_width(f32::INFINITY).font(egui::FontId::proportional(16.0)).margin(egui::vec2(8.0, 6.0)));
+                te.request_focus();
+                if te.changed() {
+                    self.palette_sel = 0;
+                }
+                ui.add_space(6.0);
+                let mut k = 0usize;
+                let mut last_cat = "";
+                for (_, i) in &hits {
+                    let c = &cmds[*i];
+                    if c.cat != last_cat {
+                        last_cat = c.cat;
+                        ui.label(RichText::new(c.cat.to_uppercase()).small().weak());
+                    }
+                    let sel = k == self.palette_sel;
+                    let col = if sel { ui.visuals().strong_text_color() } else { ui.visuals().text_color() };
+                    let (r, resp) = ui.allocate_exact_size(EV::new(w, 26.0), Sense::click());
+                    if sel {
+                        ui.painter().rect_filled(r, 6.0, accent().gamma_multiply(0.2));
+                    } else if resp.hovered() {
+                        ui.painter().rect_filled(r, 6.0, ui.visuals().widgets.hovered.weak_bg_fill);
+                    }
+                    ui.painter().text(r.left_center() + EV::new(16.0, 0.0), Align2::CENTER_CENTER, crate::theme::ph(c.icon), crate::theme::icon_font(15.0), if sel { accent() } else { ui.visuals().weak_text_color() });
+                    ui.painter().text(r.left_center() + EV::new(34.0, 0.0), Align2::LEFT_CENTER, c.name, FontId::proportional(14.0), col);
+                    if resp.clicked() {
+                        chosen = Some(k);
+                    }
+                    if resp.hovered() && ui.input(|i| i.pointer.delta().length() > 0.0) {
+                        self.palette_sel = k;
+                    }
+                    k += 1;
+                }
+                if !elems.is_empty() {
+                    ui.label(RichText::new("ELEMENTS").small().weak());
+                    for (_, name, ty) in &elems {
+                        let sel = k == self.palette_sel;
+                        let (r, resp) = ui.allocate_exact_size(EV::new(w, 24.0), Sense::click());
+                        if sel {
+                            ui.painter().rect_filled(r, 6.0, accent().gamma_multiply(0.2));
+                        }
+                        ui.painter().text(r.left_center() + EV::new(16.0, 0.0), Align2::CENTER_CENTER, egui_phosphor::regular::CUBE, crate::theme::icon_font(14.0), ui.visuals().weak_text_color());
+                        ui.painter().text(r.left_center() + EV::new(34.0, 0.0), Align2::LEFT_CENTER, format!("{name}   ·  {ty}"), FontId::proportional(13.5), ui.visuals().text_color());
+                        if resp.clicked() {
+                            chosen = Some(k);
+                        }
+                        k += 1;
+                    }
+                }
+                if total == 0 {
+                    ui.label(RichText::new("Nothing found.").weak());
+                }
+            });
+        });
+        if let Some(k) = chosen {
+            close = true;
+            if k < hits.len() {
+                (cmds[hits[k].1].run)(self);
+            } else if let Some((id, _, _)) = elems.get(k - hits.len()) {
+                self.apply(Action::Select(vec![*id], false));
+                self.apply(Action::Focus(vec![*id]));
+            }
+        }
+        if close {
+            self.palette_open = false;
+            self.palette_q.clear();
+            self.palette_sel = 0;
+        }
+    }
+}
+
+// ===================================================================== manualul integrat
+
+/// Capitolele manualului: (iconita, titlu, text). Randurile care incep cu "- " sunt liste,
+/// cele care incep cu "# " sunt subtitluri, "> " = sfat.
+const MANUAL: [(&str, &str, &str); 14] = [
+    ("🏠", "Getting started", "ManageBIM opens IFC, Revit (through the add-in), Navisworks NWD / NWC, DWG / DXF, STEP, glTF, FBX, OBJ, E57 / LAS point clouds and more.
+# First steps
+- Start page: New project, Open (a model or a .bimr project) or a recent file.
+- Append (Home › Append) adds more models to the same project: architecture, structure, MEP, point clouds.
+- Save (Ctrl+S) writes a .bimr project: models, viewpoints, sets, clash tests, rules, materials. Publish (.bimd) packs everything into one file to send.
+- Help › Open demo project loads Block A (architecture + structure, MEP and a 4D schedule) to try everything.
+> Ctrl+K opens the command palette: type what you want (\"clash\", \"section\", \"pdf\") or the name of an element and press Enter."),
+    ("🔄", "Navigation", "# Mouse
+- Left drag: orbit around the point under the cursor.
+- Middle drag or Shift + left drag: pan. Wheel: zoom towards the cursor.
+- Double-click an element: zoom to it. Home key: home view. F: focus on the selection.
+# Walk
+- Walk mode (bottom bar): drag up = forward, sideways = turn; W A S D also work. Draw a walk path and play it.
+# ViewCube and projection
+- Click a face / edge / corner of the cube for standard views. Persp / Ortho switches the projection.
+> In large models small objects are hidden while you move (adaptive LOD) and come back when the camera stops."),
+    ("👆", "Selection & visibility", "- Click selects, Ctrl+click adds / removes. Window: drag left -> right = inside, right -> left = touching.
+- Select › Same Type (Ctrl+Shift+A) selects every visible element of the same type; Same Category takes the whole category.
+- Hide (H), Hide Unselected (I), Unhide All. The eye icons in the Selection Tree hide groups.
+- Find Items: conditions as chips (Level = 2, Type = Wall...), Find All; save them as a search set (Sets).
+- Selection Tree: group by any property (Group by), search the model, double-click to zoom."),
+    ("◆", "Visual styles & appearance", "- Visual style (View tab, or Ctrl+K): Realistic (materials, textures, reflections), Shaded (file colours), Concept (white study model with strong edges), Wireframe.
+- Render › Edges and Contact shadows set the fine outlines and the soft shadows.
+- Appearance Profiler colours the model by any property (level, system, fire rating...).
+- Materials: library, PBR packs (.zip from freepbr.com, ambientCG...), saved in your own library for every project.
+- Themes: Studio, Dark, Light, Tokyo Night, Nord (chip in the top right). The ribbon has three sizes: Full, Compact, Mini."),
+    ("✂", "Sections & levels", "- Status bar › Level: pick a level to cut the model at that level (plan view), All levels to turn it off.
+- Sections tab: section box around the selection (Fit Section), Model box with stretch arrows, section planes.
+- Cut to DWG: the cut of the current section as 2D lines on an A3 sheet with a title block, at a standard scale (1:50 / 1:100 / 1:200), one layer per element type. DWG needs the free ODA File Converter, otherwise a DXF is saved.
+- Grids and levels: from IFC, from DWG / DXF, or created in the app; clash locations use them (C-4 / Level 2)."),
+    ("📏", "Measure & relocate", "- Measure: point to point, chained, angle, area; snaps to corners, midpoints and edges. Units m / mm in the status bar.
+- Relocate (Analyze tab): move, rotate and align models or elements - from a point to a point, along an edge, onto a surface.
+- Coordinates: shared coordinates / origin, reset moves."),
+    ("⚠", "Clash Detective", "- Add a test: selection A against selection B (models, sets, types), hard clash or clearance with a tolerance.
+- Run: results grouped by level, grid location, item or type; status New / Active / Reviewed / Approved / Resolved is kept between runs.
+- Clash matrix: open clashes per pair of models, Excel export.
+- Reports: HTML, CSV, BCF (Revit, ACC, Solibri, BIMcollab), Navisworks viewpoints XML."),
+    ("✔", "Model Checker (rules & IDS)", "- A rule = which elements it applies to (type, property, attribute) + what they must have (property present, exact value, list, /pattern/, range 10..20, optional or prohibited).
+- Import buildingSMART IDS 1.0 files; start from the starter rules; save rules as .mbrules (also saved in the project).
+- Run check: pass / fail per rule, failing elements with the reason, Select / Isolate, Excel and BCF reports."),
+    ("🔗", "Live Link with Revit & Navisworks", "- In ManageBIM: Select › Live Link › Sync Selection.
+- In Revit: ManageBIM tab › Sync Selection. In Navisworks: Tool Add-ins › Sync Selection.
+- Select in one program and the same elements are selected (and zoomed to) in the others. Elements are matched by UniqueId / IFC GUID, so the ManageBIM model must come from the same Revit model (Send / Export BIMC or its IFC).
+- Revit / AutoCAD / Plant 3D reference: Share › Reference (Revit / CAD) brings the ManageBIM model into the authoring tool as light reference geometry (Load / Reload / Unload)."),
+    ("☁", "Point clouds & as-built", "- Open or Append E57 / LAS scans; point size and density in Render.
+- Analyze › Scan vs Model: every visible element is sampled on its surface and compared with the scan: Built, Partial, Missing or Not scanned, with colours on the model, Select / Isolate and an Excel report.
+> Hidden faces (backs, insides) are never scanned, so the 'Built' threshold is intentionally low (30 %)."),
+    ("📅", "TimeLiner (4D) & quantities", "- TimeLiner: tasks with dates, attached to sets or selections; import / export CSV; simulation with a date slider and video export.
+- Quantification: counts, volumes, areas and lengths grouped by any property, with Excel export and templates.
+- Compare: two versions of a model - added, removed, moved and changed elements."),
+    ("📷", "Viewpoints, issues & markups", "- Save viewpoints with the camera, section, hidden elements and markups (clouds, arrows, text).
+- Issues: status, priority, responsible, comments; shared issues folder for the team (network / SharePoint).
+- Reports: HTML, Excel, BCF, and PDF Sheets - one A3 sheet per viewpoint with the image, the description, the comments and a title block."),
+    ("🌐", "Export & share", "- IFC4 export of the visible elements or of the selection (geometry, colours, levels, GUIDs, all properties).
+- Web viewer: one .html file with the model, tree, search, properties, hide / isolate and X-ray - opens offline in any browser.
+- .bimd: the whole project in one file. Navisworks XML (viewpoints, sets, clash tests), BCF, Excel / CSV, images and video."),
+    ("⌨", "Keyboard shortcuts", "- Ctrl+K: command palette        Ctrl+F: Find Items
+- Ctrl+O: open        Ctrl+S: save        F5: refresh changed models
+- Ctrl+A: select all        Ctrl+Shift+A: select same type        Esc: clear / cancel
+- H: hide        I: hide unselected        F: focus        Home: home view
+- W A S D / arrows: walk        PgUp / PgDn: level above / below        F11: hide all panels"),
+];
+
+impl App {
+    /// Fereastra manualului: cuprins + cautare in stanga, capitolul in dreapta.
+    fn manual_window(&mut self, ctx: &egui::Context) {
+        if !self.manual_open {
+            return;
+        }
+        let mut open = true;
+        let mut demo = false;
+        egui::Window::new(crate::theme::icon_job("❓", "ManageBIM manual", 14.0, ctx.style().visuals.text_color()))
+            .id(egui::Id::new("manual_win"))
+            .open(&mut open)
+            .default_size([760.0, 520.0])
+            .resizable(true)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                ui.horizontal_top(|ui| {
+                    // ---- cuprins
+                    ui.vertical(|ui| {
+                        ui.set_width(210.0);
+                        ui.add(egui::TextEdit::singleline(&mut self.manual_q).hint_text("🔍 Search the manual").desired_width(200.0));
+                        ui.add_space(4.0);
+                        let q = self.manual_q.trim().to_lowercase();
+                        egui::ScrollArea::vertical().id_salt("manual_toc").max_height(ui.available_height() - 40.0).show(ui, |ui| {
+                            for (i, (icon, title, body)) in MANUAL.iter().enumerate() {
+                                if !q.is_empty() && !title.to_lowercase().contains(&q) && !body.to_lowercase().contains(&q) {
+                                    continue;
+                                }
+                                let sel = self.manual_page == i;
+                                let b = egui::Button::new(crate::theme::icon_job(icon, title, 13.5, if sel { accent() } else { ui.visuals().text_color() }))
+                                    .fill(if sel { accent().gamma_multiply(0.16) } else { Color32::TRANSPARENT })
+                                    .stroke(Stroke::NONE)
+                                    .rounding(6.0)
+                                    .min_size(EV::new(200.0, 26.0));
+                                if ui.add(b).clicked() {
+                                    self.manual_page = i;
+                                }
+                            }
+                        });
+                        ui.add_space(6.0);
+                        if ui.add(egui::Button::new(RichText::new("Open demo project").strong().color(Color32::WHITE)).fill(accent()).rounding(7.0).min_size(EV::new(200.0, 28.0))).clicked() {
+                            demo = true;
+                        }
+                    });
+                    // ---- capitolul
+                    ui.vertical(|ui| {
+                        let (icon, title, body) = MANUAL[self.manual_page.min(MANUAL.len() - 1)];
+                        ui.label(crate::theme::icon_job(icon, title, 20.0, ui.visuals().strong_text_color()));
+                        ui.add_space(6.0);
+                        let q = self.manual_q.trim().to_lowercase();
+                        egui::ScrollArea::vertical().id_salt("manual_body").auto_shrink([false, false]).show(ui, |ui| {
+                            for line in body.lines() {
+                                let line = line.trim_end();
+                                let hit = !q.is_empty() && line.to_lowercase().contains(&q);
+                                if let Some(h) = line.strip_prefix("# ") {
+                                    ui.add_space(6.0);
+                                    ui.label(RichText::new(h.to_uppercase()).small().strong().color(ui.visuals().weak_text_color()));
+                                } else if let Some(t) = line.strip_prefix("> ") {
+                                    egui::Frame::none().fill(accent().gamma_multiply(0.12)).rounding(7.0).inner_margin(8.0).show(ui, |ui| {
+                                        ui.set_width(ui.available_width());
+                                        ui.label(crate::theme::icon_job("💡", t, 13.5, ui.visuals().text_color()));
+                                    });
+                                } else if let Some(t) = line.strip_prefix("- ") {
+                                    ui.horizontal_wrapped(|ui| {
+                                        ui.label(RichText::new("•").color(accent()));
+                                        let mut rt = RichText::new(t).size(13.5);
+                                        if hit {
+                                            rt = rt.background_color(accent().gamma_multiply(0.25));
+                                        }
+                                        ui.label(rt);
+                                    });
+                                } else if !line.is_empty() {
+                                    let mut rt = RichText::new(line).size(13.5);
+                                    if hit {
+                                        rt = rt.background_color(accent().gamma_multiply(0.25));
+                                    }
+                                    ui.label(rt);
+                                }
+                                ui.add_space(2.0);
+                            }
+                        });
+                    });
+                });
+            });
+        if !open {
+            self.manual_open = false;
+        }
+        if demo {
+            self.open_demo();
+        }
+    }
+}
+
+impl App {
+    /// Editorul cartusului (planse PDF si DWG pe plansa): campuri, format, scara.
+    fn title_block_window(&mut self, ctx: &egui::Context) {
+        if !self.title_block_open {
+            return;
+        }
+        let mut open = true;
+        let mut export: Option<Purpose> = None;
+        egui::Window::new(crate::theme::icon_job("📄", "Title block & sheet", 14.0, ctx.style().visuals.text_color()))
+            .id(egui::Id::new("tb_win"))
+            .open(&mut open)
+            .default_width(420.0)
+            .resizable(false)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                ui.label(RichText::new("Used by PDF Sheets and Cut to DWG (on sheet). Saved with the project.").small().weak());
+                ui.add_space(4.0);
+                let fallback = self.project_path.as_ref().map(|p| model_label(&crate::file_name(p))).unwrap_or_else(|| "ManageBIM".into());
+                let tb = &mut self.title_block;
+                egui::Grid::new("tb_grid").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
+                    let field = |ui: &mut egui::Ui, label: &str, v: &mut String, hint: &str| {
+                        ui.label(label);
+                        ui.add(egui::TextEdit::singleline(v).hint_text(hint).desired_width(260.0));
+                        ui.end_row();
+                    };
+                    field(ui, "Company", &mut tb.company, "your company");
+                    field(ui, "Project", &mut tb.project, &fallback);
+                    field(ui, "Client", &mut tb.client, "");
+                    field(ui, "Drawn by", &mut tb.drawn, "issue author");
+                    field(ui, "Checked by", &mut tb.checked, "");
+                    field(ui, "Sheet number prefix", &mut tb.number_prefix, "S-  ->  S-01, S-02...");
+                    field(ui, "Revision", &mut tb.revision, "A");
+                    field(ui, "Notes", &mut tb.notes, "one line in the title block");
+                    ui.label("Sheet format");
+                    ui.horizontal(|ui| {
+                        for p in crate::pdf::PAPERS {
+                            let (w, h) = crate::pdf::paper_mm(p);
+                            if ui.selectable_label(tb.paper == p, p).on_hover_text(format!("{w:.0} x {h:.0} mm, landscape")).clicked() {
+                                tb.paper = p.to_string();
+                            }
+                        }
+                    });
+                    ui.end_row();
+                    ui.label("Scale (DWG)");
+                    let cur = if tb.scale == 0 { "Auto (largest that fits)".to_string() } else { format!("1:{}", tb.scale) };
+                    egui::ComboBox::from_id_salt("tb_scale").width(200.0).selected_text(cur).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut tb.scale, 0, "Auto (largest that fits)");
+                        for n in crate::pdf::SCALES {
+                            ui.selectable_value(&mut tb.scale, n, format!("1:{n}"));
+                        }
+                    });
+                    ui.end_row();
+                });
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    let has_vp = !self.viewpoints.is_empty();
+                    if ui.add_enabled(has_vp, egui::Button::new("📄 PDF sheets…")).on_hover_text("One sheet per saved viewpoint").clicked() {
+                        export = Some(Purpose::ExportVpPdf);
+                    }
+                    if ui.add_enabled(self.section.enabled, egui::Button::new("📐 Cut to DWG on sheet…")).on_hover_text("The cut of the current section, scaled on this sheet").clicked() {
+                        self.cad_sheet = true;
+                        export = Some(Purpose::ExportSectionCad);
+                    }
+                    if ui.button("Reset").clicked() {
+                        self.title_block = Default::default();
+                    }
+                });
+            });
+        if !open {
+            self.title_block_open = false;
+        }
+        if let Some(p) = export {
+            self.request_path(p);
+        }
+    }
 }

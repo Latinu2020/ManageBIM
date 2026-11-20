@@ -79,7 +79,7 @@ fn text(c: &mut Vec<u8>, x: f32, y: f32, size: f32, bold: bool, s: &str) {
 }
 
 /// PDF-ul cu cate o plansa pentru fiecare viewpoint.
-pub fn sheets(project: &str, items: &[ReportItem], date: &str) -> Vec<u8> {
+pub fn sheets(project: &str, items: &[ReportItem], date: &str, tb: &TitleBlock) -> Vec<u8> {
     let mut pages: Vec<Page> = Vec::new();
     let n = items.len();
     for (k, it) in items.iter().enumerate() {
@@ -105,25 +105,38 @@ pub fn sheets(project: &str, items: &[ReportItem], date: &str) -> Vec<u8> {
         } else {
             text(&mut c, M + 20.0, H / 2.0, 14.0, false, "(no image)");
         }
-        // ---- cartusul (dreapta jos)
+        // ---- cartusul (dreapta jos): firma / proiect, viewpoint, stare, desenat / verificat, numar si revizie
         let tb_w = 380.0;
         let tx = W - M - tb_w;
         c.extend_from_slice(format!("0.6 w {tx:.1} {M} m {tx:.1} {:.1} l S\n", M + STRIP).as_bytes());
-        let rows = [(M + STRIP - 34.0, true), (M + 76.0, false), (M + 40.0, false)];
-        for (y, _) in rows {
+        for y in [M + STRIP - 38.0, M + 78.0, M + 40.0] {
             c.extend_from_slice(format!("0.4 w {tx:.1} {y:.1} m {:.1} {y:.1} l S\n", W - M).as_bytes());
         }
-        text(&mut c, tx + 10.0, M + STRIP - 22.0, 15.0, true, project);
-        text(&mut c, tx + 10.0, M + STRIP - 52.0, 8.0, false, "VIEWPOINT");
+        let sx = W - M - 90.0;
+        c.extend_from_slice(format!("0.4 w {sx:.1} {M} m {sx:.1} {:.1} l S\n", M + 40.0).as_bytes());
+        if !tb.company.trim().is_empty() {
+            text(&mut c, tx + 10.0, M + STRIP - 13.0, 7.5, false, &tb.company.to_uppercase());
+        }
+        text(&mut c, tx + 10.0, M + STRIP - 30.0, 14.0, true, tb.project_or(project));
+        if !tb.client.trim().is_empty() {
+            text(&mut c, tx + 230.0, M + STRIP - 13.0, 7.5, false, &format!("Client: {}", tb.client));
+        }
+        text(&mut c, tx + 10.0, M + STRIP - 52.0, 7.5, false, "VIEWPOINT");
         let title = format!("{}. {}", it.index, it.name);
-        text(&mut c, tx + 10.0, M + STRIP - 68.0, 12.5, true, &wrap(&title, 12.5, tb_w - 20.0).into_iter().next().unwrap_or_default());
+        text(&mut c, tx + 10.0, M + STRIP - 67.0, 12.0, true, &wrap(&title, 12.0, tb_w - 20.0).into_iter().next().unwrap_or_default());
         let meta = format!("Status: {}   Priority: {}   Assigned: {}", it.issue.status, it.issue.priority, if it.issue.assigned.is_empty() { "-" } else { &it.issue.assigned });
-        text(&mut c, tx + 10.0, M + 58.0, 8.5, false, &meta);
-        text(&mut c, tx + 10.0, M + 46.0 - 0.0, 8.5, false, &format!("Author: {}   Created: {}", it.issue.author, it.issue.created.get(..10).unwrap_or(&it.issue.created)));
-        text(&mut c, tx + 10.0, M + 16.0, 8.0, false, &format!("ManageBIM  -  {date}"));
-        let sheet = format!("S-{:02}", k + 1);
-        text(&mut c, W - M - 10.0 - text_w(&sheet, 18.0), M + 12.0, 18.0, true, &sheet);
-        text(&mut c, W - M - 60.0, M + 32.0, 7.5, false, &format!("{} / {}", k + 1, n));
+        text(&mut c, tx + 10.0, M + 64.0, 8.0, false, &meta);
+        let who = format!("Drawn: {}   Checked: {}", if tb.drawn.is_empty() { &it.issue.author } else { &tb.drawn }, if tb.checked.is_empty() { "-" } else { &tb.checked });
+        text(&mut c, tx + 10.0, M + 51.0, 8.0, false, &who);
+        text(&mut c, tx + 10.0, M + 25.0, 8.0, false, &format!("Date: {}   Rev: {}", date.get(..10).unwrap_or(date), if tb.revision.is_empty() { "-" } else { &tb.revision }));
+        if !tb.notes.trim().is_empty() {
+            text(&mut c, tx + 10.0, M + 12.0, 7.0, false, &wrap(&tb.notes, 7.0, 260.0).into_iter().next().unwrap_or_default());
+        } else {
+            text(&mut c, tx + 10.0, M + 12.0, 7.0, false, "ManageBIM");
+        }
+        let sheet = format!("{}{:02}", tb.number_prefix, k + 1);
+        text(&mut c, W - M - 45.0 - text_w(&sheet, 16.0) / 2.0, M + 18.0, 16.0, true, &sheet);
+        text(&mut c, W - M - 60.0, M + 6.0, 6.5, false, &format!("sheet {} of {}", k + 1, n));
         // ---- descriere si comentarii (stanga jos)
         let lw = W - 2.0 * M - tb_w - 24.0;
         let mut y = M + STRIP - 20.0;
@@ -146,12 +159,18 @@ pub fn sheets(project: &str, items: &[ReportItem], date: &str) -> Vec<u8> {
             text(&mut c, M + 12.0, y, if bold { 8.0 } else { 9.0 }, bold, &l);
             y -= if bold { 13.0 } else { 11.5 };
         }
-        pages.push(Page { content: c, image: img });
+        // formatul ales (A2 / A1 / A0 au aceleasi proportii ca A3): plansa se scaleaza intreaga
+        let s = (paper_mm(&tb.paper).0 / 420.0) as f32;
+        let mut full = format!("q {s:.4} 0 0 {s:.4} 0 0 cm\n").into_bytes();
+        full.extend_from_slice(&c);
+        full.extend_from_slice(b"Q\n");
+        pages.push(Page { content: full, image: img });
     }
-    write_pdf(&pages, project)
+    let s = (paper_mm(&tb.paper).0 / 420.0) as f32;
+    write_pdf(&pages, tb.project_or(project), W * s, H * s)
 }
 
-fn write_pdf(pages: &[Page], title: &str) -> Vec<u8> {
+fn write_pdf(pages: &[Page], title: &str, pw: f32, ph: f32) -> Vec<u8> {
     let mut out: Vec<u8> = b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n".to_vec();
     let mut offs: Vec<usize> = Vec::new();
     // obiecte: 1 catalog, 2 pagini, 3 F1, 4 F2, 5 info, apoi pe pagina: pagina, continut, imagine
@@ -177,7 +196,7 @@ fn write_pdf(pages: &[Page], title: &str) -> Vec<u8> {
     for (i, p) in pages.iter().enumerate() {
         let pid = page_ids[i];
         let res = if p.image.is_some() { format!("/XObject << /Im1 {} 0 R >> ", pid + 2) } else { String::new() };
-        obj(&mut out, &mut offs, pid, format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {W} {H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> {res}>> /Contents {} 0 R >>", pid + 1).as_bytes());
+        obj(&mut out, &mut offs, pid, format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {pw:.2} {ph:.2}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> {res}>> /Contents {} 0 R >>", pid + 1).as_bytes());
         let mut body = format!("<< /Length {} >>\nstream\n", p.content.len()).into_bytes();
         body.extend_from_slice(&p.content);
         body.extend_from_slice(b"\nendstream");
@@ -208,5 +227,51 @@ mod tests {
         assert_eq!(super::ansi("a(b)"), b"a\\(b\\)".to_vec());
         assert_eq!(super::ansi("ș"), b"s".to_vec());
         assert!(super::wrap("one two three four five six", 9.0, 40.0).len() > 1);
+    }
+}
+
+/// Cartusul planselor (PDF si DWG), editabil si salvat in proiect.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct TitleBlock {
+    pub company: String,
+    /// gol = numele proiectului (.bimr)
+    pub project: String,
+    pub client: String,
+    pub drawn: String,
+    pub checked: String,
+    /// prefixul numarului de plansa: "S-" -> S-01, S-02...
+    pub number_prefix: String,
+    pub revision: String,
+    pub notes: String,
+    /// formatul planselor: "A3", "A2", "A1", "A0"
+    pub paper: String,
+    /// scara DWG-ului pe plansa: 0 = automata (cea mai mare care incape), altfel 1:N
+    pub scale: u32,
+}
+
+impl Default for TitleBlock {
+    fn default() -> Self {
+        TitleBlock { company: String::new(), project: String::new(), client: String::new(), drawn: String::new(), checked: String::new(), number_prefix: "S-".into(), revision: "A".into(), notes: String::new(), paper: "A3".into(), scale: 0 }
+    }
+}
+
+impl TitleBlock {
+    /// numele proiectului afisat (cel din cartus sau cel dat)
+    pub fn project_or<'a>(&'a self, fallback: &'a str) -> &'a str {
+        if self.project.trim().is_empty() { fallback } else { self.project.trim() }
+    }
+}
+
+pub const PAPERS: [&str; 4] = ["A3", "A2", "A1", "A0"];
+pub const SCALES: [u32; 12] = [20, 25, 50, 75, 100, 150, 200, 250, 500, 1000, 2000, 5000];
+
+/// marimea foii (landscape) in milimetri
+pub fn paper_mm(p: &str) -> (f64, f64) {
+    match p {
+        "A2" => (594.0, 420.0),
+        "A1" => (841.0, 594.0),
+        "A0" => (1189.0, 841.0),
+        _ => (420.0, 297.0),
     }
 }
