@@ -4,6 +4,7 @@ pub mod asbuilt;
 pub mod bimc;
 pub mod check;
 pub mod clash;
+pub mod clash_smart;
 pub mod compare;
 pub mod e57;
 pub mod fbx;

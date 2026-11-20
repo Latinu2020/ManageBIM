@@ -480,3 +480,20 @@ fn undo_redo_restores_selection_and_visibility() {
     assert!(app.hidden.contains(&b));
     assert!(!app.can_redo());
 }
+
+#[test]
+fn smart_clash_kinds_joints_and_responsible() {
+    use bimrust::clash_smart::*;
+    let k = |t: &str, n: &str| kind_of(&el(n, t, &[]));
+    assert_eq!(k("IfcBeam", "Steel Beam HEA200"), Kind::Beam, "'steel' is not a fitting");
+    assert_eq!(k("IfcWallStandardCase", "Basic Wall"), Kind::Wall);
+    assert_eq!(k("IfcFlowSegment", "Pipe DN100"), Kind::Pipe);
+    assert_eq!(k("IfcDiscreteAccessory", "Pipe Hanger"), Kind::Support);
+    assert_eq!(k("IfcCovering", "Pipe Insulation 30mm"), Kind::Insulation);
+    assert!(normal_joint(Kind::Wall, Kind::Slab) && normal_joint(Kind::Support, Kind::Pipe));
+    assert!(!normal_joint(Kind::Duct, Kind::Beam), "a duct through a beam is a real clash");
+    let d = |t: &str, n: &str| discipline_of(&el(n, t, &[]), "model.ifc");
+    assert_eq!(responsible(d("IfcBeam", "Beam"), d("IfcFlowSegment", "Duct 400x200")), Some(Discipline::Ducts));
+    assert_eq!(responsible(d("IfcWall", "Wall"), d("IfcColumn", "Column")), Some(Discipline::Architecture));
+    assert_eq!(system_of(&el("P", "IfcPipe", &[("Mechanical", "System Name", "Supply Water 1")])).as_deref(), Some("Supply Water 1"));
+}

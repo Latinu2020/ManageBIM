@@ -394,7 +394,7 @@ pub struct ClashResult {
 }
 
 /// Navisworks-style rules: what the test must ignore.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClashRules {
     /// ignore clashes between items on the same level
     #[serde(default)]
@@ -414,11 +414,30 @@ pub struct ClashRules {
     /// items matching any of these rules never clash
     #[serde(default)]
     pub exclude_rules: Vec<SearchRule>,
+    /// ignora conexiunile normale (perete-placa, grinda-stalp, teava-suport, izolatie...) cu patrundere mica
+    #[serde(default)]
+    pub normal_joints: bool,
+    /// patrunderea maxima pentru o conexiune normala (mm)
+    #[serde(default = "joint_default")]
+    pub joint_mm: f32,
+    /// responsabilul fiecarui clash nou = disciplina care se muta (structura > arhitectura > instalatii)
+    #[serde(default)]
+    pub auto_assign: bool,
+}
+
+fn joint_default() -> f32 {
+    50.0
+}
+
+impl Default for ClashRules {
+    fn default() -> Self {
+        ClashRules { same_level: false, same_type: false, same_props: Vec::new(), same_sets: Vec::new(), exclude_sets: Vec::new(), exclude_rules: Vec::new(), normal_joints: true, joint_mm: joint_default(), auto_assign: true }
+    }
 }
 
 impl ClashRules {
     pub fn count(&self, same_file: bool) -> usize {
-        same_file as usize + self.same_level as usize + self.same_type as usize + self.same_props.len() + self.same_sets.len() + self.exclude_sets.len() + self.exclude_rules.len()
+        same_file as usize + self.same_level as usize + self.same_type as usize + self.normal_joints as usize + self.same_props.len() + self.same_sets.len() + self.exclude_sets.len() + self.exclude_rules.len()
     }
 }
 
@@ -431,13 +450,16 @@ pub enum GroupBy {
     Proximity,
     /// intersectia de axe cea mai apropiata + nivelul (ex. "C-4 / Level 2")
     Grid,
+    /// sistemul instalatiei (System Name / Classification)
+    System,
 }
 
 impl GroupBy {
-    pub const ALL: [GroupBy; 6] = [GroupBy::Grid, GroupBy::Level, GroupBy::ItemA, GroupBy::ItemB, GroupBy::TypePair, GroupBy::Proximity];
+    pub const ALL: [GroupBy; 7] = [GroupBy::Grid, GroupBy::Level, GroupBy::System, GroupBy::ItemA, GroupBy::ItemB, GroupBy::TypePair, GroupBy::Proximity];
     pub fn label(&self) -> &'static str {
         match self {
             GroupBy::Level => "Level",
+            GroupBy::System => "System",
             GroupBy::ItemA => "Item A",
             GroupBy::ItemB => "Item B",
             GroupBy::TypePair => "Type A × Type B",
@@ -2930,7 +2952,7 @@ impl App {
         let excluded = self.excluded_items(&test_cfg.rules);
         let set_members = self.same_set_members(&test_cfg.rules);
         let before = found.len();
-        let found: Vec<clash::Found> = found.into_iter().filter(|f| !self.pair_ignored(&test_cfg, &set_members, f.a, f.b)).collect();
+        let found: Vec<clash::Found> = found.into_iter().filter(|f| !self.pair_ignored(&test_cfg, &set_members, f.a, f.b) && !self.normal_joint_ignored(&test_cfg.rules, f.a, f.b, f.dist)).collect();
         let n_ignored = before - found.len();
         let stale: HashSet<(String, String)> = test_cfg
             .results
@@ -2995,6 +3017,44 @@ impl App {
         let ign = if n_ignored > 0 { format!(", {n_ignored} ignored by rules") } else { String::new() };
         self.toast(format!("{name}: {n_new} new, {n_act} active, {n_res} resolved{ign} ({secs:.1} s)"));
         self.colors_dirty = true;
+        if test_cfg.rules.auto_assign {
+            self.auto_assign_clashes(t);
+        }
+    }
+
+    /// conexiune normala (perete-placa, grinda-stalp, teava-suport...) cu patrundere sub prag: nu e clash real
+    pub fn normal_joint_ignored(&self, rules: &ClashRules, a: ElemId, b: ElemId, dist: f32) -> bool {
+        if !rules.normal_joints || dist > 0.0 {
+            return false;
+        }
+        let (Some((_, ea)), Some((_, eb))) = (self.elem(a), self.elem(b)) else { return false };
+        crate::clash_smart::normal_joint(crate::clash_smart::kind_of(ea), crate::clash_smart::kind_of(eb)) && dist.abs() * 1000.0 <= rules.joint_mm.max(0.0)
+    }
+
+    /// Responsabilul clash-urilor fara responsabil: disciplina care se muta (structura > arhitectura > instalatii).
+    pub fn auto_assign_clashes(&mut self, t: usize) {
+        let Some(test) = self.clash_tests.get(t) else { return };
+        let who: Vec<Option<String>> = test
+            .results
+            .iter()
+            .map(|r| {
+                if !r.assigned.is_empty() {
+                    return None;
+                }
+                let (ma, ea) = self.elem(r.a)?;
+                let (mb, eb) = self.elem(r.b)?;
+                let da = crate::clash_smart::discipline_of(ea, &ma.name);
+                let db = crate::clash_smart::discipline_of(eb, &mb.name);
+                crate::clash_smart::responsible(da, db).map(|d| d.label().to_string())
+            })
+            .collect();
+        if let Some(test) = self.clash_tests.get_mut(t) {
+            for (r, w) in test.results.iter_mut().zip(who) {
+                if let Some(w) = w {
+                    r.assigned = w;
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------------ clash groups
@@ -3048,6 +3108,7 @@ impl App {
                     GroupBy::ItemB => format!("B: {}", eb.map(|e| e.name.clone()).unwrap_or_default()),
                     GroupBy::TypePair => format!("{} × {}", ea.map(|e| e.ifc_type.clone()).unwrap_or_default(), eb.map(|e| e.ifc_type.clone()).unwrap_or_default()),
                     GroupBy::Grid => format!("Grid {}", self.grid_location(Vec3::from(r.point))),
+                    GroupBy::System => format!("System: {}", ea.and_then(crate::clash_smart::system_of).or_else(|| eb.and_then(crate::clash_smart::system_of)).unwrap_or_else(|| "(no system)".into())),
                     GroupBy::Proximity => {
                         let c = cell.max(0.1);
                         let p = r.point;

@@ -3106,21 +3106,32 @@ impl App {
                 let mut e = Vec3::ZERO;
                 e[ax] = s;
                 let (Some(p0), Some(p1)) = (to_screen(&vpm, rect, fc), to_screen(&vpm, rect, fc + e * size * 0.06)) else { continue };
-                let hovered = hover.map_or(false, |h| h.distance(p0) < 11.0 || h.distance(p1) < 11.0);
-                if hovered && self.box_drag.is_none() {
+                // sageata mai mare, prinsa oriunde pe lungimea ei (zona de 16 px in jurul tijei si al varfului)
+                let d = (p1 - p0).normalized();
+                let ok = d.x.is_finite() && d.y.is_finite();
+                let tip = if ok { p0 + d * 38.0 } else { p0 };
+                let end = if ok { tip + d * 16.0 } else { p0 };
+                let seg_dist = |h: Pos2| {
+                    let ab = end - p0;
+                    let t = ((h - p0).dot(ab) / ab.length_sq().max(1e-6)).clamp(0.0, 1.0);
+                    h.distance(p0 + ab * t)
+                };
+                let hovered = hover.map_or(false, |h| rect.contains(h) && (seg_dist(h) < 16.0 || h.distance(p0) < 16.0));
+                if hovered && self.box_drag.is_none() && handle_hover.is_none() {
                     handle_hover = Some(k);
                 }
                 let active = self.box_drag == Some(k) || (hovered && self.box_drag.is_none());
                 let col = if active { Color32::from_rgb(255, 160, 40) } else { Color32::from_rgb(60, 140, 255) };
-                // sageata: tija + varf, cu un punct pe fata
-                let d = (p1 - p0).normalized();
-                let tip = p0 + d * 26.0;
-                if d.x.is_finite() {
-                    painter.line_segment([p0, tip], Stroke::new(3.0_f32, col));
-                    let n = EV::new(-d.y, d.x);
-                    painter.add(egui::Shape::convex_polygon(vec![tip + d * 10.0, tip + n * 6.0, tip - n * 6.0], col, Stroke::new(1.0_f32, Color32::WHITE)));
+                if active {
+                    // halou: se vede clar ce prinzi
+                    painter.line_segment([p0, end], Stroke::new(14.0_f32, col.gamma_multiply(0.25)));
                 }
-                painter.circle(p0, 5.0, col, Stroke::new(1.2_f32, Color32::WHITE));
+                if ok {
+                    painter.line_segment([p0, tip], Stroke::new(4.0_f32, col));
+                    let n = EV::new(-d.y, d.x);
+                    painter.add(egui::Shape::convex_polygon(vec![end, tip + n * 9.0, tip - n * 9.0], col, Stroke::new(1.5_f32, Color32::WHITE)));
+                }
+                painter.circle(p0, 7.0, col, Stroke::new(1.5_f32, Color32::WHITE));
             }
             if let Some(k) = handle_hover.or(self.box_drag) {
                 let _ = k;
@@ -5027,6 +5038,12 @@ impl App {
                 ui.checkbox(&mut same_file, "in the same file (model)");
                 ui.checkbox(&mut rules.same_level, "on the same level");
                 ui.checkbox(&mut rules.same_type, "of the same IFC type / category");
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut rules.normal_joints, "that are normal connections").on_hover_text("Wall-slab, wall-wall, beam-column, beam-slab, column-footing, door-wall, pipe / duct - fitting, pipe / duct - support or hanger, insulation - pipe / duct, terminal - duct... are joined by design: they count only when they go deeper than the limit");
+                    ui.add_enabled(rules.normal_joints, egui::DragValue::new(&mut rules.joint_mm).range(0.0..=500.0).speed(1.0).prefix("up to ").suffix(" mm")).on_hover_text("Maximum penetration of a normal connection");
+                });
+                ui.checkbox(&mut rules.auto_assign, "Assign each new clash to the discipline that moves").on_hover_text("Structure > Architecture > HVAC > Plumbing > Electrical: the lower one is responsible (the Assigned field is filled only when empty)");
                 ui.add_space(4.0);
                 ui.label("with the same value of property (e.g. System):");
                 Self::chips(ui, "sameprop", &mut rules.same_props, &props, "➕ add property");
