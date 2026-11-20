@@ -154,6 +154,9 @@ pub struct RenderSettings {
     /// margini fine pe elemente (detectate din adancime), 0 = oprite
     #[serde(default = "edges_default")]
     pub edges: f32,
+    /// chenarul de incadrare al randarii in vizualizare (implicit oprit)
+    #[serde(default)]
+    pub show_frame: bool,
 }
 
 fn ao_default() -> f32 {
@@ -192,7 +195,7 @@ impl RenderSettings {
 
 impl Default for RenderSettings {
     fn default() -> Self {
-        RenderSettings { width: 1920, height: 1080, fps: 30, quality: 92, supersample: true, background: Background::Theme, format: VideoFormat::Mp4, sun_az: sun_az(), sun_el: sun_el(), exposure: 1.0, ambient: 1.0, sun_power: 1.0, ao: ao_default(), edges: edges_default() }
+        RenderSettings { width: 1920, height: 1080, fps: 30, quality: 92, supersample: true, background: Background::Theme, format: VideoFormat::Mp4, sun_az: sun_az(), sun_el: sun_el(), exposure: 1.0, ambient: 1.0, sun_power: 1.0, ao: ao_default(), edges: edges_default(), show_frame: false }
     }
 }
 

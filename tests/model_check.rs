@@ -429,3 +429,15 @@ fn export_demo_sheet() {
     let pdf = bimrust::pdf::sheets("Block A", std::slice::from_ref(&it), "2026-11-20", &tb);
     std::fs::write(std::env::var("MB_SHEET_OUT").unwrap_or_else(|_| "target/demo_sheet.pdf".into()), pdf).unwrap();
 }
+
+#[test]
+fn navisworks_version_order_prefers_supported() {
+    use bimrust::formats::order_years;
+    // 2027 instalat dar nesuportat: se incearca ultimul
+    assert_eq!(order_years(&[2027, 2025, 2024], 0, None), vec![2025, 2024, 2027]);
+    // preferinta din setari si versiunea care a mers ultima data au prioritate
+    assert_eq!(order_years(&[2027, 2025, 2024], 2024, None), vec![2024, 2025, 2027]);
+    assert_eq!(order_years(&[2027, 2025, 2024], 0, Some(2027)), vec![2027, 2025, 2024]);
+    // o preferinta neinstalata e ignorata
+    assert_eq!(order_years(&[2025], 2023, None), vec![2025]);
+}

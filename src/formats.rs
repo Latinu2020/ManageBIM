@@ -1016,6 +1016,9 @@ pub struct Tools {
     /// nwd2bimc.exe (ManageBIM pentru Navisworks): deschide NWD / NWC / NWF / RVT prin Navisworks instalat
     #[serde(default)]
     pub navisworks: String,
+    /// versiunea Navisworks preferata pentru deschiderea NWD / NWC / RVT (0 = automat: cea mai noua suportata)
+    #[serde(default)]
+    pub navis_year: u32,
 }
 
 static TOOLS: RwLock<Option<Tools>> = RwLock::new(None);
@@ -1069,6 +1072,7 @@ pub fn detect_tools() -> Tools {
     Tools {
         oda: find_in(&pf_oda, "ODAFileConverter", &["ODAFileConverter.exe"]).or_else(|| on_path(&["ODAFileConverter", "ODAFileConverter.exe"])).unwrap_or_default(),
         navisworks: find_nwd2bimc().unwrap_or_default(),
+        navis_year: 0,
     }
 }
 
@@ -1106,10 +1110,81 @@ pub fn convert_navisworks(path: &str, progress: &dyn Fn(f32, &str)) -> Result<Ra
              (run AddIns\\ManageBIM-Navisworks-AddIn.exe). Without Navisworks: export the model to IFC or, in Navisworks, Tool add-ins > Export to ManageBIM (.bimc)."
         ));
     }
-    progress(0.02, "Starting Navisworks (background)");
+    // versiunile instalate, in ordinea de incercare; daca una esueaza (ex. 2027, inca nesuportata) trecem la urmatoarea
+    let years = navis_years();
+    let mut errors: Vec<String> = Vec::new();
+    let tries: Vec<Option<u32>> = if years.is_empty() { vec![None] } else { years.iter().map(|y| Some(*y)).collect() };
+    for y in tries {
+        match run_nwd2bimc(&exe, path, y, progress) {
+            Ok(m) => {
+                if let Some(y) = y {
+                    *NAVIS_GOOD.write().unwrap_or_else(|e| e.into_inner()) = Some(y);
+                }
+                return Ok(m);
+            }
+            Err(e) => errors.push(match y {
+                Some(y) => format!("Navisworks {y}: {e}"),
+                None => e,
+            }),
+        }
+    }
+    Err(format!("Navisworks could not convert {}: {}", file_name_of(path), errors.join(" | ")))
+}
+
+/// versiunea Navisworks care a mers ultima data (incercata prima)
+static NAVIS_GOOD: RwLock<Option<u32>> = RwLock::new(None);
+
+/// Versiunile Navisworks Manage / Simulate instalate, in ordinea de incercare: cea aleasa in setari,
+/// cea care a mers ultima data, cele suportate (2026 -> 2022), apoi cele mai noi (2027+).
+pub fn navis_years() -> Vec<u32> {
+    let mut found: Vec<u32> = Vec::new();
+    for pf in ["ProgramFiles", "ProgramW6432"].iter().filter_map(|v| std::env::var_os(v)) {
+        if let Ok(rd) = std::fs::read_dir(PathBuf::from(pf).join("Autodesk")) {
+            for e in rd.flatten() {
+                let n = e.file_name().to_string_lossy().to_string();
+                if let Some(y) = n.strip_prefix("Navisworks Manage ").or_else(|| n.strip_prefix("Navisworks Simulate ")).and_then(|y| y.trim().parse::<u32>().ok()) {
+                    if e.path().join("Autodesk.Navisworks.Automation.dll").is_file() && !found.contains(&y) {
+                        found.push(y);
+                    }
+                }
+            }
+        }
+    }
+    order_years(&found, tools().navis_year, *NAVIS_GOOD.read().unwrap_or_else(|e| e.into_inner()))
+}
+
+/// ordinea de incercare (separata pentru teste)
+pub fn order_years(found: &[u32], preferred: u32, good: Option<u32>) -> Vec<u32> {
+    let mut out: Vec<u32> = Vec::new();
+    for y in [Some(preferred).filter(|y| *y > 0), good].into_iter().flatten() {
+        if found.contains(&y) && !out.contains(&y) {
+            out.push(y);
+        }
+    }
+    let mut sup: Vec<u32> = found.iter().copied().filter(|y| *y <= LAST_SUPPORTED_NAVIS && !out.contains(y)).collect();
+    sup.sort_unstable_by(|a, b| b.cmp(a));
+    let mut newer: Vec<u32> = found.iter().copied().filter(|y| *y > LAST_SUPPORTED_NAVIS && !out.contains(y)).collect();
+    newer.sort_unstable();
+    out.extend(sup);
+    out.extend(newer);
+    out
+}
+
+/// ultima versiune Navisworks pentru care exista add-in-ul ManageBIM
+pub const LAST_SUPPORTED_NAVIS: u32 = 2026;
+
+fn run_nwd2bimc(exe: &str, path: &str, year: Option<u32>, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
+    let ext = ext_of(path).to_uppercase();
+    progress(0.02, &match year {
+        Some(y) => format!("Starting Navisworks {y} (background)"),
+        None => "Starting Navisworks (background)".to_string(),
+    });
     let dir = temp_dir("navis")?;
     let out = dir.join("model.bimc");
-    let mut c = cmd(&exe);
+    let mut c = cmd(exe);
+    if let Some(y) = year {
+        c.arg("--year").arg(y.to_string());
+    }
     c.arg(path).arg(&out).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
     let mut child = c.spawn().map_err(|e| format!("Navisworks converter could not be started: {e}"))?;
     // erorile pe un fir separat (altfel bufferul stderr plin poate bloca procesul)
@@ -1144,7 +1219,7 @@ pub fn convert_navisworks(path: &str, progress: &dyn Fn(f32, &str)) -> Result<Ra
         let _ = std::fs::remove_dir_all(&dir);
         let msg: Vec<&str> = log.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("Opening") && !l.starts_with("Starting")).collect();
         let detail = if msg.is_empty() { format!("exit code {:?}", status.code()) } else { msg.join(" ") };
-        return Err(format!("Navisworks could not convert {}: {detail}", file_name_of(path)));
+        return Err(detail);
     }
     progress(0.86, "Reading converted model");
     let r = crate::bimc::read(&out.to_string_lossy());

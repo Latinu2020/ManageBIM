@@ -30,17 +30,20 @@ namespace ManageBIM.Navis.Cli
                 Console.WriteLine("       nwd2bimc [-o <output folder>] [-f] <files or folders>...");
                 Console.WriteLine("  -o  write the .bimc files into this folder (default: next to each model)");
                 Console.WriteLine("  -f  convert again even if the .bimc is newer than the model");
+                Console.WriteLine("  --year YYYY  use this Navisworks version (default: the newest supported one with the ManageBIM add-in)");
                 return 1;
             }
             // --- argumente
             var jobs = new List<(string inp, string outp)>();
             string outDir = null;
             bool force = false;
+            int year = 0;
             var inputs = new List<string>();
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "-o" && i + 1 < args.Length) { outDir = Path.GetFullPath(args[++i]); continue; }
                 if (args[i] == "-f") { force = true; continue; }
+                if (args[i] == "--year" && i + 1 < args.Length) { int.TryParse(args[++i], out year); continue; }
                 inputs.Add(args[i]);
             }
             if (inputs.Count == 2 && inputs[1].EndsWith(".bimc", StringComparison.OrdinalIgnoreCase) && File.Exists(inputs[0]))
@@ -74,7 +77,7 @@ namespace ManageBIM.Navis.Cli
             }
             if (jobs.Count == 0) { Console.WriteLine("Nothing to convert."); return 0; }
 
-            nwDir = FindNavisworks();
+            nwDir = FindNavisworks(year);
             if (nwDir == null) { Console.Error.WriteLine("Autodesk Navisworks Manage / Simulate is not installed."); return 2; }
             // DLL-urile Navisworks se incarca din folderul de instalare
             AppDomain.CurrentDomain.AssemblyResolve += (s, e) =>
@@ -157,15 +160,20 @@ namespace ManageBIM.Navis.Cli
         }
 
         /// <summary>
-        /// Versiunea de Navisworks folosita: cea mai noua in care add-in-ul ManageBIM e instalat (fiecare versiune
+        /// Versiunea de Navisworks folosita: cea ceruta (--year), altfel cea mai noua SUPORTATA (<= 2026) in care add-in-ul ManageBIM e instalat (fiecare versiune
         /// are propriul DLL); daca nu e instalat nicaieri, cea mai noua versiune (mesajul de eroare spune ce lipseste).
         /// </summary>
-        private static string FindNavisworks()
+        private static string FindNavisworks(int year)
         {
             string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
             string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             string newest = null;
-            for (int v = 2030; v >= 2020; v--)
+            // ordinea: versiunea ceruta; apoi cele suportate (2026 -> 2022); apoi cele mai noi (2027+, inca nesuportate de API)
+            var order = new List<int>();
+            if (year > 0) order.Add(year);
+            for (int v = 2026; v >= 2020; v--) if (!order.Contains(v)) order.Add(v);
+            for (int v = 2027; v <= 2035; v++) if (!order.Contains(v)) order.Add(v);
+            foreach (int v in order)
                 foreach (string ed in new[] { "Manage", "Simulate" })
                 {
                     string d = Path.Combine(pf, "Autodesk", $"Navisworks {ed} {v}");

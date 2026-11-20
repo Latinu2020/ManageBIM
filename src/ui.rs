@@ -3649,7 +3649,8 @@ impl App {
         // cadrul de randare (Render tab)
         if self.panel_shown(Panel::Render) {
             let ta = self.render.width as f32 / self.render.height.max(1) as f32;
-            if ta <= aspect + 1e-3 {
+            // chenarul apare doar cand il activezi (Render › Show frame)
+            if self.render.show_frame && ta <= aspect + 1e-3 {
                 let fw = rect.height() * ta;
                 let fr = Rect::from_center_size(rect.center(), EV::new(fw, rect.height())).shrink(1.0);
                 painter.rect_stroke(fr, 0.0, Stroke::new(1.5_f32, Color32::from_rgba_unmultiplied(255, 190, 60, 200)));
@@ -6735,6 +6736,25 @@ impl App {
                 Ok(v) => ui.label(RichText::new(format!("✔ OpenCascade (STEP / IGES / BREP / FCStd / DWG solids): {v}")).small()),
                 Err(e) => ui.label(RichText::new(format!("✖ OpenCascade runtime unavailable ({e}) - reinstall ManageBIM (the occt folder is missing).")).small().color(Color32::from_rgb(210, 140, 60))),
             };
+            // versiunea Navisworks folosita la NWD / NWC / RVT (cand sunt instalate mai multe)
+            let years = crate::formats::navis_years();
+            if !years.is_empty() {
+                ui.horizontal(|ui| {
+                    ui.label("Navisworks version");
+                    let cur = if t.navis_year == 0 { format!("Automatic ({})", years.first().map(|y| y.to_string()).unwrap_or_default()) } else { t.navis_year.to_string() };
+                    egui::ComboBox::from_id_salt("navis_year").selected_text(cur).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut t.navis_year, 0, "Automatic (newest supported, then the others)");
+                        let mut sorted = years.clone();
+                        sorted.sort_unstable();
+                        for y in sorted {
+                            let label = if y > crate::formats::LAST_SUPPORTED_NAVIS { format!("{y} (not supported yet)") } else { y.to_string() };
+                            ui.selectable_value(&mut t.navis_year, y, label);
+                        }
+                    });
+                })
+                .response
+                .on_hover_text("Used to open NWD / NWC / NWF / RVT. If it fails, the other installed versions are tried automatically.");
+            }
             ui.horizontal(|ui| {
                 if ui.button("Detect automatically").clicked() {
                     let d = crate::formats::detect_tools();
@@ -7009,6 +7029,7 @@ impl App {
                     if ui.button("🖼 Render Image…").on_hover_text("Current view at the chosen resolution, PNG").clicked() {
                         self.request_path(Purpose::RenderImage);
                     }
+                    ui.checkbox(&mut self.render.show_frame, "Show frame").on_hover_text("Show the frame of the rendered image in the view (aspect of the chosen resolution) - turn it on to compose the shot");
                 });
                 if can {
                     ui.label(RichText::new(format!("{frames} frames at {}×{}", self.render.width, self.render.height)).weak().small());
