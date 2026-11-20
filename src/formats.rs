@@ -1024,11 +1024,11 @@ pub struct Tools {
 static TOOLS: RwLock<Option<Tools>> = RwLock::new(None);
 
 pub fn set_tools(t: Tools) {
-    *TOOLS.write().unwrap() = Some(t);
+    *TOOLS.write().unwrap_or_else(|e| e.into_inner()) = Some(t);
 }
 
 fn tools() -> Tools {
-    TOOLS.read().unwrap().clone().unwrap_or_default()
+    TOOLS.read().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default()
 }
 
 fn on_path(names: &[&str]) -> Option<String> {
@@ -1777,4 +1777,38 @@ pub fn data_root() -> Option<std::path::PathBuf> {
         return Some(std::path::PathBuf::from(a));
     }
     std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local").join("share")))
+}
+
+/// Scriere sigura: continutul merge intr-un fisier temporar (sincronizat pe disc), versiunea veche devine
+/// `<fisier>.bak`, apoi temporarul ia locul fisierului. O cadere / pana de curent in timpul salvarii lasa
+/// intact fie fisierul vechi, fie pe cel nou - niciodata unul pe jumatate scris.
+pub fn write_atomic(path: &Path, data: &[u8], backup: bool) -> std::io::Result<()> {
+    use std::io::Write;
+    let tmp = path.with_extension(format!("{}.tmp", path.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default()));
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(data)?;
+        f.sync_all()?;
+    }
+    if backup && path.is_file() {
+        let bak = backup_path(path);
+        let _ = std::fs::remove_file(&bak);
+        if std::fs::rename(path, &bak).is_err() {
+            let _ = std::fs::copy(path, &bak);
+        }
+    }
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+/// `proiect.bimr` -> `proiect.bimr.bak`
+pub fn backup_path(path: &Path) -> PathBuf {
+    let mut s = path.as_os_str().to_owned();
+    s.push(".bak");
+    PathBuf::from(s)
 }

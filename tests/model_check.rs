@@ -441,3 +441,17 @@ fn navisworks_version_order_prefers_supported() {
     // o preferinta neinstalata e ignorata
     assert_eq!(order_years(&[2025], 2023, None), vec![2025]);
 }
+
+#[test]
+fn atomic_write_keeps_backup_and_never_half_files() {
+    let dir = std::path::Path::new("target").join("atomic_test");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = dir.join("project.bimr");
+    bimrust::formats::write_atomic(&p, b"version 1", true).unwrap();
+    bimrust::formats::write_atomic(&p, b"version 2", true).unwrap();
+    assert_eq!(std::fs::read(&p).unwrap(), b"version 2");
+    assert_eq!(std::fs::read(bimrust::formats::backup_path(&p)).unwrap(), b"version 1");
+    // niciun fisier temporar ramas
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
+}

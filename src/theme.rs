@@ -142,9 +142,10 @@ fn settings_path() -> Option<std::path::PathBuf> {
 
 impl Settings {
     pub fn load() -> Settings {
+        // setarile; daca fisierul e stricat (cadere in timpul scrierii), copia .bak de la salvarea anterioara
+        let read = |p: std::path::PathBuf| std::fs::read_to_string(p).ok().and_then(|s| serde_json::from_str::<Settings>(&s).ok());
         let mut s: Settings = settings_path()
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|s| serde_json::from_str(&s).ok())
+            .and_then(|p| read(p.clone()).or_else(|| read(crate::formats::backup_path(&p))))
             .unwrap_or_default();
         // vechiul implicit (3 m/s) -> viteza de mers normala; o valoare aleasa de utilizator ramane
         if s.walk_speed == 3.0 {
@@ -165,7 +166,7 @@ impl Settings {
                 let _ = std::fs::create_dir_all(d);
             }
             if let Ok(s) = serde_json::to_string_pretty(self) {
-                let _ = std::fs::write(p, s);
+                let _ = crate::formats::write_atomic(&p, s.as_bytes(), true);
             }
         }
     }

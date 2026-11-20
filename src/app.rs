@@ -2000,7 +2000,7 @@ impl App {
     }
 
     pub fn origin_f64(&self) -> DVec3 {
-        self.origin.lock().unwrap().unwrap_or(DVec3::ZERO)
+        self.origin.lock().unwrap_or_else(|e| e.into_inner()).unwrap_or(DVec3::ZERO)
     }
 
     /// local (render) coordinates -> real world coordinates
@@ -2023,7 +2023,7 @@ impl App {
         let (pos, nrm) = render::mesh_data(&m);
         let col = vec![200u8; pos.len() / 3 * 4];
         {
-            let mut r = self.renderer.lock().unwrap();
+            let mut r = self.renderer.lock().unwrap_or_else(|e| e.into_inner());
             r.pending.push(Upload::Mesh { slot: slot as u32, pos, nrm, col });
             r.pending.push(Upload::Points { slot: slot as u32, cloud: m.cloud.clone() });
         }
@@ -2643,7 +2643,7 @@ impl App {
         self.bimd_path = None;
         self.blank_project = false;
         {
-            let mut r = self.renderer.lock().unwrap();
+            let mut r = self.renderer.lock().unwrap_or_else(|e| e.into_inner());
             for i in 0..self.models.len() {
                 r.pending.push(Upload::Remove { slot: i as u32 });
             }
@@ -2665,7 +2665,7 @@ impl App {
         self.anim_play = None;
         self.anim_sim_active = false;
         self.loads.clear();
-        *self.origin.lock().unwrap() = None;
+        *self.origin.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.selected.clear();
         self.primary = None;
         self.hidden.clear();
@@ -2714,7 +2714,7 @@ impl App {
                 self.base_models[slot] = None;
             }
             self.elem_offsets.retain(|k, _| k.m as usize != slot);
-            self.renderer.lock().unwrap().pending.push(Upload::Remove { slot: slot as u32 });
+            self.renderer.lock().unwrap_or_else(|e| e.into_inner()).pending.push(Upload::Remove { slot: slot as u32 });
             self.selected.retain(|i| i.m as usize != slot);
             self.colors_dirty = true;
         }
@@ -3287,7 +3287,7 @@ impl App {
             Ok(px) => {
                 self.tex_layers.push((path.to_string(), px));
                 let all: Vec<Vec<u8>> = self.tex_layers.iter().map(|t| t.1.clone()).collect();
-                self.renderer.lock().unwrap().pending.push(Upload::Textures(all));
+                self.renderer.lock().unwrap_or_else(|e| e.into_inner()).pending.push(Upload::Textures(all));
                 Some((self.tex_layers.len() - 1) as u8)
             }
             Err(e) => {
@@ -3513,7 +3513,7 @@ impl App {
         }
         self.looks = new_looks;
         if !ups.is_empty() {
-            self.renderer.lock().unwrap().pending.extend(ups);
+            self.renderer.lock().unwrap_or_else(|e| e.into_inner()).pending.extend(ups);
         }
     }
 
@@ -4545,7 +4545,7 @@ impl App {
             app: "ManageBIM".into(),
             version: 1,
             models: self.models.iter().map(|m| m.as_ref().map(|m| m.path.clone()).unwrap_or_default()).collect(),
-            origin: self.origin.lock().unwrap().map(|o| o.to_array()),
+            origin: self.origin.lock().unwrap_or_else(|e| e.into_inner()).map(|o| o.to_array()),
             camera: self.cam,
             viewpoints: self.viewpoints.clone(),
             sets: self.sets.clone(),
@@ -4606,7 +4606,7 @@ impl App {
             path.push_str(".bimr");
         }
         let pf = self.project_file();
-        match serde_json::to_string_pretty(&pf).map_err(|e| e.to_string()).and_then(|s| std::fs::write(&path, s).map_err(|e| e.to_string())) {
+        match serde_json::to_string_pretty(&pf).map_err(|e| e.to_string()).and_then(|s| crate::formats::write_atomic(std::path::Path::new(&path), s.as_bytes(), true).map_err(|e| e.to_string())) {
             Ok(()) => {
                 self.toast(format!("Project saved: {}", crate::file_name(&path)));
                 self.settings.add_recent(&path);
@@ -4617,15 +4617,26 @@ impl App {
     }
 
     pub fn load_project(&mut self, path: &str) {
-        let pf: ProjectFile = match std::fs::read_to_string(path).map_err(|e| e.to_string()).and_then(|s| serde_json::from_str(&s).map_err(|e| e.to_string())) {
+        let read = |p: &std::path::Path| -> Result<ProjectFile, String> { std::fs::read_to_string(p).map_err(|e| e.to_string()).and_then(|s| serde_json::from_str(&s).map_err(|e| e.to_string())) };
+        let pf: ProjectFile = match read(std::path::Path::new(path)) {
             Ok(p) => p,
             Err(e) => {
-                self.error(format!("Invalid project: {e}"));
-                return;
+                // fisier stricat (ex. o cadere in timpul unei salvari vechi): copia .bak a salvarii anterioare
+                let bak = crate::formats::backup_path(std::path::Path::new(path));
+                match read(&bak) {
+                    Ok(p) => {
+                        self.error(format!("The project file is damaged ({e}) - the previous save (.bak) was opened instead. Save to replace the damaged file."));
+                        p
+                    }
+                    Err(_) => {
+                        self.error(format!("Invalid project: {e}"));
+                        return;
+                    }
+                }
             }
         };
         self.reset();
-        *self.origin.lock().unwrap() = pf.origin.map(DVec3::from_array);
+        *self.origin.lock().unwrap_or_else(|e| e.into_inner()) = pf.origin.map(DVec3::from_array);
         let base = std::path::Path::new(path).parent().map(|p| p.to_path_buf()).unwrap_or_default();
         // transformarile se aplica imediat ce fiecare model termina incarcarea
         self.elem_offsets = pf.elem_offsets.iter().copied().collect();
@@ -4881,7 +4892,7 @@ impl App {
 
     /// Drives the export: one captured frame per UI frame. Called before the viewport is drawn.
     pub fn render_step(&mut self) {
-        let captured = self.renderer.lock().unwrap().captured.take();
+        let captured = self.renderer.lock().unwrap_or_else(|e| e.into_inner()).captured.take();
         if let Some(r) = captured {
             if let Some(p) = self.still_path.take() {
                 match r {
@@ -4955,7 +4966,7 @@ impl App {
         if !path.to_lowercase().ends_with(".bimc") {
             path.push_str(".bimc");
         }
-        let origin = self.origin.lock().unwrap().unwrap_or(DVec3::ZERO);
+        let origin = self.origin.lock().unwrap_or_else(|e| e.into_inner()).unwrap_or(DVec3::ZERO);
         let raw = crate::bimc::from_model(&m, origin);
         match crate::bimc::write(&raw, &path) {
             Ok(n) => {

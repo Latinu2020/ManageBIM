@@ -2952,11 +2952,11 @@ impl App {
         if let Some((w, h)) = self.pending_capture.take() {
             let (bg_top, bg_bottom) = self.render_bg();
             let cp = self.frame_params(w as f32 / h.max(1) as f32);
-            self.renderer.lock().unwrap().capture = Some(crate::render::CaptureReq { params: cp, w, h, bg_top, bg_bottom });
+            self.renderer.lock().unwrap_or_else(|e| e.into_inner()).capture = Some(crate::render::CaptureReq { params: cp, w, h, bg_top, bg_bottom });
         }
         // ce se deseneaza: campul vizual, fara ascunse; simplificat cat timp camera se misca
         let lists = self.draw_lists(&params, rect.height());
-        self.renderer.lock().unwrap().lists = Some(lists);
+        self.renderer.lock().unwrap_or_else(|e| e.into_inner()).lists = Some(lists);
         if self.lod_moving() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(350));
         }
@@ -2966,12 +2966,12 @@ impl App {
             painter.add(egui::PaintCallback {
                 rect,
                 callback: Arc::new(eframe::egui_glow::CallbackFn::new(move |_info, p| {
-                    let mut r = r.lock().unwrap();
+                    let mut r = r.lock().unwrap_or_else(|e| e.into_inner());
                     unsafe { r.paint(p.gl(), &params) };
                 })),
             });
         }
-        if let Some(e) = self.renderer.lock().unwrap().error.clone() {
+        if let Some(e) = self.renderer.lock().unwrap_or_else(|e| e.into_inner()).error.clone() {
             painter.text(rect.center(), Align2::CENTER_CENTER, e, FontId::proportional(14.0), Color32::RED);
         }
 
@@ -4734,7 +4734,7 @@ impl App {
             }
         }
         let bb = e.aabb;
-        let oz = self.origin.lock().unwrap().map(|o| o.z as f32).unwrap_or(0.0);
+        let oz = self.origin.lock().unwrap_or_else(|e| e.into_inner()).map(|o| o.z as f32).unwrap_or(0.0);
         groups.push((
             "Geometry".into(),
             vec![
