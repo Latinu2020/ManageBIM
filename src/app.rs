@@ -6862,10 +6862,14 @@ impl App {
     pub fn set_visual_style(&mut self, s: crate::render::VisualStyle) {
         self.settings.visual_style = s;
         self.settings.save();
-        if s == crate::render::VisualStyle::Realistic && !self.materials_on {
-            // realist = cu materialele / texturile atribuite
-            self.materials_on = true;
-            self.materials_changed();
+        if s == crate::render::VisualStyle::Realistic {
+            // realist = cu materiale / texturi; fara atribuiri inca: automat dupa tipul IFC (pereti, sticla, beton...)
+            if self.mat_assign.is_empty() && self.loaded_models().next().is_some() {
+                self.auto_materials();
+            } else if !self.materials_on {
+                self.materials_on = true;
+                self.materials_changed();
+            }
         }
         self.toast(format!("Visual style: {}", s.label()));
     }

@@ -293,6 +293,24 @@ void main() {
     float rim = pow(1.0 - head, 4.0) * gloss * 0.35;
     vec3 sc = mix(vec3(1.0), base, metal);
     vec3 c = base * k * (1.0 - 0.35 * metal) + sc * (spec * 0.85 + rim) + metal * base * 0.22 * sky;
+    if (u_style == 0) {
+        // realist: reflexia cerului (Fresnel) - sticla, metal, suprafete lucioase prind cerul si solul
+        vec3 rv = reflect(-vd, n);
+        vec3 env = mix(vec3(0.34, 0.32, 0.29), mix(vec3(0.78, 0.84, 0.92), vec3(0.42, 0.58, 0.85), clamp(rv.z, 0.0, 1.0)), smoothstep(-0.15, 0.25, rv.z));
+        vec3 f0 = mix(vec3(0.04), base, metal);
+        vec3 fres = f0 + (1.0 - f0) * pow(1.0 - head, 5.0);
+        bool glass = a < 0.95;
+        float refl = glass ? 0.9 : gloss * 0.6;
+        c = mix(c, env * u_light.z * 1.1, clamp(fres * refl, 0.0, 1.0));
+        // sticla: mai opaca la unghiuri razante (ca in realitate)
+        if (glass) a = clamp(a + (1.0 - a) * pow(1.0 - head, 3.0) * 0.8, 0.0, 1.0);
+        // tonuri filmice (ACES): contrast si saturatie naturale, luminile nu se ard
+        // ACES ridica tonurile medii: expunerea compensata (un gri mediu ramane aproape neschimbat)
+        c *= u_light.x * 0.85;
+        c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0);
+        o_col = vec4(c * a, a);
+        return;
+    }
     // umar moale in loc de taiere la alb: luminile puternice nu se ard
     c *= u_light.x;
     vec3 e = max(c - 0.8, 0.0);
