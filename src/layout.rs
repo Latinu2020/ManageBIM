@@ -44,6 +44,10 @@ pub const ALL_PANELS: [Panel; 17] = [
 
 impl Panel {
     pub fn title(self) -> &'static str {
+        crate::i18n::tr(self.title_en())
+    }
+    /// titlul in engleza (cheia traducerii)
+    pub fn title_en(self) -> &'static str {
         match self {
             Panel::Tree => "🌲 Selection Tree",
             Panel::PropTree => "🔎 Property Tree",
@@ -66,6 +70,9 @@ impl Panel {
     }
     /// nume scurt pentru filele din panourile laterale (controlul segmentat)
     pub fn short(self) -> &'static str {
+        crate::i18n::tr(self.short_en())
+    }
+    pub fn short_en(self) -> &'static str {
         match self {
             Panel::Tree => "Tree",
             Panel::PropTree => "Prop Tree",

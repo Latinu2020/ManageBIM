@@ -153,3 +153,82 @@ fn demo_project_end_to_end() {
 
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// Previzualizare (manuala): planul complet al proiectului demo ca DXF + SVG in target/ (cargo test -- --ignored plan_preview).
+#[test]
+#[ignore]
+fn plan_preview() {
+    let root = std::env::temp_dir().join(format!("mb_prev_{}", std::process::id()));
+    std::fs::create_dir_all(root.join("a")).unwrap();
+    std::fs::create_dir_all(root.join("l")).unwrap();
+    std::env::set_var("APPDATA", root.join("a"));
+    std::env::set_var("LOCALAPPDATA", root.join("l"));
+    let mut app = App::new(vec![]);
+    app.open_demo();
+    wait(&mut app);
+    let li = std::env::var("MB_LEVEL").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+    // demo-ul nu are axe: axe pe stalpi (5 x 3) pentru previzualizare
+    let bb = app.scene_aabb();
+    let o = app.origin_f64();
+    let (x0, y0, x1, y1) = (bb.min.x as f64 + o.x, bb.min.y as f64 + o.y, bb.max.x as f64 + o.x, bb.max.y as f64 + o.y);
+    app.user_grids = (0..5).map(|i| { let x = x0 + 0.25 + (x1 - x0 - 0.5) * i as f64 / 4.0; bimrust::app::UserGrid { name: (i + 1).to_string(), a: [x, y0 - 1.5], b: [x, y1 + 1.5] } })
+        .chain((0..3).map(|j| { let y = y0 + 0.25 + (y1 - y0 - 0.5) * j as f64 / 2.0; bimrust::app::UserGrid { name: ((b'A' + j as u8) as char).to_string(), a: [x0 - 1.5, y], b: [x1 + 1.5, y] } }))
+        .collect();
+    app.use_user_grids = std::env::var("MB_GRIDS").is_ok();
+    app.section_level_box(li);
+    for (name, sheet) in [("plan_preview", false), ("sheet_preview", true)] {
+        app.cad_sheet = sheet;
+        let p = std::path::Path::new("target").join(format!("{name}.dxf"));
+        app.export_section_cad(&p.to_string_lossy());
+        let dxf = std::fs::read_to_string(&p).unwrap();
+        // DXF -> SVG (LINE si TEXT)
+        let g: Vec<&str> = dxf.lines().collect();
+        let (mut lines, mut texts) = (Vec::new(), Vec::new());
+        let mut i = 0;
+        while i + 1 < g.len() {
+            if g[i].trim() == "0" && (g[i + 1] == "LINE" || g[i + 1] == "TEXT") {
+                let kind = g[i + 1];
+                let mut j = i + 2;
+                let mut v = std::collections::HashMap::new();
+                while j + 1 < g.len() && g[j].trim() != "0" {
+                    v.insert(g[j].trim().to_string(), g[j + 1].to_string());
+                    j += 2;
+                }
+                let f = |k: &str| v.get(k).and_then(|s| s.trim().parse::<f64>().ok()).unwrap_or(0.0);
+                if kind == "LINE" {
+                    lines.push((v.get("8").cloned().unwrap_or_default(), f("10"), f("20"), f("11"), f("21")));
+                } else {
+                    texts.push((f("10"), f("20"), f("40"), f("50"), v.get("1").cloned().unwrap_or_default()));
+                }
+                i = j;
+            } else {
+                i += 2;
+            }
+        }
+        let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+        for l in &lines {
+            x0 = x0.min(l.1).min(l.3);
+            x1 = x1.max(l.1).max(l.3);
+            y0 = y0.min(l.2).min(l.4);
+            y1 = y1.max(l.2).max(l.4);
+        }
+        let col = |l: &str| match l {
+            "HATCH" => "#999",
+            "GRIDS" => "#c00",
+            "DIMS" => "#06c",
+            "LEVELS" => "#080",
+            "SHEET" => "#000",
+            _ => "#111",
+        };
+        let sw = (x1 - x0).max(y1 - y0) / 1600.0;
+        let mut svg = format!("<svg xmlns='http://www.w3.org/2000/svg' width='1600' height='{:.0}' viewBox='{} {} {} {}' style='background:#fff'>", 1600.0 * (y1 - y0) / (x1 - x0), x0, -y1, x1 - x0, y1 - y0);
+        for l in &lines {
+            svg += &format!("<line x1='{}' y1='{}' x2='{}' y2='{}' stroke='{}' stroke-width='{sw}'/>", l.1, -l.2, l.3, -l.4, col(&l.0));
+        }
+        for t in &texts {
+            svg += &format!("<text x='{}' y='{}' font-size='{}' font-family='Arial' transform='rotate({} {} {})'>{}</text>", t.0, -t.1, t.2, -t.3, t.0, -t.1, t.4.replace('&', "&amp;").replace('<', "&lt;"));
+        }
+        svg += "</svg>";
+        std::fs::write(std::path::Path::new("target").join(format!("{name}.svg")), svg).unwrap();
+    }
+}

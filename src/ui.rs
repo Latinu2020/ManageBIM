@@ -402,37 +402,37 @@ impl App {
 
     fn file_menu(&mut self, ui: &mut egui::Ui) {
         ui.set_min_width(250.0);
-        if ui.button("📂 Open Model…  (Ctrl+O)").clicked() {
+        if ui.button(crate::i18n::tr("📂 Open Model…  (Ctrl+O)")).clicked() {
             ui.close_menu();
             self.request_path(Purpose::OpenModel { append: false });
         }
-        if ui.button("➕ Append Model…").clicked() {
+        if ui.button(crate::i18n::tr("➕ Append Model…")).clicked() {
             ui.close_menu();
             self.request_path(Purpose::OpenModel { append: true });
         }
-        if ui.button("⟳ Refresh Changed Models  (F5)").on_hover_text("Reload the models whose files were modified on disk").clicked() {
+        if ui.button(crate::i18n::tr("⟳ Refresh Changed Models  (F5)")).on_hover_text("Reload the models whose files were modified on disk").clicked() {
             ui.close_menu();
             self.refresh_models(false);
         }
-        if ui.button("⟳ Reload All Models  (Ctrl+F5)").clicked() {
+        if ui.button(crate::i18n::tr("⟳ Reload All Models  (Ctrl+F5)")).clicked() {
             ui.close_menu();
             self.refresh_models(true);
         }
         ui.separator();
-        if ui.button("📁 Open Project (.bimr)…").clicked() {
+        if ui.button(crate::i18n::tr("📁 Open Project (.bimr)…")).clicked() {
             ui.close_menu();
             self.request_path(Purpose::OpenProject);
         }
-        if ui.button("💾 Save Project  (Ctrl+S)").clicked() {
+        if ui.button(crate::i18n::tr("💾 Save Project  (Ctrl+S)")).clicked() {
             ui.close_menu();
             self.save_now();
         }
-        if ui.button("Save Project As…").clicked() {
+        if ui.button(crate::i18n::tr("Save Project As…")).clicked() {
             ui.close_menu();
             self.request_path(Purpose::SaveProject);
         }
         ui.separator();
-        ui.menu_button("Recent", |ui| {
+        ui.menu_button(crate::i18n::tr("Recent"), |ui| {
             let recent = self.settings.recent.clone();
             if recent.is_empty() {
                 ui.label(RichText::new("(empty)").weak());
@@ -445,31 +445,35 @@ impl App {
                 }
             }
             ui.separator();
-            if ui.button("Clear list").clicked() {
+            if ui.button(crate::i18n::tr("Clear list")).clicked() {
                 self.settings.recent.clear();
                 self.settings.save();
                 ui.close_menu();
             }
         });
         ui.separator();
-        if ui.button("📦 Export Model Cache (.bimc)").on_hover_text("Native compact format with all geometry and properties (like NWC), written next to the sources.").clicked() {
+        if ui.button(crate::i18n::tr("📦 Export Model Cache (.bimc)")).on_hover_text("Native compact format with all geometry and properties (like NWC), written next to the sources.").clicked() {
             ui.close_menu();
             self.export_all_caches();
         }
         ui.separator();
-        if ui.button("New Project (close all)").clicked() {
+        if ui.button(crate::i18n::tr("New Project (close all)")).clicked() {
             ui.close_menu();
             self.new_project();
         }
-        if ui.button("📦 Publish .bimd…  (project + models in one file)").on_hover_text("Like Navisworks NWD: one file with the project and all models - opens on any PC without the source files").clicked() {
+        if ui.button(crate::i18n::tr("📦 Publish .bimd…  (project + models in one file)")).on_hover_text("Like Navisworks NWD: one file with the project and all models - opens on any PC without the source files").clicked() {
             ui.close_menu();
             self.request_path(Purpose::PublishBimd);
         }
-        if ui.button("🏠 Start Page").on_hover_text("Recent files, Open, New - the project stays open until you open something else").clicked() {
+        if ui.button(crate::i18n::tr("🌐 Română / English")).on_hover_text(crate::i18n::tr("Interface language: English / Română")).clicked() {
+            self.toggle_language();
+            ui.close_menu();
+        }
+        if ui.button(crate::i18n::tr("🏠 Start Page")).on_hover_text("Recent files, Open, New - the project stays open until you open something else").clicked() {
             ui.close_menu();
             self.show_start = true;
         }
-        if ui.button("Exit").clicked() {
+        if ui.button(crate::i18n::tr("Exit")).clicked() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
@@ -493,7 +497,7 @@ impl App {
                 ui.style_mut().spacing.item_spacing.x = 3.0;
                 // accentul Nord e deschis (cyan): text inchis pentru contrast
                 let ftxt = match self.settings.theme { Theme::Nord => Color32::from_rgb(46, 52, 64), Theme::TokyoNight => Color32::from_rgb(26, 27, 38), _ => Color32::WHITE };
-                let fb = egui::Button::new(crate::theme::icon_job("≡", "File ", 14.0, ftxt)).fill(accent()).rounding(7.0);
+                let fb = egui::Button::new(crate::theme::icon_job("≡", crate::i18n::tr("File "), 14.0, ftxt)).fill(accent()).rounding(7.0);
                 let r = ui.add(fb);
                 let popup = ui.make_persistent_id("file_menu");
                 if r.clicked() {
@@ -504,7 +508,8 @@ impl App {
                 // tab-uri ca "pastile": activ = nuanta de accent, fara contur
                 for (i, t) in TABS.iter().enumerate() {
                     let on = self.ribbon_tab == i && mode != RibbonMode::Mini;
-                    let txt = if on { RichText::new(*t).color(accent()).strong() } else { RichText::new(*t) };
+                    let t = crate::i18n::tr(t);
+                    let txt = if on { RichText::new(t).color(accent()).strong() } else { RichText::new(t) };
                     let b = egui::Button::new(txt).fill(if on { accent().gamma_multiply(0.16) } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(7.0);
                     let r = ui.add(b);
                     if r.double_clicked() {
@@ -1931,6 +1936,11 @@ impl App {
     }
 
     fn ribbon_view2(&mut self, ui: &mut egui::Ui) {
+        rgroup(ui, "Language", |ui| {
+            if rbtn(ui, "🌐", if self.settings.romanian { "English" } else { "Română" }, "Interface language: English / Română", false, true).clicked() {
+                self.toggle_language();
+            }
+        });
         rgroup(ui, "Theme", |ui| {
             if rbtn(ui, "☀", "Light", "Light theme", self.settings.theme == Theme::Light, true).clicked() {
                 self.set_theme(Theme::Light);
@@ -7714,6 +7724,9 @@ fn thousands(n: usize) -> String {
 /// buton de ribbon: iconita sus si eticheta dedesubt (Full) sau doar iconita (Compact, numele in tooltip).
 /// Fara contur: hover = fundalul se lumineaza, activ = nuanta de accent.
 fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled: bool) -> egui::Response {
+    let label = crate::i18n::tr(label);
+    let tip = crate::i18n::tr_lines(tip);
+    let tip = tip.as_str();
     let enabled = enabled && ui.is_enabled();
     let compact = crate::theme::RIBBON_COMPACT.load(std::sync::atomic::Ordering::Relaxed);
     let font = FontId::proportional(11.5);
@@ -7743,13 +7756,14 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     if enabled {
         resp.on_hover_text(tip)
     } else {
-        resp.on_hover_text(format!("{tip}  (not available now)"))
+        resp.on_hover_text(format!("{tip}  {}", crate::i18n::tr("(not available now)")))
     }
 }
 
 /// grupa de ribbon = card ridicat (fara chenar, fara separator); titlul sub butoane doar in modul Full.
 /// Golul dintre carduri separa grupele.
 fn rgroup(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui)) {
+    let title = crate::i18n::tr(title);
     let compact = crate::theme::RIBBON_COMPACT.load(std::sync::atomic::Ordering::Relaxed);
     let fill = card_fill(ui.visuals());
     let avail_h = ui.available_height();
@@ -8246,6 +8260,7 @@ fn commands() -> Vec<Cmd> {
             a.cad_sheet = true;
             a.request_path(Purpose::ExportSectionCad);
         }),
+        c!("Language: Română / English", "View", "🌐", "limba romana engleza interfata language", |a| a.toggle_language()),
         c!("Title block & sheet format", "Sections", "✏", "cartus format a3 a2 a1 a0 scara editare", |a| a.title_block_open = true),
         c!("DWG overlay (2D drawing over the model)", "Sections", "🗺", "suprapunere plan dwg dxf 2d", |a| a.overlay_open = true),
         // ---- panouri
@@ -8670,6 +8685,10 @@ impl App {
                     });
                     ui.end_row();
                 });
+                ui.add_space(4.0);
+                ui.checkbox(&mut self.cad_annotate, "Complete 2D drawing (Cut to DWG)").on_hover_text(
+                    "Hatch on cut walls / columns / slabs, tags (door & window numbers, wall types),\ngrid axes with bubbles and dimension chains on plans, level lines and grids on sections.\nOff = only the cut lines.",
+                );
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     let has_vp = !self.viewpoints.is_empty();

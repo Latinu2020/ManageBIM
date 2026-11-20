@@ -53,6 +53,10 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 <td width="50%"><img src="docs/images/start-page.png" alt="Start page"><br><sub><b>Start page</b> with recent projects, a demo project and the integrated manual.</sub></td>
 <td width="50%"><img src="docs/images/point-cloud.png" alt="Point cloud"><br><sub><b>Point clouds</b> (E57, LAS) next to the model, with the <b>as-built check</b>: built, partial, missing.</sub></td>
 </tr>
+<tr>
+<td width="50%"><img src="docs/images/plan-2d-sheet.png" alt="2D plan on sheet"><br><sub><b>Complete 2D plans</b> from a section — hatched cut walls and columns, door / window and wall tags, grid bubbles and dimension chains, on a sheet with the title block (DWG).</sub></td>
+<td width="50%"><img src="docs/images/romanian-ui.png" alt="Romanian interface"><br><sub><b>English / Română</b> — the interface language switches from View › Language, the File menu or Ctrl+K.</sub></td>
+</tr>
 </table>
 
 ---
@@ -85,6 +89,7 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 - **Navigation** like Navisworks — orbit, pan, walk with gravity and collision, ViewCube, walk paths, viewpoints, animations; adaptive LOD on large models.
 - **Visual styles** — Realistic, Shaded, Concept, Wireframe; fine edges, soft contact shadows, PBR material library (`.zip` packs from freepbr.com, ambientCG…).
 - **Command palette** (Ctrl+K) — every command and every element name, in one search box.
+- **Interface in English or Romanian** (View › Language).
 - **Undo / Redo** of the view (Ctrl+Z / Ctrl+Y) and **DWG / DXF overlay**: lay a 2D drawing over the model at a level.
 </details>
 
@@ -113,6 +118,7 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 <summary><b>Output</b></summary>
 
 - **IFC4 export** of the visible items or the selection — closed solids, colours, levels, original GUIDs, all properties.
+- **Complete 2D plans** — hatch on cut walls / columns / slabs, door / window numbers and wall types, grid bubbles with dimension chains; level lines and cut grids on sections.
 - **DWG / DXF** — section cuts as 2D in model space, or on an **A3 / A2 / A1 / A0 sheet** at a standard scale with the **title block**; written directly (AutoCAD 2018 format), no converter needed. Grid axes too.
 - **PDF sheets** from viewpoints with the title block; HTML / Excel reports.
 - **Web viewer** — one offline `.html` file with the model.

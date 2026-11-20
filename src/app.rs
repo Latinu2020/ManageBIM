@@ -1074,6 +1074,8 @@ pub struct App {
     pub manual_q: String,
     /// Cut to DWG: pe plansa A3 cu cartus (altfel 2D in Model space)
     pub cad_sheet: bool,
+    /// Cut to DWG: plan complet (hasura, etichete, axe cu cote, niveluri pe sectiuni)
+    pub cad_annotate: bool,
     /// istoricul vizualizarii (Undo / Redo): starile, pozitia curenta, semnatura ultimei stari
     pub hist: Vec<ViewSnap>,
     pub hist_pos: usize,
@@ -1329,6 +1331,7 @@ impl App {
             manual_page: 0,
             manual_q: String::new(),
             cad_sheet: false,
+            cad_annotate: true,
             hist: Vec::new(),
             hist_pos: 0,
             hist_sig: 0,
@@ -1461,6 +1464,7 @@ impl App {
         for f in files {
             app.open_path(&f, true);
         }
+        crate::i18n::set_romanian(app.settings.romanian);
         app
     }
 
@@ -6038,6 +6042,13 @@ pub fn grid_dxf(grids: &[UserGrid], bubble_r: f64) -> String {
 }
 
 impl App {
+    /// Interfata RO / EN (salvata in setari).
+    pub fn toggle_language(&mut self) {
+        self.settings.romanian = !self.settings.romanian;
+        crate::i18n::set_romanian(self.settings.romanian);
+        self.settings.save();
+    }
+
     /// Proiect nou, gol: aplicatia trece de pagina de start, Save (Ctrl+S) cere unde se salveaza.
     pub fn new_project(&mut self) {
         self.reset();
@@ -6084,6 +6095,8 @@ impl App {
         let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
         // (layer, x1, y1, x2, y2) in coordonatele plansei
         let mut segs: Vec<(String, [f64; 4])> = Vec::new();
+        // elementele taiate: (primul segment, dupa ultimul, se hasureaza, eticheta)
+        let mut cut_elems: Vec<(usize, usize, bool, Option<String>)> = Vec::new();
         let to2d = |p: Vec3| -> [f64; 2] {
             let w = [p.x as f64 + o.x, p.y as f64 + o.y, p.z as f64 + o.z];
             match axis {
@@ -6109,6 +6122,7 @@ impl App {
                     continue;
                 }
                 let layer = cad_layer(if e.ifc_type.is_empty() { "Model" } else { &e.ifc_type });
+                let first = segs.len();
                 for t in e.tri_start..e.tri_start + e.tri_count {
                     let i = t as usize * 3;
                     let (Some(a), Some(b), Some(c)) = (m.pos.get(i).copied(), m.pos.get(i + 1).copied(), m.pos.get(i + 2).copied()) else { continue };
@@ -6125,10 +6139,82 @@ impl App {
                         segs.push((layer.clone(), [p[0], p[1], q[0], q[1]]));
                     }
                 }
+                if segs.len() > first {
+                    let tag = if axis == 2 { cut_tag(e) } else { None };
+                    cut_elems.push((first, segs.len(), cut_is_hatched(&e.ifc_type), tag));
+                }
             }
         }
         if segs.is_empty() {
             return self.error("The section cuts no visible element.");
+        }
+        // planul complet: hasura pe elementele taiate, etichete (usi, ferestre, pereti), axe cu cote, niveluri pe sectiuni.
+        // Marimile textelor / bulelor sunt in mm de hartie: u = metri pe mm (scara plansei sau 1:100 in Model space).
+        let mut texts: Vec<CadText> = Vec::new();
+        if self.cad_annotate {
+            let u = if self.cad_sheet { sheet_scale(&segs, &self.title_block) as f64 / 1000.0 } else { 0.1 };
+            let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+            for (_, p) in &segs {
+                x0 = x0.min(p[0]).min(p[2]);
+                y0 = y0.min(p[1]).min(p[3]);
+                x1 = x1.max(p[0]).max(p[2]);
+                y1 = y1.max(p[1]).max(p[3]);
+            }
+            let mut extra: Vec<(String, [f64; 4])> = Vec::new();
+            let mut tag_boxes: Vec<[f64; 4]> = Vec::new();
+            // usile / ferestrele primele (numerele lor conteaza), apoi peretii
+            let mut cut_elems = cut_elems;
+            cut_elems.sort_by_key(|c| c.3.as_ref().map(|_| 0).unwrap_or(1) + if c.2 { 1 } else { 0 });
+            for (a, b, hatch, tag) in &cut_elems {
+                let own: Vec<[f64; 4]> = segs[*a..*b].iter().map(|s| s.1).collect();
+                if *hatch {
+                    extra.extend(hatch_lines(&own, 1.5 * u).into_iter().map(|h| ("HATCH".to_string(), h)));
+                }
+                if let Some(tag) = tag {
+                    let (mut ex0, mut ey0, mut ex1, mut ey1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+                    for p in &own {
+                        ex0 = ex0.min(p[0]).min(p[2]);
+                        ey0 = ey0.min(p[1]).min(p[3]);
+                        ex1 = ex1.max(p[0]).max(p[2]);
+                        ey1 = ey1.max(p[1]).max(p[3]);
+                    }
+                    // de-a lungul elementului (perete vertical pe plansa -> text rotit 90 grade), deasupra lui
+                    let vertical = ey1 - ey0 > (ex1 - ex0) * 1.5;
+                    let (cx, cy) = ((ex0 + ex1) / 2.0, (ey0 + ey1) / 2.0);
+                    let w = tag.chars().count() as f64 * 2.0 * u * 0.8;
+                    let th = 2.6 * u;
+                    // locul liber cel mai apropiat: deasupra / dedesubt, apoi tot mai departe (fara suprapuneri de etichete)
+                    let mut placed = None;
+                    for k in 0..8 {
+                        let off = (k / 2) as f64 * th * if k % 2 == 0 { 1.0 } else { -1.0 } - if k % 2 == 1 { (if vertical { ex1 - ex0 } else { ey1 - ey0 }) + th + 2.0 * u } else { 0.0 };
+                        let b = if vertical {
+                            let x = ex0 - 1.0 * u - off;
+                            [x - th, cy - w / 2.0, x, cy + w / 2.0]
+                        } else {
+                            let y = ey1 + 1.0 * u + off;
+                            [cx - w / 2.0, y, cx + w / 2.0, y + th]
+                        };
+                        if !tag_boxes.iter().any(|o: &[f64; 4]| b[0] < o[2] && o[0] < b[2] && b[1] < o[3] && o[1] < b[3]) {
+                            placed = Some(b);
+                            break;
+                        }
+                    }
+                    let b = placed.unwrap_or_else(|| if vertical { [ex0 - 1.0 * u - th, cy - w / 2.0, ex0 - 1.0 * u, cy + w / 2.0] } else { [cx - w / 2.0, ey1 + 1.0 * u, cx + w / 2.0, ey1 + 1.0 * u + th] });
+                    tag_boxes.push(b);
+                    texts.push(if vertical { CadText::new("TAGS", b[2], b[1], 2.0, 90.0, tag.clone()) } else { CadText::new("TAGS", b[0], b[1], 2.0, 0.0, tag.clone()) });
+                }
+            }
+            let grids = self.grids_world();
+            if axis == 2 {
+                plan_grid_annotations(&grids, u, &mut extra, &mut texts);
+            } else {
+                let oz = self.origin_f64().z;
+                let levels: Vec<(String, f64)> = self.scene_grids().levels.iter().map(|(n, z)| (n.clone(), *z as f64 + oz)).collect();
+                let o = self.origin_f64();
+                let world = value as f64 + if axis == 0 { o.x } else { o.y };
+                section_annotations(&levels, &grids, axis, world, [x0, y0, x1, y1], u, &mut extra, &mut texts);
+            }
+            segs.extend(extra);
         }
         let dwg = path.to_lowercase().ends_with(".dwg");
         let dxf_path = if dwg { std::path::Path::new(path).with_extension("dxf").to_string_lossy().to_string() } else { with_ext(path, "dxf") };
@@ -6142,9 +6228,9 @@ impl App {
                 _ => "Section".to_string(),
             };
             let project = self.project_path.as_ref().map(|p| model_label(&crate::file_name(p))).unwrap_or_else(|| "ManageBIM".into());
-            cut_sheet_dxf(&segs, &self.title_block, &project, &title, &now_string()).0
+            cut_sheet_dxf_annot(&segs, &texts, &self.title_block, &project, &title, &now_string()).0
         } else {
-            cut_dxf(&segs)
+            cut_dxf_annot(&segs, &texts, 0.1)
         };
         if let Err(e) = std::fs::write(&dxf_path, content) {
             return self.error(format!("Cannot write {dxf_path}: {e}"));
@@ -7440,6 +7526,32 @@ pub fn cut_dxf_layers(segs: &[(String, [f64; 4])], extra: &[&str]) -> String {
 /// (cea mai mare scara standard la care incape), cu chenar si cartusul editabil.
 /// `segs` sunt in metri (coordonate reale). Intoarce DXF-ul si scara (1:N).
 pub fn cut_sheet_dxf(segs: &[(String, [f64; 4])], tb: &crate::pdf::TitleBlock, project: &str, title: &str, date: &str) -> (String, u32) {
+    cut_sheet_dxf_annot(segs, &[], tb, project, title, date)
+}
+
+/// scara plansei: cea din cartus sau cea mai mare scara standard la care incape desenul w x h (m) in aw x ah (mm)
+fn fit_scale(tb: &crate::pdf::TitleBlock, w: f64, h: f64, aw: f64, ah: f64) -> u32 {
+    if tb.scale > 0 {
+        return tb.scale;
+    }
+    crate::pdf::SCALES.into_iter().find(|n| w * 1000.0 / *n as f64 <= aw && h * 1000.0 / *n as f64 <= ah).unwrap_or(10000)
+}
+
+/// Scara la care `cut_sheet_dxf` ar pune liniile pe plansa (pentru a dimensiona textele inainte).
+pub fn sheet_scale(segs: &[(String, [f64; 4])], tb: &crate::pdf::TitleBlock) -> u32 {
+    let (sw, sh) = crate::pdf::paper_mm(&tb.paper);
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for (_, p) in segs {
+        x0 = x0.min(p[0]).min(p[2]);
+        y0 = y0.min(p[1]).min(p[3]);
+        x1 = x1.max(p[0]).max(p[2]);
+        y1 = y1.max(p[1]).max(p[3]);
+    }
+    fit_scale(tb, (x1 - x0).max(0.01), (y1 - y0).max(0.01), sw - 30.0, sh - 20.0 - 48.0 - 10.0)
+}
+
+/// ca `cut_sheet_dxf`, plus textele planului (etichete, cote, axe, niveluri) mutate pe plansa (inaltimea in mm de hartie).
+pub fn cut_sheet_dxf_annot(segs: &[(String, [f64; 4])], texts: &[CadText], tb: &crate::pdf::TitleBlock, project: &str, title: &str, date: &str) -> (String, u32) {
     let (sw, sh) = crate::pdf::paper_mm(&tb.paper);
     const MARGIN: f64 = 10.0;
     const TB_W: f64 = 185.0;
@@ -7454,7 +7566,7 @@ pub fn cut_sheet_dxf(segs: &[(String, [f64; 4])], tb: &crate::pdf::TitleBlock, p
     let (w, h) = ((x1 - x0).max(0.01), (y1 - y0).max(0.01));
     // zona de desen: foaia fara margini si fara banda cartusului
     let (aw, ah) = (sw - 2.0 * MARGIN - 10.0, sh - 2.0 * MARGIN - TB_H - 10.0);
-    let scale = if tb.scale > 0 { tb.scale } else { crate::pdf::SCALES.into_iter().find(|n| w * 1000.0 / *n as f64 <= aw && h * 1000.0 / *n as f64 <= ah).unwrap_or(10000) };
+    let scale = fit_scale(tb, w, h, aw, ah);
     let k = 1000.0 / scale as f64;
     let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
     let (ox, oy) = (MARGIN + 5.0 + aw / 2.0, MARGIN + TB_H + 5.0 + ah / 2.0);
@@ -7477,8 +7589,14 @@ pub fn cut_sheet_dxf(segs: &[(String, [f64; 4])], tb: &crate::pdf::TitleBlock, p
     line(tx, ty + 11.0, r, ty + 11.0);
     line(tx + 120.0, ty, tx + 120.0, ty + 22.0);
     line(tx + 150.0, ty, tx + 150.0, ty + 22.0);
-    let mut dxf = cut_dxf_layers(&out, &["SHEET_TEXT"]);
-    let txt = |x: f64, y: f64, hgt: f64, s: &str| format!("0\nTEXT\n8\nSHEET_TEXT\n10\n{x:.2}\n20\n{y:.2}\n30\n0.0\n40\n{hgt:.2}\n1\n{}\n", s.replace('\n', " "));
+    let mut extra: Vec<&str> = vec!["SHEET_TEXT"];
+    extra.extend(texts.iter().map(|t| t.layer.as_str()));
+    let mut dxf = cut_dxf_layers(&out, &extra);
+    let plan_txt: String = texts.iter().map(|t| CadText { x: ox + (t.x - cx) * k, y: oy + (t.y - cy) * k, ..t.clone() }.dxf(1.0)).collect();
+    if let Some(p) = dxf.rfind("0\nENDSEC\n0\nEOF") {
+        dxf.insert_str(p, &plan_txt);
+    }
+    let txt =|x: f64, y: f64, hgt: f64, s: &str| format!("0\nTEXT\n8\nSHEET_TEXT\n10\n{x:.2}\n20\n{y:.2}\n30\n0.0\n40\n{hgt:.2}\n1\n{}\n", s.replace('\n', " "));
     let or = |s: &str, d: &str| if s.trim().is_empty() { d.to_string() } else { s.trim().to_string() };
     let mut t = String::new();
     if !tb.company.trim().is_empty() {
@@ -7502,6 +7620,247 @@ pub fn cut_sheet_dxf(segs: &[(String, [f64; 4])], tb: &crate::pdf::TitleBlock, p
     // plansa e in milimetri
     let dxf = dxf.replacen("$INSUNITS\n70\n6\n", "$INSUNITS\n70\n4\n", 1);
     (dxf, scale)
+}
+
+/// Un text al planului 2D (eticheta, cota, axa, nivel). `mm` = inaltimea pe hartie;
+/// in Model space se inmulteste cu `u` (metri pe mm de hartie). `rot` in grade.
+#[derive(Clone, Debug)]
+pub struct CadText {
+    pub layer: String,
+    pub x: f64,
+    pub y: f64,
+    pub mm: f64,
+    pub rot: f64,
+    pub s: String,
+}
+
+impl CadText {
+    pub fn new(layer: &str, x: f64, y: f64, mm: f64, rot: f64, s: impl Into<String>) -> Self {
+        CadText { layer: layer.into(), x, y, mm, rot, s: s.into() }
+    }
+    /// entitatea TEXT; `k` = unitati de desen pe mm de hartie
+    pub fn dxf(&self, k: f64) -> String {
+        let s: String = self.s.chars().map(|c| if c == '\n' || c == '\r' { ' ' } else { c }).collect();
+        format!("0\nTEXT\n8\n{}\n10\n{:.4}\n20\n{:.4}\n30\n0.0\n40\n{:.4}\n1\n{}\n50\n{:.2}\n", self.layer, self.x, self.y, self.mm * k, s, self.rot)
+    }
+}
+
+/// DXF in Model space (metri) cu linii si textele planului - `u` = metri pe mm de hartie (0.1 = 1:100).
+pub fn cut_dxf_annot(segs: &[(String, [f64; 4])], texts: &[CadText], u: f64) -> String {
+    let extra: Vec<&str> = texts.iter().map(|t| t.layer.as_str()).collect();
+    let mut dxf = cut_dxf_layers(segs, &extra);
+    let t: String = texts.iter().map(|t| t.dxf(u)).collect();
+    if let Some(p) = dxf.rfind("0\nENDSEC\n0\nEOF") {
+        dxf.insert_str(p, &t);
+    }
+    dxf
+}
+
+/// Hasura ANSI31 (linii la 45 grade, pas `spacing`) in interiorul conturului taiat al unui element.
+/// Conturul vine din taierea triunghiurilor unei suprafete inchise, deci regula par / impar delimiteaza interiorul.
+pub fn hatch_lines(contour: &[[f64; 4]], spacing: f64) -> Vec<[f64; 4]> {
+    let mut out = Vec::new();
+    if contour.len() < 3 || spacing <= 0.0 {
+        return out;
+    }
+    let r = std::f64::consts::FRAC_1_SQRT_2;
+    // u de-a lungul hasurii, v perpendicular
+    let uv = |x: f64, y: f64| ((x + y) * r, (y - x) * r);
+    let xy = |u: f64, v: f64| ((u - v) * r, (u + v) * r);
+    let e: Vec<((f64, f64), (f64, f64))> = contour.iter().map(|s| (uv(s[0], s[1]), uv(s[2], s[3]))).collect();
+    let (vmin, vmax) = e.iter().fold((f64::MAX, f64::MIN), |(a, b), (p, q)| (a.min(p.1).min(q.1), b.max(p.1).max(q.1)));
+    if (vmax - vmin) / spacing > 4000.0 {
+        return out;
+    }
+    // liniile pe o grila globala: hasurile elementelor vecine se continua
+    let mut v = (vmin / spacing).ceil() * spacing;
+    let mut xs: Vec<f64> = Vec::new();
+    while v <= vmax {
+        xs.clear();
+        for (p, q) in &e {
+            if (p.1 < v) != (q.1 < v) {
+                xs.push(p.0 + (q.0 - p.0) * (v - p.1) / (q.1 - p.1));
+            }
+        }
+        xs.sort_by(|a, b| a.total_cmp(b));
+        for w in xs.chunks_exact(2) {
+            if w[1] - w[0] > 1e-6 {
+                let (a, b) = (xy(w[0], v), xy(w[1], v));
+                out.push([a.0, a.1, b.0, b.1]);
+            }
+        }
+        v += spacing;
+    }
+    out
+}
+
+/// Elementele care se hasureaza in plan / sectiune (structura si pereti).
+pub fn cut_is_hatched(ifc_type: &str) -> bool {
+    let t = ifc_type.to_lowercase();
+    ["wall", "column", "slab", "beam", "footing", "pile", "stair", "ramp", "roof"].iter().any(|k| t.contains(k)) && !t.contains("opening")
+}
+
+/// Eticheta unui element taiat: usi / ferestre -> numarul (Mark / Number / Tag sau ultima parte din nume),
+/// pereti -> tipul. None pentru restul.
+pub fn cut_tag(e: &crate::model::Element) -> Option<String> {
+    let t = e.ifc_type.to_lowercase();
+    let prop = |names: &[&str]| e.props.iter().find(|p| names.iter().any(|n| p.name.eq_ignore_ascii_case(n)) && !p.value.trim().is_empty()).map(|p| p.value.trim().to_string());
+    let parts: Vec<&str> = e.name.split(':').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if t.contains("door") || t.contains("window") {
+        let v = prop(&["Mark", "Number", "Nr", "Tag"]).or_else(|| parts.last().map(|s| s.to_string()))?;
+        return Some(v.chars().take(24).collect());
+    }
+    if t.contains("wall") {
+        let v = prop(&["Type Name", "Type", "ObjectType"]).or_else(|| if parts.len() >= 2 { Some(parts[1].to_string()) } else { parts.first().map(|s| s.to_string()) })?;
+        return Some(v.chars().take(32).collect());
+    }
+    None
+}
+
+fn circle_segs(layer: &str, c: [f64; 2], r: f64, out: &mut Vec<(String, [f64; 4])>) {
+    const N: usize = 20;
+    for i in 0..N {
+        let (a, b) = (i as f64 / N as f64 * std::f64::consts::TAU, (i + 1) as f64 / N as f64 * std::f64::consts::TAU);
+        out.push((layer.into(), [c[0] + r * a.cos(), c[1] + r * a.sin(), c[0] + r * b.cos(), c[1] + r * b.sin()]));
+    }
+}
+
+/// unghiul unui text citibil de jos / din dreapta: (-90, 90]
+pub fn read_angle(dx: f64, dy: f64) -> f64 {
+    let mut a = dy.atan2(dx).to_degrees();
+    if a > 90.0 + 1e-6 {
+        a -= 180.0;
+    } else if a <= -90.0 + 1e-6 {
+        a += 180.0;
+    }
+    a
+}
+
+/// latimea aproximativa a unui text (metri), `u` = metri pe mm de hartie
+fn text_w(s: &str, mm: f64, u: f64) -> f64 {
+    s.chars().count() as f64 * mm * u * 0.8
+}
+
+/// Axele in plan: linia axei, bula cu eticheta la un capat si lanturi de cote intre axele paralele
+/// (plus cota totala) la celalalt capat. Coordonate in metri.
+pub fn plan_grid_annotations(grids: &[UserGrid], u: f64, segs: &mut Vec<(String, [f64; 4])>, texts: &mut Vec<CadText>) {
+    let r_b = 4.5 * u;
+    let mut items: Vec<([f64; 2], [f64; 2], [f64; 2], &str)> = Vec::new();
+    for g in grids {
+        let (dx, dy) = (g.b[0] - g.a[0], g.b[1] - g.a[1]);
+        let l = (dx * dx + dy * dy).sqrt();
+        if l < 1e-6 {
+            continue;
+        }
+        items.push((g.a, g.b, [dx / l, dy / l], g.name.as_str()));
+    }
+    // grupuri de axe paralele
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for i in 0..items.len() {
+        let d = items[i].2;
+        match groups.iter_mut().find(|gr| {
+            let e = items[gr[0]].2;
+            (d[0] * e[0] + d[1] * e[1]).abs() > 0.9998
+        }) {
+            Some(gr) => gr.push(i),
+            None => groups.push(vec![i]),
+        }
+    }
+    for gr in &groups {
+        let d = items[gr[0]].2;
+        let n = [-d[1], d[0]];
+        // fiecare axa: (offset pe normala, t minim, t maxim, eticheta) in sistemul primei axe din grup
+        let mut rows: Vec<(f64, f64, f64, &str)> = gr
+            .iter()
+            .map(|&i| {
+                let (a, b, _, name) = items[i];
+                let (ta, tb) = (a[0] * d[0] + a[1] * d[1], b[0] * d[0] + b[1] * d[1]);
+                (a[0] * n[0] + a[1] * n[1], ta.min(tb), ta.max(tb), name)
+            })
+            .collect();
+        rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let p = |o: f64, t: f64| [n[0] * o + d[0] * t, n[1] * o + d[1] * t];
+        for &(o, t0, t1, name) in &rows {
+            let (a, b) = (p(o, t0), p(o, t1));
+            segs.push(("GRIDS".into(), [a[0], a[1], b[0], b[1]]));
+            let c = p(o, t0 - r_b);
+            circle_segs("GRIDS", c, r_b, segs);
+            texts.push(CadText::new("GRID_TEXT", c[0] - text_w(name, 2.5, u) / 2.0, c[1] - 1.25 * u, 2.5, 0.0, name));
+        }
+        if rows.len() < 2 {
+            continue;
+        }
+        // cotele: la capatul opus bulelor
+        let tmax = rows.iter().map(|r| r.2).fold(f64::MIN, f64::max);
+        let rot = read_angle(n[0], n[1]);
+        let (rc, rs) = (rot.to_radians().cos(), rot.to_radians().sin());
+        let chain = |t: f64, idx: &[usize], segs: &mut Vec<(String, [f64; 4])>, texts: &mut Vec<CadText>| {
+            let (a, b) = (p(rows[idx[0]].0, t), p(rows[idx[idx.len() - 1]].0, t));
+            segs.push(("DIMS".into(), [a[0], a[1], b[0], b[1]]));
+            for &k in idx {
+                let o = rows[k].0;
+                // linie ajutatoare de la capatul axei si bifa la 45 grade
+                let (e0, e1) = (p(o, rows[k].2 + 2.0 * u), p(o, t + 1.5 * u));
+                segs.push(("DIMS".into(), [e0[0], e0[1], e1[0], e1[1]]));
+                let q = p(o, t);
+                let s = [(d[0] + n[0]) * u, (d[1] + n[1]) * u];
+                segs.push(("DIMS".into(), [q[0] - s[0], q[1] - s[1], q[0] + s[0], q[1] + s[1]]));
+            }
+            for w in idx.windows(2) {
+                let (oa, ob) = (rows[w[0]].0, rows[w[1]].0);
+                let mm = ((ob - oa) * 1000.0).round();
+                if mm < 1.0 {
+                    continue;
+                }
+                let label = format!("{mm:.0}");
+                let half = text_w(&label, 2.5, u) / 2.0;
+                let m = p((oa + ob) / 2.0, t);
+                // deasupra liniei de cota, in sensul de citire al textului
+                let m = [m[0] - rs * 0.8 * u, m[1] + rc * 0.8 * u];
+                texts.push(CadText::new("DIMS_TEXT", m[0] - half * rc, m[1] - half * rs, 2.5, rot, label));
+            }
+        };
+        let all: Vec<usize> = (0..rows.len()).collect();
+        chain(tmax + 12.0 * u, &all, segs, texts);
+        if rows.len() > 2 {
+            chain(tmax + 20.0 * u, &[0, rows.len() - 1], segs, texts);
+        }
+    }
+}
+
+/// Pe o sectiune verticala: liniile de nivel cu nume si cota (m) si axele taiate de plan (cu bula sus).
+/// `axis` = 0 (plan la X = value, orizontala = Y) sau 1 (plan la Y = value, orizontala = X);
+/// `bbox` = [x0, y0, x1, y1] al taieturii in coordonatele desenului.
+pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: usize, value: f64, bbox: [f64; 4], u: f64, segs: &mut Vec<(String, [f64; 4])>, texts: &mut Vec<CadText>) {
+    let [x0, y0, x1, y1] = bbox;
+    for (name, z) in levels {
+        if *z < y0 - 5.0 || *z > y1 + 5.0 {
+            continue;
+        }
+        segs.push(("LEVELS".into(), [x0 - 10.0 * u, *z, x1 + 10.0 * u, *z]));
+        // marcajul de cota (triunghi cu varful pe linie)
+        let tx = x1 + 10.0 * u;
+        segs.push(("LEVELS".into(), [tx, *z, tx + 2.0 * u, *z + 2.5 * u]));
+        segs.push(("LEVELS".into(), [tx + 2.0 * u, *z + 2.5 * u, tx - 2.0 * u, *z + 2.5 * u]));
+        segs.push(("LEVELS".into(), [tx - 2.0 * u, *z + 2.5 * u, tx, *z]));
+        texts.push(CadText::new("LEVELS_TEXT", tx + 3.5 * u, *z + 0.5 * u, 2.5, 0.0, format!("{name}  {}{:.3}", if *z >= 0.0 { "+" } else { "" }, z)));
+    }
+    for g in grids {
+        // intersectia axei (2D) cu planul sectiunii
+        let (a, b) = (g.a[axis] - value, g.b[axis] - value);
+        if (a > 1e-9 && b > 1e-9) || (a < -1e-9 && b < -1e-9) || (b - a).abs() < 1e-9 {
+            continue;
+        }
+        let t = -a / (b - a);
+        let o = 1 - axis;
+        let h = g.a[o] + (g.b[o] - g.a[o]) * t;
+        if h < x0 - 2.0 || h > x1 + 2.0 {
+            continue;
+        }
+        segs.push(("GRIDS".into(), [h, y0 - 5.0 * u, h, y1 + 10.0 * u]));
+        circle_segs("GRIDS", [h, y1 + 14.5 * u], 4.5 * u, segs);
+        texts.push(CadText::new("GRID_TEXT", h - text_w(&g.name, 2.5, u) / 2.0, y1 + 13.25 * u, 2.5, 0.0, g.name.clone()));
+    }
 }
 
 /// O stare a vizualizarii in istoricul Undo / Redo.

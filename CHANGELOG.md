@@ -3,6 +3,12 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.23.0 - 2026-11-20
+- **Planuri 2D complete din secțiuni** (Cut to DWG / Cut on Sheet): hașură ANSI31 pe pereți, stâlpi, plăci, grinzi tăiate; etichete (numărul ușilor și ferestrelor, tipul pereților) fără suprapuneri; axe cu bule și lanțuri de cote între axe plus cota totală; pe secțiuni verticale: liniile de nivel cu cotă și axele tăiate. Mărimile textelor sunt în mm de hârtie, după scara planșei. Se poate opri din Title Block („Complete 2D drawing”).
+- **Interfața în limba română** (EN / RO): View › Language, meniul File sau Ctrl+K „Language”. Se traduc filele, grupele și butoanele ribbon-ului, tooltip-urile frecvente, titlurile panourilor și meniul File; alegerea se salvează.
+- **Stilul Realistic fotorealist**: reflexii ale cerului cu Fresnel, sticlă care reflectă la unghiuri razante, tone mapping filmic (ACES), materiale atribuite automat după tipul IFC când nu există atribuiri.
+- Path tracing (randare fotorealistă statică) mutat în versiunea următoare.
+
 ## 0.22.0 - 2026-11-20
 
 - **IFC mai bun**: golurile (usi, ferestre, treceri - IfcRelVoidsElement) sunt **taiate din pereti si placi**; **sistemele / zonele** (IfcSystem, IfcZone) ca proprietati "Systems"; **clasificarile** (Uniclass, OmniClass... - IfcClassificationReference) in grupul "Classification"; **georeferentierea** (IfcMapConversion: E, N, H, rotatie, CRS) in informatiile modelului.

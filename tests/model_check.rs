@@ -613,3 +613,110 @@ fn dwg_overlay_reads_lines_and_circles() {
     let (l2, _) = bimrust::formats::cad_lines(&dwg).unwrap();
     assert_eq!(l2.len(), lines.len());
 }
+
+/// Plan complet: hasura doar in interiorul conturului, la 45 de grade.
+#[test]
+fn hatch_fills_only_the_cut_contour() {
+    // patrat 1 x 1 m cu gol 0.4 x 0.4 m in mijloc (perete cu gol) - regula par / impar
+    let sq = |a: f64, b: f64| vec![[a, a, b, a], [b, a, b, b], [b, b, a, b], [a, b, a, a]];
+    let mut c = sq(0.0, 1.0);
+    c.extend(sq(0.3, 0.7));
+    let h = bimrust::app::hatch_lines(&c, 0.1);
+    assert!(h.len() > 10, "{} hatch lines", h.len());
+    for l in &h {
+        let (dx, dy) = (l[2] - l[0], l[3] - l[1]);
+        assert!((dx - dy).abs() < 1e-9, "45 degrees");
+        for t in [0.0, 0.5, 1.0] {
+            let (x, y) = (l[0] + dx * t, l[1] + dy * t);
+            assert!((-1e-6..=1.0 + 1e-6).contains(&x) && (-1e-6..=1.0 + 1e-6).contains(&y), "outside the contour");
+            if t == 0.5 {
+                assert!(!(x > 0.3 + 1e-6 && x < 0.7 - 1e-6 && y > 0.3 + 1e-6 && y < 0.7 - 1e-6), "inside the hole");
+            }
+        }
+    }
+    assert!(bimrust::app::hatch_lines(&c, 0.0).is_empty());
+    assert!(bimrust::app::cut_is_hatched("IfcWallStandardCase") && bimrust::app::cut_is_hatched("Columns") && !bimrust::app::cut_is_hatched("IfcDoor") && !bimrust::app::cut_is_hatched("IfcOpeningElement"));
+}
+
+/// Axe in plan: bule, lant de cote cu distantele in mm si cota totala; niveluri si axe pe sectiune.
+#[test]
+fn plan_grids_get_bubbles_and_dimensions() {
+    use bimrust::app::UserGrid;
+    let g = |n: &str, a: [f64; 2], b: [f64; 2]| UserGrid { name: n.into(), a, b };
+    // 3 axe verticale (1, 2, 3 la 0 / 6 / 13.5 m; a doua desenata invers) + 2 orizontale (A, B la 0 / 5 m)
+    let grids = vec![g("1", [0.0, 0.0], [0.0, 20.0]), g("2", [6.0, 20.0], [6.0, 0.0]), g("3", [13.5, 0.0], [13.5, 20.0]), g("A", [0.0, 0.0], [20.0, 0.0]), g("B", [0.0, 5.0], [20.0, 5.0])];
+    let (mut segs, mut texts) = (Vec::new(), Vec::new());
+    bimrust::app::plan_grid_annotations(&grids, 0.1, &mut segs, &mut texts);
+    let dims: Vec<&str> = texts.iter().filter(|t| t.layer == "DIMS_TEXT").map(|t| t.s.as_str()).collect();
+    for d in ["6000", "7500", "13500", "5000"] {
+        assert!(dims.contains(&d), "dimension {d} missing: {dims:?}");
+    }
+    assert_eq!(dims.len(), 4, "{dims:?}");
+    let labels: Vec<&str> = texts.iter().filter(|t| t.layer == "GRID_TEXT").map(|t| t.s.as_str()).collect();
+    assert_eq!(labels.len(), 5);
+    assert_eq!(segs.iter().filter(|s| s.0 == "GRIDS").count(), 5 * 21, "axis line + 20-segment bubble each");
+    // textele cotelor se citesc de jos sau din dreapta
+    assert!(texts.iter().all(|t| t.rot > -90.0 - 1e-6 && t.rot <= 90.0 + 1e-6));
+
+    // sectiune la Y = 10: axele 1, 2, 3 apar ca verticale la X = 0 / 6 / 13.5; nivelurile ca linii orizontale
+    let (mut segs, mut texts) = (Vec::new(), Vec::new());
+    let levels = vec![("Level 0".to_string(), 0.0), ("Level 1".to_string(), 3.5)];
+    bimrust::app::section_annotations(&levels, &grids, 1, 10.0, [0.0, -0.5, 13.5, 7.0], 0.1, &mut segs, &mut texts);
+    let mut xs: Vec<f64> = segs.iter().filter(|s| s.0 == "GRIDS" && (s.1[0] - s.1[2]).abs() < 1e-9 && (s.1[3] - s.1[1]) > 5.0).map(|s| s.1[0]).collect();
+    xs.sort_by(|a, b| a.total_cmp(b));
+    assert_eq!(xs, vec![0.0, 6.0, 13.5]);
+    let lv: Vec<&str> = texts.iter().filter(|t| t.layer == "LEVELS_TEXT").map(|t| t.s.as_str()).collect();
+    assert_eq!(lv, vec!["Level 0  +0.000", "Level 1  +3.500"]);
+}
+
+/// DWG cu plan complet (hasura, etichete, cote rotite): se scrie fara ODA si se reciteste cu textele.
+#[test]
+fn annotated_cut_round_trips_to_dwg() {
+    use acadrust::entities::EntityType;
+    use bimrust::app::{CadText, UserGrid};
+    let mut segs = vec![("Walls".to_string(), [0.0, 0.0, 6.0, 0.0]), ("Walls".to_string(), [6.0, 0.0, 6.0, 0.2]), ("Walls".to_string(), [6.0, 0.2, 0.0, 0.2]), ("Walls".to_string(), [0.0, 0.2, 0.0, 0.0])];
+    let own: Vec<[f64; 4]> = segs.iter().map(|s| s.1).collect();
+    segs.extend(bimrust::app::hatch_lines(&own, 0.15).into_iter().map(|h| ("HATCH".to_string(), h)));
+    let mut texts = vec![CadText::new("TAGS", 2.0, 0.3, 2.0, 0.0, "Basic Wall 200")];
+    let grids = vec![UserGrid { name: "A".into(), a: [-1.0, 0.0], b: [7.0, 0.0] }, UserGrid { name: "B".into(), a: [-1.0, 6.0], b: [7.0, 6.0] }];
+    bimrust::app::plan_grid_annotations(&grids, 0.1, &mut segs, &mut texts);
+    let n_texts = texts.len();
+    for (name, dxf) in [("annot_model.dxf", bimrust::app::cut_dxf_annot(&segs, &texts, 0.1)), ("annot_sheet.dxf", bimrust::app::cut_sheet_dxf_annot(&segs, &texts, &bimrust::pdf::TitleBlock::default(), "P", "Plan", "2026-11-20").0)] {
+        let p = std::path::Path::new("target").join(name);
+        std::fs::write(&p, &dxf).unwrap();
+        let out = bimrust::formats::dxf_to_dwg_native(&p.to_string_lossy()).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let doc = acadrust::DwgReader::from_mmap(&out).and_then(|mut r| r.read()).unwrap();
+        let mut vals = Vec::new();
+        let mut rotated = false;
+        for e in doc.entities() {
+            if let EntityType::Text(t) = e {
+                vals.push(t.value.clone());
+                rotated |= t.rotation.abs() > 0.1;
+            }
+        }
+        assert!(vals.len() >= n_texts, "{name}: {vals:?}");
+        assert!(vals.iter().any(|v| v == "Basic Wall 200") && vals.iter().any(|v| v == "6000"), "{name}: {vals:?}");
+        assert!(rotated, "{name}: the dimension between vertical grids is a rotated text");
+        for l in ["HATCH", "TAGS", "GRIDS", "DIMS", "DIMS_TEXT", "GRID_TEXT"] {
+            assert!(doc.layers.get(l).is_some(), "{name}: layer {l}");
+        }
+    }
+}
+
+/// Interfata RO / EN: comutare, texte fara traducere raman in engleza, fara chei duble.
+#[test]
+fn romanian_interface_toggle() {
+    use bimrust::i18n::{set_romanian, tr, PAIRS};
+    let mut keys: Vec<&str> = PAIRS.iter().map(|p| p.0).collect();
+    keys.sort();
+    let n = keys.len();
+    keys.dedup();
+    assert_eq!(keys.len(), n, "duplicate translation keys");
+    set_romanian(true);
+    assert_eq!(tr("Sections"), "Secțiuni");
+    assert_eq!(tr("✔ Model Checker"), "✔ Verificare model");
+    assert_eq!(tr("no translation here"), "no translation here");
+    assert_eq!(bimrust::i18n::tr_lines("Light theme\nDark theme"), "Temă luminoasă\nTemă întunecată");
+    set_romanian(false);
+    assert_eq!(tr("Sections"), "Sections");
+}
