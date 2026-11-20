@@ -37,7 +37,7 @@ if (-not $NoBuild) {
     $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
     if (Get-Command cargo -ErrorAction SilentlyContinue) {
         Push-Location $root
-        try { & cargo build --release; if ($LASTEXITCODE -ne 0) { throw 'cargo build failed' } } finally { Pop-Location }
+        try { & cargo build --release --features addins; if ($LASTEXITCODE -ne 0) { throw 'cargo build failed' } } finally { Pop-Location }
     } else { Write-Warning 'cargo not found - using the existing builds in target\release' }
 }
 $exe = Join-Path $root 'target\release\ManageBIM.exe'

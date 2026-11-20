@@ -66,7 +66,7 @@ fn install_crash_log() {
             std::thread::current().name().unwrap_or("?"),
             bt
         );
-        let path = std::env::var_os("APPDATA").map(|a| std::path::PathBuf::from(a).join("ManageBIM").join("crash.log"));
+        let path = bimrust::formats::config_root().map(|a| a.join("ManageBIM").join("crash.log"));
         if let Some(p) = &path {
             let _ = std::fs::create_dir_all(p.parent().unwrap());
             use std::io::Write;

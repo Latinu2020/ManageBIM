@@ -1360,10 +1360,34 @@ fn convert_dwg_oda(oda: &str, path: &str, progress: &dyn Fn(f32, &str)) -> Resul
 }
 
 /// DXF -> DWG cu ODA File Converter (gratuit, instalat separat). Intoarce calea DWG-ului.
+/// DXF -> DWG. Implicit cu scriitorul DWG integrat (acadrust, AutoCAD 2018 / AC1032), fara alte programe;
+/// ODA File Converter (daca e instalat) ramane doar ca rezerva. DWG-ul scris e recitit ca verificare.
 pub fn dxf_to_dwg(dxf: &str) -> Result<String, String> {
+    match dxf_to_dwg_native(dxf) {
+        Ok(p) => Ok(p),
+        Err(native) => dxf_to_dwg_oda(dxf).map_err(|oda| format!("{native}; {oda}")),
+    }
+}
+
+/// scriitorul DWG integrat; verifica rezultatul recitindu-l (acelasi numar de entitati)
+pub fn dxf_to_dwg_native(dxf: &str) -> Result<String, String> {
+    let mut doc = acadrust::DxfReader::from_file(dxf).and_then(|r| r.read()).map_err(|e| format!("cannot read the DXF ({e})"))?;
+    let n = doc.entities().count();
+    doc.version = acadrust::types::DxfVersion::AC1032;
+    let out = Path::new(dxf).with_extension("dwg");
+    acadrust::DwgWriter::write_to_file(&out, &doc).map_err(|e| format!("built-in DWG writer failed ({e})"))?;
+    let back = acadrust::DwgReader::from_mmap(&out).and_then(|mut r| r.read()).map_err(|e| format!("the written DWG could not be read back ({e})"))?;
+    let m = back.entities().count();
+    if m < n {
+        return Err(format!("the written DWG has {m} of {n} entities"));
+    }
+    Ok(out.to_string_lossy().to_string())
+}
+
+fn dxf_to_dwg_oda(dxf: &str) -> Result<String, String> {
     let oda = tools().oda;
     if oda.is_empty() || !Path::new(&oda).is_file() {
-        return Err("DWG needs the free ODA File Converter (opendesign.com) - install it, or open the DXF in AutoCAD and save as DWG.".into());
+        return Err("ODA File Converter is not installed".into());
     }
     let src = Path::new(dxf);
     let dir = src.parent().ok_or("bad path")?;
@@ -1640,4 +1664,42 @@ pub fn grids_from_cad(path: &str, layer: Option<&str>) -> Result<CadGrids, Strin
     }
     let grids = by_tag.into_iter().map(|(t, a, b)| (t, (a * scale).to_array(), (b * scale).to_array())).collect();
     Ok(CadGrids { grids, layer: chosen, layers, scale })
+}
+
+// ====================================================================== portabilitate (Windows / Linux / FreeBSD)
+
+/// Dialogurile de fisiere native: pe Windows mereu; pe Linux / FreeBSD prin xdg-desktop-portal (D-Bus).
+pub fn native_dialogs() -> bool {
+    if cfg!(windows) {
+        return true;
+    }
+    std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some()
+}
+
+/// Deschide un fisier / folder cu programul implicit (Explorer, xdg-open).
+pub fn open_with_system(path: &std::path::Path) {
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("explorer").arg(path).spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+    }
+}
+
+/// Folderul de setari: %APPDATA% (Windows) sau $XDG_CONFIG_HOME / ~/.config (Linux, FreeBSD).
+pub fn config_root() -> Option<std::path::PathBuf> {
+    if let Some(a) = std::env::var_os("APPDATA") {
+        return Some(std::path::PathBuf::from(a));
+    }
+    std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
+}
+
+/// Folderul de date locale: %LOCALAPPDATA% (Windows) sau $XDG_DATA_HOME / ~/.local/share (Linux, FreeBSD).
+pub fn data_root() -> Option<std::path::PathBuf> {
+    if let Some(a) = std::env::var_os("LOCALAPPDATA") {
+        return Some(std::path::PathBuf::from(a));
+    }
+    std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local").join("share")))
 }

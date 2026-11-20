@@ -2221,11 +2221,13 @@ impl App {
             ui.label(RichText::new(format!("version {}", env!("CARGO_PKG_VERSION"))).small().color(pal.overlay_weak));
             ui.add_space(20.0);
             let bw = side_w - 36.0;
-            let big = |t: &str| egui::Button::new(RichText::new(t).size(14.0)).min_size(EV::new(bw, 32.0));
+            // iconita vectoriala + text (emoji-urile nu au glife in fontul interfetei)
+            let tcol = ui.visuals().text_color();
+            let big = |t: &str| egui::Button::new(crate::theme::title_job(t, 14.0, tcol)).min_size(EV::new(bw, 32.0));
             // Open… cu meniu (model / proiect), ca butonul Open din Navisworks
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
-                if ui.add(egui::Button::new(RichText::new("📂  Open…").size(14.0)).min_size(EV::new(bw - 30.0, 32.0))).on_hover_text("Open a model or a project (IFC, Revit / Navisworks, DWG, STEP, FBX, E57, .bimr, .bimd…)  Ctrl+O").clicked() {
+                if ui.add(egui::Button::new(crate::theme::title_job("📂 Open…", 14.0, tcol)).min_size(EV::new(bw - 30.0, 32.0))).on_hover_text("Open a model or a project (IFC, Revit / Navisworks, DWG, STEP, FBX, E57, .bimr, .bimd…)  Ctrl+O").clicked() {
                     act = Some(StartAction::OpenModelDialog);
                 }
                 ui.menu_button(RichText::new("⏷").size(14.0), |ui| {
@@ -2240,20 +2242,20 @@ impl App {
                 });
             });
             ui.add_space(4.0);
-            if ui.add(big("✚  New")).on_hover_text("New empty project: add models, grids, levels; save it with Save (Ctrl+S)").clicked() {
+            if ui.add(big("➕ New")).on_hover_text("New empty project: add models, grids, levels; save it with Save (Ctrl+S)").clicked() {
                 act = Some(StartAction::New);
             }
             if open_name.is_some() && self.show_start {
                 ui.add_space(4.0);
-                if ui.add(big("✖  Close project")).clicked() {
+                if ui.add(big("✖ Close project")).clicked() {
                     act = Some(StartAction::Close);
                 }
             }
             ui.add_space(4.0);
-            if ui.add(big("🏗  Demo project")).on_hover_text("Block A: architecture + structure, MEP and a 4D schedule - try every feature").clicked() {
+            if ui.add(big("🏗 Demo project")).on_hover_text("Block A: architecture + structure, MEP and a 4D schedule - try every feature").clicked() {
                 self.open_demo();
             }
-            if ui.add(big("❓  Manual")).on_hover_text("The ManageBIM manual, with search").clicked() {
+            if ui.add(big("❓ Manual")).on_hover_text("The ManageBIM manual, with search").clicked() {
                 self.manual_open = true;
             }
             ui.add_space(16.0);
@@ -6067,7 +6069,9 @@ impl App {
         }
         #[cfg(not(windows))]
         {
-            let _ = path;
+            if let Some(dir) = std::path::Path::new(path).parent() {
+                crate::formats::open_with_system(dir);
+            }
         }
     }
 
@@ -6491,7 +6495,7 @@ impl App {
                     if ui.button("📂 Open my library folder").clicked() {
                         if let Some(d) = crate::materials::user_library_dir() {
                             let _ = std::fs::create_dir_all(&d);
-                            let _ = std::process::Command::new("explorer").arg(&d).spawn();
+                            crate::formats::open_with_system(&d);
                         }
                         ui.close_menu();
                     }
@@ -8433,7 +8437,7 @@ const MANUAL: [(&str, &str, &str); 14] = [
 - Themes: Studio, Dark, Light, Tokyo Night, Nord (chip in the top right). The ribbon has three sizes: Full, Compact, Mini."),
     ("✂", "Sections & levels", "- Status bar › Level: pick a level to cut the model at that level (plan view), All levels to turn it off.
 - Sections tab: section box around the selection (Fit Section), Model box with stretch arrows, section planes.
-- Cut to DWG: the cut of the current section as 2D lines on an A3 sheet with a title block, at a standard scale (1:50 / 1:100 / 1:200), one layer per element type. DWG needs the free ODA File Converter, otherwise a DXF is saved.
+- Cut to DWG: the cut of the current section as 2D lines on an A3 sheet with a title block, at a standard scale (1:50 / 1:100 / 1:200), one layer per element type. DWG (AutoCAD 2018) is written directly, no other program needed; DXF is also available.
 - Grids and levels: from IFC, from DWG / DXF, or created in the app; clash locations use them (C-4 / Level 2)."),
     ("📏", "Measure & relocate", "- Measure: point to point, chained, angle, area; snaps to corners, midpoints and edges. Units m / mm in the status bar.
 - Relocate (Analyze tab): move, rotate and align models or elements - from a point to a point, along an edge, onto a surface.

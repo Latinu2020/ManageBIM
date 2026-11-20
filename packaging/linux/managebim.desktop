@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=ManageBIM
+GenericName=BIM Coordination
+Comment=Federated BIM viewer: IFC, Navisworks, DWG, point clouds, clash detection
+Exec=ManageBIM %F
+Icon=managebim
+Terminal=false
+Categories=Graphics;Engineering;3DGraphics;Viewer;
+MimeType=application/x-step;model/ifc;
+Keywords=BIM;IFC;Clash;Navisworks;Revit;CAD;
+StartupWMClass=ManageBIM

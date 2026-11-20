@@ -13,7 +13,7 @@ pub const OURS: &str = "managebim.sel";
 pub const PEERS: [(&str, &str); 2] = [("revit.sel", "Revit"), ("navis.sel", "Navisworks")];
 
 pub fn sync_dir() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("ManageBIM").join("Sync"))
+    crate::formats::data_root().map(|d| d.join("ManageBIM").join("Sync"))
 }
 
 const B64: &[u8; 64] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$";

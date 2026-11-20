@@ -230,7 +230,7 @@ pub fn load_texture(path: &str) -> Result<Vec<u8>, String> {
 /// %APPDATA%\ManageBIM\Materials - aici stau texturile importate si `library.bimmat` (materialele tale,
 /// disponibile in orice proiect).
 pub fn user_library_dir() -> Option<std::path::PathBuf> {
-    std::env::var_os("APPDATA").map(|d| std::path::PathBuf::from(d).join("ManageBIM").join("Materials"))
+    crate::formats::config_root().map(|d| d.join("ManageBIM").join("Materials"))
 }
 
 /// Materialele salvate de utilizator (gol daca nu exista inca).
@@ -299,7 +299,9 @@ fn pbr_role(file: &str) -> Option<&'static str> {
 
 /// "fabric-pattern-07-bl.zip" -> "Fabric pattern 07"
 pub fn pbr_name(path: &str) -> String {
-    let stem = std::path::Path::new(path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "PBR material".into());
+    // numele fisierului fara extensie, cu / sau \ ca separator (cai Windows si Linux deopotriva)
+    let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    let stem = file.rsplit_once('.').map(|(a, _)| a).unwrap_or(file).to_string();
     let mut words: Vec<String> = stem.split(['-', '_', ' ', '.']).filter(|w| !w.is_empty()).map(|w| w.to_string()).collect();
     while words.len() > 1 && matches!(words.last().map(|w| w.to_ascii_lowercase()).as_deref(), Some("bl" | "ue" | "unity" | "png" | "jpg" | "1k" | "2k" | "4k" | "8k" | "pbr")) {
         words.pop();

@@ -141,7 +141,8 @@ fn pbr_pack_names_and_roles() {
 #[test]
 #[ignore]
 fn export_sample_web_viewer() {
-    let p = "samples/Block_A_Architecture_Structure.ifc";
+    // cache-ul .bimc (cu golurile pentru ferestre deja taiate), daca exista; altfel IFC-ul
+    let p = if std::path::Path::new("samples/Block_A_Architecture_Structure.ifc.bimc").is_file() { "samples/Block_A_Architecture_Structure.ifc.bimc" } else { "samples/Block_A_Architecture_Structure.ifc" };
     let raw = bimrust::load_any(p, &|_, _| {}).unwrap();
     let m = bimrust::build_model(raw, p, glam::DVec3::ZERO);
     let items: Vec<(&Model, &Element)> = m.elements.iter().filter(|e| e.tri_count > 0).map(|e| (&m, e)).collect();
@@ -282,4 +283,149 @@ fn unique_requirement_flags_duplicates() {
     assert_eq!(res[0].checked, 3);
     assert_eq!(res[0].failed.len(), 2, "D1 and D3 share Mark 101");
     assert!(res[0].failed.iter().all(|(_, w)| w.contains("not unique")));
+}
+
+#[test]
+fn dwg_is_written_without_oda() {
+    let segs = vec![("Walls".to_string(), [0.0, 0.0, 30.0, 0.0]), ("IfcDoor".to_string(), [30.0, 0.0, 30.0, 18.0])];
+    let dir = std::path::Path::new("target");
+    for (name, dxf) in [("dwg_test_model.dxf", bimrust::app::cut_dxf(&segs)), ("dwg_test_sheet.dxf", bimrust::app::cut_sheet_dxf(&segs, &bimrust::pdf::TitleBlock::default(), "Block A", "Plan - Level 1", "2026-11-20").0)] {
+        let p = dir.join(name);
+        std::fs::write(&p, dxf).unwrap();
+        let out = bimrust::formats::dxf_to_dwg_native(&p.to_string_lossy()).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let bytes = std::fs::read(&out).unwrap();
+        assert!(bytes.starts_with(b"AC1032"), "AutoCAD 2018 DWG header");
+    }
+}
+
+/// DWG-ul scris direct: recitit, trebuie sa aiba aceleasi layere, linii, texte, unitati si coordonate.
+#[test]
+fn dwg_export_round_trip_is_exact() {
+    use acadrust::entities::EntityType;
+    let segs = vec![
+        ("Walls".to_string(), [1000.5, 2000.25, 1030.5, 2000.25]),
+        ("IfcDoor".to_string(), [1030.5, 2000.25, 1030.5, 2018.0]),
+        ("Ifc_Slab".to_string(), [1000.5, 2018.0, 1030.5, 2018.0]),
+    ];
+    let mut tb = bimrust::pdf::TitleBlock::default();
+    tb.company = "Acme".into();
+    let cases = [
+        ("rt_model.dxf", bimrust::app::cut_dxf(&segs), 6i16, 3usize, 0usize),
+        ("rt_sheet.dxf", bimrust::app::cut_sheet_dxf(&segs, &tb, "Block A", "Plan - Level 1", "2026-11-20").0, 4, 3 + 4 + 4 + 4 + 5, 10),
+    ];
+    for (name, dxf, units, lines, texts) in cases {
+        let p = std::path::Path::new("target").join(name);
+        std::fs::write(&p, &dxf).unwrap();
+        let out = bimrust::formats::dxf_to_dwg_native(&p.to_string_lossy()).unwrap();
+        let doc = acadrust::DwgReader::from_mmap(&out).and_then(|mut r| r.read()).unwrap();
+        assert_eq!(doc.header.insertion_units, units, "{name}: units");
+        let mut n_lines = 0;
+        let mut n_texts = 0;
+        let mut first: Option<(f64, f64, f64, f64, String)> = None;
+        let mut text_values = Vec::new();
+        for e in doc.entities() {
+            match e {
+                EntityType::Line(l) => {
+                    n_lines += 1;
+                    if first.is_none() {
+                        first = Some((l.start.x, l.start.y, l.end.x, l.end.y, l.common.layer.clone()));
+                    }
+                }
+                EntityType::Text(t) => {
+                    n_texts += 1;
+                    assert!(t.height > 0.0);
+                    text_values.push(t.value.clone());
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(n_lines, lines, "{name}: lines");
+        assert_eq!(n_texts, texts, "{name}: texts {text_values:?}");
+        for l in ["Walls", "IfcDoor", "Ifc_Slab"] {
+            assert!(doc.layers.get(l).is_some(), "{name}: layer {l} missing");
+        }
+        if name == "rt_model.dxf" {
+            let (x1, y1, x2, y2, layer) = first.unwrap();
+            assert_eq!(layer, "Walls");
+            assert!((x1 - 1000.5).abs() < 1e-6 && (y1 - 2000.25).abs() < 1e-6 && (x2 - 1030.5).abs() < 1e-6 && (y2 - 2000.25).abs() < 1e-6, "coordinates kept");
+        } else {
+            assert!(doc.layers.get("SHEET").is_some() && doc.layers.get("SHEET_TEXT").is_some());
+            assert!(text_values.iter().any(|t| t == "ACME") && text_values.iter().any(|t| t == "Plan - Level 1") && text_values.iter().any(|t| t.starts_with("1:")));
+        }
+    }
+}
+
+#[test]
+fn dwg_export_texts_on_layer_and_grids() {
+    use acadrust::entities::EntityType;
+    // textele cartusului pe layerul lor
+    let segs = vec![("Walls".to_string(), [0.0, 0.0, 10.0, 0.0])];
+    let p = std::path::Path::new("target").join("rt_layers.dxf");
+    std::fs::write(&p, bimrust::app::cut_sheet_dxf(&segs, &bimrust::pdf::TitleBlock::default(), "P", "T", "2026-11-20").0).unwrap();
+    let out = bimrust::formats::dxf_to_dwg_native(&p.to_string_lossy()).unwrap();
+    let doc = acadrust::DwgReader::from_mmap(&out).and_then(|mut r| r.read()).unwrap();
+    for e in doc.entities() {
+        if let EntityType::Text(t) = e {
+            assert_eq!(t.common.layer, "SHEET_TEXT");
+        }
+    }
+    // axele: linii, bule (cercuri) si etichete centrate
+    let grids = vec![
+        bimrust::app::UserGrid { name: "A".into(), a: [0.0, 0.0], b: [0.0, 20.0] },
+        bimrust::app::UserGrid { name: "1".into(), a: [-2.0, 2.0], b: [30.0, 2.0] },
+    ];
+    let g = std::path::Path::new("target").join("rt_grids.dxf");
+    std::fs::write(&g, bimrust::app::grid_dxf(&grids, 0.5)).unwrap();
+    let out = bimrust::formats::dxf_to_dwg_native(&g.to_string_lossy()).unwrap();
+    let doc = acadrust::DwgReader::from_mmap(&out).and_then(|mut r| r.read()).unwrap();
+    let (mut l, mut c, mut t) = (0, 0, 0);
+    for e in doc.entities() {
+        match e {
+            EntityType::Line(_) => l += 1,
+            EntityType::Circle(_) => c += 1,
+            EntityType::Text(x) => {
+                t += 1;
+                assert!(x.value == "A" || x.value == "1");
+            }
+            _ => {}
+        }
+    }
+    assert_eq!((l, c, t), (2, 4, 4));
+    assert!(doc.layers.get("GRID").is_some() && doc.layers.get("GRID_TAGS").is_some());
+}
+
+/// plansa PDF de prezentare (rulat manual: MB_SHEET_IMG=imagine.png ... --ignored)
+#[test]
+#[ignore]
+fn export_demo_sheet() {
+    use bimrust::markup::{Issue, ReportItem, VpComment};
+    let Ok(img) = std::env::var("MB_SHEET_IMG") else { return };
+    let png = std::fs::read(img).unwrap();
+    let it = ReportItem {
+        index: 4,
+        name: "Level 2 - duct crossing beam at C-4".into(),
+        description: "The supply duct DN400 crosses the concrete beam at grid C-4 / Level 2. Lower the duct by 150 mm or reroute it through the corridor. Structure to confirm whether a sleeve is possible.".into(),
+        issue: Issue { guid: "g".into(), status: "Open".into(), priority: "High".into(), assigned: "MEP team".into(), author: "BIM coordinator".into(), created: "2026-11-20T10:00:00Z".into() },
+        comments: vec![VpComment { author: "Structure".into(), date: "2026-11-20".into(), text: "No sleeve possible in this beam - please reroute.".into() }],
+        redlines: 0,
+        eye: [0.0; 3],
+        dir: [1.0, 0.0, 0.0],
+        up: [0.0, 0.0, 1.0],
+        fov_deg: 50.0,
+        ortho_height: None,
+        selected_guids: Vec::new(),
+        hidden_guids: Vec::new(),
+        image: png,
+        image_w: 0,
+        image_h: 0,
+    };
+    let mut tb = bimrust::pdf::TitleBlock::default();
+    tb.company = "Your Company".into();
+    tb.project = "Block A - Coordination".into();
+    tb.client = "Client name".into();
+    tb.drawn = "BIM coordinator".into();
+    tb.checked = "Project lead".into();
+    tb.number_prefix = "CO-".into();
+    let pdf = bimrust::pdf::sheets("Block A", std::slice::from_ref(&it), "2026-11-20", &tb);
+    std::fs::write(std::env::var("MB_SHEET_OUT").unwrap_or_else(|_| "target/demo_sheet.pdf".into()), pdf).unwrap();
 }

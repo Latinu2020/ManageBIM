@@ -5,7 +5,7 @@
     2025 / 2026  -> .NET 8 (runtime-ul .NET 8 desktop instalat)
   Referintele Revit API vin din pachetele NuGet Nice3point.Revit.Api.RevitAPI / RevitAPIUI (doar assembly-uri
   de referinta, descarcate o data in revit-addin\refs). Revit nu trebuie sa fie instalat.
-  Rezultatul ajunge in installers\payload\revit\ManageBIM.RevitExporter.<an>.dll; apoi `cargo build --release`
+  Rezultatul ajunge in installers\payload\revit\ManageBIM.RevitExporter.<an>.dll; apoi `cargo build --release --features addins`
   reface ManageBIM-Revit-AddIn.exe (care le include).
 #>
 param([int[]]$Versions = @(2023, 2024, 2025, 2026))

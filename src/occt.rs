@@ -6,7 +6,9 @@
 //!
 //! Fiecare piesa frunza din ansamblu devine un element ManageBIM: nume (instanta / piesa), calea
 //! de ansamblu ca proprietate, culori pe fata (XCAF), coordonate in metri.
-use crate::model::{Prop, RawElement, RawModel};
+#[cfg(windows)]
+use crate::model::{Prop, RawElement};
+use crate::model::RawModel;
 use glam::DVec3;
 use std::path::PathBuf;
 

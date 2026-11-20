@@ -107,7 +107,7 @@ fn file_stem(path: &str) -> String {
 
 /// %LOCALAPPDATA%\ManageBIM\Inbox - aici scriu add-in-urile cand trimit modelul direct in ManageBIM.
 pub fn inbox_dir() -> Option<std::path::PathBuf> {
-    let d = std::path::PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("ManageBIM").join("Inbox");
+    let d = crate::formats::data_root()?.join("ManageBIM").join("Inbox");
     std::fs::create_dir_all(&d).ok()?;
     Some(d)
 }
@@ -2443,7 +2443,7 @@ impl App {
             return;
         }
         self.outbox_sig = sig;
-        let Some(dir) = std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("ManageBIM").join("Outbox")) else { return };
+        let Some(dir) = crate::formats::data_root().map(|d| d.join("ManageBIM").join("Outbox")) else { return };
         if std::fs::create_dir_all(&dir).is_err() {
             return;
         }
@@ -5300,8 +5300,8 @@ impl App {
 
     /// Deschide dialogul de fisiere (Windows) sau un camp text (alte sisteme).
     pub fn request_path(&mut self, purpose: Purpose) {
-        #[cfg(windows)]
-        {
+        #[cfg(any(windows, unix))]
+        if crate::formats::native_dialogs() {
             let d = rfd::FileDialog::new();
             let r = match purpose {
                 Purpose::OpenModel { .. } => d.set_title("Open Model").add_filter("All supported models", &crate::SUPPORTED[..crate::SUPPORTED_MODELS])
@@ -5322,13 +5322,13 @@ impl App {
                 Purpose::ExportClashMatrix => d.set_title("Clash matrix (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("clash_matrix.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportWeb => d.set_title("Web viewer (HTML)").add_filter("Web page", &["html"]).set_file_name("model.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportAsBuilt => d.set_title("As-built report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("as_built.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
-                Purpose::ExportSectionCad => d.set_title("Section cut (DWG / DXF)").add_filter("AutoCAD DWG (needs ODA File Converter)", &["dwg"]).add_filter("DXF", &["dxf"]).set_file_name("section.dwg").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportSectionCad => d.set_title("Section cut (DWG / DXF)").add_filter("AutoCAD DWG (2018)", &["dwg"]).add_filter("DXF", &["dxf"]).set_file_name("section.dwg").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportCheckRules => d.set_title("Import IDS or rules").add_filter("IDS / ManageBIM rules", &["ids", "xml", "mbrules", "json"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCheckRules => d.set_title("Save rules").add_filter("ManageBIM rules", &["mbrules"]).set_file_name("rules.mbrules").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCheckXlsx => d.set_title("Model check report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("model_check.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCheckBcf => d.set_title("Model check issues (BCF)").add_filter("BCF", &["bcf", "bcfzip"]).set_file_name("model_check.bcf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportGridsCad => d.set_title("Import grid axes from DWG / DXF").add_filter("DWG / DXF", &["dwg", "dxf"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
-                Purpose::ExportGrids => d.set_title("Export grid axes").add_filter("DXF (AutoCAD, any CAD)", &["dxf"]).add_filter("DWG (needs ODA File Converter)", &["dwg"]).set_file_name("grids.dxf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportGrids => d.set_title("Export grid axes").add_filter("DXF (AutoCAD, any CAD)", &["dxf"]).add_filter("AutoCAD DWG (2018)", &["dwg"]).set_file_name("grids.dxf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::SharedFolder => d.set_title("Shared issues folder (network / SharePoint / OneDrive)").pick_folder().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportIfc => d.set_title("Export to IFC4").add_filter("IFC", &["ifc"]).set_file_name("export.ifc").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashBcf => d.set_title("Export clashes as BCF").add_filter("BIM Collaboration Format", &["bcf", "bcfzip"]).set_file_name("clashes.bcf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5404,8 +5404,9 @@ impl App {
                     self.handle_path(pur, p);
                 }
             }
+            return;
         }
-        #[cfg(not(windows))]
+        // fara dialog nativ (sesiune fara D-Bus / portal): calea se scrie intr-un camp
         {
             let text = match purpose {
                 Purpose::SaveProject => self.project_path.clone().unwrap_or_else(|| "project.bimr".into()),
@@ -5674,7 +5675,7 @@ impl App {
 // ------------------------------------------------------------------ salvare automata
 /// %LOCALAPPDATA%\ManageBIM\Autosave
 pub fn autosave_dir() -> Option<std::path::PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("ManageBIM").join("Autosave"))
+    crate::formats::data_root().map(|d| d.join("ManageBIM").join("Autosave"))
 }
 
 /// Starea salvarii automate: lock-ul sesiunii (tinut deschis cat ruleaza aplicatia) si ce se poate recupera.
@@ -5876,7 +5877,7 @@ impl App {
     }
 
 
-    /// Taietura sectiunii curente (plan / nivel) ca linii 2D intr-un DXF (sau DWG cu ODA File Converter):
+    /// Taietura sectiunii curente (plan / nivel) ca linii 2D in DWG (scriitor integrat) sau DXF:
     /// un layer pe tip de element (Walls, Doors, IfcColumn...), coordonate reale in metri.
     pub fn export_section_cad(&mut self, path: &str) {
         if !self.section.enabled {
@@ -5977,11 +5978,15 @@ impl App {
             return self.toast(format!("Section cut exported ({what}, {n} lines): {}", crate::file_name(&dxf_path)));
         }
         match crate::formats::dxf_to_dwg(&dxf_path) {
-            Ok(out) => self.toast(format!("Section cut exported ({what}, {n} lines): {}", crate::file_name(&out))),
+            Ok(out) => {
+                // DXF-ul a fost doar intermediar
+                let _ = std::fs::remove_file(&dxf_path);
+                self.toast(format!("Section cut exported ({what}, {n} lines): {}", crate::file_name(&out)))
+            }
             Err(e) => self.toast(format!("Saved as DXF ({}) - {e}", crate::file_name(&dxf_path))),
         }
     }
-    /// Export DXF; daca extensia e .dwg si ODA File Converter e instalat, DXF-ul se converteste in DWG.
+    /// Export DXF; daca extensia e .dwg, DXF-ul se converteste in DWG (scriitorul integrat, ODA doar ca rezerva).
     pub fn export_grids(&mut self, path: &str) {
         let grids = self.grids_world();
         if grids.is_empty() {
@@ -5996,7 +6001,10 @@ impl App {
             return self.toast(format!("{} grid axes exported: {}", grids.len(), crate::file_name(&dxf_path)));
         }
         match crate::formats::dxf_to_dwg(&dxf_path) {
-            Ok(out) => self.toast(format!("{} grid axes exported: {}", grids.len(), crate::file_name(&out))),
+            Ok(out) => {
+                let _ = std::fs::remove_file(&dxf_path);
+                self.toast(format!("{} grid axes exported: {}", grids.len(), crate::file_name(&out)))
+            }
             Err(e) => self.toast(format!("Saved as DXF ({}) - {e}", crate::file_name(&dxf_path))),
         }
     }
@@ -6140,7 +6148,7 @@ impl App {
 // ------------------------------------------------------------------ .bimd (un singur fisier, ca .nwd)
 /// Folderul in care se despacheteaza fisierele .bimd deschise.
 pub fn published_dir() -> Option<std::path::PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("ManageBIM").join("Published"))
+    crate::formats::data_root().map(|d| d.join("ManageBIM").join("Published"))
 }
 
 impl App {
@@ -6579,8 +6587,8 @@ impl App {
             ("Block_A_MEP.ifc", include_bytes!("../samples/Block_A_MEP.ifc")),
             ("Block_A_schedule_4D.csv", include_bytes!("../samples/Block_A_schedule_4D.csv")),
         ];
-        let Some(dir) = std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("ManageBIM").join("Demo")) else {
-            return self.error("LOCALAPPDATA is not set.");
+        let Some(dir) = crate::formats::data_root().map(|d| d.join("ManageBIM").join("Demo")) else {
+            return self.error("No local data folder (LOCALAPPDATA / HOME is not set).");
         };
         if let Err(e) = std::fs::create_dir_all(&dir) {
             return self.error(format!("Cannot create {}: {e}", dir.display()));
@@ -6804,11 +6812,7 @@ impl App {
         match std::fs::write(&path, html) {
             Ok(()) => {
                 self.toast(format!("Web viewer saved: {} ({} items, {} triangles, {:.1} MB) - open it in any browser", crate::file_name(&path), st.elements, st.triangles, st.bytes as f64 / 1e6));
-                #[cfg(windows)]
-                {
-                    use std::os::windows::process::CommandExt;
-                    let _ = std::process::Command::new("explorer").arg(&path).creation_flags(0x0800_0000).spawn();
-                }
+                crate::formats::open_with_system(std::path::Path::new(&path));
             }
             Err(e) => self.error(format!("Cannot write {path}: {e}")),
         }
@@ -6843,7 +6847,7 @@ impl App {
 
 /// %LOCALAPPDATA%\ManageBIM\Outbox (referinte, issue-uri pentru add-in-uri)
 pub fn outbox_dir() -> Option<std::path::PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("ManageBIM").join("Outbox"))
+    crate::formats::data_root().map(|d| d.join("ManageBIM").join("Outbox"))
 }
 
 // ------------------------------------------------------------------ matricea de clash (discipline / modele)
@@ -7102,7 +7106,12 @@ pub fn cad_layer(s: &str) -> String {
 
 /// DXF R12 cu linii pe layere (culoare AutoCAD diferita pe layer), unitati: metri
 pub fn cut_dxf(segs: &[(String, [f64; 4])]) -> String {
-    let mut layers: Vec<&str> = segs.iter().map(|s| s.0.as_str()).collect();
+    cut_dxf_layers(segs, &[])
+}
+
+/// ca `cut_dxf`, cu layere suplimentare definite in tabel (ex. pentru texte adaugate dupa)
+pub fn cut_dxf_layers(segs: &[(String, [f64; 4])], extra: &[&str]) -> String {
+    let mut layers: Vec<&str> = segs.iter().map(|s| s.0.as_str()).chain(extra.iter().copied()).collect();
     layers.sort();
     layers.dedup();
     let mut s = String::from("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n6\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n");
@@ -7160,7 +7169,7 @@ pub fn cut_sheet_dxf(segs: &[(String, [f64; 4])], tb: &crate::pdf::TitleBlock, p
     line(tx, ty + 11.0, r, ty + 11.0);
     line(tx + 120.0, ty, tx + 120.0, ty + 22.0);
     line(tx + 150.0, ty, tx + 150.0, ty + 22.0);
-    let mut dxf = cut_dxf(&out);
+    let mut dxf = cut_dxf_layers(&out, &["SHEET_TEXT"]);
     let txt = |x: f64, y: f64, hgt: f64, s: &str| format!("0\nTEXT\n8\nSHEET_TEXT\n10\n{x:.2}\n20\n{y:.2}\n30\n0.0\n40\n{hgt:.2}\n1\n{}\n", s.replace('\n', " "));
     let or = |s: &str, d: &str| if s.trim().is_empty() { d.to_string() } else { s.trim().to_string() };
     let mut t = String::new();

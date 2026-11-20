@@ -3,6 +3,18 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.21.0 - 2026-11-20
+
+- **Linux si FreeBSD**: aplicatia compileaza pentru Linux (x86-64, X11 / Wayland) si FreeBSD; folderele de date dupa standardul XDG (`~/.config/ManageBIM`, `~/.local/share/ManageBIM`), dialoguri de fisiere prin xdg-desktop-portal (cu camp text ca rezerva), deschiderea fisierelor cu `xdg-open`. Pachete: **AppImage** (Linux, un singur fisier, fara root) si arhiva `.tar.gz` (FreeBSD). Add-in-urile si cititorul STEP nativ raman doar pe Windows.
+- **GitHub Actions**: la fiecare push se compileaza si se testeaza pe Windows, Linux si FreeBSD; un tag `v*` publica pachetele in Releases.
+- Programele de instalare a add-in-urilor se construiesc doar cu `--features addins` (scriptul de Setup), ca proiectul sa compileze dintr-un clone curat.
+- **Export DWG verificat**: recitit si comparat cu sursa (layere, linii, texte, unitati, coordonate). Corectat: layerul textelor din cartus (`SHEET_TEXT`) nu era definit.
+- Pagina de start cu iconite vectoriale; **README** nou, cu capturi actuale.
+
+## 0.20.1 - 2026-11-20
+
+- **DWG fara ODA File Converter**: exportul DWG (taietura sectiunii, planse, axe) foloseste scriitorul DWG integrat (format AutoCAD 2018); fisierul scris e recitit ca verificare. ODA ramane doar ca rezerva; DXF-ul intermediar se sterge.
+
 ## 0.20.0 - 2026-11-20
 
 - **Paleta de comenzi Ctrl+K** (si campul „Search or Ctrl+K” din dreapta sus): peste 70 de comenzi cu cautare aproximativa (si cuvinte in romana: „sectiune”, „planse”, „cartus”...), navigare cu sagetile + Enter; scrii numele unui element si il selecteaza cu zoom.

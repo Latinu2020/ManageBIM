@@ -1,6 +1,6 @@
 [package]
 name = "bimrust"
-version = "0.20.0"
+version = "0.21.0"
 edition = "2021"
 license = "MIT"
 description = "BimRust - vizualizare si coordonare modele BIM (IFC / glTF)"
@@ -14,7 +14,7 @@ name = "ManageBIM"
 path = "src/main.rs"
 
 [dependencies]
-eframe = { version = "0.29.1", default-features = false, features = ["glow", "default_fonts", "x11"] }
+eframe = { version = "0.29.1", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
 glam = "0.29"
 egui_extras = { version = "0.29.1", default-features = false }
 earcutr = "0.4"
@@ -35,12 +35,18 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # iconite vectoriale (Phosphor, MIT) in locul emoji-urilor
 egui-phosphor = "0.7.3"
 
-[target.'cfg(windows)'.dependencies]
+# dialogurile de fisiere: Windows nativ; Linux / FreeBSD prin xdg-desktop-portal
+[target.'cfg(any(windows, unix))'.dependencies]
 rfd = "0.15"
 
 [build-dependencies]
 # compileaza shim-ul OpenCascade (src/occt/mbocct.cpp) cu MSVC - vezi build.rs
 cc = "1"
+
+[features]
+# programele de instalare a add-in-urilor (Windows): includ DLL-urile construite de revit-addin / acad-addin /
+# navis-addin (nu sunt in repo). Activat de tools/make-backup.ps1 (cargo build --release --features addins); fara el se construieste doar aplicatia.
+addins = []
 
 [profile.release]
 opt-level = 3
@@ -53,14 +59,17 @@ opt-level = 1
 [[bin]]
 name = "ManageBIM-Revit-AddIn"
 path = "src/bin/addin/revit.rs"
+required-features = ["addins"]
 
 [[bin]]
 name = "ManageBIM-AutoCAD-AddIn"
 path = "src/bin/addin/acad.rs"
+required-features = ["addins"]
 
 [[bin]]
 name = "ManageBIM-Navisworks-AddIn"
 path = "src/bin/addin/navis.rs"
+required-features = ["addins"]
 
 [[bin]]
 name = "bimc-convert"

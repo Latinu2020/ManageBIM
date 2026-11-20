@@ -4,7 +4,7 @@
     R25 (AutoCAD 2025+, .NET 8)          - referinte: runtime-ul .NET 8 instalat + DLL-urile AutoCAD 2025+ instalate
     R24 (AutoCAD 2021-2024, .NET 4.8)    - referinte: .NET Framework 4.8 + pachetele NuGet AutoCAD.NET 24.0.0
   Rezultatul ajunge in installers\payload\acad\ManageBIM.AcadExporter.R24|R25.dll; apoi
-  `cargo build --release` reface ManageBIM-AutoCAD-AddIn.exe (care le include).
+  `cargo build --release --features addins` reface ManageBIM-AutoCAD-AddIn.exe (care le include).
   Necesita compilatorul C# (Visual Studio / Build Tools 2019+).
 #>
 $ErrorActionPreference = 'Stop'
