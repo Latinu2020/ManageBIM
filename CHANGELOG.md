@@ -3,6 +3,19 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.22.0 - 2026-11-20
+
+- **IFC mai bun**: golurile (usi, ferestre, treceri - IfcRelVoidsElement) sunt **taiate din pereti si placi**; **sistemele / zonele** (IfcSystem, IfcZone) ca proprietati "Systems"; **clasificarile** (Uniclass, OmniClass... - IfcClassificationReference) in grupul "Classification"; **georeferentierea** (IfcMapConversion: E, N, H, rotatie, CRS) in informatiile modelului.
+- **Model Checker**: **export IDS 1.0** (buildingSMART) - dus-intors exact cu importul; cerinta noua "unique" (valori duplicate: Mark, GUID...).
+- **Clash inteligent**: conexiunile normale (perete-placa, grinda-stalp, teava-suport, izolatie...) ignorate pana la o patrundere aleasa; **responsabil automat** dupa disciplina (structura > arhitectura > HVAC > sanitare > electrice); **grupare pe sistem**.
+- **Foldere pentru viewpoints / markup-uri**: tragi viewpoint-urile in foldere (si subfoldere), redenumesti, exporti doar un folder (BCF, PDF, Excel, HTML, Navisworks XML); folderele trec in Navisworks (XML si add-in-ul Issues).
+- **Undo / Redo al vizualizarii** (Ctrl+Z / Ctrl+Y, butoane in bara de jos): selectie, elemente ascunse, sectiune, camera.
+- **Suprapunere DWG / DXF 2D** peste model (Sections › DWG Overlay): linii, polilinii, arce, cercuri, blocuri; la cota unui nivel, cu deplasare, rotatie, culoare; salvata in proiect.
+- **Versiunile Autodesk**: NWD / NWC / RVT se deschid cu versiunea Navisworks suportata (2026 -> 2022), cu trecere automata la urmatoarea daca una esueaza si alegerea versiunii in setari; add-in-urile se instaleaza doar in versiunile suportate (Revit 2023-2026, AutoCAD / Plant 3D 2024-2026).
+- **Stabilitate**: proiectul si setarile se salveaza sigur (fisier temporar + copie .bak, recuperare automata din .bak); blocarile interne nu mai pot opri aplicatia in bucla dupa o eroare.
+- Manerele section box-ului mai mari si prinse pe toata sageata; chenarul de randare debifat implicit (Render › Show frame).
+- **Verificare generala automata**: proiectul demo trece prin toate functiile principale (selectie, Undo, clash, Model Checker, IDS, foldere, exporturi IFC / web / DWG, salvare si redeschidere).
+
 ## 0.21.0 - 2026-11-20
 
 - **Linux si FreeBSD**: aplicatia compileaza pentru Linux (x86-64, X11 / Wayland) si FreeBSD; folderele de date dupa standardul XDG (`~/.config/ManageBIM`, `~/.local/share/ManageBIM`), dialoguri de fisiere prin xdg-desktop-portal (cu camp text ca rezerva), deschiderea fisierelor cu `xdg-open`. Pachete: **AppImage** (Linux, un singur fisier, fara root) si arhiva `.tar.gz` (FreeBSD). Add-in-urile si cititorul STEP nativ raman doar pe Windows.

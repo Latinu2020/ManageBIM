@@ -56,6 +56,7 @@ fn xml_contains_camera_section_comments_and_markups() {
             red(RedKind::Freehand, (0..200).map(|i| [i as f32 * 0.001, 0.0]).collect(), ""),
             red(RedKind::Text, vec![[0.3, -0.2]], "check <here>"),
         ],
+        folder: String::new(),
     };
     let x = navis_viewpoints_xml(&[v], "m");
     assert!(x.starts_with("<?xml") && x.contains("<exchange") && x.trim_end().ends_with("</exchange>"));

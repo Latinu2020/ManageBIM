@@ -9,12 +9,12 @@
 Open **IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP and point clouds** together, run clash detection and model checks,<br>
 manage issues and markups, publish drawings — and stay in sync with Revit and Navisworks.
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.21.0-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.21.0.exe)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.22.0-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.22.0.exe)
 &nbsp;
 [![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Releases-334155?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/Latinu2020/ManageBIM/releases)
 
 [![Build](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml/badge.svg)](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-0.21.0-blue)
+![Version](https://img.shields.io/badge/version-0.22.0-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20FreeBSD-0078d4)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-b7410e)
 ![No admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a)
@@ -61,12 +61,12 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 
 | Platform | Package | Notes |
 |---|---|---|
-| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.21.0.exe**](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.21.0.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins. Per-user, **no administrator rights**. |
+| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.22.0.exe**](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.22.0.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins. Per-user, **no administrator rights**. |
 | **Linux** (x86-64) | `ManageBIM-<version>-x86_64.AppImage` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | One file: `chmod +x`, then run. No installation, no root. |
 | **FreeBSD** (x86-64) | `ManageBIM-<version>-freebsd-x86_64.tar.gz` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | Unpack and run `ManageBIM/ManageBIM`. Needs `pkg install mesa-libs libxkbcommon`. |
 
 > **Windows:** the installer is not digitally signed yet — if SmartScreen asks, choose *More info › Run anyway*.
-> Silent install: `ManageBIM-Setup-0.21.0.exe /S` (add `/NoAddins` for the application only).
+> Silent install: `ManageBIM-Setup-0.22.0.exe /S` (add `/NoAddins` for the application only).
 >
 > **Linux / FreeBSD:** the add-ins (Revit, Navisworks, AutoCAD) and the native STEP / IGES reader exist only on Windows; everything else is the same.
 
@@ -79,19 +79,20 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 <details open>
 <summary><b>Model review</b></summary>
 
-- **Federated models** — IFC 2x3 / IFC4 (`.ifczip` too), Revit and Navisworks (through the add-ins), AutoCAD / Plant 3D DWG with Plant 3D properties, DXF, STEP / IGES / BREP / FCStd, FBX, glTF / GLB, OBJ, STL, PLY.
+- **Federated models** — IFC 2x3 / IFC4 (`.ifczip` too) with openings cut, systems, classifications and georeference, Revit and Navisworks (through the add-ins), AutoCAD / Plant 3D DWG with Plant 3D properties, DXF, STEP / IGES / BREP / FCStd, FBX, glTF / GLB, OBJ, STL, PLY.
 - **Point clouds** — E57 and LAS, density and point size control, one item per scan.
 - **Selection Tree** (group by any property, category colours, counts), **Property Tree**, **Find Items** with condition chips, selection and search **sets**, **Select Same Type / Category**.
 - **Navigation** like Navisworks — orbit, pan, walk with gravity and collision, ViewCube, walk paths, viewpoints, animations; adaptive LOD on large models.
 - **Visual styles** — Realistic, Shaded, Concept, Wireframe; fine edges, soft contact shadows, PBR material library (`.zip` packs from freepbr.com, ambientCG…).
 - **Command palette** (Ctrl+K) — every command and every element name, in one search box.
+- **Undo / Redo** of the view (Ctrl+Z / Ctrl+Y) and **DWG / DXF overlay**: lay a 2D drawing over the model at a level.
 </details>
 
 <details open>
 <summary><b>Coordination</b></summary>
 
-- **Clash Detective** — hard and clearance tests, rules, grouping by level / grid location / type, status tracking between runs, **clash matrix** per pair of models; HTML, CSV, BCF and Navisworks reports.
-- **Model Checker** — rules or **buildingSMART IDS 1.0** files: properties, attributes, classifications, materials; exact values, lists, patterns, ranges, optional / prohibited, **unique values** (duplicate marks, GUIDs). Excel and BCF reports.
+- **Clash Detective** — hard and clearance tests, **smart rules** (normal connections ignored, responsible discipline assigned automatically, grouping by system), rules, grouping by level / grid location / type, status tracking between runs, **clash matrix** per pair of models; HTML, CSV, BCF and Navisworks reports.
+- **Model Checker** — rules or **buildingSMART IDS 1.0** files (import **and export**): properties, attributes, classifications, materials; exact values, lists, patterns, ranges, optional / prohibited, **unique values** (duplicate marks, GUIDs). Excel and BCF reports.
 - **Live Link** — the selection follows **Revit** and **Navisworks** both ways (matched by UniqueId / IFC GUID).
 - **As-built check** — the model against the point cloud: built, partial, missing, not scanned; colours on the model and an Excel report.
 - **Sections** — boxes with stretch arrows (like Revit), planes, **sections by level** from the status bar, filled cuts.
@@ -102,7 +103,7 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 <details open>
 <summary><b>Issues & collaboration</b></summary>
 
-- **Viewpoints and issues** — status, priority, assignee, comments and markups (line, arrow, rectangle, ellipse, cloud, text).
+- **Viewpoints and issues** — status, priority, assignee, comments and markups (line, arrow, rectangle, ellipse, cloud, text). **Folders** (drag and drop, export per folder, kept in Navisworks).
 - **BCF 2.1 / 3.0** import and export (Revit, ACC, Solibri, BIMcollab); **Navisworks XML** viewpoints, search sets and clash tests.
 - **Shared issues** through a common folder (network drive, SharePoint / OneDrive) with automatic sync.
 - **Projects** — `.bimr` (references, like NWF) and `.bimd` (everything in one file, like NWD); autosave and crash recovery.
