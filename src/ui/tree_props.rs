@@ -688,7 +688,13 @@ impl App {
         ui.separator();
         let Some((m, e)) = self.elem(pid) else { return };
         let mut groups: Vec<(String, Vec<(String, String)>)> = Vec::new();
-        groups.push(("File".into(), vec![("Model".into(), m.name.clone()), ("Path".into(), m.path.clone())]));
+        groups.push(("File".into(), vec![
+            ("Model".into(), m.name.clone()),
+            ("Path".into(), m.path.clone()),
+            ("GlobalId".into(), e.guid.clone()),
+            ("IFC Type".into(), e.ifc_type.clone()),
+            ("Level".into(), e.storey.clone()),
+        ]));
         let user_g: HashSet<(String, String)> = self.user_params.iter().map(|p| (p.group.clone(), p.name.to_lowercase())).collect();
         for p in &e.props {
             if p.group == USER_GROUP || user_g.contains(&(p.group.clone(), p.name.to_lowercase())) {
@@ -741,7 +747,7 @@ impl App {
                         egui::Frame::none().fill(card_fill).stroke(card_stroke).rounding(6.0).inner_margin(egui::Margin { left: 6.0, right: 6.0, top: 3.0, bottom: 3.0 }).show(ui, |ui| {
                             ui.set_width(ui.available_width());
                             let id = ui.make_persistent_id(("pcard", g));
-                            let mut st = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, gi < 6 || !q.is_empty());
+                            let mut st = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true);
                             let open = st.is_open();
                             let head = ui.horizontal(|ui| {
                                 ui.label(RichText::new(g.to_uppercase()).small().strong());

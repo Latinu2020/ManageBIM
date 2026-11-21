@@ -80,7 +80,7 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 > **Windows:** the installer is not digitally signed yet — if SmartScreen asks, choose *More info › Run anyway*.
 > Silent install: `ManageBIM-Setup-0.25.5.exe /S` (add `/NoAddins` for the application only).
 
-> **0.27.0-beta.1** — this test build adds **progressive CPU path tracing** (preview, time limit, Cancel, PNG export), a **Blender-style Properties bar** (add any panel as a tab), Navisworks-style clash groups and filters, audit trail, SwitchBack, Scan vs Model, 4D “only scheduled elements”, **Hidden line** visual style, a denser professional UI and persistent UI settings. Build locally with `cargo build --release --features addins` and `tools\make-setup.ps1`; the downloadable installer above is the latest published 0.25.5 package.
+> **0.27.0-beta.1 (test build)** — this build adds progressive CPU path tracing, a Navisworks-style clash workflow, Hidden line and dropdown lists in the View ribbon. The Properties panel is now a single, full-height view with **all** properties of the selected element (search and “Show in Model” at the top); panels are added to the bottom bar from the status bar. The installer `ManageBIM-Setup-0.27.0-beta.1.exe` is produced locally by `tools\make-setup.ps1` and is intended to be attached to the GitHub release for the `v0.27.0-beta.1` tag. The downloadable installer above is the latest published 0.25.5 package.
 >
 > **Linux / FreeBSD:** the add-ins (Revit, Navisworks, AutoCAD) and the native STEP / IGES reader exist only on Windows; everything else is the same.
 

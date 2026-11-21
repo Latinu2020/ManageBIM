@@ -2218,35 +2218,17 @@ impl App {
             });
             ui.add_space(2.0);
         } else if d == Dock::Right {
-            // Bara de proprietati cu taburi VERTICALE (stil Blender) + meniu de adaugat panouri.
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 3.0;
-                    ui.spacing_mut().button_padding = egui::vec2(5.0, 3.0);
-                    for p in &tabs {
-                        let on = Some(*p) == active;
-                        let short = p.short_en();
-                        let glyph = &short[..short.len().min(2)];
-                        let b = egui::Button::new(RichText::new(glyph).size(12.0).strong())
-                            .fill(if on { accent().gamma_multiply(0.42) } else { Color32::TRANSPARENT })
-                            .stroke(Stroke::NONE)
-                            .rounding(6.0)
-                            .min_size(EV::new(28.0, 26.0));
-                        let r = ui.add(b).on_hover_text(format!("{}\nRight-click: dock / float / close", p.title()));
-                        if r.clicked() {
-                            self.settings.layout.active[d.idx()] = Some(*p);
-                        }
-                        r.context_menu(|ui| self.panel_menu(ui, *p));
-                    }
-                    ui.add_space(2.0);
+            // Panoul din dreapta e doar Properties: titlul sus si continutul pe toata inaltimea.
+            if let Some(a) = active {
+                ui.horizontal(|ui| {
+                    ui.label(crate::theme::title_job(a.title(), 14.0, ui.visuals().strong_text_color()));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.menu_button(RichText::new(egui_phosphor::regular::DOTS_THREE).font(crate::theme::icon_font(15.0)), |ui| self.panel_menu(ui, a));
+                    });
                 });
-                ui.separator();
-                ui.vertical(|ui| {
-                    if let Some(a) = active {
-                        egui::ScrollArea::horizontal().id_salt(("side_scroll", d.idx())).auto_shrink([false, false]).show(ui, |ui| self.panel_body(ui, a));
-                    }
-                });
-            });
+                ui.add_space(3.0);
+                egui::ScrollArea::vertical().id_salt(("side_scroll", d.idx())).auto_shrink([false, false]).show(ui, |ui| self.panel_body(ui, a));
+            }
             return;
         } else {
         ui.horizontal_wrapped(|ui| {
@@ -2495,16 +2477,16 @@ impl App {
                         r.context_menu(|ui| self.panel_menu(ui, p));
                     }
                     ui.menu_button("＋ Add tab", |ui| {
-                        ui.label(RichText::new("Add a panel to the Properties bar").small().weak());
+                        ui.label(RichText::new("Add a panel to the bottom toolbar").small().weak());
                         ui.separator();
                         for p in crate::layout::ALL_PANELS {
-                            let in_right = self.settings.layout.get(p).map(|s| s.dock == Dock::Right).unwrap_or(false);
-                            if !in_right && ui.button(p.title()).clicked() {
-                                self.settings.layout.move_to(p, Dock::Right);
+                            let in_bottom = self.settings.layout.get(p).map(|s| s.dock == Dock::Bottom).unwrap_or(false);
+                            if !in_bottom && ui.button(p.title()).clicked() {
+                                self.settings.layout.move_to(p, Dock::Bottom);
                                 ui.close_menu();
                             }
                         }
-                    }).response.on_hover_text("Add a panel as a vertical tab in the Properties bar");
+                    }).response.on_hover_text("Add a panel as a tab in the bottom horizontal bar");
                     ui.separator();
                 }
                 let nm = self.loaded_models().count();
