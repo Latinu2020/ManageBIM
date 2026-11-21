@@ -49,6 +49,50 @@ pub fn accent() -> Color32 {
     Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
 }
 
+/// Preferintele UI care trebuie sa supravietuiasca unei restartari (Clash + 4D).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ClashUiPrefs {
+    #[serde(default)]
+    pub subtab: u8,
+    #[serde(default)]
+    pub filter: Option<crate::clash::ClashStatus>,
+    #[serde(default)]
+    pub filter_sel: u8,
+    #[serde(default = "others_default")]
+    pub others: crate::app::Others,
+    #[serde(default = "yes")]
+    pub auto_zoom: bool,
+    #[serde(default)]
+    pub highlight_all: bool,
+    #[serde(default = "group_cell_default")]
+    pub group_cell: f32,
+    #[serde(default = "yes")]
+    pub only_linked: bool,
+}
+
+fn group_cell_default() -> f32 {
+    5.0
+}
+
+fn others_default() -> crate::app::Others {
+    crate::app::Others::Dim
+}
+
+impl Default for ClashUiPrefs {
+    fn default() -> Self {
+        ClashUiPrefs {
+            subtab: 0,
+            filter: None,
+            filter_sel: 0,
+            others: crate::app::Others::Dim,
+            auto_zoom: true,
+            highlight_all: false,
+            group_cell: 5.0,
+            only_linked: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub theme: Theme,
@@ -104,6 +148,9 @@ pub struct Settings {
     /// unitatea XML-ului pentru Navisworks: "auto" (din modelul Navisworks) sau m / cm / mm / ft / in
     #[serde(default = "auto")]
     pub navis_units: String,
+    /// preferinte UI persistente (Clash Detective / 4D)
+    #[serde(default)]
+    pub clash_ui: ClashUiPrefs,
 }
 
 fn auto() -> String {
@@ -125,7 +172,7 @@ fn default_walk() -> f32 {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false }
+        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, clash_ui: ClashUiPrefs::default() }
     }
 }
 
@@ -222,20 +269,20 @@ pub fn palette(t: Theme) -> Palette {
             gantt_text: Color32::from_rgb(40, 46, 58),
             label_bg: Color32::from_rgba_unmultiplied(20, 26, 36, 220),
         },
-        // Nord: Polar Night (fundal), Snow Storm (text), Frost (accent), Aurora (rosu / verde)
+        // Nord: varianta usor mai inchisa (Polar Night adancit), Snow Storm (text), Frost (accent)
         Theme::Nord => Palette {
             accent: Color32::from_rgb(136, 192, 208),
-            vp_top: Color32::from_rgb(46, 52, 64),
-            vp_bottom: Color32::from_rgb(94, 105, 125),
+            vp_top: Color32::from_rgb(36, 41, 52),
+            vp_bottom: Color32::from_rgb(80, 90, 108),
             overlay_text: Color32::from_rgb(236, 239, 244),
             overlay_weak: Color32::from_rgba_unmultiplied(216, 222, 233, 150),
-            overlay_btn: Color32::from_rgba_unmultiplied(46, 52, 64, 215),
+            overlay_btn: Color32::from_rgba_unmultiplied(36, 41, 52, 215),
             elem_a: Color32::from_rgb(191, 97, 106),
             elem_b: Color32::from_rgb(163, 190, 140),
-            gantt_bg: Color32::from_rgb(46, 52, 64),
-            gantt_grid: Color32::from_rgb(67, 76, 94),
+            gantt_bg: Color32::from_rgb(36, 41, 52),
+            gantt_grid: Color32::from_rgb(57, 65, 82),
             gantt_text: Color32::from_rgb(229, 233, 240),
-            label_bg: Color32::from_rgba_unmultiplied(46, 52, 64, 225),
+            label_bg: Color32::from_rgba_unmultiplied(36, 41, 52, 225),
         },
         // Tokyo Night: bg #1a1b26, fg #c0caf5, blue #7aa2f7, red #f7768e, green #9ece6a
         Theme::TokyoNight => Palette {
@@ -254,18 +301,18 @@ pub fn palette(t: Theme) -> Palette {
         },
         // Studio: aproape negru, albastru electric
         Theme::Studio => Palette {
-            accent: Color32::from_rgb(52, 120, 255),
-            vp_top: Color32::from_rgb(12, 13, 16),
-            vp_bottom: Color32::from_rgb(34, 37, 44),
-            overlay_text: Color32::from_rgb(226, 230, 238),
-            overlay_weak: Color32::from_rgba_unmultiplied(200, 206, 218, 140),
-            overlay_btn: Color32::from_rgba_unmultiplied(22, 24, 30, 235),
+            accent: Color32::from_rgb(59, 130, 246),
+            vp_top: Color32::from_rgb(28, 34, 46),
+            vp_bottom: Color32::from_rgb(15, 19, 26),
+            overlay_text: Color32::from_rgb(226, 230, 239),
+            overlay_weak: Color32::from_rgba_unmultiplied(138, 147, 165, 150),
+            overlay_btn: Color32::from_rgba_unmultiplied(34, 40, 49, 235),
             elem_a: Color32::from_rgb(255, 99, 99),
             elem_b: Color32::from_rgb(80, 210, 140),
-            gantt_bg: Color32::from_rgb(17, 19, 24),
-            gantt_grid: Color32::from_rgb(36, 40, 48),
-            gantt_text: Color32::from_rgb(220, 224, 232),
-            label_bg: Color32::from_rgba_unmultiplied(18, 20, 26, 230),
+            gantt_bg: Color32::from_rgb(26, 30, 36),
+            gantt_grid: Color32::from_rgb(52, 58, 69),
+            gantt_text: Color32::from_rgb(226, 230, 239),
+            label_bg: Color32::from_rgba_unmultiplied(17, 19, 23, 230),
         },
     }
 }
@@ -286,19 +333,19 @@ pub fn apply(ctx: &egui::Context, t: Theme) {
     let mut v = if t.is_dark() { egui::Visuals::dark() } else { egui::Visuals::light() };
     match t {
         Theme::Nord => {
-            v.panel_fill = Color32::from_rgb(46, 52, 64);
-            v.window_fill = Color32::from_rgb(59, 66, 82);
-            v.extreme_bg_color = Color32::from_rgb(39, 44, 54);
-            v.faint_bg_color = Color32::from_rgb(52, 59, 74);
-            v.code_bg_color = Color32::from_rgb(39, 44, 54);
-            v.window_stroke = Stroke::new(1.0_f32, Color32::from_rgb(76, 86, 106));
+            v.panel_fill = Color32::from_rgb(37, 42, 53);
+            v.window_fill = Color32::from_rgb(49, 55, 70);
+            v.extreme_bg_color = Color32::from_rgb(31, 35, 44);
+            v.faint_bg_color = Color32::from_rgb(43, 49, 62);
+            v.code_bg_color = Color32::from_rgb(31, 35, 44);
+            v.window_stroke = Stroke::new(1.0_f32, Color32::from_rgb(63, 72, 90));
             let text = Color32::from_rgb(216, 222, 233);
-            widget(&mut v.widgets.noninteractive, Color32::from_rgb(59, 66, 82), Color32::from_rgb(67, 76, 94), Color32::from_rgb(200, 207, 220), 6.0);
-            widget(&mut v.widgets.inactive, Color32::from_rgb(67, 76, 94), Color32::from_rgb(67, 76, 94), text, 6.0);
-            widget(&mut v.widgets.hovered, Color32::from_rgb(76, 86, 106), Color32::from_rgb(129, 161, 193), Color32::from_rgb(236, 239, 244), 6.0);
-            widget(&mut v.widgets.active, Color32::from_rgb(94, 129, 172), p.accent, Color32::from_rgb(236, 239, 244), 6.0);
-            widget(&mut v.widgets.open, Color32::from_rgb(67, 76, 94), Color32::from_rgb(76, 86, 106), text, 6.0);
-            v.selection.bg_fill = Color32::from_rgb(94, 129, 172);
+            widget(&mut v.widgets.noninteractive, Color32::from_rgb(49, 55, 70), Color32::from_rgb(58, 66, 82), Color32::from_rgb(198, 205, 218), 6.0);
+            widget(&mut v.widgets.inactive, Color32::from_rgb(58, 66, 82), Color32::from_rgb(58, 66, 82), text, 6.0);
+            widget(&mut v.widgets.hovered, Color32::from_rgb(66, 75, 94), Color32::from_rgb(129, 161, 193), Color32::from_rgb(236, 239, 244), 6.0);
+            widget(&mut v.widgets.active, Color32::from_rgb(84, 116, 155), p.accent, Color32::from_rgb(236, 239, 244), 6.0);
+            widget(&mut v.widgets.open, Color32::from_rgb(58, 66, 82), Color32::from_rgb(63, 72, 90), text, 6.0);
+            v.selection.bg_fill = Color32::from_rgb(84, 116, 155);
             v.selection.stroke = Stroke::new(1.0_f32, Color32::from_rgb(236, 239, 244));
             v.hyperlink_color = p.accent;
             v.warn_fg_color = Color32::from_rgb(235, 203, 139);
@@ -415,6 +462,15 @@ pub fn apply(ctx: &egui::Context, t: Theme) {
         v.faint_bg_color = tone(pf, 4);
         // ferestrele plutitoare: fara chenar, doar umbra
         v.window_stroke = Stroke::NONE;
+        // design system comun tuturor temelor: colturi rotunjite, densitate compacta, umbre
+        for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
+            w.rounding = Rounding::same(8.0);
+        }
+        style.spacing.item_spacing = egui::vec2(6.0, 4.0);
+        style.spacing.button_padding = egui::vec2(8.0, 3.0);
+        style.spacing.interact_size.y = 20.0;
+        v.window_rounding = Rounding::same(10.0);
+        v.menu_rounding = Rounding::same(8.0);
     }
     v.window_rounding = Rounding::same(10.0);
     v.menu_rounding = Rounding::same(8.0);

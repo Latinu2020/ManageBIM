@@ -212,7 +212,7 @@ uniform vec3 u_sun;
 uniform vec3 u_light;
 uniform int u_caps;
 uniform sampler2DArray u_tex;
-uniform int u_style;   // 0 realist, 1 umbrit (fara texturi), 2 concept (alb mat), 3 wireframe
+uniform int u_style;   // 0 realist, 1 umbrit, 2 concept, 3 wireframe, 4 hidden-line
 out vec4 o_col;
 uniform sampler2D u_shadow;
 uniform mat4 u_svp;
@@ -321,8 +321,9 @@ void main() {
     vec3 base = v_col.rgb;
     int pt = int(v_mat.x * 255.0 + 0.5);
     // stilurile fara materiale: culorile din fisier (umbrit) sau aproape alb, mat (concept)
-    if (u_style == 1 || u_style == 3) pt = 0;
+    if (u_style == 1 || u_style == 3 || u_style == 4) pt = 0;
     if (u_style == 2) { pt = 0; base = mix(base, vec3(0.94, 0.94, 0.92), 0.78); }
+    if (u_style == 4) { base = vec3(0.86, 0.88, 0.91); }
     if (pt >= 16) {
         vec3 an = abs(n);
         vec2 uv;
@@ -345,10 +346,10 @@ void main() {
     // umbra aruncata: fetele intoarse spre soare dar acoperite devin vizibil mai inchise (ca afara, unde soarele domina)
     k *= mix(1.0, mix(0.62, 1.0, shv), smoothstep(0.0, 0.25, dot(n, u_sun)) * step(0.5, u_sp.z));
     // un luciu mic pentru orice material (suprafetele nu mai par plate / de hartie)
-    float gloss = u_style == 0 ? max(v_mat.y, 0.07) : (u_style == 2 ? 0.0 : 0.07);
+    float gloss = u_style == 0 ? max(v_mat.y, 0.07) : ((u_style == 2 || u_style == 4) ? 0.0 : 0.07);
     float metal = u_style == 0 ? v_mat.z : 0.0;
-    if (u_style == 2) {
-        // concept: lumina moale, fara reflexii (ca un macheta din carton)
+    if (u_style == 2 || u_style == 4) {
+        // concept / hidden-line: lumina moale, fara reflexii
         vec3 cc = base * (0.62 + 0.30 * head + 0.10 * sky + 0.08 * sun) * u_light.x;
         o_col = vec4(min(cc, vec3(1.0)) * a, a);
         return;
@@ -1127,16 +1128,19 @@ pub enum VisualStyle {
     Concept,
     /// doar muchiile triunghiurilor
     Wireframe,
+    /// hidden-line: suprafete neutre, muchiile ascunse de geometrie nu se vede (ca in AutoCAD / Navisworks)
+    Hidden,
 }
 
 impl VisualStyle {
-    pub const ALL: [VisualStyle; 4] = [VisualStyle::Realistic, VisualStyle::Shaded, VisualStyle::Concept, VisualStyle::Wireframe];
+    pub const ALL: [VisualStyle; 5] = [VisualStyle::Realistic, VisualStyle::Shaded, VisualStyle::Concept, VisualStyle::Wireframe, VisualStyle::Hidden];
     pub fn label(self) -> &'static str {
         match self {
             VisualStyle::Realistic => "Realistic",
             VisualStyle::Shaded => "Shaded",
             VisualStyle::Concept => "Concept",
             VisualStyle::Wireframe => "Wireframe",
+            VisualStyle::Hidden => "Hidden line",
         }
     }
     pub fn code(self) -> i32 {
@@ -1145,6 +1149,7 @@ impl VisualStyle {
             VisualStyle::Shaded => 1,
             VisualStyle::Concept => 2,
             VisualStyle::Wireframe => 3,
+            VisualStyle::Hidden => 4,
         }
     }
 }

@@ -253,9 +253,16 @@ fn read_streams(f: &File, file_offset: u64, nfields: usize) -> Result<Vec<Vec<u8
         }
         if ptype == 1 {
             let p = f.read(pos, plen as usize)?;
+            // antetul pachetului: 4 octeti + numarul de campuri + lungimile campurilor
+            if p.len() < 6 {
+                return Err("E57: data packet is truncated".into());
+            }
             let n = u16le(&p, 4) as usize;
             if n != nfields {
                 return Err(format!("E57: data packet with {n} fields, expected {nfields}"));
+            }
+            if p.len() < 6 + 2 * n {
+                return Err("E57: data packet is truncated".into());
             }
             let mut o = 6 + 2 * n;
             for (k, s) in streams.iter_mut().enumerate() {

@@ -69,6 +69,42 @@ fn clash_rules_and_groups() {
 }
 
 #[test]
+fn clash_status_follows_navisworks_lifecycle() {
+    let mut app = app();
+    let mep = "Block_A_MEP.ifc";
+    let arch = "Block_A_Architecture_Structure.ifc";
+    app.clash_tests[0].a = Selector { kind: SelKind::Model, value: arch.into() };
+    app.clash_tests[0].b = Selector { kind: SelKind::Model, value: mep.into() };
+
+    // prima rulare: totul e New
+    app.run_clash_blocking(0);
+    let n = app.clash_tests[0].results.len();
+    assert!(n > 0);
+    assert_eq!(app.clash_tests[0].count(ClashStatus::New), n);
+
+    // a doua rulare, configuratie identica: aceleasi clash-uri devin Active
+    app.run_clash_blocking(0);
+    assert_eq!(app.clash_tests[0].results.len(), n);
+    assert_eq!(app.clash_tests[0].count(ClashStatus::Active), n);
+    assert_eq!(app.clash_tests[0].count(ClashStatus::New), 0);
+
+    // Approved isi pastreaza statusul la re-rulare (ca in Navisworks)
+    app.clash_tests[0].results[0].status = ClashStatus::Approved;
+    app.run_clash_blocking(0);
+    assert_eq!(app.clash_tests[0].results[0].status, ClashStatus::Approved);
+
+    // daca nimic nu mai e gasit, vechiul clash devine Resolved
+    app.clash_tests[0].b = Selector { kind: SelKind::Model, value: "no-such-model.ifc".into() };
+    app.run_clash_blocking(0);
+    assert_eq!(app.clash_tests[0].count(ClashStatus::Resolved), n);
+
+    // daca geometria reapare, Resolved revine la New
+    app.clash_tests[0].b = Selector { kind: SelKind::Model, value: mep.into() };
+    app.run_clash_blocking(0);
+    assert!(app.clash_tests[0].count(ClashStatus::New) > 0);
+}
+
+#[test]
 fn prop_index_and_multi_type_sets() {
     let mut app = app();
     app.refresh_caches();

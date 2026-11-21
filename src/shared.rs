@@ -40,6 +40,12 @@ pub struct SharedState {
     pub status: String,
 }
 
+/// Un GUID valid ajunge in numele fisierului: acceptam doar hexazecimal si '-'
+/// (un fisier JSON stricat din folderul comun nu poate scrie in afara lui).
+fn safe_guid(g: &str) -> String {
+    g.chars().filter(|c| c.is_ascii_hexdigit() || *c == '-').collect()
+}
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -149,6 +155,9 @@ impl App {
                 }
                 let Ok(txt) = std::fs::read_to_string(&p) else { continue };
                 let Ok(si) = serde_json::from_str::<SharedIssue>(&txt) else { continue };
+                if si.guid.is_empty() || safe_guid(&si.guid) != si.guid {
+                    continue; // GUID invalid: ignoram fisierul (nu il folosim ca nume de fisier)
+                }
                 if let Some(mt) = mt {
                     self.shared.mtimes.insert(key, mt);
                 }
@@ -194,12 +203,24 @@ impl App {
         // ---- 2) trimitere: ce s-a schimbat aici (sau e nou), plus stergerile
         let mut pushed = 0;
         let by = user();
+        // Fisier temporar unic per proces: doi colegi care salveaza acelasi issue in acelasi
+        // moment nu scriu unul peste altul (rename-ul ramane atomic).
+        let pid = std::process::id();
+        let tmp_seq = std::sync::atomic::AtomicU64::new(0);
         let write = |si: &SharedIssue| -> Option<std::time::SystemTime> {
-            let f = dirp.join(format!("{}.json", si.guid));
-            let tmp = dirp.join(format!("{}.json.tmp", si.guid));
+            let guid = safe_guid(&si.guid);
+            if guid.is_empty() {
+                return None;
+            }
+            let f = dirp.join(format!("{guid}.json"));
+            let n = tmp_seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let tmp = dirp.join(format!("{guid}.{pid}.{n}.json.tmp"));
             let txt = serde_json::to_string_pretty(si).ok()?;
             std::fs::write(&tmp, txt).ok()?;
-            std::fs::rename(&tmp, &f).ok()?;
+            if std::fs::rename(&tmp, &f).is_err() {
+                let _ = std::fs::remove_file(&tmp);
+                return None;
+            }
             std::fs::metadata(&f).and_then(|m| m.modified()).ok()
         };
         for i in 0..self.viewpoints.len() {

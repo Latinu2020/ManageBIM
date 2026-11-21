@@ -4,10 +4,12 @@ use bimrust::compare::Diff;
 use bimrust::model::ElemId;
 use bimrust::profiler::ProfileMode;
 use bimrust::*;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 const ARCH: &str = "samples/Block_A_Architecture_Structure.ifc";
 const MEP: &str = "samples/Block_A_MEP.ifc";
+// APPDATA is process-global: serialize tests that redirect it.
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn tmp(name: &str) -> String {
     let d = std::env::temp_dir().join(format!("managebim_xio_{}", std::process::id()));
@@ -36,6 +38,7 @@ fn app_with(paths: &[&str]) -> App {
 
 #[test]
 fn profile_export_import_keeps_custom_colours_on_another_model() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let file = tmp("types.bimprofile");
     let mut a = app_with(&[ARCH]);
     a.profile.cat = ITEM_CAT.into();
@@ -73,6 +76,7 @@ fn profile_export_import_keeps_custom_colours_on_another_model() {
 
 #[test]
 fn profile_ranges_can_be_edited_by_hand() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut a = app_with(&[ARCH]);
     a.profile.cat = "Element".into();
     a.profile.prop = "Level elevation".into();
@@ -96,6 +100,7 @@ fn profile_ranges_can_be_edited_by_hand() {
 
 #[test]
 fn compare_save_open_and_csv() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let p = |_: f32, _: &str| {};
     let old = load_any(ARCH, &p).unwrap();
     let mut new = load_any(ARCH, &p).unwrap();
@@ -153,6 +158,7 @@ fn compare_save_open_and_csv() {
 
 #[test]
 fn tree_grouping_by_any_property_and_export_import() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let file = tmp("tree.bimtree");
     let mut app = app_with(&[ARCH]);
     let m = app.models[0].clone().unwrap();

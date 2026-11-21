@@ -4,6 +4,8 @@
 use bimrust::app::App;
 use std::path::PathBuf;
 
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn wait(app: &mut App) {
     let t0 = std::time::Instant::now();
     while (!app.loads.is_empty() || app.clash_job.is_some()) && t0.elapsed().as_secs() < 120 {
@@ -27,6 +29,7 @@ fn file_ok(p: &PathBuf, min: u64) {
 
 #[test]
 fn demo_project_end_to_end() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // setari si date izolate (nu ating folderele utilizatorului)
     let root = std::env::temp_dir().join(format!("mb_smoke_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);

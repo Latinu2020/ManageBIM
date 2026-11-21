@@ -1,4 +1,5 @@
 pub mod acis;
+pub mod addin_install;
 pub mod anim;
 pub mod asbuilt;
 pub mod bimc;
@@ -19,6 +20,7 @@ pub mod ifc;
 pub mod ifc_export;
 pub mod model;
 pub mod occt;
+pub mod pathtrace;
 pub mod plant3d;
 pub mod plant3d_db;
 pub mod profiler;

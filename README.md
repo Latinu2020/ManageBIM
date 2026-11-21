@@ -14,7 +14,7 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 [![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Releases-334155?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/Latinu2020/ManageBIM/releases)
 
 [![Build](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml/badge.svg)](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-0.25.5-blue)
+![Version](https://img.shields.io/badge/version-0.27.0--beta.1-orange)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20FreeBSD-0078d4)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-b7410e)
 ![No admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a)
@@ -79,6 +79,8 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 
 > **Windows:** the installer is not digitally signed yet — if SmartScreen asks, choose *More info › Run anyway*.
 > Silent install: `ManageBIM-Setup-0.25.5.exe /S` (add `/NoAddins` for the application only).
+
+> **0.27.0-beta.1** — this test build adds **progressive CPU path tracing** (preview, time limit, Cancel, PNG export), a **Blender-style Properties bar** (add any panel as a tab), Navisworks-style clash groups and filters, audit trail, SwitchBack, Scan vs Model, 4D “only scheduled elements”, **Hidden line** visual style, a denser professional UI and persistent UI settings. Build locally with `cargo build --release --features addins` and `tools\make-setup.ps1`; the downloadable installer above is the latest published 0.25.5 package.
 >
 > **Linux / FreeBSD:** the add-ins (Revit, Navisworks, AutoCAD) and the native STEP / IGES reader exist only on Windows; everything else is the same.
 
@@ -95,8 +97,9 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 - **Point clouds** — E57 and LAS, density and point size control, one item per scan.
 - **Selection Tree** (group by any property, category colours, counts), **Property Tree**, **Find Items** with condition chips, selection and search **sets**, **Select Same Type / Category**.
 - **Navigation** like Navisworks — orbit, pan, walk with gravity and collision, ViewCube, walk paths, viewpoints, animations; adaptive LOD on large models.
-- **Visual styles** — Realistic, Shaded, Concept, Wireframe; fine edges, soft contact shadows, **sun shadows by date, time and location**, PBR material library (`.zip` packs from freepbr.com, ambientCG…).
+- **Visual styles** — Realistic, Shaded, Concept, Wireframe and **Hidden line**; fine edges, soft contact shadows, **sun shadows by date, time and location**, PBR material library (`.zip` packs from freepbr.com, ambientCG…).
 - **Command palette** (Ctrl+K) — every command and every element name, in one search box.
+- **Arrangeable panels** — dock left / right / bottom or float, auto-hide, and a **Blender-style Properties bar**: add any panel as a tab there; **Model focus** hides the ribbon and panels but keeps Properties floating. UI settings (clash filter, groups, visual style, 4D) are saved between sessions.
 - **Interface in English or Romanian** (View › Language).
 - **Undo / Redo** of the view (Ctrl+Z / Ctrl+Y) and **DWG / DXF overlay**: lay a 2D drawing over the model at a level.
 </details>
@@ -104,7 +107,7 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 <details open>
 <summary><b>Coordination</b></summary>
 
-- **Clash Detective** like Navisworks — test list with New / Active / Reviewed / Approved / Resolved columns and test status (New / Done / Old), **Add Test, Reset All, Compact All, Delete All, Update All** (with a summary of what changed), Rules / Select / Results / Report tabs; hard and clearance tests with **severity levels** (Critical / Major / Minor) and **ready-made templates** by discipline, **smart rules** (normal connections ignored, responsible discipline assigned automatically, grouping by system), grouping by level / grid location / type; **import / export of clash tests** as Navisworks XML (with the selection sets) or CSV / Excel; **clash matrix by test** (Selection A × Selection B, a sheet per status) and tests created from a **sets matrix**; HTML, CSV, BCF and Navisworks reports.
+- **Clash Detective** like Navisworks — test list with New / Active / Reviewed / Approved / Resolved columns and test status (New / Done / Old), **Add Test, Reset All, Compact All, Delete All, Update All** (with a summary of what changed), Rules / Select / Results / Report tabs; hard and clearance tests with **severity levels** (Critical / Major / Minor) and **ready-made templates** by discipline, **smart rules** (normal connections ignored, responsible discipline assigned automatically, grouping by system), grouping by level / grid location / type / model / assignee / status; **Filter by Selection** (inclusive / exclusive); Approved / Resolved keep **who and when**; **SwitchBack** sends a clash to Revit / Navisworks with the camera and the two elements; **Scan vs Model** turns as-built discrepancies into clashes; **import / export of clash tests** as Navisworks XML (with the selection sets) or CSV / Excel; **clash matrix by test** (Selection A × Selection B, a sheet per status) and tests created from a **sets matrix**; HTML, CSV, BCF and Navisworks reports.
 - **Model Checker** — rules or **buildingSMART IDS 1.0** files (import **and export**): properties, attributes, classifications, materials; exact values, lists, patterns, ranges, optional / prohibited, **unique values** (duplicate marks, GUIDs). Excel and BCF reports. **Quick checks without IDS**: no level, name, classification, material or geometry, duplicates, duplicate GUIDs.
 - **Live Link** — the selection follows **Revit** and **Navisworks** both ways (matched by UniqueId / IFC GUID).
 - **As-built check** — the model against the point cloud: built, partial, missing, not scanned; colours on the model and an Excel report.
@@ -134,6 +137,7 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 - **Web viewer** — one offline `.html` file with the model.
 - **Reference models** for Revit and AutoCAD / Plant 3D (`.mbref`) with Load / Reload / Unload.
 - **Animations window** — Record your navigation, Orbit 360°, walkthrough of viewpoints, walk path, **Import 4D** (the TimeLiner sequence); ▶ Play each one with a full player (loop, ping-pong), animate objects (colour, transparency, visibility).
+- **Images and path tracing** — quick PNG of the current view, or **progressive CPU path tracing** in a separate window (resolution, samples, time limit, Cancel, export the current image at any time).
 - Images and **videos** (MP4, AVI, GIF, PNG frames), optionally **rendered with materials** (Realistic style, textures, sun shadows).
 </details>
 
@@ -166,7 +170,7 @@ Requirements: [Rust](https://rustup.rs) (stable). On Windows also Visual Studio 
 ```bash
 git clone https://github.com/Latinu2020/ManageBIM.git
 cd ManageBIM
-cargo build --release      # ManageBIM and bimc-convert (command-line converter to .bimc)
+cargo build --release --features addins   # application, bimc-convert and the three add-in installers
 cargo test --release       # the test suite
 ```
 

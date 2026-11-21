@@ -1,6 +1,9 @@
 //! Export viewpoints + markups in formatul XML Navisworks (nw-exchange-12.0.xsd).
 use bimrust::markup::{navis_viewpoints_xml, nw_quaternion, NwView, RedKind, Redline};
 
+// APPDATA is process-global: tests that redirect it must not run in parallel.
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn rot(q: [f64; 4], v: [f64; 3]) -> [f64; 3] {
     // v' = q v q*  (q = x, y, z, w)
     let (x, y, z, w) = (q[0], q[1], q[2], q[3]);
@@ -300,6 +303,7 @@ fn ifc_grids_and_levels_give_clash_locations() {
 
 #[test]
 fn shared_issues_sync_between_two_colleagues() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = std::env::temp_dir().join(format!("mb_shared_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let d = dir.to_string_lossy().to_string();
@@ -405,6 +409,7 @@ fn tools_grids_levels_sections_and_project_roundtrip() {
 
 #[test]
 fn grid_alignment_by_picking_and_rotation() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use bimrust::app::{transform_grids, UserGrid};
     let mut g = vec![UserGrid { name: "1".into(), a: [10.0, 0.0], b: [10.0, 20.0] }];
     transform_grids(&mut g, [10.0, 0.0], 90.0, [1.0, 2.0]);
@@ -457,6 +462,7 @@ fn demo_grid_project() {
 
 #[test]
 fn bimd_holds_project_and_models_in_one_file() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("APPDATA", std::env::temp_dir().join("mb_test_appdata"));
     let mut a = app();
     a.save_viewpoint();

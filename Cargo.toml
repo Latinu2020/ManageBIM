@@ -1,6 +1,6 @@
 [package]
 name = "bimrust"
-version = "0.25.5"
+version = "0.27.0-beta.1"
 edition = "2021"
 license = "MIT"
 description = "BimRust - vizualizare si coordonare modele BIM (IFC / glTF)"
@@ -53,7 +53,9 @@ addins = []
 [profile.release]
 opt-level = 3
 lto = "thin"
-strip = true
+# pastram tabela de simboluri: crash.log din %APPDATA%\ManageBIM ramane lizibil
+# (nume de functii in backtrace); codul de debug si tabelele de linii se elimina
+strip = "debuginfo"
 
 [profile.dev]
 opt-level = 1

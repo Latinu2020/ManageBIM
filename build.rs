@@ -37,6 +37,43 @@ fn main() {
     println!("cargo:rerun-if-changed=third_party/ufbx/ufbx.c");
     cc::Build::new().file("third_party/ufbx/ufbx.c").file("src/fbx/mbfbx.c").opt_level(2).warnings(false).compile("mbfbx");
     occt();
+    addin_payloads();
+}
+
+/// Instalerele add-in-urilor (binarele cu --features addins) includ fisierele din
+/// installers\payload\<add-in> direct in .exe. Payload-ul e produs de scripturile C#
+/// (revit-addin\build.ps1 etc.) si nu e in repo; daca lipseste, binarele se compileaza
+/// in continuare si spun la rulare ce script trebuie rulat.
+fn addin_payloads() {
+    let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    for (kind, dir) in [("revit", "revit"), ("acad", "acad"), ("navisworks", "navisworks")] {
+        let root = manifest.join("installers").join("payload").join(dir);
+        println!("cargo:rerun-if-changed={}", root.display());
+        let mut files = Vec::new();
+        collect_payload(&root, &root, &mut files);
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut src = String::from("// generat de build.rs din installers/payload\npub static FILES: &[(&str, &[u8])] = &[\n");
+        for (rel, abs) in files {
+            src.push_str(&format!("    ({:?}, include_bytes!({:?})),\n", rel, abs.display().to_string()));
+        }
+        src.push_str("];\n");
+        std::fs::write(out.join(format!("addin_payload_{kind}.rs")), src).unwrap();
+    }
+}
+
+fn collect_payload(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            collect_payload(root, &p, out);
+        } else if p.is_file() {
+            if let Ok(rel) = p.strip_prefix(root) {
+                out.push((rel.to_string_lossy().replace('\\', "/"), p));
+            }
+        }
+    }
 }
 
 fn occt() {

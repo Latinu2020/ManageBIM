@@ -17,7 +17,21 @@ New-Item -ItemType Directory -Force $obj | Out-Null
 $csc = $null
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 if (Test-Path $vswhere) { foreach ($vs in (& $vswhere -all -products * -property installationPath)) { $c = Join-Path $vs 'MSBuild\Current\Bin\Roslyn\csc.exe'; if (Test-Path $c) { $csc = $c; break } } }
-if (-not $csc) { throw 'C# compiler not found (Visual Studio / Build Tools 2019+).' }
+if (-not $csc) {
+    # fallback: .NET SDK instalat per-utilizator (Visual Studio fara workload C#)
+    $sdkRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet\sdk'
+    $sdk = Get-ChildItem $sdkRoot -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+    if ($sdk) {
+        $dll = Join-Path $sdk.FullName 'Roslyn\bincore\csc.dll'
+        $dn = Join-Path (Split-Path $sdkRoot -Parent) 'dotnet.exe'
+        if ((Test-Path $dll) -and (Test-Path $dn)) {
+            $shim = Join-Path $env:TEMP 'managebim-csc.cmd'
+            "@echo off`r`n`"$dn`" `"$dll`" %*`r`n" | Set-Content -Encoding ascii $shim
+            $csc = $shim
+        }
+    }
+}
+if (-not $csc) { throw 'C# compiler not found (Visual Studio / Build Tools 2019+ or per-user .NET SDK).' }
 $srcs = Get-ChildItem $here -Filter *.cs | ForEach-Object { "`"$($_.FullName)`"" }
 $common = @('/nologo', '/langversion:latest', '/optimize+', '/platform:x64', '/target:library', '/nowarn:1701,1702,8019,0618')
 
@@ -51,7 +65,7 @@ if (-not (Get-ChildItem $refDir -Recurse -Filter 'AcDbMgd.dll' -ErrorAction Sile
     }
 }
 $fw = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
-$refs24 = @("$fw\System.dll", "$fw\System.Core.dll", "$fw\System.Drawing.dll", "$fw\System.IO.Compression.dll", "$fw\System.Xaml.dll", "$fw\WPF\PresentationCore.dll", "$fw\WPF\PresentationFramework.dll", "$fw\WPF\WindowsBase.dll") | ForEach-Object { "/r:`"$_`"" }
+$refs24 = @("$fw\mscorlib.dll", "$fw\System.dll", "$fw\System.Core.dll", "$fw\System.Drawing.dll", "$fw\System.IO.Compression.dll", "$fw\System.Xaml.dll", "$fw\WPF\PresentationCore.dll", "$fw\WPF\PresentationFramework.dll", "$fw\WPF\WindowsBase.dll") | ForEach-Object { "/r:`"$_`"" }
 $refs24 += Get-ChildItem $refDir -Recurse -Filter *.dll | Where-Object { $_.Name -in 'AcDbMgd.dll', 'AcCoreMgd.dll', 'AcMgd.dll', 'AdWindows.dll' } | Sort-Object Name -Unique | ForEach-Object { "/r:`"$($_.FullName)`"" }
 $rsp = Join-Path $obj 'r24.rsp'
 ($common + @("/out:`"$obj\R24.dll`"") + $refs24 + $srcs) | Set-Content $rsp -Encoding ascii

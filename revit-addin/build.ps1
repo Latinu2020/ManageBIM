@@ -20,7 +20,21 @@ New-Item -ItemType Directory -Force $obj, $refsRoot | Out-Null
 $csc = $null
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 if (Test-Path $vswhere) { foreach ($vs in (& $vswhere -all -products * -property installationPath)) { $c = Join-Path $vs 'MSBuild\Current\Bin\Roslyn\csc.exe'; if (Test-Path $c) { $csc = $c; break } } }
-if (-not $csc) { throw 'C# compiler not found (Visual Studio / Build Tools 2019+).' }
+if (-not $csc) {
+    # fallback: .NET SDK instalat per-utilizator (Visual Studio fara workload C#)
+    $sdkRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet\sdk'
+    $sdk = Get-ChildItem $sdkRoot -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+    if ($sdk) {
+        $dll = Join-Path $sdk.FullName 'Roslyn\bincore\csc.dll'
+        $dn = Join-Path (Split-Path $sdkRoot -Parent) 'dotnet.exe'
+        if ((Test-Path $dll) -and (Test-Path $dn)) {
+            $shim = Join-Path $env:TEMP 'managebim-csc.cmd'
+            "@echo off`r`n`"$dn`" `"$dll`" %*`r`n" | Set-Content -Encoding ascii $shim
+            $csc = $shim
+        }
+    }
+}
+if (-not $csc) { throw 'C# compiler not found (Visual Studio / Build Tools 2019+ or per-user .NET SDK).' }
 $srcs = Get-ChildItem $here -Filter *.cs | ForEach-Object { "`"$($_.FullName)`"" }
 $common = @('/nologo', '/langversion:latest', '/optimize+', '/platform:x64', '/target:library', '/nowarn:1701,1702,8019,0618', "/out:`"$obj\ManageBIM.RevitExporter.dll`"")
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'
@@ -55,7 +69,7 @@ foreach ($y in $Versions) {
         $noconfig = @('/noconfig')
     } else {
         $fw = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
-        $refs = @("$fw\System.dll", "$fw\System.Core.dll", "$fw\System.Xaml.dll", "$fw\System.Windows.Forms.dll", "$fw\System.Drawing.dll", "$fw\WPF\PresentationCore.dll", "$fw\WPF\WindowsBase.dll") | ForEach-Object { "/r:`"$_`"" }
+        $refs = @("$fw\mscorlib.dll", "$fw\System.dll", "$fw\System.Core.dll", "$fw\System.Xaml.dll", "$fw\System.Windows.Forms.dll", "$fw\System.Drawing.dll", "$fw\WPF\PresentationCore.dll", "$fw\WPF\WindowsBase.dll") | ForEach-Object { "/r:`"$_`"" }
         $noconfig = @()
     }
     $rsp = Join-Path $obj "r$y.rsp"

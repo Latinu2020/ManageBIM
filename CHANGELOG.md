@@ -3,6 +3,29 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.0-beta.1 - 2026-11-21 (test)
+- **Build-ul add-in-urilor reparat**: `cargo build --release --features addins` functionează din nou. Cele trei instalere (`ManageBIM-Revit-AddIn.exe`, `ManageBIM-AutoCAD-AddIn.exe`, `ManageBIM-Navisworks-AddIn.exe`) au sursele în `src/bin/addin/` și includ automat DLL-urile din `installers\payload\`; dacă lipseau DLL-urile, primesți un mesaj clar cu scriptul C# de rulat. Logica de instalare e în `src/addin_install.rs`, cu 5 teste noi (Revit 2023–2027, 2027 folosește DLL-ul de 2026, AutoCAD R24/R25, Navisworks vechi/nou, dezinstalare).
+- **Monoliții sparți în module**: `ui.rs` (10.311 → ~4.600 linii) și `app.rs` (8.811 → ~2.700 linii) au acum 7, respectiv 16 submodule (`src/ui/`, `src/app/`): coordination, tree_props, time, tools, analysis, clash, grids, project, anim, materials etc. Nicio funcționalitate mutată — doar organizare.
+- **Interfață mai prietenoasă**: pagina de start are logo isometric, buton Open evidențiat, carduri „Welcome” cu acțiuni rapide (Open / Demo / Commands) și sublinierea tab-ului activ în ribbon.
+- **Corecții**: pachet E57 trunchiat → eroare clară în loc de panic; sincronizarea issue-urilor partajate folosește fișiere temporare unice per proces (fără coliziuni între colegi); GUID-urile invalide din folderul comun sunt ignorate; fișierul `.json.tmp` rămas e curățat; backtrace-ul din `crash.log` păstrează simbolurile (`strip = "debuginfo"`); remove duplicate branches în UI și importul nefolosit.
+- **Clash Detective spacios**: buton **⛶ Focus** în panoul de jos (și în meniul contextual) deschide Clash Detective într-o fereastră aproape cât ecranul; Esc sau „Exit focus” revine la model. Panoul de jos are și buton **⤢** de maximizare, iar varianta plutitoare pornește la 1100×760.
+- **Fonturi mai vizibile**: Inter cu mărimi mărite (Small 11, Body/Button 14, Heading 19, Mono 13) și ținte de click mai mari.
+- **OpenCascade inclus**: scriptul `tools\build-occt.ps1` găsește CMake / Ninja instalați per-user (winget) și compilează toolkit-urile necesare; STEP / IGES / BREP native funcționează.
+- **DLL-uri add-in construite**: Revit 2023–2026, AutoCAD R24/R25, Navisworks 2022–2026; scripturile C# folosesc și compilatorul Roslyn din .NET SDK-ul per-user (cu referință `mscorlib` pentru .NET Framework).
+- **Test Navisworks clash lifecycle**: verificat New → Active → Resolved → New și păstrarea statusului Approved la re-rulare (ca în documentația Autodesk).
+- **Clash Detective — paritate Navisworks**: Auto-group după Model A/B, Assigned To și Status; **Filter by Selection** (None / Inclusive / Exclusive); statusul **Approved / Resolved** salvează cine și când (`approved_by/at`, `resolved_by/at`, cu tooltip în tabel); **⇄ SwitchBack** trimite clash-ul în Revit / Navisworks ca viewpoint cu selecția celor două elemente.
+- **Scan vs Model**: diferențele as-built (Missing / Partial) pot deveni test de clash cu norul de puncte; coloana „Item B” arată „Point cloud (scan)”.
+- **4D**: opțiunea „Show only scheduled elements” ascunde tot ce nu e legat de o sarcină — vezi doar ce se construiește.
+- **Visual style „Hidden line”**: suprafețe neutre, muchii ascunse de geometrie (ca în AutoCAD / Navisworks).
+- **Ferestre plutitoare**: buton **⤢ Stretch to screen** / **⤡ Restore size**; redimensionare liberă pe margini și colțuri.
+- **Persistență UI**: filtrul, tabul, gruparea, modul de afișare, auto-zoomul și setarea 4D se salvează în `settings.json`.
+- **Properties mai dens**: carduri cu padding redus, valori pe o linie cu tooltip complet, antet compact — încap mult mai multe informații.
+- **Tema Nord mai inchisa** cu acelasi contrast al textului, apropiata de aspectul din captura ta.
+- **Path tracing progresiv (CPU)**: buton „Path trace image…” în Render, cu rezoluție, samples, limită de timp, anulare și export PNG.
+- **Cut to DWG**: anotațiile se plasează doar deasupra elementelor tăiate, cu gap, fără ce e dedesubt.
+- **Visual style „Hidden line”** adăugat și în ribbon (Visual Style).
+- **Teste**: 148 de teste trec (28 unitare + 120 integrare), 0 eșuate.
+
 ## 0.25.5 - 2026-11-21
 - **Clash Detective ca în Navisworks**: lista testelor cu coloanele Name, Status (New / Done / Old), Clashes, New, Active, Reviewed, Approved, Resolved; butoanele **Add Test, Reset All, Compact All, Delete All, Update All**; tab-urile **Rules / Select / Results / Report**; meniu contextual pe test (Run, Reset, Compact, Duplicate, Delete).
 - **Update All**: rulează toate testele și arată sumarul: ce e nou, ce e încă activ, ce s-a rezolvat, pe fiecare test, cu diferența față de rularea anterioară.

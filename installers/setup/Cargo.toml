@@ -1,6 +1,6 @@
 [package]
 name = "managebim-setup"
-version = "0.25.5"
+version = "0.27.0-beta.1"
 edition = "2021"
 description = "ManageBIM - installer intr-un singur .exe (aplicatie + OpenCascade + add-in-uri), per utilizator, fara admin"
 

@@ -155,6 +155,9 @@ pub struct UiLayout {
     /// zona de jos ridicata (filele ei stau in bara de stare; clic pe fila activa o coboara)
     #[serde(default = "crate::layout::yes")]
     pub bottom_open: bool,
+    /// panoul de jos maximizat (inaltime mare pentru clashuri / teste multe)
+    #[serde(default)]
+    pub bottom_tall: bool,
 }
 
 impl Default for UiLayout {
@@ -166,6 +169,7 @@ impl Default for UiLayout {
             autohide: [false; 3],
             hide_all: false,
             bottom_open: true,
+            bottom_tall: false,
         }
     }
 }

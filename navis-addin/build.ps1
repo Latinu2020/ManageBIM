@@ -35,7 +35,21 @@ if (Test-Path $vswhere) {
         if (Test-Path $c) { $csc = $c; break }
     }
 }
-if (-not $csc) { throw 'C# compiler not found. Install "Build Tools for Visual Studio" (or Visual Studio) 2019 or newer.' }
+if (-not $csc) {
+    # fallback: .NET SDK instalat per-utilizator (Visual Studio fara workload C#)
+    $sdkRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet\sdk'
+    $sdk = Get-ChildItem $sdkRoot -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+    if ($sdk) {
+        $dll = Join-Path $sdk.FullName 'Roslyn\bincore\csc.dll'
+        $dn = Join-Path (Split-Path $sdkRoot -Parent) 'dotnet.exe'
+        if ((Test-Path $dll) -and (Test-Path $dn)) {
+            $shim = Join-Path $env:TEMP 'managebim-csc.cmd'
+            "@echo off`r`n`"$dn`" `"$dll`" %*`r`n" | Set-Content -Encoding ascii $shim
+            $csc = $shim
+        }
+    }
+}
+if (-not $csc) { throw 'C# compiler not found. Install "Build Tools for Visual Studio" (or Visual Studio) 2019 or newer, or a per-user .NET SDK.' }
 Write-Host "csc: $csc"
 
 function Get-Installed {
@@ -72,7 +86,7 @@ function Get-ApiRef([int]$year) {
 }
 
 $fw = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
-$common = @('/nologo', '/langversion:latest', '/optimize+', '/platform:x64', '/nowarn:1701,1702', "/r:$fw\System.dll", "/r:$fw\System.Core.dll")
+$common = @('/nologo', '/langversion:latest', '/optimize+', '/platform:x64', '/nowarn:1701,1702', "/r:$fw\mscorlib.dll", "/r:$fw\System.dll", "/r:$fw\System.Core.dll")
 $srcs = @('BimcWriter.cs', 'BimcStream.cs', 'NwCom.cs', 'NwExporter.cs', 'ExportPlugin.cs', 'ManageBimLink.cs', 'ManageBimIssues.cs', 'IssuesPlugin.cs', 'SyncPlugin.cs') | ForEach-Object { Join-Path $here $_ }
 
 # --- add-in: cate unul pentru fiecare an

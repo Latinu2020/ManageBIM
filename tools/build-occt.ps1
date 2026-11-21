@@ -31,8 +31,13 @@ $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
 $cmakeDir = Join-Path $vsroot 'Common7\IDE\CommonExtensions\Microsoft\CMake'
 $cmake = Join-Path $cmakeDir 'CMake\bin\cmake.exe'
 $ninja = Join-Path $cmakeDir 'Ninja\ninja.exe'
+# Ninja poate fi instalat si per-utilizator (winget / GitHub), nu doar odata cu VS-ul
+if (-not (Test-Path $ninja)) { $ninja = (Get-Command ninja -ErrorAction SilentlyContinue).Source }
+if (-not $ninja -or -not (Test-Path $ninja)) { $ninja = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') -Recurse -Filter ninja.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
+if (-not $ninja -or -not (Test-Path $ninja)) { throw 'Ninja not found (install "Ninja" with winget or the VS C++ CMake tools component).' }
 if (-not (Test-Path $cmake)) { $cmake = (Get-Command cmake -ErrorAction SilentlyContinue).Source }
-if (-not $cmake) { throw 'CMake not found (install the "C++ CMake tools for Windows" component or CMake per-user).' }
+if (-not $cmake -or -not (Test-Path $cmake)) { $cmake = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') -Recurse -Filter cmake.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
+if (-not $cmake -or -not (Test-Path $cmake)) { throw 'CMake not found (install the "C++ CMake tools for Windows" component or CMake per-user).' }
 
 # ------------------------------------------------------------ 2. sursa OCCT
 New-Item -ItemType Directory -Force $Work | Out-Null

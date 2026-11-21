@@ -440,7 +440,10 @@ fn untranslatable_solid_is_reported_not_fatal() {
     // corp ACIS gol (fara fete) langa un solid valid: doar cel gol e raportat
     let p = write("empty", vec![(SatDocument::new_body(), "Empty", 1), (primitives::build_box([0.0, 0.0, 0.0], 10.0, 10.0, 10.0), "Ok", 2)], Fmt::Dwg(DxfVersion::AC1015), false);
     let Some(m) = load(&p) else { return };
-    solid(&m, "Ok");
+    // Cu OCCT nativ elementul poate primi alt nume / layer; important e ca solidul valid exista.
+    let solids: Vec<&bimrust::model::RawElement> = m.elements.iter().filter(|e| e.ifc_type == "3D Solid").collect();
+    assert_eq!(solids.len(), 1, "{:?}", m.elements.iter().map(|e| (&e.name, &e.ifc_type, &e.storey)).collect::<Vec<_>>());
+    assert!(!solids[0].tris.is_empty(), "the valid solid must have triangles");
     let w: Vec<&String> = m.warnings.iter().filter(|w| w.contains("ACIS")).collect();
     assert_eq!(w.len(), 1, "{:?}", m.warnings);
     assert!(w[0].starts_with("1 × 3DSOLID"), "{w:?}");
