@@ -460,8 +460,8 @@ pub fn apply(ctx: &egui::Context, t: Theme) {
         v.selection.stroke = Stroke::new(1.0_f32, if dark { Color32::from_rgb(light(a.r()), light(a.g()), light(a.b())) } else { a });
         // dunga tabelelor: se simte, nu se vede
         v.faint_bg_color = tone(pf, 4);
-        // ferestrele plutitoare: fara chenar, doar umbra
-        v.window_stroke = Stroke::NONE;
+        // ferestrele plutitoare: chenar subtile, nu contur dur
+        v.window_stroke = Stroke::new(1.0_f32, tone(pf, 12));
         // design system comun tuturor temelor: colturi rotunjite, densitate compacta, umbre
         for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
             w.rounding = Rounding::same(8.0);

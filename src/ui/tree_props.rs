@@ -626,6 +626,17 @@ impl App {
             ui.label(format!("{} elements selected — showing the last one.", sel.len()));
         }
         let mut acts = Vec::new();
+        // filtrul e chiar sub titlul panoului, inainte de orice card
+        let filter_id = ui.make_persistent_id("prop_filter");
+        let mut filter: String = ui.data_mut(|d| d.get_temp(filter_id)).unwrap_or_default();
+        ui.add(egui::TextEdit::singleline(&mut filter).hint_text("🔍 Filter properties").desired_width(f32::INFINITY));
+        ui.add_space(3.0);
+        // actiunea principala sus, nu jos
+        let b = egui::Button::new(RichText::new("🎯  Show in Model").strong().size(13.0).color(Color32::WHITE)).fill(accent()).rounding(7.0);
+        if ui.add_sized([ui.available_width(), 28.0], b).on_hover_text("Zoom to the selected item(s)").clicked() {
+            acts.push(Action::Focus(sel.clone()));
+        }
+        ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             if ui.small_button("Hide").clicked() {
                 acts.push(Action::Hide(sel.clone()));
@@ -699,21 +710,12 @@ impl App {
             ],
         ));
         let mut copy = None;
-        // aspect "studio": fisa elementului sus, grupurile ca niste carduri, butonul mare "Show in Model" jos
+        // carduri compacte, cu un chenar abia vizibil
         let card_fill = ui.visuals().faint_bg_color;
         let card_stroke = Stroke::new(1.0_f32, ui.visuals().widgets.noninteractive.bg_stroke.color);
         let weak = ui.visuals().weak_text_color();
-        let filter_id = ui.make_persistent_id("prop_filter");
-        let mut filter: String = ui.data_mut(|d| d.get_temp(filter_id)).unwrap_or_default();
-        ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-            let b = egui::Button::new(RichText::new("🎯  Show in Model").strong().size(14.0).color(Color32::WHITE)).fill(accent()).rounding(8.0);
-            if ui.add_sized([ui.available_width(), 34.0], b).on_hover_text("Zoom to the selected item(s)").clicked() {
-                acts.push(Action::Focus(sel.clone()));
-            }
-            ui.add_space(6.0);
-            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                // fisa elementului
-                egui::Frame::none().fill(card_fill).stroke(card_stroke).rounding(8.0).inner_margin(6.0).show(ui, |ui| {
+        {
+                egui::Frame::none().fill(card_fill).stroke(card_stroke).rounding(6.0).inner_margin(5.0).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         let c = m.tri_color.get(e.tri_start as usize).copied().unwrap_or([200, 200, 200, 255]);
@@ -729,9 +731,6 @@ impl App {
                         }
                     });
                 });
-                ui.add_space(2.0);
-                ui.add(egui::TextEdit::singleline(&mut filter).hint_text("🔍 Filter properties").desired_width(f32::INFINITY));
-                ui.add_space(2.0);
                 let q = filter.trim().to_lowercase();
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     for (gi, (g, rows)) in groups.iter().enumerate() {
@@ -739,7 +738,7 @@ impl App {
                         if rows.is_empty() {
                             continue;
                         }
-                        egui::Frame::none().fill(card_fill).stroke(card_stroke).rounding(8.0).inner_margin(egui::Margin { left: 8.0, right: 8.0, top: 5.0, bottom: 5.0 }).show(ui, |ui| {
+                        egui::Frame::none().fill(card_fill).stroke(card_stroke).rounding(6.0).inner_margin(egui::Margin { left: 6.0, right: 6.0, top: 3.0, bottom: 3.0 }).show(ui, |ui| {
                             ui.set_width(ui.available_width());
                             let id = ui.make_persistent_id(("pcard", g));
                             let mut st = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, gi < 6 || !q.is_empty());
@@ -756,8 +755,8 @@ impl App {
                             }
                             st.store(ui.ctx());
                             if open {
-                                ui.add_space(4.0);
-                                egui::Grid::new(("pgrid", gi, g)).num_columns(2).spacing([8.0, 1.0]).show(ui, |ui| {
+                                ui.add_space(2.0);
+                                egui::Grid::new(("pgrid", gi, g)).num_columns(2).spacing([6.0, 0.0]).show(ui, |ui| {
                                     for (n, v) in rows {
                                         ui.label(RichText::new(n).small().color(weak));
                                         let r = ui.add(egui::Label::new(v.as_str()).truncate().sense(Sense::click()));
@@ -773,11 +772,10 @@ impl App {
                                 });
                             }
                         });
-                        ui.add_space(4.0);
+                        ui.add_space(2.0);
                     }
                 });
-            });
-        });
+        }
         ui.data_mut(|d| d.insert_temp(filter_id, filter));
         if let Some(c) = copy {
             ui.ctx().copy_text(c);

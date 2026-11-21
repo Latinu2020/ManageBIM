@@ -2203,6 +2203,46 @@ impl App {
                 }
             });
             ui.add_space(2.0);
+        } else if d == Dock::Right {
+            // Bara de proprietati cu taburi VERTICALE (stil Blender) + meniu de adaugat panouri.
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 3.0;
+                    ui.spacing_mut().button_padding = egui::vec2(5.0, 3.0);
+                    for p in &tabs {
+                        let on = Some(*p) == active;
+                        let short = p.short_en();
+                        let glyph = &short[..short.len().min(2)];
+                        let b = egui::Button::new(RichText::new(glyph).size(12.0).strong())
+                            .fill(if on { accent().gamma_multiply(0.42) } else { Color32::TRANSPARENT })
+                            .stroke(Stroke::NONE)
+                            .rounding(6.0)
+                            .min_size(EV::new(28.0, 26.0));
+                        let r = ui.add(b).on_hover_text(format!("{}\nRight-click: dock / float / close", p.title()));
+                        if r.clicked() {
+                            self.settings.layout.active[d.idx()] = Some(*p);
+                        }
+                        r.context_menu(|ui| self.panel_menu(ui, *p));
+                    }
+                    ui.menu_button("＋", |ui| {
+                        ui.label(RichText::new("Add a panel as a tab here").small().weak());
+                        ui.separator();
+                        for p in crate::layout::ALL_PANELS {
+                            if !tabs.contains(&p) && ui.button(p.title()).clicked() {
+                                self.settings.layout.move_to(p, Dock::Right);
+                                ui.close_menu();
+                            }
+                        }
+                    }).response.on_hover_text("Add a panel to this bar");
+                });
+                ui.separator();
+                ui.vertical(|ui| {
+                    if let Some(a) = active {
+                        egui::ScrollArea::horizontal().id_salt(("side_scroll", d.idx())).auto_shrink([false, false]).show(ui, |ui| self.panel_body(ui, a));
+                    }
+                });
+            });
+            return;
         } else {
         ui.horizontal_wrapped(|ui| {
             ui.style_mut().spacing.item_spacing.x = 3.0;
