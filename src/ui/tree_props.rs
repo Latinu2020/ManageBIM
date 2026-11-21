@@ -727,11 +727,11 @@ impl App {
                         let c = m.tri_color.get(e.tri_start as usize).copied().unwrap_or([200, 200, 200, 255]);
                         let (r, _) = ui.allocate_exact_size(EV::splat(9.0), Sense::hover());
                         ui.painter().circle_filled(r.center(), 4.5, Color32::from_rgb(c[0], c[1], c[2]));
-                        let name = ui.label(RichText::new(&e.name).strong().size(13.5));
+                        let name = ui.label(RichText::new(&e.name).strong().size(16.0));
                         name.on_hover_text(format!("{}\n{}\n{}", e.ifc_type, e.guid, m.name));
                     });
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(&e.ifc_type).small().color(accent()));
+                        ui.label(RichText::new(&e.ifc_type).size(12.5).strong().color(accent()));
                         if !e.storey.is_empty() {
                             ui.label(RichText::new(format!("· {}", e.storey)).small().color(weak));
                         }

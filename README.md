@@ -9,7 +9,7 @@
 Open **IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP and point clouds** together, run clash detection and model checks,<br>
 manage issues and markups, publish drawings — and stay in sync with Revit and Navisworks.
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.25.5-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.25.5.exe)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.27.0-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.0/ManageBIM-Setup-0.27.0.exe)
 &nbsp;
 [![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Releases-334155?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/Latinu2020/ManageBIM/releases)
 

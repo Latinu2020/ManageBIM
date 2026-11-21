@@ -2440,6 +2440,7 @@ impl App {
                 // filele panourilor de jos (Find Items, Clash, TimeLiner...): clic = panoul se ridica,
                 // clic pe fila deschisa = coboara (tot ecranul pentru model)
                 let bottom = self.settings.layout.in_area(Dock::Bottom);
+                // "Add panel" e mereu prezent, chiar si cand bara de jos e goala.
                 if !bottom.is_empty() && !self.settings.layout.hide_all && !self.settings.layout.autohide[2] {
                     let active = self.settings.layout.active[2];
                     let open = self.settings.layout.bottom_open;
@@ -2459,7 +2460,9 @@ impl App {
                         }
                         r.context_menu(|ui| self.panel_menu(ui, p));
                     }
-                    ui.menu_button("＋ Add tab", |ui| {
+                }
+                if !self.settings.layout.hide_all {
+                    ui.menu_button("＋ Add panel", |ui| {
                         ui.label(RichText::new("Add a panel to the bottom toolbar").small().weak());
                         ui.separator();
                         for p in crate::layout::ALL_PANELS {
@@ -4145,8 +4148,8 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     let tip = tip.as_str();
     let enabled = enabled && ui.is_enabled();
     let compact = crate::theme::RIBBON_COMPACT.load(std::sync::atomic::Ordering::Relaxed);
-    let font = FontId::proportional(11.5);
-    // Dimensiune FIXA pentru toate butoanele din ribbon: etichetele nu mai schimba latimea.
+    let font = FontId::proportional(10.5);
+    // Dimensiune FIXA pentru toate butoanele din ribbon; etichetele se scurteaza ca sa nu se suprapuna.
     let size = if compact {
         egui::vec2(30.0, 30.0)
     } else {
@@ -4166,7 +4169,7 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
         p.text(rect.center(), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), col);
     } else {
         p.text(rect.center_top() + egui::vec2(0.0, 13.0), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), col);
-        let shown = if label.chars().count() > 11 { format!("{}…", label.chars().take(10).collect::<String>()) } else { label.to_string() };
+        let shown = if label.chars().count() > 8 { format!("{}…", label.chars().take(7).collect::<String>()) } else { label.to_string() };
         p.text(rect.center_bottom() - egui::vec2(0.0, 8.0), Align2::CENTER_CENTER, &shown, font, col);
     }
     let tip = if compact { format!("{label}\n{tip}") } else { tip.to_string() };
@@ -4190,7 +4193,7 @@ fn rgroup(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui)) {
             ui.spacing_mut().item_spacing.y = 0.0;
             let r = ui
                 .horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 1.0;
+                    ui.spacing_mut().item_spacing.x = 4.0;
                     if compact {
                         ui.set_min_height(avail_h - 8.0);
                         ui.set_max_height(avail_h - 6.0);
