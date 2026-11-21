@@ -9,12 +9,12 @@
 Open **IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP and point clouds** together, run clash detection and model checks,<br>
 manage issues and markups, publish drawings — and stay in sync with Revit and Navisworks.
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.24.0-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.24.0.exe)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.25.5-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.25.5.exe)
 &nbsp;
 [![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Releases-334155?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/Latinu2020/ManageBIM/releases)
 
 [![Build](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml/badge.svg)](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-0.22.0-blue)
+![Version](https://img.shields.io/badge/version-0.25.5-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20FreeBSD-0078d4)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-b7410e)
 ![No admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a)
@@ -42,6 +42,14 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 
 <table>
 <tr>
+<td width="50%"><img src="docs/images/clash-detective.png" alt="Clash Detective"><br><sub><b>Clash Detective like Navisworks</b> — tests with New / Active / Reviewed / Approved / Resolved columns, Add Test, Reset / Compact / Delete All, <b>Update All</b>; the clash is shown in the model and the elements' properties next to it.</sub></td>
+<td width="50%"><img src="docs/images/clash-update-all.png" alt="Update All summary"><br><sub><b>Update All</b> runs every test again and shows what changed: new, still active and resolved clashes per test.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/clash-matrix.png" alt="Clash matrix by test"><br><sub><b>Clash matrix by test</b> — Selection A on the rows, Selection B on the columns, the tests and their statuses in each cell; Excel export with a sheet per status. Tests are created from a <b>sets matrix</b> and imported / exported as <b>Navisworks XML</b> or CSV.</sub></td>
+<td width="50%"><img src="docs/images/animations-4d.png" alt="Animations window"><br><sub><b>Animations</b> in their own window — Record, Orbit 360°, viewpoints, walk path and <b>Import 4D</b>; ▶ Play on each one, then <b>export the video</b>, optionally rendered with materials.</sub></td>
+</tr>
+<tr>
 <td width="50%"><img src="docs/images/light-theme.png" alt="Light theme"><br><sub><b>Five themes</b> — Studio, Dark, Light, Tokyo Night, Nord. Card ribbon in three sizes, vector icons, panels that slide up from the status bar.</sub></td>
 <td width="50%"><img src="docs/images/concept-style.png" alt="Concept visual style"><br><sub><b>Visual styles</b> — Realistic (materials, textures), Shaded, Concept (white study model with edges) and Wireframe.</sub></td>
 </tr>
@@ -65,12 +73,12 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 
 | Platform | Package | Notes |
 |---|---|---|
-| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.24.0.exe**](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.24.0.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins. Per-user, **no administrator rights**. |
+| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.25.5.exe**](https://github.com/Latinu2020/ManageBIM/raw/main/download/ManageBIM-Setup-0.25.5.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins. Per-user, **no administrator rights**. |
 | **Linux** (x86-64) | `ManageBIM-<version>-x86_64.AppImage` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | One file: `chmod +x`, then run. No installation, no root. |
 | **FreeBSD** (x86-64) | `ManageBIM-<version>-freebsd-x86_64.tar.gz` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | Unpack and run `ManageBIM/ManageBIM`. Needs `pkg install mesa-libs libxkbcommon`. |
 
 > **Windows:** the installer is not digitally signed yet — if SmartScreen asks, choose *More info › Run anyway*.
-> Silent install: `ManageBIM-Setup-0.24.0.exe /S` (add `/NoAddins` for the application only).
+> Silent install: `ManageBIM-Setup-0.25.5.exe /S` (add `/NoAddins` for the application only).
 >
 > **Linux / FreeBSD:** the add-ins (Revit, Navisworks, AutoCAD) and the native STEP / IGES reader exist only on Windows; everything else is the same.
 
@@ -96,14 +104,15 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 <details open>
 <summary><b>Coordination</b></summary>
 
-- **Clash Detective** — hard and clearance tests with **severity levels** (Critical / Major / Minor) and **ready-made templates** by discipline (Structure vs MEP, clearances, duplicates), **smart rules** (normal connections ignored, responsible discipline assigned automatically, grouping by system), rules, grouping by level / grid location / type, status tracking between runs, **clash matrix** per pair of models; HTML, CSV, BCF and Navisworks reports.
+- **Clash Detective** like Navisworks — test list with New / Active / Reviewed / Approved / Resolved columns and test status (New / Done / Old), **Add Test, Reset All, Compact All, Delete All, Update All** (with a summary of what changed), Rules / Select / Results / Report tabs; hard and clearance tests with **severity levels** (Critical / Major / Minor) and **ready-made templates** by discipline, **smart rules** (normal connections ignored, responsible discipline assigned automatically, grouping by system), grouping by level / grid location / type; **import / export of clash tests** as Navisworks XML (with the selection sets) or CSV / Excel; **clash matrix by test** (Selection A × Selection B, a sheet per status) and tests created from a **sets matrix**; HTML, CSV, BCF and Navisworks reports.
 - **Model Checker** — rules or **buildingSMART IDS 1.0** files (import **and export**): properties, attributes, classifications, materials; exact values, lists, patterns, ranges, optional / prohibited, **unique values** (duplicate marks, GUIDs). Excel and BCF reports. **Quick checks without IDS**: no level, name, classification, material or geometry, duplicates, duplicate GUIDs.
 - **Live Link** — the selection follows **Revit** and **Navisworks** both ways (matched by UniqueId / IFC GUID).
 - **As-built check** — the model against the point cloud: built, partial, missing, not scanned; colours on the model and an Excel report.
 - **Sections** — boxes with stretch arrows (like Revit), planes, **sections by level** from the status bar, filled cuts.
 - **Grids and levels** — from IFC, from DWG / DXF, or created in the app; clash locations like **“C-4 / Level 2”**.
 - **Measure** with snapping, **relocate** models (point to point, rotate, align to a face), **compare** model versions (geometry and **parameter by parameter**, old → new), **TimeLiner** 4D (CSV, **MS Project** and **Primavera P6** XML; videos with date and legend) and **quantities**.
-- **Colour by parameter** with a legend in the view and on images / videos; **add parameters** to elements that have no data (saved with the project, exported to IFC).
+- **Colour by parameter** with a legend in the view and on images / videos.
+- **User data like Navisworks** — Properties › Custom › Add User Data Tab / Insert New Property: your own properties and values on any element (also on geometry without data: STEP, DWG, OBJ), saved with the project, used by Find, Profiler, Model Checker and IFC export. **Import properties from Excel / CSV** (matched by GlobalId, Name or any property) and export an Excel template.
 </details>
 
 <details open>
@@ -124,7 +133,8 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 - **PDF sheets** from viewpoints with the title block; HTML / Excel reports.
 - **Web viewer** — one offline `.html` file with the model.
 - **Reference models** for Revit and AutoCAD / Plant 3D (`.mbref`) with Load / Reload / Unload.
-- Images and **videos** (MP4, AVI, GIF) with materials, lighting and ambient occlusion.
+- **Animations window** — Record your navigation, Orbit 360°, walkthrough of viewpoints, walk path, **Import 4D** (the TimeLiner sequence); ▶ Play each one with a full player (loop, ping-pong), animate objects (colour, transparency, visibility).
+- Images and **videos** (MP4, AVI, GIF, PNG frames), optionally **rendered with materials** (Realistic style, textures, sun shadows).
 </details>
 
 ---
@@ -154,9 +164,24 @@ The setup installs them per user — no administrator rights.
 Requirements: [Rust](https://rustup.rs) (stable). On Windows also Visual Studio 2022 Build Tools (C++ and .NET) and CMake.
 
 ```bash
-cargo build --release      # the application
+git clone https://github.com/Latinu2020/ManageBIM.git
+cd ManageBIM
+cargo build --release      # ManageBIM and bimc-convert (command-line converter to .bimc)
 cargo test --release       # the test suite
 ```
+
+The repository is self-contained: everything needed to build the application is in it. OpenCascade (STEP / IGES / BREP solids) and the Autodesk add-ins are optional and built with the scripts below; without them the application still builds and runs (those formats report that the runtime is missing).
+
+<details>
+<summary>Windows installer from Linux (cross-compile)</summary>
+
+```bash
+rustup target add x86_64-pc-windows-gnu
+sudo apt install gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+cargo build --release --target x86_64-pc-windows-gnu --bin ManageBIM --bin bimc-convert
+```
+The icon is compiled with `x86_64-w64-mingw32-windres` when `rc.exe` (Windows SDK) is not available.
+</details>
 
 <details>
 <summary>Windows: add-ins, OpenCascade and the installer</summary>
@@ -195,7 +220,8 @@ Every push is built and tested on Windows, Linux and FreeBSD by [GitHub Actions]
 
 | Folder | Content |
 |---|---|
-| `src/` | application (egui / OpenGL), readers (IFC, DWG / DXF, E57, LAS, FBX…), clash, model checker, IFC / DWG / PDF export, renderer |
+| `src/` | application (egui / OpenGL), readers (IFC, DWG / DXF, E57, LAS, FBX…), clash (`clash.rs`, `clash_io.rs`: Navisworks XML / CSV, matrix), model checker, animations, IFC / DWG / PDF export, renderer |
+| `src/bin/` | `bimc-convert` (command-line converter) |
 | `revit-addin/`, `acad-addin/`, `navis-addin/` | C# add-ins |
 | `installers/`, `packaging/` | Windows setup wizard; Linux AppImage and FreeBSD packaging |
 | `tests/` | integration tests |

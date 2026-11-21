@@ -86,10 +86,15 @@ pub fn compile_icon_res(out: &std::path::Path, extra_rc: &str) -> Option<std::pa
     std::fs::write(&ico, ico_bytes(&[16, 20, 24, 32, 40, 48, 64, 128, 256])).ok()?;
     let rc = out.join("managebim.rc");
     std::fs::write(&rc, format!("1 ICON \"{}\"\n{}", ico.display().to_string().replace('\\', "\\\\"), extra_rc)).ok()?;
-    let rcexe = find_rc()?;
     let res = out.join("managebim.res");
-    let ok = std::process::Command::new(rcexe).arg("/nologo").arg("/fo").arg(&res).arg(&rc).status().ok()?.success();
-    ok.then_some(res)
+    if let Some(rcexe) = find_rc() {
+        let ok = std::process::Command::new(rcexe).arg("/nologo").arg("/fo").arg(&res).arg(&rc).status().ok()?.success();
+        return ok.then_some(res);
+    }
+    // compilare incrucisata (MinGW): windres produce un obiect COFF pe care il primeste linker-ul
+    let obj = out.join("managebim_res.o");
+    let ok = std::process::Command::new("x86_64-w64-mingw32-windres").arg("-O").arg("coff").arg("-i").arg(&rc).arg("-o").arg(&obj).status().ok()?.success();
+    ok.then_some(obj)
 }
 
 #[allow(dead_code)]

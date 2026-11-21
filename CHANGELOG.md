@@ -3,6 +3,24 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.25.5 - 2026-11-21
+- **Clash Detective ca în Navisworks**: lista testelor cu coloanele Name, Status (New / Done / Old), Clashes, New, Active, Reviewed, Approved, Resolved; butoanele **Add Test, Reset All, Compact All, Delete All, Update All**; tab-urile **Rules / Select / Results / Report**; meniu contextual pe test (Run, Reset, Compact, Duplicate, Delete).
+- **Update All**: rulează toate testele și arată sumarul: ce e nou, ce e încă activ, ce s-a rezolvat, pe fiecare test, cu diferența față de rularea anterioară.
+- **Import / Export Clash Tests**: XML compatibil Navisworks (Clash Detective › Import / Export), cu seturile de selecție folosite (Model / Type / Discipline devin search sets); CSV / Excel, un rând pe test, de editat și reimportat. Testele cu același nume se actualizează, rezultatele rămân.
+- **Clash Matrix pe teste**: Selection A pe rânduri, Selection B pe coloane, în fiecare celulă testele perechii cu stările lor (Open, Total, New, Active, Reviewed, Approved, Resolved); click pe celulă deschide testul. Excel: foaia Matrix, câte o foaie pe stare și lista testelor. **Matricea de seturi**: bifezi perechile și se creează testele.
+- **Date pe obiecte ca în Navisworks**: în Properties, butonul **Custom** › Add / Delete / Rename User Data Tab și Insert New Property; proprietățile și valorile se editează direct în tabel și se scriu pe toate elementele selectate (și pe geometrie fără date: STEP, DWG, OBJ). Se salvează în proiect și apar în Find, Profiler, Model Checker și exportul IFC.
+- **Import proprietăți din Excel / CSV**: alegi coloana cheie și după ce se potrivește (GlobalId, Name sau orice proprietate); fiecare altă coloană devine o proprietate. **Export Properties** face șablonul Excel (un rând pe element, cu cheia) de completat și reimportat.
+- Grupul **Data** din ribbon: Add Property, Import Properties, Export Properties, Sets ⏷ și Schedule ⏷ (meniuri în locul butoanelor duble).
+- **Draw Path reparat**: traseul nu mai urcă metri deasupra podelei între puncte la înălțimi diferite (curba e lină doar în plan).
+- Bara din vederea 3D are lățime fixă: butoanele nu se mai mută sub mouse când treci în Walk; Path și Play sunt mereu pe bară.
+- **Fereastră separată Animations** (Render › Animations), despărțită de Render / Materials: lista animațiilor cu **▶ Play pe fiecare** (Record, Orbit 360°, Viewpoints, Walk path, 4D), playerul (început, keyframe anterior, înapoi, pauză, stop, play, keyframe următor, sfârșit, bara de timp, Loop, Ping-pong) și **Export video** cu rezumatul a ce se exportă. Editarea keyframe-urilor și animația obiectelor (culoare, transparență, vizibilitate) sunt ascunse sub „Edit keyframes (advanced)”.
+- **Import 4D**: secvența de construcție din TimeLiner devine animație (~1 s pe săptămână de șantier, din vederea curentă); fără planificare, întâi se alege fișierul (CSV, MS Project XML, Primavera P6 XML).
+- **4D reparat**: sarcinile TimeLiner importate înainte ca modelele să se încarce (ex. proiectul demo) se leagă acum automat de elemente - simularea 4D arată din nou construcția.
+- **Record**: înregistrează navigarea în timp real ca animație nouă.
+- **Render with materials**: videoclipul se exportă în stilul Realistic (materiale, texturi, reflexii, umbre), iar vederea revine apoi la stilul tău.
+- Render: tab-ul Image (setări și Render Image) + Materials.
+- Sursa **bimc-convert** (`src/bin/bimc_convert.rs`) e acum în proiect: proiectul se compilează pe orice calculator și pe GitHub Actions.
+
 ## 0.24.0 - 2026-11-20
 - **Compare pe parametri**: lista parametrilor schimbați între două versiuni ale modelului, cu numărul de elemente; click pe un parametru = selectează elementele și arată valoarea veche → nouă. Raport CSV (GUID, element, tip, parametru, vechi, nou).
 - **Verificări rapide fără IDS** (Model Checker › ⚡ Quick checks): elemente fără nivel, fără nume, fără clasificare, fără material, fără geometrie, geometrie degenerată, duplicate (același tip și aceeași geometrie în același loc), GUID dublat. Select pe fiecare verificare și raport CSV.

@@ -15,6 +15,7 @@ pub enum Panel {
     Measure,
     Coords,
     Render,
+    Animation,
     Project,
     Profiler,
     Compare,
@@ -22,7 +23,7 @@ pub enum Panel {
     Check,
 }
 
-pub const ALL_PANELS: [Panel; 17] = [
+pub const ALL_PANELS: [Panel; 18] = [
     Panel::Tree,
     Panel::PropTree,
     Panel::Sets,
@@ -35,6 +36,7 @@ pub const ALL_PANELS: [Panel; 17] = [
     Panel::Measure,
     Panel::Coords,
     Panel::Render,
+    Panel::Animation,
     Panel::Project,
     Panel::Profiler,
     Panel::Compare,
@@ -61,6 +63,7 @@ impl Panel {
             Panel::Measure => "📏 Measure",
             Panel::Coords => "📐 Coordinates",
             Panel::Render => "🎬 Render",
+            Panel::Animation => "🎬 Animations",
             Panel::Project => "📁 Project",
             Panel::Profiler => "🎨 Appearance Profiler",
             Panel::Compare => "⚖ Compare",
@@ -86,6 +89,7 @@ impl Panel {
             Panel::Measure => "Measure",
             Panel::Coords => "Coordinates",
             Panel::Render => "Render",
+            Panel::Animation => "Animations",
             Panel::Project => "Project",
             Panel::Profiler => "Profiler",
             Panel::Compare => "Compare",
@@ -157,7 +161,7 @@ impl Default for UiLayout {
     fn default() -> Self {
         UiLayout {
             // panourile noi pornesc inchise (se deschid din ribbon), ca sa nu aglomereze zona de jos
-            panels: ALL_PANELS.iter().map(|&p| PanelState { panel: p, dock: p.default_dock(), open: !matches!(p, Panel::Profiler | Panel::Compare | Panel::Quantities | Panel::Check) }).collect(),
+            panels: ALL_PANELS.iter().map(|&p| PanelState { panel: p, dock: p.default_dock(), open: !matches!(p, Panel::Profiler | Panel::Compare | Panel::Quantities | Panel::Check | Panel::Animation) }).collect(),
             active: [Some(Panel::Tree), Some(Panel::Properties), Some(Panel::Find)],
             autohide: [false; 3],
             hide_all: false,

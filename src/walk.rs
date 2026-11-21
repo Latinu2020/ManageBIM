@@ -140,7 +140,7 @@ impl PathRun {
             yaw_prev = Some(y);
             keys.push(Keyframe { t: d / speed, cam: Camera { eye: (p + Vec3::Z * eye_h).into(), yaw: y, pitch: -0.05, focus: 3.0, fov_deg, ortho: false } });
         }
-        Animation { name, keys, sim_4d: false, ease: false }
+        Animation { name, keys, sim_4d: false, ease: false, sets: Vec::new(), kind: crate::anim::AnimKind::WalkPath }
     }
 }
 
@@ -164,9 +164,23 @@ pub fn densify(ctrl: &[Vec3], step: f32) -> Vec<Vec3> {
         for k in 1..=n {
             let u = k as f32 / n as f32;
             let (u2, u3) = (u * u, u * u * u);
-            let q = 0.5 * ((2.0 * p1) + (-p0 + p2) * u + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * u2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * u3);
+            let mut q = 0.5 * ((2.0 * p1) + (-p0 + p2) * u + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * u2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * u3);
+            // inaltimea: liniar intre puncte (curba doar in plan) - altfel traseul "sare" metri peste podea
+            // cand punctele sunt la inaltimi diferite (scari, rampe, alt nivel)
+            q.z = p1.z + (p2.z - p1.z) * u;
             out.push(q);
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn path_stays_on_the_floor() {
+        use glam::Vec3;
+        let pts = [Vec3::new(0.0, 0.0, 0.0), Vec3::new(5.0, 0.0, 3.0), Vec3::new(10.0, 2.0, 3.0), Vec3::new(12.0, 8.0, 0.0)];
+        let d = super::densify(&pts, 0.25);
+        assert!(d.iter().all(|p| p.z >= -1e-4 && p.z <= 3.0 + 1e-4));
+    }
 }

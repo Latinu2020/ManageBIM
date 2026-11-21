@@ -728,7 +728,7 @@ fn user_params_apply_replace_and_remove() {
     let raw = bimrust::load_any("tests/data/wall_opening.ifc", &|_, _| {}).expect("ifc");
     let mut m = bimrust::model::Model::from_raw(raw, "wall.ifc".into(), "tests/data/wall_opening.ifc".into(), glam::DVec3::ZERO);
     let k0 = user_key(&m.elements[0], 0);
-    let p = |name: &str, value: &str| UserParam { model: "wall.ifc".into(), key: k0.clone(), name: name.into(), value: value.into() };
+    let p = |name: &str, value: &str| UserParam { model: "wall.ifc".into(), key: k0.clone(), name: name.into(), value: value.into(), group: "User".into() };
     apply_user_params(&mut m, &[p("Status", "Approved"), p("Zone", "Z1"), UserParam { model: "other.ifc".into(), ..p("Status", "x") }]);
     let user: Vec<(String, String)> = m.elements[0].props.iter().filter(|q| q.group == "User").map(|q| (q.name.clone(), q.value.clone())).collect();
     assert_eq!(user, vec![("Status".to_string(), "Approved".to_string()), ("Zone".to_string(), "Z1".to_string())]);

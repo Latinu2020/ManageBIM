@@ -512,6 +512,9 @@ pub struct ClashTest {
     /// pragurile de gravitate (mm): sub primul = Minor, intre = Major, peste al doilea = Critical
     #[serde(default = "sev_default")]
     pub sev_mm: [f32; 2],
+    /// amprenta configuratiei la ultima rulare (Status Old cand s-a schimbat ceva de atunci)
+    #[serde(default)]
+    pub run_key: u64,
 }
 
 fn sev_default() -> [f32; 2] {
@@ -616,6 +619,7 @@ impl ClashTest {
             last_run: String::new(),
             rules: ClashRules::default(),
             sev_mm: sev_default(),
+            run_key: 0,
         }
     }
     pub fn count(&self, s: ClashStatus) -> usize {
@@ -951,6 +955,10 @@ pub enum Purpose {
     ImportGridsCad,
     ExportReference,
     ExportClashMatrix,
+    ImportClashTests,
+    ImportUserProps,
+    ExportUserProps,
+    ExportClashTestsCsv,
     ExportWeb,
     ExportAsBuilt,
     ExportSectionCad,
@@ -1038,6 +1046,8 @@ pub struct RenderJob {
     pub waiting: bool,
     pub started: Instant,
     pub saved_sel: BTreeSet<ElemId>,
+    /// Render with materials: stilul vederii si materialele de dinainte (refacute la final)
+    pub saved_style: Option<(crate::render::VisualStyle, bool)>,
 }
 
 pub enum Action {
@@ -1235,6 +1245,18 @@ pub struct App {
     pub anim_play: Option<f32>,
     pub anim_time: f32,
     pub anim_loop: bool,
+    /// ping-pong (P.P. in Navisworks): la capat, animatia merge inapoi
+    pub anim_pp: bool,
+    /// Import 4D: dupa importul planificarii se creeaza animatia 4D
+    pub anim_4d_pending: bool,
+    /// un model s-a incarcat: sarcinile TimeLiner fara elemente se leaga din nou
+    pub relink_tasks: bool,
+    /// directia redarii: 1 inainte, -1 inapoi
+    pub anim_dir: f32,
+    /// starea obiectelor animate la timpul curent: element -> (culoare rgba, vizibil)
+    pub anim_obj: HashMap<ElemId, ([u8; 4], bool)>,
+    /// Record: inregistrarea navigarii in timp real (inceput, keyframe-uri)
+    pub anim_rec: Option<(Instant, Vec<crate::anim::Keyframe>)>,
     pub anim_sim_active: bool,
     pub render_job: Option<RenderJob>,
     pub still_path: Option<String>,
@@ -1258,6 +1280,10 @@ pub struct App {
     pub theme_dirty: bool,
     pub last_mode: (bool, bool),
     pub clash_queue: Vec<usize>,
+    /// Update All: starile dinainte (pentru sumar) si sumarul de la final
+    pub update_all_before: Option<Vec<(String, [usize; 5])>>,
+    pub update_summary: Option<crate::clash_io::UpdateSummary>,
+    pub update_all_cur: Option<usize>,
     /// camera before the first clash was focused - restored when leaving Clash Detective
     pub cam_before_clash: Option<Camera>,
     pub home: Option<Camera>,
@@ -1321,6 +1347,15 @@ pub struct App {
     /// parametrii adaugati de utilizator (salvati in proiect) si campurile din panoul Properties
     pub user_params: Vec<UserParam>,
     pub up_name: String,
+    pub prop_import: Option<PropImport>,
+    /// (tab, proprietate) scrise vreodata in aceasta sesiune - se sterg corect dupa redenumire / stergere
+    pub user_applied: HashSet<(String, String)>,
+    /// tab-ul de date utilizator afisat / editat in Properties
+    pub user_tab: String,
+    /// tab-uri goale create cu Add User Data Tab (inca fara proprietati)
+    pub user_tabs_new: Vec<String>,
+    /// redenumirea tab-ului curent (textul din campul de editare)
+    pub user_tab_rename: Option<String>,
     pub up_value: String,
     pub compare_param_pick: Option<String>,
     pub compare_on: bool,
@@ -1486,6 +1521,12 @@ impl App {
             cur_anim: 0,
             render: RenderSettings::default(),
             anim_play: None,
+            anim_pp: false,
+            anim_4d_pending: false,
+            relink_tasks: false,
+            anim_dir: 1.0,
+            anim_obj: HashMap::new(),
+            anim_rec: None,
             anim_time: 0.0,
             anim_loop: false,
             anim_sim_active: false,
@@ -1511,6 +1552,9 @@ impl App {
             theme_dirty: true,
             last_mode: (false, false),
             clash_queue: Vec::new(),
+            update_all_before: None,
+            update_summary: None,
+            update_all_cur: None,
             cam_before_clash: None,
             home: None,
             active_vp: None,
@@ -1553,6 +1597,11 @@ impl App {
             profile_legend: true,
             user_params: Vec::new(),
             up_name: String::new(),
+            prop_import: None,
+            user_applied: HashSet::new(),
+            user_tab: String::new(),
+            user_tabs_new: Vec::new(),
+            user_tab_rename: None,
             up_value: String::new(),
             compare_param_pick: None,
             compare_on: false,
@@ -3000,6 +3049,7 @@ impl App {
                         self.log.push(format!("{}: {w}", m.name));
                     }
                     self.models[job.slot] = Some(m);
+                    self.relink_tasks = true;
                     self.apply_transform(job.slot);
                     if first && self.pending_project.is_none() {
                         let bb = self.scene_aabb();
@@ -3028,6 +3078,23 @@ impl App {
             for p in std::mem::take(&mut self.pending_csv) {
                 self.import_tasks_csv(&p);
             }
+            // modele noi incarcate: sarcinile 4D importate inainte (fara elemente) se leaga acum
+            if std::mem::take(&mut self.relink_tasks) {
+                let mut n = 0;
+                for i in 0..self.tasks.len() {
+                    if self.tasks[i].elems.is_empty() && !self.tasks[i].rule.trim().is_empty() {
+                        let e = self.rule_elems(&self.tasks[i].rule.clone());
+                        if !e.is_empty() {
+                            self.tasks[i].elems = e;
+                            n += 1;
+                        }
+                    }
+                }
+                if n > 0 {
+                    self.invalidate_sim();
+                    self.log.push(format!("TimeLiner: {n} tasks linked to the loaded models."));
+                }
+            }
         }
         // clash
         if let Some(job) = &self.clash_job {
@@ -3046,14 +3113,11 @@ impl App {
                 self.clash_job = None;
                 if cancelled {
                     self.clash_queue.clear();
+                    self.update_all_before = None;
                     self.toast("Clash test cancelled.");
                 } else {
                     self.merge_clash(t, found, secs);
-                    if !self.clash_queue.is_empty() {
-                        let n = self.clash_queue.remove(0);
-                        self.cur_test = n;
-                        self.run_clash(n);
-                    }
+                    self.clash_queue_next();
                 }
             }
         }
@@ -3210,6 +3274,7 @@ impl App {
         }
         test.results = out;
         test.last_run = now;
+        test.run_key = crate::clash_io::run_key(&test_cfg);
         let name = test.name.clone();
         self.cur_result = None;
         self.sel_results.clear();
@@ -3692,6 +3757,7 @@ impl App {
         let empty_p: HashMap<ElemId, u16> = HashMap::new();
         let matmap = if self.materials_on { self.mat_cache.as_ref().unwrap_or(&empty) } else { &empty };
         let (hidden_set, overrides, sim_cache, selected, materials) = (&self.hidden, &self.overrides, &self.sim_cache, &self.selected, &self.materials);
+        let anim_obj = &self.anim_obj;
         let (pmap, prules, punmatched) = (self.profile_map.as_ref().unwrap_or(&empty_p), &self.profile.rules, self.profile.unmatched);
         let cmp = self.compare.as_ref().filter(|_| self.compare_on);
         // aspectul unui element: override manual > profil > material; simularea 4D si clash-ul au prioritate
@@ -3722,6 +3788,14 @@ impl App {
                     Some(SimState::Hidden) => hidden = true,
                     Some(SimState::Highlight(c)) => ovr = Some(*c),
                     _ => {}
+                }
+            }
+            // Animator: culoarea / transparenta / vizibilitatea seturilor animate
+            if let Some((c, vis)) = anim_obj.get(&id) {
+                if !*vis {
+                    hidden = true;
+                } else {
+                    ovr = Some(*c);
                 }
             }
             if ghost {
@@ -4240,6 +4314,11 @@ impl App {
     /// sau categoria / proprietatea din model), seturile explicite -> Item / GUID = ... (SAU intre ele).
     /// Intoarce (xml, avertismente).
     pub fn navis_selectionsets_xml(&self) -> (String, Vec<String>) {
+        self.navis_selectionsets_xml_with(&[])
+    }
+
+    /// ca `navis_selectionsets_xml`, plus seturile `extra` (ex. cele generate din selectiile testelor de clash)
+    pub fn navis_selectionsets_xml_with(&self, extra: &[SelSet]) -> (String, Vec<String>) {
         use crate::markup::esc;
         let mut warn = Vec::new();
         let cond = |cat: &str, prop: &str, test: &str, value: &str, or: bool| -> String {
@@ -4257,7 +4336,7 @@ impl App {
             format!("<condition test=\"{test}\" flags=\"{flags}\"><category><name{ci}>{}</name></category><property><name{pi}>{}</name></property><value>{val}</value></condition>", esc(cat), esc(prop))
         };
         let mut s = String::from("<selectionsets>\n");
-        for set in &self.sets {
+        for set in self.sets.iter().chain(extra.iter().filter(|x| !self.sets.iter().any(|y| y.name == x.name))) {
             let mut conds = String::new();
             match &set.kind {
                 SetKind::Search(rules) => {
@@ -4335,41 +4414,7 @@ impl App {
 
     /// Testele de clash (+ seturile folosite) -> XML Navisworks (Clash Detective > Import Clash Tests).
     pub fn export_navis_clash(&mut self, path: &str) {
-        use crate::markup::esc;
-        if self.clash_tests.is_empty() {
-            return self.error("No clash tests to export.");
-        }
-        let locator = |s: &Selector| -> String {
-            match s.kind {
-                SelKind::Set => format!("lcop_selection_set_tree/{}", s.value),
-                SelKind::Model => format!("/{}", s.value),
-                _ => "/".to_string(),
-            }
-        };
-        let mut tests = String::new();
-        for t in &self.clash_tests {
-            let ty = match t.ty {
-                ClashType::Hard => "hard",
-                ClashType::Clearance => "clearance",
-                ClashType::Duplicates => "duplicate",
-            };
-            let side = |tag: &str, s: &Selector| format!("<{tag}><clashselection selfintersect=\"0\" primtypes=\"1\"><locator>{}</locator></clashselection></{tag}>", esc(&locator(s)));
-            tests.push_str(&format!(
-                "<clashtest name=\"{}\" guid=\"{}\" test_type=\"{ty}\" status=\"new\" tolerance=\"{:.6}\" merge_composites=\"0\"><linkage mode=\"none\"/>{}{}</clashtest>\n",
-                esc(&t.name),
-                crate::markup::new_guid(),
-                t.tol_mm as f64 / 1000.0,
-                side("left", &t.a),
-                side("right", &t.b)
-            ));
-        }
-        let (sets, _) = self.navis_selectionsets_xml();
-        let path = if path.to_lowercase().ends_with(".xml") { path.to_string() } else { format!("{path}.xml") };
-        let x = format!("{}<batchtest name=\"ManageBIM\" internal_name=\"ManageBIM\" units=\"m\"><clashtests>\n{tests}</clashtests>\n{sets}</batchtest>\n</exchange>\n", Self::NW_HEAD);
-        match std::fs::write(&path, x) {
-            Ok(()) => self.toast(format!("{} clash tests exported for Navisworks: {} - in Navisworks: Clash Detective > Import / Export > Import Clash Tests.", self.clash_tests.len(), crate::file_name(&path))),
-            Err(e) => self.error(format!("Cannot write {path}: {e}")),
-        }
+        self.export_clash_tests_xml(path);
     }
 
     /// Rezultatele unui test de clash ca "vederi": camera izometrica pe clash, cutia celor doua elemente
@@ -4832,8 +4877,12 @@ impl App {
         let name = format!("Walk path {}", self.animations.len() + 1);
         let a = r.to_animation(name.clone(), self.settings.walk_speed, self.settings.eye_height, self.cam.fov_deg);
         let secs = a.duration();
+        self.stop_anim();
         self.animations.push(a);
-        self.toast(format!("Animation \"{name}\" created ({:.0} m, {:.0} s) - see Render > Animator.", r.length(), secs));
+        self.cur_anim = self.animations.len() - 1;
+        self.anim_time = 0.0;
+        self.open_panel(crate::layout::Panel::Animation);
+        self.toast(format!("Animation \"{name}\" created ({:.0} m, {:.0} s) - press ▶ in Animations to play it.", r.length(), secs));
     }
 
     pub fn gravity_tick(&mut self, dt: f32) {
@@ -5158,19 +5207,64 @@ impl App {
             self.cam = c;
         }
         self.sim_sync(self.cur_anim, t);
+        self.anim_objects(self.cur_anim, t);
     }
 
-    /// Real-time preview in the viewport.
+    /// Elementele unui set animat.
+    pub fn anim_set_items(&self, s: &crate::anim::AnimSet) -> Vec<ElemId> {
+        if !s.items.is_empty() {
+            return s.items.clone();
+        }
+        self.resolve_selector(&s.target)
+    }
+
+    /// Aplica starea seturilor de obiecte animate la timpul t (culoare, transparenta, vizibilitate).
+    pub fn anim_objects(&mut self, anim: usize, t: f32) {
+        let mut map: HashMap<ElemId, ([u8; 4], bool)> = HashMap::new();
+        if let Some(a) = self.animations.get(anim) {
+            for s in a.sets.iter().filter(|s| s.enabled) {
+                let Some(k) = s.sample(t) else { continue };
+                for id in self.anim_set_items(s) {
+                    let base = self.elem(id).map(|(m, e)| m.tri_color.get(e.tri_start as usize).copied().unwrap_or([200, 200, 200, 255])).unwrap_or([200, 200, 200, 255]);
+                    let c = k.color.unwrap_or([base[0], base[1], base[2]]);
+                    let alpha = ((1.0 - k.transparency.clamp(0.0, 1.0)) * base[3] as f32) as u8;
+                    // complet transparent = ascuns
+                    map.insert(id, ([c[0], c[1], c[2], alpha], k.visible && alpha > 2));
+                }
+            }
+        }
+        if map != self.anim_obj {
+            self.anim_obj = map;
+            self.colors_dirty = true;
+        }
+    }
+
+    /// Real-time preview in the viewport (si Record).
     pub fn anim_tick(&mut self, dt: f32) {
+        // Record: un keyframe la fiecare 0,2 s cand camera s-a miscat
+        if let Some((start, keys)) = &mut self.anim_rec {
+            let t = start.elapsed().as_secs_f32();
+            let moved = keys.last().map_or(true, |k| {
+                let (a, b) = (k.cam, self.cam);
+                (a.eye() - b.eye()).length() > 1e-3 || (a.yaw - b.yaw).abs() > 1e-4 || (a.pitch - b.pitch).abs() > 1e-4 || (a.fov_deg - b.fov_deg).abs() > 1e-3
+            });
+            if keys.last().map_or(true, |k| t - k.t >= 0.2) && moved {
+                keys.push(crate::anim::Keyframe { t, cam: self.cam });
+            }
+        }
         let Some(t) = self.anim_play else { return };
         let dur = self.animations.get(self.cur_anim).map(|a| a.duration()).unwrap_or(0.0);
-        let mut t = t + dt;
-        if t > dur {
-            if self.anim_loop && dur > 0.0 {
-                t = 0.0;
+        let mut t = t + dt * self.anim_dir;
+        if t > dur || t < 0.0 {
+            if self.anim_pp && dur > 0.0 {
+                // ping-pong: schimba directia
+                self.anim_dir = -self.anim_dir;
+                t = t.clamp(0.0, dur);
+            } else if self.anim_loop && dur > 0.0 {
+                t = if self.anim_dir > 0.0 { 0.0 } else { dur };
             } else {
                 self.anim_play = None;
-                self.goto_anim_time(dur);
+                self.goto_anim_time(t.clamp(0.0, dur));
                 return;
             }
         }
@@ -5178,10 +5272,119 @@ impl App {
         self.goto_anim_time(t);
     }
 
+    /// Redare inainte (dir 1) sau inapoi (dir -1) de la timpul curent.
+    pub fn play_anim(&mut self, dir: f32) {
+        let dur = self.animations.get(self.cur_anim).map(|a| a.duration()).unwrap_or(0.0);
+        if dur <= 0.0 {
+            return;
+        }
+        self.anim_dir = dir;
+        let mut t = self.anim_time;
+        if dir > 0.0 && t >= dur - 1e-3 {
+            t = 0.0;
+        } else if dir < 0.0 && t <= 1e-3 {
+            t = dur;
+        }
+        self.anim_play = Some(t);
+    }
+
+    /// Pas la keyframe-ul urmator (dir 1) sau anterior (dir -1).
+    pub fn step_anim(&mut self, dir: i32) {
+        let Some(a) = self.animations.get(self.cur_anim) else { return };
+        let ts = a.key_times();
+        let now = self.anim_time;
+        let t = if dir > 0 { ts.iter().copied().find(|x| *x > now + 1e-3) } else { ts.iter().rev().copied().find(|x| *x < now - 1e-3) };
+        if let Some(t) = t {
+            self.anim_play = None;
+            self.goto_anim_time(t);
+        }
+    }
+
+    /// Record (Navisworks Animation > Record): porneste / opreste inregistrarea navigarii; la oprire
+    /// devine o animatie noua.
+    pub fn toggle_record(&mut self) {
+        match self.anim_rec.take() {
+            None => {
+                self.stop_anim();
+                self.anim_rec = Some((Instant::now(), vec![crate::anim::Keyframe { t: 0.0, cam: self.cam }]));
+                self.toast("Recording: navigate in the 3D view (orbit, walk, zoom). Press Record again to stop.");
+            }
+            Some((start, mut keys)) => {
+                let t = start.elapsed().as_secs_f32();
+                if keys.last().map_or(true, |k| t - k.t > 0.05) {
+                    keys.push(crate::anim::Keyframe { t, cam: self.cam });
+                }
+                if keys.len() < 2 || t < 0.3 {
+                    return self.toast("Recording stopped - nothing recorded (move the camera while recording).");
+                }
+                let n = self.animations.iter().filter(|a| a.name.starts_with("Recording")).count() + 1;
+                let mut a = crate::anim::Animation::new(format!("Recording {n}"));
+                a.ease = false;
+                a.kind = crate::anim::AnimKind::Recording;
+                a.keys = keys;
+                self.animations.push(a);
+                self.cur_anim = self.animations.len() - 1;
+                self.anim_time = 0.0;
+                self.toast(format!("Recording saved: {:.1} s, {} keyframes.", t, self.animations[self.cur_anim].keys.len()));
+            }
+        }
+    }
+
+    /// Animatie prin toate viewpoint-urile salvate, in ordine.
+    pub fn anim_from_viewpoints(&mut self) {
+        if self.viewpoints.is_empty() {
+            return self.error("Save some viewpoints first (Viewpoint › Save View).");
+        }
+        let mut a = crate::anim::Animation::new(format!("Walkthrough {}", self.animations.len() + 1));
+        a.kind = crate::anim::AnimKind::Viewpoints;
+        for (i, v) in self.viewpoints.iter().enumerate() {
+            a.keys.push(crate::anim::Keyframe { t: i as f32 * self.key_step, cam: v.cam });
+        }
+        if a.keys.len() == 1 {
+            // un singur viewpoint: camera sta pe loc cat un pas
+            let k = a.keys[0];
+            a.keys.push(crate::anim::Keyframe { t: self.key_step, cam: k.cam });
+        }
+        self.stop_anim();
+        self.animations.push(a);
+        self.cur_anim = self.animations.len() - 1;
+        self.anim_time = 0.0;
+    }
+
+    /// Import 4D: secventa de constructie din TimeLiner ca animatie (camera = vederea curenta). Fara
+    /// planificare, intai se importa una (CSV, MS Project, Primavera P6).
+    pub fn import_4d_animation(&mut self) {
+        let Some((s, e)) = self.sim_range() else {
+            self.anim_4d_pending = true;
+            self.toast("Choose the construction schedule (CSV, MS Project XML or Primavera P6 XML) - the 4D animation is created from it.");
+            return self.request_path(Purpose::ImportTasksCsv);
+        };
+        // ~1 s pe saptamana de santier, intre 10 s si 60 s
+        let weeks = ((e - s + 1).max(1) as f32) / 7.0;
+        let dur = weeks.clamp(10.0, 60.0);
+        let mut a = crate::anim::Animation::new(format!("4D sequence {}", self.animations.iter().filter(|a| a.kind == crate::anim::AnimKind::FourD).count() + 1));
+        a.kind = crate::anim::AnimKind::FourD;
+        a.sim_4d = true;
+        a.ease = false;
+        a.keys.push(crate::anim::Keyframe { t: 0.0, cam: self.cam });
+        a.keys.push(crate::anim::Keyframe { t: dur, cam: self.cam });
+        self.stop_anim();
+        self.animations.push(a);
+        self.cur_anim = self.animations.len() - 1;
+        self.anim_time = 0.0;
+        self.open_panel(crate::layout::Panel::Animation);
+        self.toast(format!("4D animation created: {} tasks over {:.0} s, seen from the current view. Press ▶ to play it.", self.tasks.len(), dur));
+    }
+
     pub fn stop_anim(&mut self) {
         self.anim_play = None;
+        self.anim_dir = 1.0;
         if self.anim_sim_active {
             self.anim_sim_active = false;
+            self.colors_dirty = true;
+        }
+        if !self.anim_obj.is_empty() {
+            self.anim_obj.clear();
             self.colors_dirty = true;
         }
     }
@@ -5201,8 +5404,8 @@ impl App {
             return;
         }
         let Some(anim) = self.animations.get(self.cur_anim) else { return self.error("Create an animation first.") };
-        if anim.keys.len() < 2 {
-            return self.error("The animation needs at least two keyframes.");
+        if anim.keys.is_empty() || anim.duration() <= 0.0 {
+            return self.error("This animation is empty - record, orbit or capture at least two keyframes.");
         }
         let fmt = self.render.format;
         if fmt == VideoFormat::Mp4 && !self.ffmpeg.unwrap_or(false) {
@@ -5243,7 +5446,20 @@ impl App {
         self.stop_anim();
         let saved_sel = std::mem::take(&mut self.selected);
         self.colors_dirty = true;
-        self.render_job = Some(RenderJob { anim: self.cur_anim, frame: 0, frames, fps, ss, w: w * ss, h: h * ss, tx: Some(tx), done: drx, path, waiting: false, started: Instant::now(), saved_sel });
+        // Render with materials: video in stilul Realistic (materiale, texturi, umbre); vederea revine la final
+        let saved_style = if self.render.with_materials {
+            let prev = (self.settings.visual_style, self.materials_on);
+            self.settings.visual_style = crate::render::VisualStyle::Realistic;
+            if self.mat_assign.is_empty() && self.loaded_models().next().is_some() {
+                self.auto_materials();
+            }
+            self.materials_on = true;
+            self.materials_changed();
+            Some(prev)
+        } else {
+            None
+        };
+        self.render_job = Some(RenderJob { anim: self.cur_anim, frame: 0, frames, fps, ss, w: w * ss, h: h * ss, tx: Some(tx), done: drx, path, waiting: false, started: Instant::now(), saved_sel, saved_style });
     }
 
     /// Ce se scrie pe imaginile / cadrele exportate: (titlu, randuri culoare + text, jos).
@@ -5337,6 +5553,11 @@ impl App {
             if let Ok(r) = res {
                 let j = self.render_job.take().unwrap();
                 self.selected = j.saved_sel;
+                if let Some((style, mat)) = j.saved_style {
+                    self.settings.visual_style = style;
+                    self.materials_on = mat;
+                    self.materials_changed();
+                }
                 self.anim_sim_active = false;
                 self.colors_dirty = true;
                 match r {
@@ -5357,6 +5578,7 @@ impl App {
             }
             self.anim_time = t;
             self.sim_sync(anim, t);
+            self.anim_objects(anim, t);
             self.pending_capture = Some((w, h));
             if let Some(j) = self.render_job.as_mut() {
                 j.waiting = true;
@@ -5478,7 +5700,11 @@ impl App {
             Purpose::ExportGrids => self.export_grids(&path),
             Purpose::ImportGridsCad => self.import_grids_cad(&path, None),
             Purpose::ExportReference => self.export_reference(&path),
-            Purpose::ExportClashMatrix => self.export_clash_matrix(&path),
+            Purpose::ExportClashMatrix => self.export_test_matrix(&path),
+            Purpose::ImportClashTests => self.import_clash_tests(&path),
+            Purpose::ImportUserProps => self.open_prop_import(&path),
+            Purpose::ExportUserProps => self.export_user_props(&path),
+            Purpose::ExportClashTestsCsv => self.export_clash_tests_csv(&path),
             Purpose::ExportWeb => self.export_web(&path),
             Purpose::ExportAsBuilt => self.export_asbuilt_xlsx(&path),
             Purpose::ExportSectionCad => self.export_section_cad(&path),
@@ -5496,7 +5722,12 @@ impl App {
             }
             Purpose::ExportClashNavis => self.export_clash_navis(&path),
             Purpose::ImportBcf => self.import_bcf(&path),
-            Purpose::ImportTasksCsv => self.import_tasks_csv(&path),
+            Purpose::ImportTasksCsv => {
+                self.import_tasks_csv(&path);
+                if std::mem::take(&mut self.anim_4d_pending) && !self.tasks.is_empty() {
+                    self.import_4d_animation();
+                }
+            }
             Purpose::ExportTasksCsv => {
                 let c = self.export_tasks_csv();
                 write(self, c, "Schedule CSV");
@@ -5767,6 +5998,10 @@ impl App {
                     d.set_title("Reference for Revit / AutoCAD / Plant 3D").add_filter("ManageBIM reference", &["mbref"]).set_directory(dir).set_file_name(format!("{name}.mbref")).save_file().map(|p| vec![p.to_string_lossy().to_string()])
                 }
                 Purpose::ExportClashMatrix => d.set_title("Clash matrix (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("clash_matrix.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ImportUserProps => d.set_title("Import properties onto elements").add_filter("Excel / CSV", &["xlsx", "csv", "txt"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportUserProps => d.set_title("Export properties (Excel template)").add_filter("Excel workbook", &["xlsx"]).set_file_name("properties.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ImportClashTests => d.set_title("Import Clash Tests").add_filter("Clash tests (Navisworks XML, CSV, Excel)", &["xml", "csv", "xlsx"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportClashTestsCsv => d.set_title("Export Clash Tests (CSV)").add_filter("CSV", &["csv"]).set_file_name("clash_tests.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportWeb => d.set_title("Web viewer (HTML)").add_filter("Web page", &["html"]).set_file_name("model.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportAsBuilt => d.set_title("As-built report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("as_built.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportSectionCad => d.set_title("Section cut (DWG / DXF)").add_filter("AutoCAD DWG (2018)", &["dwg"]).add_filter("DXF", &["dxf"]).set_file_name("section.dwg").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -5871,6 +6106,10 @@ impl App {
                 Purpose::ImportGridsCad => String::new(),
                 Purpose::ExportReference => "reference.mbref".into(),
                 Purpose::ExportClashMatrix => "clash_matrix.xlsx".into(),
+                Purpose::ImportClashTests => "clash_tests.xml".into(),
+                Purpose::ImportUserProps => String::new(),
+                Purpose::ExportUserProps => "properties.xlsx".into(),
+                Purpose::ExportClashTestsCsv => "clash_tests.csv".into(),
                 Purpose::ExportWeb => "model.html".into(),
                 Purpose::ExportAsBuilt => "as_built.xlsx".into(),
                 Purpose::ExportSectionCad => "section.dwg".into(),
@@ -8189,20 +8428,52 @@ pub struct UserParam {
     pub key: String,
     pub name: String,
     pub value: String,
+    /// tab-ul de date utilizator (Navisworks: User Data Tab); proiectele vechi: "User"
+    #[serde(default = "user_group_default")]
+    pub group: String,
 }
 
-/// grupul proprietatilor adaugate de utilizator
+fn user_group_default() -> String {
+    USER_GROUP.to_string()
+}
+
+/// grupul implicit al proprietatilor adaugate de utilizator (proiectele vechi)
 pub const USER_GROUP: &str = "User";
+
+/// Import de proprietati din Excel / CSV: fisierul citit si alegerile din fereastra de import.
+#[derive(Clone, Debug, Default)]
+pub struct PropImport {
+    pub path: String,
+    pub rows: Vec<Vec<String>>,
+    /// randul de antet
+    pub header: usize,
+    /// coloana cu cheia elementului
+    pub key_col: usize,
+    /// cum se potriveste cheia: "GlobalId", "Name" sau numele unei proprietati
+    pub match_by: String,
+    /// tab-ul in care se scriu proprietatile
+    pub tab: String,
+    /// doar elementele selectate
+    pub only_selected: bool,
+}
 
 /// cheia unui element: GUID-ul sau "#index" cand nu are GUID
 pub fn user_key(e: &Element, idx: usize) -> String {
     if e.guid.trim().is_empty() { format!("#{idx}") } else { e.guid.clone() }
 }
 
-/// Scrie parametrii utilizatorului in proprietatile modelului (grupul "User" se reface de la zero).
+/// Scrie parametrii utilizatorului in proprietatile modelului (tab-urile utilizatorului se refac de la zero).
 pub fn apply_user_params(m: &mut Model, params: &[UserParam]) {
+    apply_user_params_ext(m, params, &HashSet::new());
+}
+
+/// ca `apply_user_params`; `stale` = perechi (tab, proprietate) aplicate anterior (redenumite / sterse) care trebuie scoase.
+pub fn apply_user_params_ext(m: &mut Model, params: &[UserParam], stale: &HashSet<(String, String)>) {
     let mine: Vec<&UserParam> = params.iter().filter(|p| p.model == m.name).collect();
-    let had = m.elements.iter().any(|e| e.props.iter().any(|p| p.group == USER_GROUP));
+    let mut strip: HashSet<(String, String)> = params.iter().map(|p| (p.group.clone(), p.name.to_lowercase())).collect();
+    strip.extend(stale.iter().map(|(g, n)| (g.clone(), n.to_lowercase())));
+    let is_user = |p: &crate::model::Prop| p.group == USER_GROUP || strip.contains(&(p.group.clone(), p.name.to_lowercase()));
+    let had = m.elements.iter().any(|e| e.props.iter().any(|p| is_user(p)));
     if mine.is_empty() && !had {
         return;
     }
@@ -8211,14 +8482,19 @@ pub fn apply_user_params(m: &mut Model, params: &[UserParam]) {
         by_key.entry(p.key.as_str()).or_default().push(p);
     }
     for (i, e) in m.elements.iter_mut().enumerate() {
-        e.props.retain(|p| p.group != USER_GROUP);
+        e.props.retain(|p| !is_user(p));
         let k = user_key(e, i);
         if let Some(v) = by_key.get(k.as_str()) {
             for p in v {
-                e.props.push(crate::model::Prop { group: USER_GROUP.into(), name: p.name.clone(), value: p.value.clone() });
+                e.props.push(crate::model::Prop { group: p.group.clone(), name: p.name.clone(), value: p.value.clone() });
             }
         }
     }
+}
+
+/// numele afisat al unei proprietati
+pub fn prop_display_name(n: &str) -> &str {
+    n
 }
 
 impl App {
@@ -8243,13 +8519,17 @@ impl App {
         let base = self.base_models.get_mut(slot).and_then(|b| b.take());
         let cur = self.models.get_mut(slot).and_then(|c| c.take());
         let same = matches!((&base, &cur), (Some(a), Some(b)) if Arc::ptr_eq(a, b));
+        for p in &self.user_params {
+            self.user_applied.insert((p.group.clone(), p.name.clone()));
+        }
+        let stale = self.user_applied.clone();
         let patch = |m: Option<Arc<Model>>, params: &[UserParam]| -> Option<Arc<Model>> {
             let mut m = m?;
             match Arc::get_mut(&mut m) {
-                Some(mm) => apply_user_params(mm, params),
+                Some(mm) => apply_user_params_ext(mm, params, &stale),
                 None => {
                     let mut c = m.clone_model();
-                    apply_user_params(&mut c, params);
+                    apply_user_params_ext(&mut c, params, &stale);
                     m = Arc::new(c);
                 }
             }
@@ -8272,10 +8552,18 @@ impl App {
         self.colors_dirty = true;
     }
 
-    /// Adauga / schimba un parametru pe elementele date (valoare goala = sterge parametrul).
+    /// Adauga / schimba un parametru pe elementele date (valoare goala = sterge parametrul), in tab-ul "User".
     pub fn set_user_param(&mut self, ids: &[ElemId], name: &str, value: &str) -> usize {
-        let name = name.trim();
-        if name.is_empty() {
+        if value.trim().is_empty() {
+            return self.remove_user_param(ids, USER_GROUP, name);
+        }
+        self.set_user_prop(ids, USER_GROUP, name, value)
+    }
+
+    /// Scrie proprietatea `name` = `value` in tab-ul `group` pe elementele date (valoarea poate fi goala).
+    pub fn set_user_prop(&mut self, ids: &[ElemId], group: &str, name: &str, value: &str) -> usize {
+        let (group, name) = (group.trim(), name.trim());
+        if name.is_empty() || group.is_empty() {
             return 0;
         }
         let mut slots: BTreeSet<usize> = BTreeSet::new();
@@ -8283,10 +8571,8 @@ impl App {
         for id in ids {
             let Some((m, e)) = self.elem(*id) else { continue };
             let (model, key) = (m.name.clone(), user_key(e, id.e as usize));
-            self.user_params.retain(|p| !(p.model == model && p.key == key && p.name.eq_ignore_ascii_case(name)));
-            if !value.trim().is_empty() {
-                self.user_params.push(UserParam { model, key, name: name.to_string(), value: value.trim().to_string() });
-            }
+            self.user_params.retain(|p| !(p.model == model && p.key == key && p.group == group && p.name.eq_ignore_ascii_case(name)));
+            self.user_params.push(UserParam { model, key, name: name.to_string(), value: value.trim().to_string(), group: group.to_string() });
             slots.insert(id.m as usize);
             n += 1;
         }
@@ -8295,4 +8581,231 @@ impl App {
         }
         n
     }
+
+    /// Sterge proprietatea `name` din tab-ul `group` (name gol = tot tab-ul) de pe elementele date.
+    pub fn remove_user_param(&mut self, ids: &[ElemId], group: &str, name: &str) -> usize {
+        let keys: HashSet<(String, String)> = ids.iter().filter_map(|id| self.elem(*id).map(|(m, e)| (m.name.clone(), user_key(e, id.e as usize)))).collect();
+        let before = self.user_params.len();
+        self.user_params.retain(|p| !(keys.contains(&(p.model.clone(), p.key.clone())) && p.group == group && (name.is_empty() || p.name.eq_ignore_ascii_case(name))));
+        let n = before - self.user_params.len();
+        let slots: BTreeSet<usize> = ids.iter().map(|i| i.m as usize).collect();
+        for s in slots {
+            self.refresh_user_params(s);
+        }
+        n
+    }
+
+    /// Redenumeste o proprietate (din tab-ul `group`) pe elementele date.
+    pub fn rename_user_prop(&mut self, ids: &[ElemId], group: &str, old: &str, new: &str) {
+        let new = new.trim();
+        if new.is_empty() || new == old {
+            return;
+        }
+        let keys: HashSet<(String, String)> = ids.iter().filter_map(|id| self.elem(*id).map(|(m, e)| (m.name.clone(), user_key(e, id.e as usize)))).collect();
+        for p in &mut self.user_params {
+            if keys.contains(&(p.model.clone(), p.key.clone())) && p.group == group && p.name == old {
+                p.name = new.to_string();
+            }
+        }
+        let slots: BTreeSet<usize> = ids.iter().map(|i| i.m as usize).collect();
+        for s in slots {
+            self.refresh_user_params(s);
+        }
+    }
+
+    /// Redenumeste un tab de date utilizator pe elementele date.
+    pub fn rename_user_tab(&mut self, ids: &[ElemId], old: &str, new: &str) {
+        let new = new.trim();
+        if new.is_empty() || new == old {
+            return;
+        }
+        let keys: HashSet<(String, String)> = ids.iter().filter_map(|id| self.elem(*id).map(|(m, e)| (m.name.clone(), user_key(e, id.e as usize)))).collect();
+        for p in &mut self.user_params {
+            if keys.contains(&(p.model.clone(), p.key.clone())) && p.group == old {
+                p.group = new.to_string();
+            }
+        }
+        let slots: BTreeSet<usize> = ids.iter().map(|i| i.m as usize).collect();
+        for s in slots {
+            self.refresh_user_params(s);
+        }
+    }
+
+    /// Tab-urile de date utilizator ale unui element, cu proprietatile lor (in ordinea adaugarii).
+    pub fn user_tabs_of(&self, id: ElemId) -> Vec<(String, Vec<(String, String)>)> {
+        let Some((m, e)) = self.elem(id) else { return Vec::new() };
+        let key = user_key(e, id.e as usize);
+        let mut out: Vec<(String, Vec<(String, String)>)> = Vec::new();
+        for p in self.user_params.iter().filter(|p| p.model == m.name && p.key == key) {
+            match out.iter_mut().find(|g| g.0 == p.group) {
+                Some(g) => g.1.push((p.name.clone(), p.value.clone())),
+                None => out.push((p.group.clone(), vec![(p.name.clone(), p.value.clone())])),
+            }
+        }
+        out
+    }
+
+    // ------------------------------------------------------------------ import / export de proprietati
+
+    /// Citeste un Excel / CSV pentru import si deschide fereastra de potrivire.
+    pub fn open_prop_import(&mut self, path: &str) {
+        let rows = match crate::tables::read_rows(path) {
+            Ok(r) => r,
+            Err(e) => return self.error(format!("{}: {e}", crate::file_name(path))),
+        };
+        if rows.len() < 2 {
+            return self.error("The file needs a header row and at least one data row.");
+        }
+        let header = 0;
+        let h: Vec<String> = rows[header].iter().map(|c| c.trim().trim_start_matches('\u{feff}').to_lowercase()).collect();
+        let key_col = h.iter().position(|c| ["key", "globalid", "guid", "ifcguid", "ifc guid", "uniqueid", "unique id"].contains(&c.as_str())).or_else(|| h.iter().position(|c| c == "name")).unwrap_or(0);
+        let match_by = match h.get(key_col).map(|s| s.as_str()) {
+            Some("name") => "Name".to_string(),
+            Some("key") => "Key".to_string(),
+            Some("globalid") | Some("guid") | Some("ifcguid") | Some("ifc guid") => "GlobalId".to_string(),
+            Some(_) => rows[header][key_col].trim().to_string(),
+            None => "GlobalId".to_string(),
+        };
+        self.prop_import = Some(PropImport { path: path.to_string(), rows, header, key_col, match_by, tab: "User Data".into(), only_selected: false });
+    }
+
+    /// cheia de potrivire a unui element pentru importul de proprietati
+    fn prop_match_values(&self, id: ElemId, by: &str) -> Vec<String> {
+        let Some((m, e)) = self.elem(id) else { return Vec::new() };
+        match by {
+            "Key" => vec![user_key(e, id.e as usize), format!("{}|{}", m.name, user_key(e, id.e as usize))],
+            "GlobalId" => crate::sync::ids_of(e),
+            "Name" => vec![e.name.trim().to_string()],
+            p => e.props.iter().filter(|q| prop_display_name(&q.name).eq_ignore_ascii_case(p)).map(|q| q.value.trim().to_string()).collect(),
+        }
+    }
+
+    /// Cate randuri din import se potrivesc cu elemente (randuri potrivite, elemente).
+    pub fn prop_import_preview(&self, imp: &PropImport) -> (usize, usize) {
+        let idx = self.prop_import_index(imp);
+        let mut rows_ok = 0;
+        let mut elems = 0;
+        for r in &imp.rows[imp.header + 1..] {
+            let k = r.get(imp.key_col).map(|s| s.trim().to_string()).unwrap_or_default();
+            if let Some(v) = idx.get(&norm_key(&k)) {
+                rows_ok += 1;
+                elems += v.len();
+            }
+        }
+        (rows_ok, elems)
+    }
+
+    fn prop_import_index(&self, imp: &PropImport) -> HashMap<String, Vec<ElemId>> {
+        let ids: Vec<ElemId> = if imp.only_selected { self.selected.iter().copied().collect() } else { self.all_ids() };
+        let mut idx: HashMap<String, Vec<ElemId>> = HashMap::new();
+        for id in ids {
+            for v in self.prop_match_values(id, &imp.match_by) {
+                if !v.is_empty() {
+                    idx.entry(norm_key(&v)).or_default().push(id);
+                }
+            }
+        }
+        for v in idx.values_mut() {
+            v.sort();
+            v.dedup();
+        }
+        idx
+    }
+
+    /// Scrie proprietatile din fisier pe elementele potrivite: fiecare coloana (in afara de cheie) = o proprietate.
+    pub fn run_prop_import(&mut self) {
+        let Some(imp) = self.prop_import.take() else { return };
+        let idx = self.prop_import_index(&imp);
+        let head: Vec<String> = imp.rows[imp.header].iter().map(|c| c.trim().trim_start_matches('\u{feff}').to_string()).collect();
+        // coloanele de identificare din sablonul exportat nu devin proprietati
+        let skip = ["key", "model", "name", "type", "globalid", "level"];
+        let cols: Vec<usize> = (0..head.len()).filter(|&c| c != imp.key_col && !head[c].is_empty() && !(skip.contains(&head[c].to_lowercase().as_str()) && head.iter().any(|h| h.eq_ignore_ascii_case("key")))).collect();
+        let tab = if imp.tab.trim().is_empty() { "User Data".to_string() } else { imp.tab.trim().to_string() };
+        let mut slots: BTreeSet<usize> = BTreeSet::new();
+        let (mut n_rows, mut n_vals) = (0, 0);
+        let mut missing = 0;
+        let mut new_params: Vec<UserParam> = Vec::new();
+        for r in &imp.rows[imp.header + 1..] {
+            let k = r.get(imp.key_col).map(|s| s.trim().to_string()).unwrap_or_default();
+            if k.is_empty() {
+                continue;
+            }
+            let Some(ids) = idx.get(&norm_key(&k)) else {
+                missing += 1;
+                continue;
+            };
+            n_rows += 1;
+            for &id in ids {
+                let Some((m, e)) = self.elem(id) else { continue };
+                let (model, key) = (m.name.clone(), user_key(e, id.e as usize));
+                for &c in &cols {
+                    let v = r.get(c).map(|s| s.trim().to_string()).unwrap_or_default();
+                    if v.is_empty() {
+                        continue;
+                    }
+                    new_params.push(UserParam { model: model.clone(), key: key.clone(), name: head[c].clone(), value: v, group: tab.clone() });
+                    n_vals += 1;
+                }
+                slots.insert(id.m as usize);
+            }
+        }
+        // aceeasi proprietate pe acelasi element: valoarea noua o inlocuieste pe cea veche
+        let newk: HashSet<(String, String, String, String)> = new_params.iter().map(|p| (p.model.clone(), p.key.clone(), p.group.clone(), p.name.to_lowercase())).collect();
+        self.user_params.retain(|p| !newk.contains(&(p.model.clone(), p.key.clone(), p.group.clone(), p.name.to_lowercase())));
+        self.user_params.extend(new_params);
+        for s in slots {
+            self.refresh_user_params(s);
+        }
+        self.refresh_caches();
+        let miss = if missing > 0 { format!(", {missing} rows without a matching element") } else { String::new() };
+        self.toast(format!("Properties imported into tab \"{tab}\": {n_vals} values from {n_rows} rows{miss}."));
+    }
+
+    /// Sablonul Excel: un rand pe element (selectia sau toate vizibile), cheia + proprietatile utilizatorului.
+    pub fn export_user_props(&mut self, path: &str) {
+        use crate::qto::{Cell, Sheet};
+        let ids: Vec<ElemId> = if self.selected.is_empty() { self.all_ids().into_iter().filter(|i| !self.hidden.contains(i)).collect() } else { self.selected.iter().copied().collect() };
+        let ids: Vec<ElemId> = ids.into_iter().filter(|i| self.elem(*i).map_or(false, |(_, e)| e.tri_count > 0)).collect();
+        if ids.is_empty() {
+            return self.error("No elements to export.");
+        }
+        let mut names: Vec<String> = Vec::new();
+        for p in &self.user_params {
+            if !names.contains(&p.name) {
+                names.push(p.name.clone());
+            }
+        }
+        if names.is_empty() {
+            names.push("Status".into());
+        }
+        let mut headers: Vec<String> = ["Key", "Model", "Name", "Type", "Level"].iter().map(|s| s.to_string()).collect();
+        headers.extend(names.iter().cloned());
+        let rows: Vec<Vec<Cell>> = ids
+            .iter()
+            .filter_map(|&id| {
+                let (m, e) = self.elem(id)?;
+                let key = user_key(e, id.e as usize);
+                let mut r = vec![Cell::S(key.clone()), Cell::S(m.name.clone()), Cell::S(e.name.clone()), Cell::S(e.ifc_type.clone()), Cell::S(e.storey.clone())];
+                for n in &names {
+                    let v = self.user_params.iter().find(|p| p.model == m.name && p.key == key && &p.name == n).map(|p| p.value.clone()).unwrap_or_default();
+                    r.push(Cell::S(v));
+                }
+                Some(r)
+            })
+            .collect();
+        let widths: Vec<f64> = [40.0, 24.0, 30.0, 20.0, 14.0].into_iter().chain(std::iter::repeat(18.0)).take(headers.len()).collect();
+        let n = rows.len();
+        let sheet = Sheet { name: "Properties".into(), title: "ManageBIM properties - fill the columns, add new ones, then Import Properties (matched by Key)".into(), headers, widths, rows, total_from: None };
+        let p = with_ext(path, "xlsx");
+        match std::fs::write(&p, crate::qto::xlsx(&[sheet])) {
+            Ok(()) => self.toast(format!("{n} elements exported: {} - fill in the values (new columns = new properties), then Import Properties.", crate::file_name(&p))),
+            Err(e) => self.error(format!("Cannot write {p}: {e}")),
+        }
+    }
+}
+
+/// cheia normalizata pentru potrivire (fara spatii la capete, GUID-uri cu litere mici)
+fn norm_key(s: &str) -> String {
+    let t = s.trim();
+    if t.len() == 36 && t.matches('-').count() == 4 { t.to_ascii_lowercase() } else { t.to_string() }
 }

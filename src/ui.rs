@@ -1806,13 +1806,12 @@ impl App {
     fn ribbon_render(&mut self, ui: &mut egui::Ui) {
         self.style_group(ui);
         rgroup(ui, "Presentation", |ui| {
-            let on = self.panel_shown(Panel::Render) && self.render_subtab == 0;
-            if rbtn(ui, "🎬", "Animation", "Camera animations & video export", on, true).clicked() {
-                self.render_subtab = 0;
+            let on = self.panel_shown(Panel::Animation);
+            if rbtn(ui, "🎞", "Animations", "Animations: Record, Orbit 360°, viewpoints, 4D - play them and export video", on, true).clicked() {
                 if on {
-                    self.settings.layout.close(Panel::Render);
+                    self.settings.layout.close(Panel::Animation);
                 } else {
-                    self.open_panel(Panel::Render);
+                    self.open_panel(Panel::Animation);
                 }
             }
             let on = self.panel_shown(Panel::Render) && self.render_subtab == 1;
@@ -1846,10 +1845,8 @@ impl App {
             if rbtn(ui, "🖼", "Image", "Render the current view to PNG", false, true).clicked() {
                 self.request_path(Purpose::RenderImage);
             }
-            let can = !self.animations.is_empty();
-            if rbtn(ui, "🎞", "Video", "Export the selected animation (AVI / MP4 / GIF / PNG)", false, can).clicked() {
-                self.render_subtab = 0;
-                self.open_panel(Panel::Render);
+            if rbtn(ui, "🎞", "Video", "Animations and video export", false, true).clicked() {
+                self.open_panel(Panel::Animation);
             }
         });
     }
@@ -1914,19 +1911,51 @@ impl App {
 
     fn ribbon_output2(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Data", |ui| {
-            if rbtn(ui, "📤", "Sets", "Export selection / search sets", false, !self.sets.is_empty()).clicked() {
-                self.request_path(Purpose::ExportSets);
+            let has_sel = !self.selected.is_empty();
+            if rbtn(ui, "🏷", "Add Property", "Add a property with a value to the selected items (Properties › Custom, like Navisworks User Data)", false, has_sel).clicked() {
+                if self.user_tab.is_empty() && !self.user_tabs_new.contains(&"User Data".to_string()) {
+                    self.user_tabs_new.push("User Data".into());
+                }
+                let tab = if self.user_tab.is_empty() { "User Data".to_string() } else { self.user_tab.clone() };
+                let sel: Vec<ElemId> = self.selected.iter().copied().collect();
+                self.set_user_prop(&sel, &tab, "New Property", "");
+                self.user_tab = tab;
+                self.open_panel(crate::layout::Panel::Properties);
             }
-            if rbtn(ui, "📥", "Sets", "Import sets", false, true).clicked() {
-                self.request_path(Purpose::ImportSets);
+            if rbtn(ui, "📥", "Import Properties", "Write properties onto elements from Excel / CSV: one row per element (matched by GlobalId, Name or any property), every other column = a property", false, self.loaded_models().next().is_some()).clicked() {
+                self.request_path(Purpose::ImportUserProps);
             }
-            if rbtn(ui, "📤", "Schedule", "Export the TimeLiner schedule (CSV)", false, true).clicked() {
-                self.request_path(Purpose::ExportTasksCsv);
+            if rbtn(ui, "📤", "Export Properties", "Excel template: one row per element (selection, or all visible) with its key and its user properties", false, self.loaded_models().next().is_some()).clicked() {
+                self.request_path(Purpose::ExportUserProps);
             }
-            if rbtn(ui, "📥", "Schedule", "Import a TimeLiner schedule: CSV, MS Project XML or Primavera P6 XML.
-Link tasks to elements with [Level=Level 1;Type=IfcSlab] at the end of the task name (or Text1 in MS Project).", false, true).clicked() {
-                self.request_path(Purpose::ImportTasksCsv);
+            let r = rbtn(ui, "📋", "Sets ⏷", "Import / export selection and search sets", false, true);
+            let pid = ui.make_persistent_id("data_sets_menu");
+            if r.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(pid));
             }
+            egui::popup_below_widget(ui, pid, &r, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                ui.set_min_width(190.0);
+                if ui.add_enabled(!self.sets.is_empty(), egui::Button::new("📤 Export sets…")).clicked() {
+                    self.request_path(Purpose::ExportSets);
+                }
+                if ui.button("📥 Import sets…").clicked() {
+                    self.request_path(Purpose::ImportSets);
+                }
+            });
+            let r = rbtn(ui, "📅", "Schedule ⏷", "Import / export the TimeLiner schedule", false, true);
+            let pid = ui.make_persistent_id("data_sched_menu");
+            if r.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(pid));
+            }
+            egui::popup_below_widget(ui, pid, &r, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                ui.set_min_width(230.0);
+                if ui.button("📤 Export schedule (CSV)…").clicked() {
+                    self.request_path(Purpose::ExportTasksCsv);
+                }
+                if ui.button("📥 Import schedule…").on_hover_text("CSV, MS Project XML or Primavera P6 XML.\nLink tasks to elements with [Level=Level 1;Type=IfcSlab] at the end of the task name (or Text1 in MS Project).").clicked() {
+                    self.request_path(Purpose::ImportTasksCsv);
+                }
+            });
             if rbtn(ui, "📦", "BIMC", "Export .bimc caches next to the models", false, true).clicked() {
                 self.export_all_caches();
             }
@@ -2732,6 +2761,7 @@ Link tasks to elements with [Level=Level 1;Type=IfcSlab] at the end of the task 
             Panel::Measure => self.measure_ui(ui),
             Panel::Coords => self.coords_ui(ui),
             Panel::Render => self.render_ui(ui),
+            Panel::Animation => self.animations_ui(ui),
             Panel::Project => self.models_ui(ui),
             Panel::Profiler => self.profiler_ui(ui),
             Panel::Compare => self.compare_ui(ui),
@@ -3898,7 +3928,7 @@ Link tasks to elements with [Level=Level 1;Type=IfcSlab] at the end of the task 
     fn nav_bar(&mut self, ui: &mut egui::Ui, rect: Rect) {
         let pal = self.pal();
         let pos = rect.center_bottom() - EV::new(0.0, 14.0);
-        egui::Area::new(egui::Id::new("nav_bar")).fixed_pos(pos).pivot(Align2::CENTER_BOTTOM).order(egui::Order::Foreground).show(ui.ctx(), |ui| {
+        egui::Area::new(egui::Id::new("nav_bar")).fixed_pos(pos).pivot(Align2::CENTER_BOTTOM).order(egui::Order::Middle).show(ui.ctx(), |ui| {
             egui::Frame::none()
                 .fill(pal.overlay_btn)
                 .stroke(Stroke::new(1.0_f32, Color32::from_white_alpha(18)))
@@ -4018,27 +4048,30 @@ Link tasks to elements with [Level=Level 1;Type=IfcSlab] at the end of the task 
                         if big(ui, ic, lb, tip, false, true) {
                             self.cam.ortho = !self.cam.ortho;
                         }
-                        // mers: traseu, redare, viteza
-                        if self.nav == NavMode::Walk {
-                            sep(ui);
-                            if big(ui, "✏", "Path", "Draw a walk path: click points on the floor, double-click to finish", self.tool == Tool::WalkPath, true) {
-                                self.path_run = None;
-                                self.tool = if self.tool == Tool::WalkPath { Tool::Select } else { Tool::WalkPath };
+                        // mers: traseu, redare, viteza - mereu pe bara (latime fixa: butoanele nu se muta sub mouse
+                        // cand schimbi modul de navigare)
+                        sep(ui);
+                        if big(ui, "✏", "Path", "Draw a walk path: click points on the floor, double-click / Enter to finish (switches to Walk)", self.tool == Tool::WalkPath, true) {
+                            self.path_run = None;
+                            if self.tool == Tool::WalkPath {
+                                self.tool = Tool::Select;
+                            } else {
+                                self.nav = NavMode::Walk;
+                                self.tool = Tool::WalkPath;
                             }
-                            if self.walk_path.len() >= 2 {
-                                let playing = self.path_run.as_ref().map(|r| !r.paused).unwrap_or(false);
-                                if big(ui, if playing { "⏸" } else { "▶" }, if playing { "Pause" } else { "Play" }, "Walk along the path (Space) · Esc stops", playing, true) {
-                                    self.walk_path_play();
-                                }
-                            }
-                            let mut v = self.settings.walk_speed;
-                            let r = ui.add(egui::DragValue::new(&mut v).range(0.2..=20.0).speed(0.05).max_decimals(1).suffix(" m/s")).on_hover_text("Walk speed (drag or type)");
-                            if r.changed() {
-                                self.settings.walk_speed = v;
-                            }
-                            if r.drag_stopped() || r.lost_focus() {
-                                self.settings.save();
-                            }
+                        }
+                        let playing = self.path_run.as_ref().map(|r| !r.paused).unwrap_or(false);
+                        if big(ui, if playing { "⏸" } else { "▶" }, if playing { "Pause" } else { "Play" }, "Walk along the drawn path (Space) · Esc stops", playing, self.walk_path.len() >= 2) {
+                            self.nav = NavMode::Walk;
+                            self.walk_path_play();
+                        }
+                        let mut v = self.settings.walk_speed;
+                        let r = ui.add_sized([62.0, 22.0], egui::DragValue::new(&mut v).range(0.2..=20.0).speed(0.05).max_decimals(1).suffix(" m/s")).on_hover_text("Walk speed (drag or type)");
+                        if r.changed() {
+                            self.settings.walk_speed = v;
+                        }
+                        if r.drag_stopped() || r.lost_focus() {
+                            self.settings.save();
                         }
                     });
                 });
@@ -4831,33 +4864,8 @@ Link tasks to elements with [Level=Level 1;Type=IfcSlab] at the end of the task 
                 self.min_distance_selected();
             }
         });
-        // parametri proprii: pentru elemente fara date (DWG, OBJ, STEP...) sau informatii de coordonare
-        egui::CollapsingHeader::new(format!("➕ Add parameter ({} selected)", sel.len())).id_salt("user_params").default_open(false).show(ui, |ui| {
-            ui.label(RichText::new("Written on every selected element, saved with the project, visible in Find, Profiler, Model Checker and IFC export (group \"User\").").small().weak());
-            ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut self.up_name).hint_text("Name (e.g. Status)").desired_width(130.0));
-                ui.add(egui::TextEdit::singleline(&mut self.up_value).hint_text("Value (empty = remove)").desired_width(150.0));
-                if ui.add_enabled(!self.up_name.trim().is_empty(), egui::Button::new("Apply")).clicked() {
-                    let (n, v) = (self.up_name.clone(), self.up_value.clone());
-                    let k = self.set_user_param(&sel, &n, &v);
-                    self.toast(if v.trim().is_empty() { format!("Parameter \"{n}\" removed from {k} elements") } else { format!("Parameter \"{n}\" = \"{v}\" set on {k} elements") });
-                }
-            });
-            // nume folosite deja (click = completeaza)
-            let mut names: Vec<String> = self.user_params.iter().map(|p| p.name.clone()).collect();
-            names.sort();
-            names.dedup();
-            if !names.is_empty() {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new("Used:").small().weak());
-                    for n in names.iter().take(20) {
-                        if ui.small_button(n).clicked() {
-                            self.up_name = n.clone();
-                        }
-                    }
-                });
-            }
-        });
+        // ---- date utilizator ca in Navisworks: Custom > Add / Delete / Rename User Data Tab, Insert New Property
+        self.user_data_ui(ui, pid, &sel);
         // aspect
         egui::CollapsingHeader::new("Appearance override").default_open(false).show(ui, |ui| {
             let mut c = Color32::from_rgba_unmultiplied(self.override_color[0], self.override_color[1], self.override_color[2], 255);
@@ -4894,7 +4902,11 @@ Link tasks to elements with [Level=Level 1;Type=IfcSlab] at the end of the task 
         let Some((m, e)) = self.elem(pid) else { return };
         let mut groups: Vec<(String, Vec<(String, String)>)> = Vec::new();
         groups.push(("File".into(), vec![("Model".into(), m.name.clone()), ("Path".into(), m.path.clone())]));
+        let user_g: HashSet<(String, String)> = self.user_params.iter().map(|p| (p.group.clone(), p.name.to_lowercase())).collect();
         for p in &e.props {
+            if p.group == USER_GROUP || user_g.contains(&(p.group.clone(), p.name.to_lowercase())) {
+                continue;
+            }
             match groups.iter_mut().find(|g| g.0 == p.group) {
                 Some(g) => g.1.push((p.name.clone(), p.value.clone())),
                 None => groups.push((p.group.clone(), vec![(p.name.clone(), p.value.clone())])),
@@ -5032,134 +5044,922 @@ Link tasks to elements with [Level=Level 1;Type=IfcSlab] at the end of the task 
     }
 
     fn clash_ui(&mut self, ui: &mut egui::Ui) {
+        use crate::clash_io::{status_counts, test_state, TestState};
+        if self.clash_tests.is_empty() {
+            self.clash_tests.push(ClashTest::new("Test 1".into()));
+        }
         if self.cur_test >= self.clash_tests.len() {
             self.cur_test = 0;
         }
-        ui.horizontal_top(|ui| {
-            // ---- tests
-            ui.vertical(|ui| {
-                ui.set_width(210.0);
-                ui.horizontal(|ui| {
-                    ui.strong("Tests");
-                    if ui.small_button("➕").on_hover_text("New test").clicked() {
-                        let n = self.clash_tests.len() + 1;
-                        self.clash_tests.push(ClashTest::new(format!("Test {n}")));
+        let ti = self.cur_test;
+        // ---- antet: testul curent, ultima rulare, totalul (ca in Navisworks)
+        {
+            let t = &self.clash_tests[ti];
+            let k = status_counts(t);
+            let open = k[0] + k[1];
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(&t.name).size(15.0).strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(format!("Clashes - Total: {}  (Open: {}  Closed: {})", t.results.len(), open, t.results.len() - open));
+                    ui.add_space(12.0);
+                    ui.label(format!("Last Run: {}", if t.last_run.is_empty() { "<None>" } else { &t.last_run }));
+                });
+            });
+        }
+        // ---- lista testelor: Name | Status | Clashes | New | Active | Reviewed | Approved | Resolved
+        let mut pick: Option<usize> = None;
+        let mut ctx_action: Option<(usize, u8)> = None;
+        egui::Frame::group(ui.style()).inner_margin(2.0).show(ui, |ui| {
+            let h = (24.0 + 20.0 * self.clash_tests.len() as f32).clamp(70.0, 190.0);
+            TableBuilder::new(ui)
+                .id_salt("clash_tests_tbl")
+                .striped(true)
+                .sense(egui::Sense::click())
+                .max_scroll_height(h)
+                .min_scrolled_height(h.min(70.0))
+                .column(Column::remainder().at_least(150.0).clip(true))
+                .column(Column::exact(52.0))
+                .column(Column::exact(58.0))
+                .columns(Column::exact(76.0), 5)
+                .header(20.0, |mut hd| {
+                    hd.col(|ui| {
+                        ui.strong("Name");
+                    });
+                    hd.col(|ui| {
+                        ui.strong("Status");
+                    });
+                    hd.col(|ui| {
+                        ui.strong("Clashes");
+                    });
+                    for st in ClashStatus::ALL {
+                        hd.col(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 4.0;
+                                let (r, _) = ui.allocate_exact_size(EV::new(4.0, 14.0), egui::Sense::hover());
+                                ui.painter().rect_filled(r, 0.0, c32(st.color()));
+                                ui.add(egui::Label::new(RichText::new(st.label()).strong()).extend());
+                            });
+                        });
+                    }
+                })
+                .body(|body| {
+                    let n = self.clash_tests.len();
+                    body.rows(20.0, n, |mut row| {
+                        let i = row.index();
+                        let t = &self.clash_tests[i];
+                        let k = status_counts(t);
+                        let state = test_state(t);
+                        let running = self.clash_job.as_ref().map_or(false, |j| j.test == i);
+                        row.set_selected(i == ti);
+                        row.col(|ui| {
+                            ui.label(&t.name);
+                        });
+                        row.col(|ui| {
+                            let (txt, col) = if running {
+                                ("Running", accent())
+                            } else {
+                                match state {
+                                    TestState::New => ("New", ui.visuals().text_color()),
+                                    TestState::Done => ("Done", Color32::from_rgb(70, 170, 90)),
+                                    TestState::Old => ("Old", Color32::from_rgb(230, 150, 40)),
+                                }
+                            };
+                            ui.label(RichText::new(txt).color(col)).on_hover_text(match state {
+                                TestState::New => "Not run yet",
+                                TestState::Done => "Up to date",
+                                TestState::Old => "The test changed after the last run (selections, type, tolerance or rules) - Update",
+                            });
+                        });
+                        row.col(|ui| {
+                            ui.strong(t.results.len().to_string());
+                        });
+                        for v in k {
+                            row.col(|ui| {
+                                ui.label(v.to_string());
+                            });
+                        }
+                        let r = row.response();
+                        if r.clicked() {
+                            pick = Some(i);
+                        }
+                        r.context_menu(|ui| {
+                            for (a, l) in [(0u8, "▶ Run"), (1, "Reset (remove results)"), (2, "Compact (remove resolved)"), (3, "Duplicate"), (4, "🗑 Delete")] {
+                                if ui.button(l).clicked() {
+                                    ctx_action = Some((i, a));
+                                    ui.close_menu();
+                                }
+                            }
+                        });
+                    });
+                });
+        });
+        if let Some(i) = pick {
+            if i != self.cur_test {
+                self.cur_test = i;
+                self.cur_result = None;
+                self.sel_results.clear();
+                self.clash_focus = None;
+                self.colors_dirty = true;
+            }
+        }
+        if let Some((i, a)) = ctx_action {
+            match a {
+                0 => {
+                    self.cur_test = i;
+                    self.run_clash(i);
+                }
+                1 => {
+                    let t = &mut self.clash_tests[i];
+                    t.results.clear();
+                    t.last_run.clear();
+                    t.run_key = 0;
+                    self.colors_dirty = true;
+                }
+                2 => self.clash_tests[i].results.retain(|r| r.status != ClashStatus::Resolved),
+                3 => {
+                    let mut t = self.clash_tests[i].clone();
+                    t.name = format!("{} (copy)", t.name);
+                    t.results.clear();
+                    t.last_run.clear();
+                    t.run_key = 0;
+                    self.clash_tests.insert(i + 1, t);
+                    self.cur_test = i + 1;
+                }
+                _ => {
+                    self.clash_tests.remove(i);
+                    if self.clash_tests.is_empty() {
+                        self.clash_tests.push(ClashTest::new("Test 1".into()));
+                    }
+                    self.cur_test = self.cur_test.min(self.clash_tests.len() - 1);
+                    self.cur_result = None;
+                    self.sel_results.clear();
+                    self.clash_focus = None;
+                    self.colors_dirty = true;
+                }
+            }
+        }
+        // ---- butoanele de sub lista (Navisworks: Add Test, Reset All, Compact All, Delete All, Update All, Import / Export)
+        let idle = self.clash_job.is_none();
+        ui.horizontal_wrapped(|ui| {
+            if ui.add_enabled(idle, egui::Button::new("➕ Add Test")).clicked() {
+                let mut n = self.clash_tests.len() + 1;
+                while self.clash_tests.iter().any(|t| t.name == format!("Test {n}")) {
+                    n += 1;
+                }
+                self.clash_tests.push(ClashTest::new(format!("Test {n}")));
+                self.cur_test = self.clash_tests.len() - 1;
+                self.cur_result = None;
+                self.sel_results.clear();
+                self.clash_subtab = 2;
+            }
+            ui.menu_button("📋 Templates ⏷", |ui| {
+                ui.label(RichText::new("Add a ready-made test").strong());
+                for (name, about, t) in ClashTest::templates() {
+                    if ui.button(name).on_hover_text(about).clicked() {
+                        self.clash_tests.push(t);
                         self.cur_test = self.clash_tests.len() - 1;
                         self.cur_result = None;
                         self.sel_results.clear();
+                        ui.close_menu();
                     }
-                    ui.menu_button("📋", |ui| {
-                        ui.label(RichText::new("Add a ready-made test").strong());
-                        for (name, about, t) in ClashTest::templates() {
-                            if ui.button(name).on_hover_text(about).clicked() {
-                                self.clash_tests.push(t);
-                                self.cur_test = self.clash_tests.len() - 1;
-                                self.cur_result = None;
-                                self.sel_results.clear();
-                                ui.close_menu();
-                            }
-                        }
-                        ui.separator();
-                        if ui.button("All of the above").clicked() {
-                            self.clash_tests.extend(ClashTest::templates().into_iter().map(|t| t.2));
-                            self.cur_test = self.clash_tests.len() - 1;
-                            self.cur_result = None;
-                            self.sel_results.clear();
-                            ui.close_menu();
-                        }
-                    })
-                    .response
-                    .on_hover_text("Test templates: Structure vs MEP, clearances, duplicates - disciplines are recognised automatically");
-                    if ui.add_enabled(self.clash_tests.len() > 1, egui::Button::new("🗑").small()).on_hover_text("Delete test").clicked() {
-                        self.clash_tests.remove(self.cur_test);
-                        self.cur_test = 0;
-                        self.cur_result = None;
-                        self.sel_results.clear();
-                        self.clash_focus = None;
-                        self.colors_dirty = true;
+                }
+                ui.separator();
+                if ui.button("All of the above").clicked() {
+                    self.clash_tests.extend(ClashTest::templates().into_iter().map(|t| t.2));
+                    self.cur_test = self.clash_tests.len() - 1;
+                    self.cur_result = None;
+                    self.sel_results.clear();
+                    ui.close_menu();
+                }
+            })
+            .response
+            .on_hover_text("Test templates: Structure vs MEP, clearances, duplicates - disciplines are recognised automatically");
+            ui.separator();
+            let has_res = self.clash_tests.iter().any(|t| !t.results.is_empty());
+            if ui.add_enabled(idle && has_res, egui::Button::new("Reset All")).on_hover_text("Remove the results of every test (the tests stay, status New)").clicked() {
+                self.clash_reset_all();
+            }
+            if ui.add_enabled(idle && self.clash_tests.iter().any(|t| t.results.iter().any(|r| r.status == ClashStatus::Resolved)), egui::Button::new("Compact All")).on_hover_text("Remove the Resolved clashes from every test").clicked() {
+                self.clash_compact_all();
+            }
+            let del = ui.add_enabled(idle, egui::Button::new("Delete All")).on_hover_text("Delete every clash test");
+            let pid = ui.make_persistent_id("del_all_confirm");
+            if del.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(pid));
+            }
+            egui::popup_below_widget(ui, pid, &del, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                ui.set_min_width(200.0);
+                ui.label(format!("Delete all {} clash tests?", self.clash_tests.len()));
+                ui.horizontal(|ui| {
+                    if ui.button(RichText::new("Delete All").color(Color32::from_rgb(230, 80, 70))).clicked() {
+                        self.clash_delete_all();
+                        ui.memory_mut(|m| m.close_popup());
                     }
-                    if ui.add_enabled(self.clash_job.is_none(), egui::Button::new("▶ Run all").small()).on_hover_text("Run every test one after another").clicked() {
-                        self.clash_queue = (1..self.clash_tests.len()).collect();
-                        self.cur_test = 0;
-                        self.run_clash(0);
-                    }
-                });
-                egui::ScrollArea::vertical().id_salt("tests").max_height(ui.available_height() - 4.0).show(ui, |ui| {
-                    for i in 0..self.clash_tests.len() {
-                        let t = &self.clash_tests[i];
-                        let open = t.count(ClashStatus::New) + t.count(ClashStatus::Active);
-                        let txt = format!("{}  —  {} open / {} total", t.name, open, t.results.len());
-                        if ui.selectable_label(i == self.cur_test, txt).clicked() && i != self.cur_test {
-                            self.cur_test = i;
-                            self.cur_result = None;
-                            self.sel_results.clear();
-                            self.clash_focus = None;
-                            self.colors_dirty = true;
-                        }
+                    if ui.button("Cancel").clicked() {
+                        ui.memory_mut(|m| m.close_popup());
                     }
                 });
             });
             ui.separator();
-            ui.vertical(|ui| {
-                let ti = self.cur_test;
-                // ---- setup (Select tab in Navisworks)
-                let mut test = self.clash_tests[ti].clone();
-                ui.horizontal_wrapped(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut test.name).desired_width(110.0));
-                    ui.label("A:");
-                    self.selector_combo(ui, "selA", &mut test.a);
-                    ui.label("B:");
-                    self.selector_combo(ui, "selB", &mut test.b);
+            if ui
+                .add_enabled(idle && self.loaded_models().next().is_some(), egui::Button::new(RichText::new("⟳ Update All").strong().color(Color32::WHITE)).fill(accent()))
+                .on_hover_text("Run every test again. Clashes found again stay Active (or keep Reviewed / Approved), new ones are New, the ones gone are Resolved.\nA summary shows what changed.")
+                .clicked()
+            {
+                self.clash_update_all();
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.menu_button("⇅ Import / Export ⏷", |ui| {
+                    if ui.button("📥 Import Clash Tests…").on_hover_text("Navisworks XML (Clash Detective > Import / Export > Export Clash Tests), CSV or Excel").clicked() {
+                        self.request_path(Purpose::ImportClashTests);
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("📤 Export Clash Tests (Navisworks XML)…").on_hover_text("In Navisworks: Clash Detective > Import / Export > Import Clash Tests. The selection sets used are exported too.").clicked() {
+                        self.request_path(Purpose::ExportNavisClash);
+                        ui.close_menu();
+                    }
+                    if ui.button("📤 Export Clash Tests (CSV)…").on_hover_text("One row per test - edit in Excel and import back").clicked() {
+                        self.request_path(Purpose::ExportClashTestsCsv);
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("▦ Clash Matrix…").clicked() {
+                        self.show_clash_matrix = true;
+                        ui.close_menu();
+                    }
+                });
+                if ui.selectable_label(self.show_clash_matrix, "▦ Matrix").on_hover_text("Clash matrix: Selection A × Selection B, the results of each test").clicked() {
+                    self.show_clash_matrix = !self.show_clash_matrix;
+                }
+            });
+        });
+        if let Some(job) = &self.clash_job {
+            let left = self.clash_queue.len();
+            ui.horizontal(|ui| {
+                let name = self.clash_tests.get(job.test).map(|t| t.name.clone()).unwrap_or_default();
+                ui.label(format!("Running {name}{}", if left > 0 { format!("  ({left} more)") } else { String::new() }));
+                ui.add(egui::ProgressBar::new(job.prog.frac()).desired_width(220.0).show_percentage());
+                if ui.button("Cancel").clicked() {
+                    job.prog.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            });
+        }
+        // ---- tab-urile: Rules | Select | Results | Report
+        let ti = self.cur_test.min(self.clash_tests.len() - 1);
+        ui.horizontal(|ui| {
+            let nres = self.clash_tests[ti].results.len();
+            let nrules = self.clash_tests[ti].rules.count(self.clash_tests[ti].ignore_same_file);
+            ui.selectable_value(&mut self.clash_subtab, 1, format!("Rules ({nrules})"));
+            ui.selectable_value(&mut self.clash_subtab, 2, "Select");
+            ui.selectable_value(&mut self.clash_subtab, 0, format!("Results ({nres})"));
+            ui.selectable_value(&mut self.clash_subtab, 3, "Report");
+        });
+        ui.separator();
+        match self.clash_subtab {
+            1 => self.clash_rules_ui(ui, ti),
+            2 => self.clash_select_ui(ui, ti),
+            3 => self.clash_report_ui(ui, ti),
+            _ => self.clash_results(ui, ti),
+        }
+    }
+
+    /// Tab-urile de date utilizator ale elementului (Navisworks: butonul Custom din Properties):
+    /// proprietati cu valori scrise pe toate elementele selectate, salvate in proiect.
+    fn user_data_ui(&mut self, ui: &mut egui::Ui, pid: ElemId, sel: &[ElemId]) {
+        let mut tabs: Vec<(String, Vec<(String, String)>)> = self.user_tabs_of(pid);
+        for t in &self.user_tabs_new {
+            if !tabs.iter().any(|x| &x.0 == t) {
+                tabs.push((t.clone(), Vec::new()));
+            }
+        }
+        if !tabs.iter().any(|t| t.0 == self.user_tab) {
+            self.user_tab = tabs.first().map(|t| t.0.clone()).unwrap_or_default();
+        }
+        let cur = self.user_tab.clone();
+        let card_fill = ui.visuals().faint_bg_color;
+        let card_stroke = Stroke::new(1.0_f32, ui.visuals().widgets.noninteractive.bg_stroke.color);
+        let weak = ui.visuals().weak_text_color();
+        enum Op {
+            AddTab,
+            DelTab,
+            Rename(String),
+            Insert,
+            Set(String, String),
+            RenameProp(String, String),
+            Del(String),
+        }
+        let mut ops: Vec<Op> = Vec::new();
+        egui::Frame::none().fill(card_fill).stroke(card_stroke).rounding(8.0).inner_margin(egui::Margin { left: 10.0, right: 10.0, top: 8.0, bottom: 8.0 }).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("USER DATA").small().strong());
+                ui.label(RichText::new(if sel.len() > 1 { format!("· {} selected items", sel.len()) } else { String::new() }).small().color(weak));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.menu_button("Custom ⏷", |ui| {
+                        if ui.button("Add User Data Tab").clicked() {
+                            ops.push(Op::AddTab);
+                            ui.close_menu();
+                        }
+                        if ui.add_enabled(!cur.is_empty(), egui::Button::new("Delete User Data Tab")).clicked() {
+                            ops.push(Op::DelTab);
+                            ui.close_menu();
+                        }
+                        if ui.add_enabled(!cur.is_empty(), egui::Button::new("Rename User Data Tab")).clicked() {
+                            self.user_tab_rename = Some(cur.clone());
+                            ui.close_menu();
+                        }
+                        if ui.button("Insert New Property").clicked() {
+                            ops.push(Op::Insert);
+                            ui.close_menu();
+                        }
+                        ui.separator();
+                        if ui.button("📥 Import properties (Excel / CSV)…").on_hover_text("Write properties onto elements from a table: one row per element, matched by GlobalId, Name or any property; every other column becomes a property").clicked() {
+                            self.request_path(Purpose::ImportUserProps);
+                            ui.close_menu();
+                        }
+                        if ui.button("📤 Export properties (Excel)…").on_hover_text("One row per element (selection, or all visible) with its key - fill in values or add columns, then import").clicked() {
+                            self.request_path(Purpose::ExportUserProps);
+                            ui.close_menu();
+                        }
+                    });
+                });
+            });
+            if tabs.is_empty() {
+                ui.label(RichText::new("No user data. Custom › Add User Data Tab, then Insert New Property.").small().color(weak));
+                return;
+            }
+            // tab-urile, ca in Navisworks
+            ui.horizontal_wrapped(|ui| {
+                for (t, _) in &tabs {
+                    if ui.selectable_label(*t == cur, t).clicked() {
+                        self.user_tab = t.clone();
+                    }
+                }
+            });
+            if let Some(mut nm) = self.user_tab_rename.clone() {
+                ui.horizontal(|ui| {
+                    ui.label("Rename tab");
+                    let r = ui.add(egui::TextEdit::singleline(&mut nm).desired_width(150.0));
+                    r.request_focus();
+                    let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                    if ui.button("OK").clicked() || enter {
+                        ops.push(Op::Rename(nm.clone()));
+                    } else if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                        self.user_tab_rename = None;
+                    } else {
+                        self.user_tab_rename = Some(nm);
+                    }
+                });
+            }
+            let rows = tabs.iter().find(|t| t.0 == cur).map(|t| t.1.clone()).unwrap_or_default();
+            egui::Grid::new(("udgrid", &cur)).num_columns(3).spacing([8.0, 3.0]).striped(true).show(ui, |ui| {
+                ui.label(RichText::new("Property").small().color(weak));
+                ui.label(RichText::new("Value").small().color(weak));
+                ui.label("");
+                ui.end_row();
+                for (k, (n, v)) in rows.iter().enumerate() {
+                    // textul in lucru se pastreaza intre cadre; se scrie la Enter / iesirea din camp
+                    let nid = egui::Id::new(("udn", &cur, k, pid));
+                    let vid = egui::Id::new(("udv", &cur, k, pid));
+                    let mut nn: String = ui.data(|d| d.get_temp(nid)).unwrap_or_else(|| n.clone());
+                    let mut vv: String = ui.data(|d| d.get_temp(vid)).unwrap_or_else(|| v.clone());
+                    // latimea campurilor dupa latimea panoului (Properties e de obicei ingust)
+                    let w = (ui.available_width() - 40.0).max(120.0);
+                    let rn = ui.add(egui::TextEdit::singleline(&mut nn).desired_width((w * 0.42).clamp(70.0, 180.0)).hint_text("property"));
+                    let rv = ui.add(egui::TextEdit::singleline(&mut vv).desired_width((w * 0.58).clamp(80.0, 260.0)).hint_text("value"));
+                    if rn.has_focus() || rn.changed() {
+                        ui.data_mut(|d| d.insert_temp(nid, nn.clone()));
+                    }
+                    if rv.has_focus() || rv.changed() {
+                        ui.data_mut(|d| d.insert_temp(vid, vv.clone()));
+                    }
+                    if rn.lost_focus() {
+                        ui.data_mut(|d| d.remove::<String>(nid));
+                        if nn.trim() != n {
+                            ops.push(Op::RenameProp(n.clone(), nn.trim().to_string()));
+                        }
+                    }
+                    if rv.lost_focus() {
+                        ui.data_mut(|d| d.remove::<String>(vid));
+                        if vv != *v {
+                            ops.push(Op::Set(n.clone(), vv.clone()));
+                        }
+                    }
+                    if ui.small_button("✖").on_hover_text("Delete property").clicked() {
+                        ops.push(Op::Del(n.clone()));
+                    }
+                    ui.end_row();
+                }
+            });
+            if ui.small_button("➕ Property").on_hover_text("Insert New Property").clicked() {
+                ops.push(Op::Insert);
+            }
+        });
+        ui.add_space(4.0);
+        for op in ops {
+            match op {
+                Op::AddTab => {
+                    let mut n = 1;
+                    let name = loop {
+                        let c = if n == 1 { "User Data".to_string() } else { format!("User Data {n}") };
+                        if !tabs.iter().any(|t| t.0 == c) && !self.user_tabs_new.contains(&c) {
+                            break c;
+                        }
+                        n += 1;
+                    };
+                    self.user_tabs_new.push(name.clone());
+                    self.user_tab = name;
+                }
+                Op::DelTab => {
+                    self.remove_user_param(sel, &cur, "");
+                    self.user_tabs_new.retain(|t| *t != cur);
+                    self.user_tab.clear();
+                }
+                Op::Rename(nm) => {
+                    let nm = nm.trim().to_string();
+                    if !nm.is_empty() {
+                        self.rename_user_tab(sel, &cur, &nm);
+                        for t in self.user_tabs_new.iter_mut() {
+                            if *t == cur {
+                                *t = nm.clone();
+                            }
+                        }
+                        self.user_tab = nm;
+                    }
+                    self.user_tab_rename = None;
+                }
+                Op::Insert => {
+                    let tab = if cur.is_empty() {
+                        self.user_tabs_new.push("User Data".into());
+                        "User Data".to_string()
+                    } else {
+                        cur.clone()
+                    };
+                    let mut k = 1;
+                    let name = loop {
+                        let c = if k == 1 { "New Property".to_string() } else { format!("New Property {k}") };
+                        if !rows_has(&tabs, &tab, &c) {
+                            break c;
+                        }
+                        k += 1;
+                    };
+                    self.set_user_prop(sel, &tab, &name, "");
+                    self.user_tab = tab;
+                }
+                Op::Set(n, v) => {
+                    self.set_user_prop(sel, &cur, &n, &v);
+                }
+                Op::RenameProp(o, n) => {
+                    if !n.is_empty() {
+                        self.rename_user_prop(sel, &cur, &o, &n);
+                    }
+                }
+                Op::Del(n) => {
+                    self.remove_user_param(sel, &cur, &n);
+                }
+            }
+            self.refresh_caches();
+        }
+    }
+
+    /// Fereastra de import a proprietatilor: coloana cheie, cum se potriveste, tab-ul tinta.
+    fn prop_import_window(&mut self, ctx: &egui::Context) {
+        let Some(mut imp) = self.prop_import.clone() else { return };
+        let mut open = true;
+        let mut run = false;
+        let mut cancel = false;
+        let (ok_rows, n_el) = self.prop_import_preview(&imp);
+        egui::Window::new("📥 Import properties").open(&mut open).collapsible(false).default_width(560.0).anchor(Align2::CENTER_CENTER, EV::ZERO).show(ctx, |ui| {
+            ui.label(RichText::new(crate::file_name(&imp.path)).strong());
+            let head: Vec<String> = imp.rows[imp.header].iter().map(|c| c.trim().trim_start_matches('\u{feff}').to_string()).collect();
+            egui::Grid::new("pimp").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+                ui.label("Element key column");
+                egui::ComboBox::from_id_salt("pimp_key").selected_text(head.get(imp.key_col).cloned().unwrap_or_default()).show_ui(ui, |ui| {
+                    for (i, h) in head.iter().enumerate() {
+                        ui.selectable_value(&mut imp.key_col, i, h);
+                    }
+                });
+                ui.end_row();
+                ui.label("matches the element's");
+                let mut opts: Vec<String> = vec!["Key".into(), "GlobalId".into(), "Name".into()];
+                for p in &self.cache_props {
+                    if !opts.contains(p) {
+                        opts.push(p.clone());
+                    }
+                }
+                egui::ComboBox::from_id_salt("pimp_by").width(220.0).selected_text(&imp.match_by).show_ui(ui, |ui| {
+                    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                        for o in &opts {
+                            let tip = match o.as_str() {
+                                "Key" => "The Key column of an exported properties template (GUID, or #index for items without one)",
+                                "GlobalId" => "IFC GlobalId / GUID / Revit UniqueId",
+                                "Name" => "Element name",
+                                _ => "Value of this property",
+                            };
+                            ui.selectable_value(&mut imp.match_by, o.clone(), o).on_hover_text(tip);
+                        }
+                    });
+                });
+                ui.end_row();
+                ui.label("Write into tab");
+                ui.add(egui::TextEdit::singleline(&mut imp.tab).desired_width(200.0));
+                ui.end_row();
+                ui.label("");
+                ui.checkbox(&mut imp.only_selected, format!("Only the selected items ({})", self.selected.len()));
+                ui.end_row();
+            });
+            ui.add_space(4.0);
+            let props: Vec<&String> = head.iter().enumerate().filter(|(i, h)| *i != imp.key_col && !h.is_empty()).map(|(_, h)| h).collect();
+            ui.label(RichText::new(format!("Properties (one per column): {}", props.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "))).small());
+            let total = imp.rows.len() - imp.header - 1;
+            let col = if ok_rows == 0 { Color32::from_rgb(230, 90, 70) } else { Color32::from_rgb(70, 170, 90) };
+            ui.label(RichText::new(format!("{ok_rows} of {total} rows match {n_el} elements")).strong().color(col));
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui.add_enabled(ok_rows > 0, egui::Button::new(RichText::new("Import").strong())).clicked() {
+                    run = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if !open || cancel {
+            self.prop_import = None;
+        } else {
+            self.prop_import = Some(imp);
+            if run {
+                self.run_prop_import();
+            }
+        }
+    }
+
+    /// Matricea de clash pe teste: Selection A pe randuri, Selection B pe coloane; in fiecare celula testele
+    /// perechii cu starile lor. Dedesubt: matricea de seturi din care se creeaza testele.
+    fn clash_matrix_window(&mut self, ctx: &egui::Context) {
+        use crate::clash_io::{status_counts, test_matrix};
+        let mut open = true;
+        let m = test_matrix(&self.clash_tests);
+        let vid = egui::Id::new("cm_view");
+        let mut view: usize = ctx.data(|d| d.get_temp(vid)).unwrap_or(0);
+        let mut goto: Option<usize> = None;
+        let mut export = false;
+        let mut create: Option<(Vec<(Selector, Selector)>, ClashType, f32)> = None;
+        egui::Window::new("▦ Clash Matrix").open(&mut open).default_width(720.0).default_height(520.0).show(ctx, |ui| {
+            const VIEWS: [&str; 8] = ["Open (New + Active)", "Total", "New", "Active", "Reviewed", "Approved", "Resolved", "Tests"];
+            ui.horizontal(|ui| {
+                ui.label("Show");
+                egui::ComboBox::from_id_salt("cm_v").selected_text(VIEWS[view]).show_ui(ui, |ui| {
+                    for (i, v) in VIEWS.iter().enumerate() {
+                        ui.selectable_value(&mut view, i, *v);
+                    }
+                });
+                ui.label(RichText::new("Rows = Selection A, columns = Selection B. Click a cell to open its test.").weak().small());
+            });
+            ui.add_space(4.0);
+            if m.cells.is_empty() {
+                ui.label(RichText::new("No clash tests yet.").weak());
+            } else {
+                let maxv = m.cells.keys().filter_map(|(r, c)| m.counts(&self.clash_tests, *r, *c)).map(|k| k[0] + k[1]).max().unwrap_or(1).max(1) as f32;
+                egui::ScrollArea::both().id_salt("cm_scroll").max_height(300.0).show(ui, |ui| {
+                    egui::Grid::new("cm_grid").spacing([4.0, 4.0]).show(ui, |ui| {
+                        ui.label(RichText::new("A \\ B").weak().small());
+                        for c in &m.cols {
+                            ui.label(RichText::new(c).strong().small());
+                        }
+                        ui.label(RichText::new("Total").strong().small());
+                        ui.end_row();
+                        for r in 0..m.rows.len() {
+                            ui.label(RichText::new(&m.rows[r]).strong().small());
+                            let mut row_tot = 0;
+                            for c in 0..m.cols.len() {
+                                let Some(ix) = m.cells.get(&(r, c)) else {
+                                    egui::Frame::none().fill(Color32::from_white_alpha(6)).rounding(4.0).inner_margin(egui::Margin::symmetric(8.0, 4.0)).show(ui, |ui| {
+                                        ui.set_min_width(90.0);
+                                        ui.label(RichText::new("—").weak());
+                                    });
+                                    continue;
+                                };
+                                let k = m.counts(&self.clash_tests, r, c).unwrap_or([0; 5]);
+                                let open_n = k[0] + k[1];
+                                let total: usize = k.iter().sum();
+                                let v = match view {
+                                    0 => open_n,
+                                    1 => total,
+                                    2..=6 => k[view - 2],
+                                    _ => open_n,
+                                };
+                                row_tot += v;
+                                let run = ix.iter().all(|&i| !self.clash_tests[i].last_run.is_empty());
+                                let t = open_n as f32 / maxv;
+                                let fill = if !run {
+                                    Color32::from_rgba_unmultiplied(120, 120, 140, 50)
+                                } else if open_n == 0 {
+                                    Color32::from_rgba_unmultiplied(70, 180, 100, 90)
+                                } else {
+                                    Color32::from_rgba_unmultiplied(230, (170.0 - 120.0 * t) as u8, 60, (90.0 + 110.0 * t) as u8)
+                                };
+                                let resp = egui::Frame::none()
+                                    .fill(fill)
+                                    .rounding(4.0)
+                                    .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+                                    .show(ui, |ui| {
+                                        ui.set_min_width(90.0);
+                                        ui.vertical(|ui| {
+                                            let big = if !run { "not run".to_string() } else if view == 7 { format!("{open_n} / {total}") } else { v.to_string() };
+                                            ui.label(RichText::new(big).strong());
+                                            for &i in ix {
+                                                ui.label(RichText::new(&self.clash_tests[i].name).small());
+                                            }
+                                        });
+                                    })
+                                    .response
+                                    .interact(Sense::click());
+                                let tip: Vec<String> = ix
+                                    .iter()
+                                    .map(|&i| {
+                                        let t = &self.clash_tests[i];
+                                        let q = status_counts(t);
+                                        format!("{} ({}, {} mm)\nNew {}  Active {}  Reviewed {}  Approved {}  Resolved {}  -  total {}\nLast run: {}", t.name, t.ty.label(), t.tol_mm, q[0], q[1], q[2], q[3], q[4], t.results.len(), if t.last_run.is_empty() { "never" } else { &t.last_run })
+                                    })
+                                    .collect();
+                                let resp = resp.on_hover_text(format!("{} × {}\n\n{}", m.rows[r], m.cols[c], tip.join("\n\n")));
+                                if resp.clicked() {
+                                    goto = ix.first().copied();
+                                }
+                            }
+                            ui.label(RichText::new(row_tot.to_string()).strong());
+                            ui.end_row();
+                        }
+                    });
+                });
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.button("📊 Export Excel").on_hover_text("The matrix with the tests of each cell, one sheet per status, and the list of tests").clicked() {
+                        export = true;
+                    }
+                    if ui.add_enabled(self.clash_job.is_none() && self.loaded_models().next().is_some(), egui::Button::new("⟳ Update All")).clicked() {
+                        self.clash_update_all();
+                    }
+                });
+            }
+            ui.separator();
+            // ---- matricea de seturi: bifezi perechile, se creeaza testele
+            egui::CollapsingHeader::new(RichText::new("Create tests from a sets matrix").strong()).default_open(m.cells.is_empty() || self.clash_tests.iter().all(|t| t.results.is_empty() && t.last_run.is_empty())).show(ui, |ui| {
+                let mut cands: Vec<Selector> = self.sets.iter().map(|s| Selector { kind: SelKind::Set, value: s.name.clone() }).collect();
+                for d in ["Structure", "Architecture", "MEP - HVAC", "MEP - Plumbing", "MEP - Electrical"] {
+                    cands.push(Selector { kind: SelKind::Discipline, value: d.into() });
+                }
+                for (_, md) in self.loaded_models() {
+                    cands.push(Selector { kind: SelKind::Model, value: md.name.clone() });
+                }
+                let pid = egui::Id::new("cm_pick");
+                let mut picked: HashSet<(String, String)> = ui.data(|d| d.get_temp(pid)).unwrap_or_default();
+                let tyid = egui::Id::new("cm_ty");
+                let (mut ty, mut tol): (ClashType, f32) = ui.data(|d| d.get_temp(tyid)).unwrap_or((ClashType::Hard, 10.0));
+                ui.label(RichText::new("Tick the pairs that must be tested (row = Selection A, column = Selection B). Pairs that already have a test are marked ✔.").weak().small());
+                egui::ScrollArea::both().id_salt("cm_sets").max_height(240.0).show(ui, |ui| {
+                    egui::Grid::new("cm_sets_grid").spacing([6.0, 2.0]).striped(true).show(ui, |ui| {
+                        ui.label("");
+                        for b in &cands {
+                            ui.label(RichText::new(b.label()).small()).on_hover_text(b.label());
+                        }
+                        ui.end_row();
+                        for a in &cands {
+                            ui.label(RichText::new(a.label()).small());
+                            for b in &cands {
+                                let exists = self.clash_tests.iter().any(|t| (&t.a, &t.b) == (a, b));
+                                if exists {
+                                    ui.label(RichText::new("✔").color(Color32::from_rgb(70, 170, 90)));
+                                    continue;
+                                }
+                                let key = (a.label(), b.label());
+                                let mut on = picked.contains(&key);
+                                if ui.checkbox(&mut on, "").changed() {
+                                    if on {
+                                        picked.insert(key);
+                                    } else {
+                                        picked.remove(&key);
+                                    }
+                                }
+                            }
+                            ui.end_row();
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Type");
+                    egui::ComboBox::from_id_salt("cm_type").selected_text(ty.label()).show_ui(ui, |ui| {
+                        for t in [ClashType::Hard, ClashType::Clearance, ClashType::Duplicates] {
+                            ui.selectable_value(&mut ty, t, t.label());
+                        }
+                    });
+                    ui.label("Tolerance");
+                    ui.add(egui::DragValue::new(&mut tol).range(0.0..=5000.0).speed(1.0).suffix(" mm"));
+                    if ui.add_enabled(!picked.is_empty(), egui::Button::new(format!("➕ Create {} tests", picked.len()))).clicked() {
+                        let pairs = picked.iter().map(|(a, b)| (crate::clash_io::selector_from_label(a), crate::clash_io::selector_from_label(b))).collect();
+                        create = Some((pairs, ty, tol));
+                        picked.clear();
+                    }
+                });
+                ui.data_mut(|d| {
+                    d.insert_temp(pid, picked);
+                    d.insert_temp(tyid, (ty, tol));
+                });
+            });
+        });
+        ctx.data_mut(|d| d.insert_temp(vid, view));
+        self.show_clash_matrix = open;
+        if let Some(i) = goto {
+            self.cur_test = i;
+            self.cur_result = None;
+            self.sel_results.clear();
+            self.clash_subtab = 0;
+            self.open_panel(crate::layout::Panel::Clash);
+        }
+        if let Some((pairs, ty, tol)) = create {
+            let n = self.create_tests_from_matrix(&pairs, ty, tol);
+            self.toast(format!("{n} clash tests created - press Update All to run them."));
+        }
+        if export {
+            self.request_path(Purpose::ExportClashMatrix);
+        }
+    }
+
+    /// Sumarul dupa Update All: pe fiecare test, starile acum si diferenta fata de rularea anterioara.
+    fn update_summary_window(&mut self, ctx: &egui::Context) {
+        let Some(sum) = self.update_summary.clone() else { return };
+        let mut open = true;
+        let mut close = false;
+        let mut goto = None;
+        egui::Window::new("⟳ Update All - what changed").open(&mut open).collapsible(false).default_width(640.0).anchor(Align2::CENTER_CENTER, EV::ZERO).show(ctx, |ui| {
+            let (mut new_n, mut act, mut res) = (0usize, 0usize, 0usize);
+            for (_, _, a) in &sum {
+                new_n += a[0];
+                act += a[1];
+                res += a[4];
+            }
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(format!("{new_n} new")).strong().color(c32(ClashStatus::New.color())));
+                ui.label("·");
+                ui.label(RichText::new(format!("{act} still active")).strong().color(c32(ClashStatus::Active.color())));
+                ui.label("·");
+                ui.label(RichText::new(format!("{res} resolved")).strong().color(c32(ClashStatus::Resolved.color())));
+                ui.label(RichText::new(format!("in {} tests", sum.len())).weak());
+            });
+            ui.add_space(4.0);
+            egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                egui::Grid::new("upd_sum").striped(true).spacing([14.0, 4.0]).show(ui, |ui| {
+                    ui.strong("Test");
+                    for s in ClashStatus::ALL {
+                        ui.label(RichText::new(s.label()).strong().color(c32(s.color())));
+                    }
+                    ui.strong("Total");
+                    ui.end_row();
+                    for (i, (name, b, a)) in sum.iter().enumerate() {
+                        if ui.link(name).on_hover_text("Open this test").clicked() {
+                            goto = Some(i);
+                        }
+                        for j in 0..5 {
+                            let d = a[j] as i64 - b[j] as i64;
+                            let txt = if d == 0 { a[j].to_string() } else { format!("{} ({:+})", a[j], d) };
+                            ui.label(if d != 0 { RichText::new(txt).strong() } else { RichText::new(txt) });
+                        }
+                        ui.label(a.iter().sum::<usize>().to_string());
+                        ui.end_row();
+                    }
+                });
+            });
+            ui.add_space(4.0);
+            ui.label(RichText::new("New = found for the first time · Active = found again · Resolved = no longer found. Reviewed / Approved keep their status.").weak().small());
+            if ui.button("Close").clicked() {
+                close = true;
+            }
+        });
+        if let Some(i) = goto {
+            if i < self.clash_tests.len() {
+                self.cur_test = i;
+                self.cur_result = None;
+                self.sel_results.clear();
+                self.clash_subtab = 0;
+            }
+        }
+        if !open || close {
+            self.update_summary = None;
+        }
+    }
+
+    /// Tab-ul Select: Selection A / Selection B, tipul testului, toleranta, Run Test.
+    fn clash_select_ui(&mut self, ui: &mut egui::Ui, ti: usize) {
+        let mut test = self.clash_tests[ti].clone();
+        let mut run = false;
+        egui::ScrollArea::vertical().id_salt("csel").auto_shrink([false, false]).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Name");
+                ui.add(egui::TextEdit::singleline(&mut test.name).desired_width(220.0));
+            });
+            ui.add_space(4.0);
+            ui.columns(2, |c| {
+                for (k, (lbl, sel, id)) in [("Selection A", &mut test.a, "selA"), ("Selection B", &mut test.b, "selB")].into_iter().enumerate() {
+                    let ui = &mut c[k];
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_min_width(ui.available_width());
+                        ui.strong(lbl);
+                        self.selector_combo(ui, id, sel);
+                        // numarul de elemente: calculat o data pe selectie (Discipline / All parcurg tot modelul)
+                        let key = egui::Id::new(("sel_count", sel.label(), self.loaded_models().map(|(_, m)| m.elements.len()).sum::<usize>(), self.sets.len()));
+                        let n = match ui.data(|d| d.get_temp::<usize>(key)) {
+                            Some(n) => n,
+                            None => {
+                                let n = self.resolve_selector(sel).len();
+                                ui.data_mut(|d| d.insert_temp(key, n));
+                                n
+                            }
+                        };
+                        ui.label(RichText::new(format!("{n} items")).weak().small());
+                    });
+                }
+            });
+            ui.add_space(6.0);
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                ui.strong("Settings");
+                egui::Grid::new("csettings").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+                    ui.label("Type");
                     egui::ComboBox::from_id_salt("ctype").selected_text(test.ty.label()).show_ui(ui, |ui| {
                         for t in [ClashType::Hard, ClashType::Clearance, ClashType::Duplicates] {
                             ui.selectable_value(&mut test.ty, t, t.label());
                         }
                     });
+                    ui.end_row();
                     ui.label("Tolerance");
                     ui.add(egui::DragValue::new(&mut test.tol_mm).range(0.0..=5000.0).speed(1.0).suffix(" mm"));
+                    ui.end_row();
                     if test.ty == ClashType::Hard {
-                        ui.label("Major / Critical from").on_hover_text("Severity by penetration depth: under the first value = Minor, between = Major, over the second = Critical");
-                        ui.add(egui::DragValue::new(&mut test.sev_mm[0]).range(0.0..=1000.0).speed(1.0).suffix(" mm"));
-                        ui.add(egui::DragValue::new(&mut test.sev_mm[1]).range(0.0..=5000.0).speed(1.0).suffix(" mm"));
+                        ui.label("Severity").on_hover_text("By penetration depth: under the first value = Minor, between = Major, over the second = Critical");
+                        ui.horizontal(|ui| {
+                            ui.label("Major from");
+                            ui.add(egui::DragValue::new(&mut test.sev_mm[0]).range(0.0..=1000.0).speed(1.0).suffix(" mm"));
+                            ui.label("Critical from");
+                            ui.add(egui::DragValue::new(&mut test.sev_mm[1]).range(0.0..=5000.0).speed(1.0).suffix(" mm"));
+                        });
                         test.sev_mm[1] = test.sev_mm[1].max(test.sev_mm[0]);
-                    }
-                    self.clash_tests[ti].sev_mm = test.sev_mm;
-                    if let Some(job) = &self.clash_job {
-                        ui.add(egui::ProgressBar::new(job.prog.frac()).desired_width(160.0).show_percentage());
-                        if ui.button("Cancel").clicked() {
-                            job.prog.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
-                        }
-                    } else if ui.add_enabled(self.loaded_models().next().is_some(), egui::Button::new(RichText::new("▶ Run Test").strong().color(Color32::WHITE)).fill(accent())).clicked() {
-                        self.clash_tests[ti].name = test.name.clone();
-                        self.clash_tests[ti].a = test.a.clone();
-                        self.clash_tests[ti].b = test.b.clone();
-                        self.clash_tests[ti].ty = test.ty;
-                        self.clash_tests[ti].tol_mm = test.tol_mm;
-                        self.run_clash(ti);
+                        ui.end_row();
                     }
                 });
-                {
-                    let t = &mut self.clash_tests[ti];
-                    t.name = test.name;
-                    t.a = test.a;
-                    t.b = test.b;
-                    t.ty = test.ty;
-                    t.tol_mm = test.tol_mm;
-                }
-                // ---- sub-tabs
-                ui.horizontal(|ui| {
-                    let nres = self.clash_tests[ti].results.len();
-                    let nrules = self.clash_tests[ti].rules.count(self.clash_tests[ti].ignore_same_file);
-                    ui.selectable_value(&mut self.clash_subtab, 0, format!("Results ({nres})"));
-                    ui.selectable_value(&mut self.clash_subtab, 1, format!("Rules ({nrules})"));
-                });
-                ui.separator();
-                if self.clash_subtab == 0 {
-                    self.clash_results(ui, ti);
-                } else {
-                    self.clash_rules_ui(ui, ti);
+                ui.add_space(6.0);
+                if ui.add_enabled(self.clash_job.is_none() && self.loaded_models().next().is_some(), egui::Button::new(RichText::new("▶ Run Test").strong().color(Color32::WHITE)).fill(accent())).clicked() {
+                    run = true;
                 }
             });
+        });
+        let t = &mut self.clash_tests[ti];
+        t.name = test.name;
+        t.a = test.a;
+        t.b = test.b;
+        t.ty = test.ty;
+        t.tol_mm = test.tol_mm;
+        t.sev_mm = test.sev_mm;
+        if run {
+            self.run_clash(ti);
+            self.clash_subtab = 0;
+        }
+    }
+
+    /// Tab-ul Report: rapoartele si exporturile testului curent / tuturor testelor.
+    fn clash_report_ui(&mut self, ui: &mut egui::Ui, ti: usize) {
+        let has = !self.clash_tests[ti].results.is_empty();
+        egui::Grid::new("creport").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+            ui.strong("Current test");
+            ui.horizontal_wrapped(|ui| {
+                if ui.add_enabled(has, egui::Button::new("HTML report")).clicked() {
+                    self.request_path(Purpose::ExportClashHtml);
+                }
+                if ui.add_enabled(has, egui::Button::new("CSV report")).clicked() {
+                    self.request_path(Purpose::ExportClashCsv);
+                }
+                if ui.add_enabled(has, egui::Button::new("📤 BCF")).on_hover_text("Open clashes as BCF topics (camera + the two elements) - Revit, ACC, Solibri, BIMcollab, Navisworks").clicked() {
+                    self.request_path(Purpose::ExportClashBcf);
+                }
+                if ui.add_enabled(has, egui::Button::new("🧭 Navisworks viewpoints")).on_hover_text("Open clashes as Navisworks viewpoints with a section box around each clash (Saved Viewpoints > Import Viewpoints)").clicked() {
+                    self.request_path(Purpose::ExportClashNavis);
+                }
+            });
+            ui.end_row();
+            ui.strong("All tests");
+            ui.horizontal_wrapped(|ui| {
+                if ui.button("▦ Clash matrix (Excel)").on_hover_text("Selection A × Selection B with the results of each test, one sheet per status").clicked() {
+                    self.request_path(Purpose::ExportClashMatrix);
+                }
+                if ui.button("Tests (Navisworks XML)").clicked() {
+                    self.request_path(Purpose::ExportNavisClash);
+                }
+                if ui.button("Tests (CSV)").clicked() {
+                    self.request_path(Purpose::ExportClashTestsCsv);
+                }
+            });
+            ui.end_row();
         });
     }
 
@@ -5326,22 +6126,6 @@ Link tasks to elements with [Level=Level 1;Type=IfcSlab] at the end of the task 
             if ui.small_button("Collapse all").clicked() {
                 self.open_groups.clear();
             }
-            ui.separator();
-            if ui.button("HTML report").clicked() {
-                self.request_path(Purpose::ExportClashHtml);
-            }
-            if ui.button("CSV").clicked() {
-                self.request_path(Purpose::ExportClashCsv);
-            }
-            if ui.selectable_label(self.show_clash_matrix, "▦ Matrix").on_hover_text("Clash matrix: open / total clashes for every pair of models (all tests), Excel export").clicked() {
-                self.show_clash_matrix = !self.show_clash_matrix;
-            }
-            if ui.button("📤 BCF").on_hover_text("Open clashes as BCF topics (camera + the two elements) - Revit, ACC, Solibri, BIMcollab, Navisworks").clicked() {
-                self.request_path(Purpose::ExportClashBcf);
-            }
-            if ui.button("🧭 Navisworks").on_hover_text("Open clashes as Navisworks viewpoints with a section box around each clash (Saved Viewpoints > Import Viewpoints)").clicked() {
-                self.request_path(Purpose::ExportClashNavis);
-            }
             let lr = self.clash_tests[ti].last_run.clone();
             if !lr.is_empty() {
                 ui.label(RichText::new(format!("Last run: {lr}")).weak().small());
@@ -5382,7 +6166,7 @@ Link tasks to elements with [Level=Level 1;Type=IfcSlab] at the end of the task 
             }
         }
         if rows.is_empty() {
-            ui.label(RichText::new("No results. Set up selections A / B and press “Run Test”. Click a result to view it in 3D; Ctrl / Shift + click selects several.").weak());
+            ui.label(RichText::new("No results. Choose Selection A / B in the Select tab and press “Run Test” (or Update All). Click a result to view it in 3D; Ctrl / Shift + click selects several.").weak());
             return;
         }
         let items: Vec<usize> = rows.iter().filter_map(|r| if let Row::Item(i, _) = r { Some(*i) } else { None }).collect();
@@ -6969,16 +7753,145 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
     }
 
     // ------------------------------------------------------------------ render / animation
+    /// Animator: seturile de obiecte animate (culoare, transparenta, vizibilitate) cu keyframe-urile lor.
+    fn anim_sets_ui(&mut self, ui: &mut egui::Ui, ai: usize) {
+        use crate::anim::{AnimSet, ObjKey};
+        let n_sets = self.animations[ai].sets.len();
+        egui::CollapsingHeader::new(RichText::new(format!("Animation sets - objects ({n_sets})")).strong()).id_salt(("animsets", ai)).default_open(n_sets > 0).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                let sel: Vec<ElemId> = self.selected.iter().copied().collect();
+                if ui.add_enabled(!sel.is_empty(), egui::Button::new(format!("➕ From selection ({})", sel.len()))).on_hover_text("Animate the selected items (Navisworks: Add Animation Set > From current selection)").clicked() {
+                    let n = self.animations[ai].sets.len() + 1;
+                    self.animations[ai].sets.push(AnimSet { name: format!("Set {n}"), target: Selector { kind: SelKind::All, value: String::new() }, items: sel, keys: vec![ObjKey { t: self.anim_time, visible: true, color: None, transparency: 0.0 }], enabled: true });
+                }
+                ui.menu_button("➕ From set ⏷", |ui| {
+                    if self.sets.is_empty() {
+                        ui.label(RichText::new("No selection / search sets").weak());
+                    }
+                    for st in self.sets.clone() {
+                        if ui.button(&st.name).clicked() {
+                            self.animations[ai].sets.push(AnimSet { name: st.name.clone(), target: Selector { kind: SelKind::Set, value: st.name.clone() }, items: Vec::new(), keys: vec![ObjKey { t: self.anim_time, visible: true, color: None, transparency: 0.0 }], enabled: true });
+                            ui.close_menu();
+                        }
+                    }
+                });
+            });
+            let mut del_set = None;
+            let mut goto = None;
+            let now = self.anim_time;
+            for si in 0..self.animations[ai].sets.len() {
+                ui.separator();
+                let mut changed = false;
+                {
+                    let st = &mut self.animations[ai].sets[si];
+                    ui.horizontal(|ui| {
+                        changed |= ui.checkbox(&mut st.enabled, "").on_hover_text("Active").changed();
+                        ui.add(egui::TextEdit::singleline(&mut st.name).desired_width(120.0));
+                        let what = if st.items.is_empty() { st.target.label() } else { format!("{} items", st.items.len()) };
+                        ui.label(RichText::new(what).weak().small());
+                        if ui.small_button("📷 Capture keyframe").on_hover_text("Adds a keyframe at the current time, copying the state at this moment - then change colour, transparency or visibility").clicked() {
+                            let k = st.sample(now).unwrap_or(ObjKey { t: now, visible: true, color: None, transparency: 0.0 });
+                            st.keys.retain(|x| (x.t - now).abs() > 1e-3);
+                            st.keys.push(ObjKey { t: now, ..k });
+                            st.sort();
+                            changed = true;
+                        }
+                        if ui.small_button("🗑").clicked() {
+                            del_set = Some(si);
+                        }
+                    });
+                    let mut kdel = None;
+                    egui::Grid::new(("objkeys", ai, si)).num_columns(6).striped(true).spacing([6.0, 2.0]).show(ui, |ui| {
+                        for (k, key) in st.keys.iter_mut().enumerate() {
+                            changed |= ui.add(egui::DragValue::new(&mut key.t).range(0.0..=3600.0).speed(0.05).fixed_decimals(2).suffix(" s")).changed();
+                            changed |= ui.checkbox(&mut key.visible, "Visible").changed();
+                            let mut has_c = key.color.is_some();
+                            if ui.checkbox(&mut has_c, "Colour").changed() {
+                                key.color = if has_c { Some([230, 60, 50]) } else { None };
+                                changed = true;
+                            }
+                            if let Some(c) = key.color.as_mut() {
+                                changed |= ui.color_edit_button_srgb(c).changed();
+                            } else {
+                                ui.label("");
+                            }
+                            let mut tr = key.transparency * 100.0;
+                            if ui.add(egui::DragValue::new(&mut tr).range(0.0..=100.0).speed(1.0).suffix(" % transp.")).changed() {
+                                key.transparency = tr / 100.0;
+                                changed = true;
+                            }
+                            ui.horizontal(|ui| {
+                                if ui.small_button("Go to").clicked() {
+                                    goto = Some(key.t);
+                                }
+                                if ui.small_button("✖").clicked() {
+                                    kdel = Some(k);
+                                }
+                            });
+                            ui.end_row();
+                        }
+                    });
+                    if let Some(k) = kdel {
+                        st.keys.remove(k);
+                        changed = true;
+                    }
+                    if changed && !ui.ctx().is_using_pointer() {
+                        st.sort();
+                    }
+                }
+                if changed {
+                    self.anim_objects(ai, self.anim_time);
+                }
+            }
+            if let Some(i) = del_set {
+                self.animations[ai].sets.remove(i);
+                self.anim_objects(ai, self.anim_time);
+            }
+            if let Some(t) = goto {
+                self.anim_play = None;
+                self.goto_anim_time(t);
+            }
+            if n_sets == 0 {
+                ui.label(RichText::new("Animate objects like in Navisworks Animator: add a set from the selection, capture keyframes at different times and change colour, transparency or visibility (e.g. a crane appearing, a phase fading in).").weak().small());
+            }
+        });
+    }
+
     fn render_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.render_subtab, 0, "🎬 Animation & Output");
+            ui.selectable_value(&mut self.render_subtab, 0, "🖼 Image");
             ui.selectable_value(&mut self.render_subtab, 1, format!("🎨 Materials ({})", self.mat_assign.len()));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("🎞 Animations…").on_hover_text("Camera animations, 4D and video export are in their own window").clicked() {
+                    self.open_panel(Panel::Animation);
+                }
+            });
         });
         ui.separator();
         if self.render_subtab == 1 {
             self.materials_ui(ui);
             return;
         }
+        ui.columns(2, |cols| {
+            let ui = &mut cols[0];
+            ui.label(RichText::new("IMAGE SETTINGS").small().strong().color(ui.visuals().weak_text_color()));
+            self.output_settings_grid(ui, false);
+            let ui = &mut cols[1];
+            ui.label(RichText::new("RENDER THE CURRENT VIEW").small().strong().color(ui.visuals().weak_text_color()));
+            ui.label(format!("{}×{} PNG of what you see in the 3D view, with the current visual style ({}).", self.render.width, self.render.height, self.settings.visual_style.label()));
+            ui.add_space(4.0);
+            if ui.add(egui::Button::new(RichText::new("🖼 Render Image…").strong().color(Color32::WHITE)).fill(accent()).min_size(EV::new(180.0, 30.0))).clicked() {
+                self.request_path(Purpose::RenderImage);
+            }
+            ui.add_space(4.0);
+            ui.checkbox(&mut self.render.show_frame, "Show the image frame in the 3D view").on_hover_text("Compose the shot: shows the frame of the chosen resolution");
+            ui.checkbox(&mut self.render.overlay_4d, "4D date & legend on images");
+            ui.checkbox(&mut self.render.legend_on_images, "Colour legend (Appearance Profiler) on images");
+        });
+    }
+
+    /// Setarile de iesire (rezolutie, cadre, format, calitate, fundal, anti-aliasing). `video` = si cadrele / formatul.
+    fn output_settings_grid(&mut self, ui: &mut egui::Ui, video: bool) {
         if self.ffmpeg.is_none() {
             let ok = crate::video::ffmpeg_available();
             self.ffmpeg = Some(ok);
@@ -6986,73 +7899,70 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                 self.render.format = VideoFormat::Avi;
             }
         }
-        if self.cur_anim >= self.animations.len() {
-            self.cur_anim = self.animations.len().saturating_sub(1);
-        }
+        let ff = self.ffmpeg.unwrap_or(false);
         let busy = self.render_job.is_some();
-        ui.columns(3, |cols| {
-            // ---- animations
-            let ui = &mut cols[0];
-            ui.label(RichText::new("Animations").strong());
-            ui.horizontal_wrapped(|ui| {
-                if ui.button("➕ New").on_hover_text("Empty animation - add keyframes from the current view").clicked() {
-                    let n = self.animations.len() + 1;
-                    self.animations.push(Animation::new(format!("Animation {n}")));
-                    self.cur_anim = self.animations.len() - 1;
-                }
-                if ui.add_enabled(!self.viewpoints.is_empty(), egui::Button::new("📷 From viewpoints")).on_hover_text("Fly through all saved viewpoints").clicked() {
-                    let mut a = Animation::new(format!("Walkthrough {}", self.animations.len() + 1));
-                    for (i, v) in self.viewpoints.iter().enumerate() {
-                        a.keys.push(crate::anim::Keyframe { t: i as f32 * self.key_step, cam: v.cam });
-                    }
-                    self.animations.push(a);
-                    self.cur_anim = self.animations.len() - 1;
-                }
-                if ui.button("🔄 Orbit 360°").on_hover_text("Turntable around the model at the current height and distance").clicked() {
-                    let bb = self.scene_aabb();
-                    let a = Animation::orbit(format!("Orbit {}", self.animations.len() + 1), &self.cam, &bb, self.orbit_secs);
-                    self.animations.push(a);
-                    self.cur_anim = self.animations.len() - 1;
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Orbit");
-                ui.add(egui::DragValue::new(&mut self.orbit_secs).range(2.0..=600.0).suffix(" s"));
-                ui.label("Key step");
-                ui.add(egui::DragValue::new(&mut self.key_step).range(0.5..=60.0).speed(0.1).suffix(" s"));
-            });
-            ui.separator();
-            let mut del = None;
-            egui::ScrollArea::vertical().id_salt("anims").auto_shrink([false, false]).show(ui, |ui| {
-                for i in 0..self.animations.len() {
+        ui.add_enabled_ui(!busy, |ui| {
+                egui::Grid::new(("outgrid", video)).num_columns(2).spacing([10.0, 5.0]).show(ui, |ui| {
+                    ui.label("Resolution");
                     ui.horizontal(|ui| {
-                        let d = self.animations[i].duration();
-                        if ui.selectable_label(i == self.cur_anim, format!("🎬 {:.1} s", d)).clicked() {
-                            self.cur_anim = i;
-                            self.stop_anim();
+                        let cur = crate::anim::RESOLUTIONS.iter().find(|r| r.0 == self.render.width && r.1 == self.render.height).map(|r| r.2).unwrap_or("Custom");
+                        egui::ComboBox::from_id_salt("res").width(130.0).selected_text(cur).show_ui(ui, |ui| {
+                            for (w, h, n) in crate::anim::RESOLUTIONS {
+                                if ui.selectable_label(cur == n, format!("{n}  ({w}×{h})")).clicked() {
+                                    self.render.width = w;
+                                    self.render.height = h;
+                                }
+                            }
+                        });
+                        ui.add(egui::DragValue::new(&mut self.render.width).range(64..=7680));
+                        ui.label("×");
+                        ui.add(egui::DragValue::new(&mut self.render.height).range(64..=4320));
+                    });
+                    ui.end_row();
+                    if video {
+                    ui.label("Frame rate");
+                    ui.horizontal(|ui| {
+                        for f in [24, 25, 30, 60] {
+                            ui.selectable_value(&mut self.render.fps, f, format!("{f}"));
                         }
-                        ui.add(egui::TextEdit::singleline(&mut self.animations[i].name).desired_width(140.0));
-                        if ui.small_button("🗑").clicked() {
-                            del = Some(i);
+                        ui.label("fps");
+                    });
+                    ui.end_row();
+                    }
+                    if video {
+                    ui.label("Format");
+                    egui::ComboBox::from_id_salt("fmt").width(260.0).selected_text(self.render.format.label()).show_ui(ui, |ui| {
+                        for f in VideoFormat::ALL {
+                            let en = f != VideoFormat::Mp4 || ff;
+                            ui.add_enabled_ui(en, |ui| {
+                                ui.selectable_value(&mut self.render.format, f, f.label());
+                            });
                         }
                     });
-                }
-                if self.animations.is_empty() {
-                    ui.label(RichText::new("No animations yet.\nCreate an orbit, a walkthrough from viewpoints, or a new animation and capture keyframes from the 3D view.").weak());
-                }
-            });
-            if let Some(i) = del {
-                self.animations.remove(i);
-                self.stop_anim();
+                    ui.end_row();
+                    }
+                    ui.label("Quality");
+                    ui.add(egui::Slider::new(&mut self.render.quality, 50..=100));
+                    ui.end_row();
+                    ui.label("Background");
+                    egui::ComboBox::from_id_salt("bg").selected_text(self.render.background.label()).show_ui(ui, |ui| {
+                        for b in [Background::Theme, Background::White, Background::Dark] {
+                            ui.selectable_value(&mut self.render.background, b, b.label());
+                        }
+                    });
+                    ui.end_row();
+                    ui.label("Anti-aliasing");
+                    ui.checkbox(&mut self.render.supersample, "2× supersampling");
+                    ui.end_row();
+                });
+            if video && !ff {
+                ui.label(RichText::new("MP4 needs ffmpeg on the PATH (ffmpeg.org). AVI plays in Windows, PowerPoint and VLC.").weak().small());
             }
+        });
+    }
 
-            // ---- keyframes + preview
-            let ui = &mut cols[1];
-            let ai = self.cur_anim;
-            if ai >= self.animations.len() {
-                ui.label(RichText::new("Select or create an animation.").weak());
-            } else {
-                ui.label(RichText::new(format!("Keyframes - {}", self.animations[ai].name)).strong());
+    /// Editorul de keyframe-uri al camerei (avansat; ascuns implicit in fereastra Animations).
+    fn anim_keys_ui(&mut self, ui: &mut egui::Ui, ai: usize) {
                 ui.horizontal_wrapped(|ui| {
                     if ui.button("📷 Capture keyframe").on_hover_text("Adds the current 3D view").clicked() {
                         let a = &mut self.animations[ai];
@@ -7112,120 +8022,262 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                     self.stop_anim();
                     self.goto_anim_time(t);
                 }
-                let has_tasks = !self.tasks.is_empty();
-                ui.horizontal_wrapped(|ui| {
-                    ui.checkbox(&mut self.animations[ai].ease, "Ease in / out");
-                    ui.add_enabled(has_tasks, egui::Checkbox::new(&mut self.animations[ai].sim_4d, "Play TimeLiner 4D")).on_hover_text("The construction sequence runs from start to end during the animation");
-                    ui.checkbox(&mut self.anim_loop, "Loop preview");
+    }
+
+    /// Fereastra Animations: lista animatiilor cu Play pe fiecare, playerul, exportul video.
+    fn animations_ui(&mut self, ui: &mut egui::Ui) {
+        use crate::anim::AnimKind;
+        if self.cur_anim >= self.animations.len() {
+            self.cur_anim = self.animations.len().saturating_sub(1);
+        }
+        let busy = self.render_job.is_some();
+        let weak = ui.visuals().weak_text_color();
+        let head = |ui: &mut egui::Ui, t: &str| {
+            ui.label(RichText::new(t).small().strong().color(weak));
+        };
+        ui.columns(3, |cols| {
+            // ================= 1. lista animatiilor
+            let ui = &mut cols[0];
+            head(ui, "CREATE");
+            ui.horizontal_wrapped(|ui| {
+                let rec = self.anim_rec.is_some();
+                let rb = egui::Button::new(RichText::new(if rec { "⏹ Stop recording" } else { "⏺ Record" }).color(if rec { Color32::WHITE } else { Color32::from_rgb(225, 75, 75) })).fill(if rec { Color32::from_rgb(200, 50, 50) } else { ui.visuals().widgets.inactive.weak_bg_fill });
+                if ui.add_enabled(!busy, rb).on_hover_text("Record your navigation in the 3D view (orbit, walk, zoom) as a new animation").clicked() {
+                    self.toggle_record();
+                }
+                if ui.add_enabled(!busy, egui::Button::new("🔄 Orbit 360°")).on_hover_text("A full turn around the model, at the current height and distance").clicked() {
+                    let bb = self.scene_aabb();
+                    let a = Animation::orbit(format!("Orbit {}", self.animations.len() + 1), &self.cam, &bb, self.orbit_secs);
+                    self.animations.push(a);
+                    self.cur_anim = self.animations.len() - 1;
+                    self.anim_time = 0.0;
+                }
+                if ui.add_enabled(!busy && !self.viewpoints.is_empty(), egui::Button::new("📷 From viewpoints")).on_hover_text(if self.viewpoints.is_empty() { "Save some viewpoints first (Viewpoint › Save View)" } else { "Fly through all saved viewpoints, in order" }).clicked() {
+                    self.anim_from_viewpoints();
+                }
+                let has_path = self.walk_path.len() >= 2;
+                if ui.add_enabled(!busy && has_path, egui::Button::new("🚶 Walk path")).on_hover_text(if has_path { "The walk path you drew (Viewpoint › Walk Path › Draw) as an animation" } else { "Draw a walk path first: Viewpoint › Walk Path › Draw" }).clicked() {
+                    self.walk_path_to_animation();
+                }
+                if ui.add_enabled(!busy, egui::Button::new("📅 Import 4D")).on_hover_text("The TimeLiner 4D construction sequence as an animation (imports a schedule first if there is none)").clicked() {
+                    self.import_4d_animation();
+                }
+            });
+            if let Some((start, keys)) = &self.anim_rec {
+                egui::Frame::none().fill(Color32::from_rgb(200, 50, 50)).rounding(6.0).inner_margin(6.0).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.label(RichText::new(format!("⏺ Recording {:.1} s ({} keys) - move around in the 3D view, then press Stop recording.", start.elapsed().as_secs_f32(), keys.len())).color(Color32::WHITE));
                 });
-                let dur = self.animations[ai].duration();
-                ui.horizontal(|ui| {
-                    let playing = self.anim_play.is_some();
-                    if ui.add_enabled(!busy && self.animations[ai].keys.len() >= 2, egui::Button::new(if playing { "⏸ Pause" } else { "▶ Play" })).clicked() {
-                        if playing {
-                            self.anim_play = None;
-                        } else {
-                            let start = if self.anim_time >= dur - 1e-3 { 0.0 } else { self.anim_time };
-                            self.anim_play = Some(start);
+                ui.ctx().request_repaint();
+            }
+            ui.add_space(6.0);
+            head(ui, "ANIMATIONS");
+            let mut del = None;
+            let mut play_row: Option<usize> = None;
+            egui::ScrollArea::vertical().id_salt("anim_list").auto_shrink([false, false]).show(ui, |ui| {
+                if self.animations.is_empty() {
+                    ui.label(RichText::new("No animations yet. Create one above: Record your navigation, an Orbit 360°, a walkthrough of your viewpoints, your walk path, or the 4D construction sequence.").color(weak));
+                }
+                for i in 0..self.animations.len() {
+                    let cur = i == self.cur_anim;
+                    let playing = cur && self.anim_play.is_some();
+                    let fill = if cur { accent().gamma_multiply(0.18) } else { ui.visuals().faint_bg_color };
+                    egui::Frame::none().fill(fill).rounding(6.0).inner_margin(egui::Margin::symmetric(6.0, 4.0)).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            let b = egui::Button::new(RichText::new(if playing { "⏸" } else { "▶" }).size(16.0).color(Color32::WHITE)).fill(if playing { Color32::from_rgb(230, 150, 40) } else { accent() }).min_size(EV::new(34.0, 28.0)).rounding(14.0);
+                            if ui.add_enabled(!busy && self.animations[i].duration() > 0.0, b).on_hover_text(if playing { "Pause" } else { "Play this animation in the 3D view" }).clicked() {
+                                play_row = Some(i);
+                            }
+                            let (a_icon, a_name, a_kind, d) = { let a = &self.animations[i]; (a.kind.icon(), a.name.clone(), a.kind.label(), a.duration()) };
+                            ui.vertical(|ui| {
+                                let r = ui.add(egui::Label::new(RichText::new(format!("{a_icon} {a_name}")).strong()).sense(Sense::click())).on_hover_text("Select");
+                                if r.clicked() && !cur {
+                                    self.stop_anim();
+                                    self.cur_anim = i;
+                                    self.anim_time = 0.0;
+                                }
+                                let t = if cur { self.anim_time } else { 0.0 };
+                                ui.label(RichText::new(format!("{a_kind} · {:.1} / {:.1} s", t.min(d), d)).small().color(weak));
+                            });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.add_enabled(!busy, egui::Button::new("🗑").small()).on_hover_text("Delete this animation").clicked() {
+                                    del = Some(i);
+                                }
+                            });
+                        });
+                        if cur {
+                            let d = self.animations[i].duration().max(1e-3);
+                            ui.add(egui::ProgressBar::new((self.anim_time / d).clamp(0.0, 1.0)).desired_height(4.0));
                         }
-                    }
-                    if ui.add_enabled(!busy, egui::Button::new("⏹")).clicked() {
+                    });
+                    ui.add_space(3.0);
+                }
+            });
+            if let Some(i) = play_row {
+                if i == self.cur_anim && self.anim_play.is_some() {
+                    self.anim_play = None;
+                } else {
+                    if i != self.cur_anim {
                         self.stop_anim();
-                        self.goto_anim_time(0.0);
+                        self.cur_anim = i;
+                        self.anim_time = 0.0;
                     }
+                    self.play_anim(1.0);
+                }
+            }
+            if let Some(i) = del {
+                self.stop_anim();
+                self.animations.remove(i);
+                self.cur_anim = self.cur_anim.min(self.animations.len().saturating_sub(1));
+                self.anim_time = 0.0;
+            }
+
+            // ================= 2. playerul
+            let ui = &mut cols[1];
+            let ai = self.cur_anim;
+            if ai >= self.animations.len() {
+                head(ui, "PLAYER");
+                ui.label(RichText::new("Create or select an animation on the left.").color(weak));
+            } else {
+                head(ui, "PLAYER");
+                let dur = self.animations[ai].duration();
+                ui.label(RichText::new(format!("{} {}", self.animations[ai].kind.icon(), self.animations[ai].name)).strong().size(15.0));
+                ui.label(RichText::new(format!("{:.1} s  /  {:.1} s", self.anim_time.min(dur), dur)).size(18.0).monospace());
+                let can = !busy && dur > 0.0;
+                ui.horizontal(|ui| {
                     let mut t = self.anim_time;
-                    ui.spacing_mut().slider_width = (ui.available_width() - 80.0).max(60.0);
-                    if ui.add_enabled(!busy, egui::Slider::new(&mut t, 0.0..=dur.max(0.01)).fixed_decimals(1).suffix(" s")).changed() {
+                    ui.spacing_mut().slider_width = (ui.available_width() - 10.0).max(80.0);
+                    if ui.add_enabled(can, egui::Slider::new(&mut t, 0.0..=dur.max(0.01)).show_value(false)).changed() {
                         self.anim_play = None;
                         self.goto_anim_time(t);
                     }
                 });
+                ui.horizontal(|ui| {
+                    let playing = self.anim_play.is_some();
+                    let fwd = playing && self.anim_dir > 0.0;
+                    let back = playing && self.anim_dir < 0.0;
+                    let base = ui.visuals().widgets.inactive.weak_bg_fill;
+                    let tb = |icon: &str, on: bool| egui::Button::new(RichText::new(icon).size(15.0)).min_size(EV::new(34.0, 28.0)).fill(if on { accent().gamma_multiply(0.5) } else { base });
+                    if ui.add_enabled(can, tb("⏮", false)).on_hover_text("Back to the start").clicked() {
+                        self.anim_play = None;
+                        self.goto_anim_time(0.0);
+                    }
+                    if ui.add_enabled(can, tb("⏪", false)).on_hover_text("Previous keyframe").clicked() {
+                        self.step_anim(-1);
+                    }
+                    if ui.add_enabled(can, tb("◀", back)).on_hover_text("Play backwards").clicked() {
+                        self.play_anim(-1.0);
+                    }
+                    if ui.add_enabled(can && playing, tb("⏸", false)).on_hover_text("Pause").clicked() {
+                        self.anim_play = None;
+                    }
+                    if ui.add_enabled(!busy, tb("⏹", false)).on_hover_text("Stop: back to the start").clicked() {
+                        self.stop_anim();
+                        self.goto_anim_time(0.0);
+                        self.stop_anim();
+                    }
+                    let pb = egui::Button::new(RichText::new("▶").size(17.0).color(Color32::WHITE)).min_size(EV::new(44.0, 28.0)).fill(if fwd { Color32::from_rgb(230, 150, 40) } else { accent() });
+                    if ui.add_enabled(can, pb).on_hover_text("Play").clicked() {
+                        self.play_anim(1.0);
+                    }
+                    if ui.add_enabled(can, tb("⏩", false)).on_hover_text("Next keyframe").clicked() {
+                        self.step_anim(1);
+                    }
+                    if ui.add_enabled(can, tb("⏭", false)).on_hover_text("Go to the end").clicked() {
+                        self.anim_play = None;
+                        self.goto_anim_time(dur);
+                    }
+                });
+                ui.horizontal_wrapped(|ui| {
+                    if ui.checkbox(&mut self.anim_loop, "Loop").on_hover_text("Start again at the end").changed() && self.anim_loop {
+                        self.anim_pp = false;
+                    }
+                    if ui.checkbox(&mut self.anim_pp, "Ping-pong").on_hover_text("At the end, play backwards, then forwards again").changed() && self.anim_pp {
+                        self.anim_loop = false;
+                    }
+                    ui.checkbox(&mut self.animations[ai].ease, "Smooth start / end");
+                    let has_tasks = !self.tasks.is_empty();
+                    ui.add_enabled(has_tasks, egui::Checkbox::new(&mut self.animations[ai].sim_4d, "Play 4D")).on_hover_text(if has_tasks { "The TimeLiner construction sequence runs from start to end during the animation" } else { "No TimeLiner schedule - use Import 4D" });
+                });
+                ui.add_space(6.0);
+                egui::CollapsingHeader::new(RichText::new("✏ Edit keyframes and object animation (advanced)").color(weak)).id_salt(("anim_adv", ai)).default_open(false).show(ui, |ui| {
+                    egui::ScrollArea::vertical().id_salt("anim_adv_scroll").max_height(260.0).show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("Orbit length");
+                            ui.add(egui::DragValue::new(&mut self.orbit_secs).range(2.0..=600.0).suffix(" s"));
+                            ui.label("Key step");
+                            ui.add(egui::DragValue::new(&mut self.key_step).range(0.5..=60.0).speed(0.1).suffix(" s"));
+                        });
+                        self.anim_keys_ui(ui, ai);
+                        self.anim_sets_ui(ui, ai);
+                    });
+                });
             }
 
-            // ---- output
+            // ================= 3. exportul video
             let ui = &mut cols[2];
-            ui.label(RichText::new("Output").strong());
-            let ff = self.ffmpeg.unwrap_or(false);
-            ui.add_enabled_ui(!busy, |ui| {
-                egui::Grid::new("outgrid").num_columns(2).spacing([10.0, 5.0]).show(ui, |ui| {
-                    ui.label("Resolution");
-                    ui.horizontal(|ui| {
-                        let cur = crate::anim::RESOLUTIONS.iter().find(|r| r.0 == self.render.width && r.1 == self.render.height).map(|r| r.2).unwrap_or("Custom");
-                        egui::ComboBox::from_id_salt("res").width(130.0).selected_text(cur).show_ui(ui, |ui| {
-                            for (w, h, n) in crate::anim::RESOLUTIONS {
-                                if ui.selectable_label(cur == n, format!("{n}  ({w}×{h})")).clicked() {
-                                    self.render.width = w;
-                                    self.render.height = h;
-                                }
-                            }
-                        });
-                        ui.add(egui::DragValue::new(&mut self.render.width).range(64..=7680));
-                        ui.label("×");
-                        ui.add(egui::DragValue::new(&mut self.render.height).range(64..=4320));
-                    });
-                    ui.end_row();
-                    ui.label("Frame rate");
-                    ui.horizontal(|ui| {
-                        for f in [24, 25, 30, 60] {
-                            ui.selectable_value(&mut self.render.fps, f, format!("{f}"));
-                        }
-                        ui.label("fps");
-                    });
-                    ui.end_row();
-                    ui.label("Format");
-                    egui::ComboBox::from_id_salt("fmt").width(260.0).selected_text(self.render.format.label()).show_ui(ui, |ui| {
-                        for f in VideoFormat::ALL {
-                            let en = f != VideoFormat::Mp4 || ff;
-                            ui.add_enabled_ui(en, |ui| {
-                                ui.selectable_value(&mut self.render.format, f, f.label());
-                            });
-                        }
-                    });
-                    ui.end_row();
-                    ui.label("Quality");
-                    ui.add(egui::Slider::new(&mut self.render.quality, 50..=100));
-                    ui.end_row();
-                    ui.label("Background");
-                    egui::ComboBox::from_id_salt("bg").selected_text(self.render.background.label()).show_ui(ui, |ui| {
-                        for b in [Background::Theme, Background::White, Background::Dark] {
-                            ui.selectable_value(&mut self.render.background, b, b.label());
-                        }
-                    });
-                    ui.end_row();
-                    ui.label("Anti-aliasing");
-                    ui.checkbox(&mut self.render.supersample, "2× supersampling");
-                    ui.end_row();
-                });
-                if !ff {
-                    ui.label(RichText::new("MP4 needs ffmpeg on the PATH (ffmpeg.org). AVI plays in Windows, PowerPoint and VLC.").weak().small());
-                }
-            });
+            head(ui, "EXPORT VIDEO");
             if let Some(j) = &self.render_job {
                 let f = j.frame as f32 / j.frames.max(1) as f32;
                 let txt = if j.frame >= j.frames { "Finishing…".to_string() } else { format!("Frame {} / {}", j.frame, j.frames) };
+                ui.label(RichText::new("Exporting - the 3D view shows each frame.").strong());
                 ui.add(egui::ProgressBar::new(f).text(txt).desired_width(ui.available_width()));
                 if ui.button("Cancel").clicked() {
                     self.cancel_render();
                 }
-            } else {
-                let can = self.animations.get(self.cur_anim).map_or(false, |a| a.keys.len() >= 2);
-                let frames = self.animations.get(self.cur_anim).map(|a| (a.duration() * self.render.fps as f32).ceil() as u32 + 1).unwrap_or(0);
-                ui.horizontal_wrapped(|ui| {
-                    if ui.add_enabled(can, egui::Button::new(RichText::new("🎞 Export Animation…").strong().color(Color32::WHITE)).fill(accent())).clicked() {
-                        self.stop_anim();
-                        self.request_path(Purpose::ExportVideo);
-                    }
-                    if ui.button("🖼 Render Image…").on_hover_text("Current view at the chosen resolution, PNG").clicked() {
-                        self.request_path(Purpose::RenderImage);
-                    }
-                    ui.checkbox(&mut self.render.show_frame, "Show frame").on_hover_text("Show the frame of the rendered image in the view (aspect of the chosen resolution) - turn it on to compose the shot");
-                    ui.checkbox(&mut self.render.overlay_4d, "4D date & legend").on_hover_text("On images and videos of a 4D simulation: the date, the progress and the tasks in work (coloured like the simulation)");
-                    ui.checkbox(&mut self.render.legend_on_images, "Colour legend").on_hover_text("When colouring by parameter (Appearance Profiler) is on, its legend is drawn on images and videos");
-                });
-                if can {
-                    ui.label(RichText::new(format!("{frames} frames at {}×{}", self.render.width, self.render.height)).weak().small());
-                }
+                return;
             }
+            let info = self.animations.get(self.cur_anim).map(|a| (a.name.clone(), a.duration(), a.keys.len(), a.sets.iter().filter(|s| s.enabled).count(), a.sim_4d));
+            let fps = self.render.fps.max(1);
+            let can = info.as_ref().map_or(false, |i| i.1 > 0.0 && i.2 >= 1) && self.anim_rec.is_none();
+            egui::Frame::group(ui.style()).rounding(6.0).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                match &info {
+                    None => {
+                        ui.label(RichText::new("No animation to export yet.").color(Color32::from_rgb(230, 150, 40)));
+                    }
+                    Some((name, dur, _nk, ns, sim)) => {
+                        let frames = (dur * fps as f32).ceil() as u32 + 1;
+                        ui.label(RichText::new(format!("🎬 {name}")).strong().size(14.0));
+                        let fmt = match self.render.format {
+                            VideoFormat::PngSequence => "PNG images".to_string(),
+                            f => f.ext().to_uppercase(),
+                        };
+                        ui.label(format!("{dur:.1} s · {frames} frames · {}×{} · {fps} fps · {fmt}", self.render.width, self.render.height));
+                        let mut extra = Vec::new();
+                        if *sim {
+                            extra.push("4D sequence".to_string());
+                        }
+                        if *ns > 0 {
+                            extra.push(format!("{ns} animated object sets"));
+                        }
+                        if !extra.is_empty() {
+                            ui.label(RichText::new(format!("with {}", extra.join(", "))).small());
+                        }
+                    }
+                }
+            });
+            ui.add_space(4.0);
+            ui.checkbox(&mut self.render.with_materials, "🎨 Render with materials").on_hover_text("Realistic style for the video: materials and textures, reflections, sun shadows.\nThe 3D view goes back to your style after the export.");
+            ui.add_space(4.0);
+            let label = match &info {
+                Some((name, ..)) => format!("🎞 Export \"{name}\"…"),
+                None => "🎞 Export video…".into(),
+            };
+            if ui.add_enabled(can, egui::Button::new(RichText::new(label).strong().color(Color32::WHITE)).fill(accent()).min_size(EV::new(ui.available_width().min(260.0), 32.0))).on_hover_text("Choose where to save the video").clicked() {
+                self.stop_anim();
+                self.request_path(Purpose::ExportVideo);
+            }
+            if self.anim_rec.is_some() {
+                ui.label(RichText::new("Stop the recording first.").color(Color32::from_rgb(230, 150, 40)));
+            }
+            ui.add_space(4.0);
+            egui::CollapsingHeader::new("⚙ Video settings").id_salt("vid_settings").default_open(false).show(ui, |ui| {
+                self.output_settings_grid(ui, true);
+                ui.checkbox(&mut self.render.overlay_4d, "4D date & legend on the video");
+                ui.checkbox(&mut self.render.legend_on_images, "Colour legend (Appearance Profiler)");
+            });
         });
     }
 
@@ -7361,6 +8413,10 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                 Purpose::ImportGridsCad => "Import grid axes (DWG / DXF)",
                 Purpose::ExportReference => "Reference for Revit / AutoCAD",
                 Purpose::ExportClashMatrix => "Clash matrix (Excel)",
+                Purpose::ImportClashTests => "Import Clash Tests (XML / CSV / Excel)",
+                Purpose::ImportUserProps => "Import properties onto elements (Excel / CSV)",
+                Purpose::ExportUserProps => "Export properties (Excel template)",
+                Purpose::ExportClashTestsCsv => "Export Clash Tests (CSV)",
                 Purpose::ExportWeb => "Web viewer (HTML)",
                 Purpose::ExportAsBuilt => "As-built report (Excel)",
                 Purpose::ExportSectionCad => "Section cut (DWG / DXF)",
@@ -7501,56 +8557,13 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
             }
         }
         if self.show_clash_matrix {
-            let mut open = true;
-            let m = self.clash_matrix();
-            let mut export = false;
-            egui::Window::new("▦ Clash matrix").open(&mut open).default_width(560.0).show(ctx, |ui| {
-                if m.cells.is_empty() {
-                    ui.label(RichText::new("No clash results yet - run the clash tests first.").weak());
-                    return;
-                }
-                ui.label(RichText::new("Open clashes (New + Active) / all clashes, for every pair of models, over all clash tests.").weak().small());
-                ui.add_space(4.0);
-                egui::ScrollArea::both().max_height(420.0).show(ui, |ui| {
-                    egui::Grid::new("cm").striped(false).spacing([4.0, 4.0]).show(ui, |ui| {
-                        ui.label("");
-                        for n in &m.models {
-                            ui.label(RichText::new(n).strong().small());
-                        }
-                        ui.end_row();
-                        let maxo = m.cells.values().map(|c| c[0]).max().unwrap_or(1).max(1) as f32;
-                        for i in 0..m.models.len() {
-                            ui.label(RichText::new(&m.models[i]).strong().small());
-                            for j in 0..m.models.len() {
-                                if j < i {
-                                    ui.label("");
-                                    continue;
-                                }
-                                let c = m.get(i, j);
-                                let all = c[0] + c[1] + c[2];
-                                // culoarea: cu cat mai multe clash-uri deschise, cu atat mai rosu
-                                let t = c[0] as f32 / maxo;
-                                let fill = if all == 0 { Color32::from_white_alpha(8) } else if c[0] == 0 { Color32::from_rgba_unmultiplied(70, 180, 100, 90) } else { Color32::from_rgba_unmultiplied(230, (170.0 - 120.0 * t) as u8, 60, (90.0 + 110.0 * t) as u8) };
-                                egui::Frame::none().fill(fill).rounding(4.0).inner_margin(egui::Margin::symmetric(8.0, 4.0)).show(ui, |ui| {
-                                    ui.set_min_width(64.0);
-                                    ui.label(RichText::new(if all == 0 { "-".to_string() } else { format!("{} / {}", c[0], all) }).strong());
-                                })
-                                .response
-                                .on_hover_text(format!("{} × {}\nopen (new + active): {}\nreviewed / approved: {}\nresolved: {}", m.models[i], m.models[j], c[0], c[1], c[2]));
-                            }
-                            ui.end_row();
-                        }
-                    });
-                });
-                ui.add_space(6.0);
-                if ui.button("📊 Export Excel").clicked() {
-                    export = true;
-                }
-            });
-            self.show_clash_matrix = open;
-            if export {
-                self.request_path(Purpose::ExportClashMatrix);
-            }
+            self.clash_matrix_window(ctx);
+        }
+        if self.update_summary.is_some() {
+            self.update_summary_window(ctx);
+        }
+        if self.prop_import.is_some() {
+            self.prop_import_window(ctx);
         }
         if self.show_grids_editor {
             let mut open = true;
@@ -7926,6 +8939,10 @@ fn thousands(n: usize) -> String {
 
 /// buton de ribbon: iconita sus si eticheta dedesubt (Full) sau doar iconita (Compact, numele in tooltip).
 /// Fara contur: hover = fundalul se lumineaza, activ = nuanta de accent.
+fn rows_has(tabs: &[(String, Vec<(String, String)>)], tab: &str, name: &str) -> bool {
+    tabs.iter().any(|t| t.0 == tab && t.1.iter().any(|(n, _)| n.eq_ignore_ascii_case(name)))
+}
+
 fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled: bool) -> egui::Response {
     let label = crate::i18n::tr(label);
     let tip = crate::i18n::tr_lines(tip);
@@ -8481,6 +9498,7 @@ fn commands() -> Vec<Cmd> {
         c!("Scan vs Model (as-built)", "Analyze", "☁", "nor de puncte as built scanare", |a| a.asbuilt_open = true),
         c!("Coordinates / move model", "Analyze", "📐", "muta roteste relocare", |a| a.open_panel(Panel::Coords)),
         c!("Render & materials", "Render", "🎬", "randare materiale lumina", |a| a.open_panel(Panel::Render)),
+        c!("Animations (play, export video)", "Render", "🎞", "animatie video orbit record 4d", |a| a.open_panel(Panel::Animation)),
         // ---- export / share
         c!("Export IFC4…", "Export", "🏗", "ifc export", |a| {
             a.ifc_selection = false;

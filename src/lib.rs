@@ -103,6 +103,7 @@ pub fn build_model(raw: RawModel, path: &str, origin: glam::DVec3) -> Model {
 }
 
 pub mod app;
+pub mod clash_io;
 pub mod camera;
 pub mod layout;
 pub mod render;

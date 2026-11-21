@@ -3,6 +3,8 @@
 /installers/setup/target/
 /dist/
 **/bin/
+# sursele programelor Rust (bimc-convert, installerele add-in-urilor) fac parte din proiect
+!/src/bin/
 **/obj/
 # Autodesk API reference assemblies (proprietary - restored by the build scripts / NuGet)
 **/refs/
