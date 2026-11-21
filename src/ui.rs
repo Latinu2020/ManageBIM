@@ -1223,17 +1223,25 @@ impl App {
         rgroup(ui, "Visual Style", |ui| {
             use crate::render::VisualStyle as V;
             let cur = self.settings.visual_style;
-            for (s, icon, tip) in [
-                (V::Realistic, "☀", "Materials, textures, reflections, contact shadows"),
-                (V::Shaded, "◆", "The model colours with light and shadow, no textures"),
-                (V::Concept, "✏", "Study model: white, matte, strong edges - good for presentations and reviews"),
-                (V::Wireframe, "▦", "Triangle edges only - see through the model"),
-                (V::Hidden, "◫", "Hidden line: neutral surfaces, hidden edges removed - like AutoCAD / Navisworks"),
-            ] {
-                if rbtn(ui, icon, s.label(), tip, cur == s, true).clicked() && cur != s {
-                    self.set_visual_style(s);
-                }
+            let r = rbtn(ui, "◫", cur.label(), "Choose a visual style", true, true);
+            let id = ui.make_persistent_id("vstyle_menu");
+            if r.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(id));
             }
+            egui::popup_below_widget(ui, id, &r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                for (s, icon, tip) in [
+                    (V::Realistic, "☀", "Materials, textures, reflections, contact shadows"),
+                    (V::Shaded, "◆", "Model colours with light, no textures"),
+                    (V::Concept, "✏", "White study model with strong edges"),
+                    (V::Hidden, "◫", "Hidden line: neutral surfaces, hidden edges removed"),
+                    (V::Wireframe, "▦", "Triangle edges only - see through the model"),
+                ] {
+                    if ui.selectable_label(cur == s, format!("{icon}  {}", s.label())).on_hover_text(tip).clicked() {
+                        self.set_visual_style(s);
+                        ui.close_menu();
+                    }
+                }
+            });
         });
     }
 
@@ -1308,21 +1316,27 @@ impl App {
             }
         });
         rgroup(ui, "Theme", |ui| {
-            if rbtn(ui, "☀", "Light", "Light theme", self.settings.theme == Theme::Light, true).clicked() {
-                self.set_theme(Theme::Light);
+            let cur = self.settings.theme;
+            let r = rbtn(ui, "🎨", cur.label(), "Choose a colour theme", true, true);
+            let id = ui.make_persistent_id("theme_menu");
+            if r.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(id));
             }
-            if rbtn(ui, "🌙", "Dark", "Dark theme", self.settings.theme == Theme::Dark, true).clicked() {
-                self.set_theme(Theme::Dark);
-            }
-            if rbtn(ui, "❄", "Nord", "Nord theme: calm arctic blue-grey (nordtheme.com)", self.settings.theme == Theme::Nord, true).clicked() {
-                self.set_theme(Theme::Nord);
-            }
-            if rbtn(ui, "◆", "Studio", "Studio theme: near-black with electric blue, modern BIM look", self.settings.theme == Theme::Studio, true).clicked() {
-                self.set_theme(Theme::Studio);
-            }
-            if rbtn(ui, "🌃", "Tokyo Night", "Tokyo Night theme: deep night blue with blue / purple accents", self.settings.theme == Theme::TokyoNight, true).clicked() {
-                self.set_theme(Theme::TokyoNight);
-            }
+            egui::popup_below_widget(ui, id, &r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                for (t, icon, tip) in [
+                    (Theme::Studio, "◆", "Near-black with electric blue, modern BIM look"),
+                    (Theme::Dark, "🌙", "Classic dark"),
+                    (Theme::Nord, "❄", "Calm arctic blue-grey"),
+                    (Theme::TokyoNight, "🌃", "Deep night blue with blue / purple accents"),
+                    (Theme::Light, "☀", "Bright light theme"),
+                ] {
+                    let label = format!("{icon}  {}", t.label());
+                    if ui.selectable_label(cur == t, label).on_hover_text(tip).clicked() {
+                        self.set_theme(t);
+                        ui.close_menu();
+                    }
+                }
+            });
         });
         rgroup(ui, "Options", |ui| {
             let r = rbtn(ui, "⚙", "Options ⏷", "Cache, converters, file associations", false, true);
@@ -2224,16 +2238,7 @@ impl App {
                         }
                         r.context_menu(|ui| self.panel_menu(ui, *p));
                     }
-                    ui.menu_button("＋", |ui| {
-                        ui.label(RichText::new("Add a panel as a tab here").small().weak());
-                        ui.separator();
-                        for p in crate::layout::ALL_PANELS {
-                            if !tabs.contains(&p) && ui.button(p.title()).clicked() {
-                                self.settings.layout.move_to(p, Dock::Right);
-                                ui.close_menu();
-                            }
-                        }
-                    }).response.on_hover_text("Add a panel to this bar");
+                    ui.add_space(2.0);
                 });
                 ui.separator();
                 ui.vertical(|ui| {
@@ -2489,6 +2494,17 @@ impl App {
                         }
                         r.context_menu(|ui| self.panel_menu(ui, p));
                     }
+                    ui.menu_button("＋ Add tab", |ui| {
+                        ui.label(RichText::new("Add a panel to the Properties bar").small().weak());
+                        ui.separator();
+                        for p in crate::layout::ALL_PANELS {
+                            let in_right = self.settings.layout.get(p).map(|s| s.dock == Dock::Right).unwrap_or(false);
+                            if !in_right && ui.button(p.title()).clicked() {
+                                self.settings.layout.move_to(p, Dock::Right);
+                                ui.close_menu();
+                            }
+                        }
+                    }).response.on_hover_text("Add a panel as a vertical tab in the Properties bar");
                     ui.separator();
                 }
                 let nm = self.loaded_models().count();

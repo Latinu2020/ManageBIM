@@ -732,7 +732,7 @@ impl App {
                     });
                 });
                 let q = filter.trim().to_lowercase();
-                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt("prop_scroll").auto_shrink([false, false]).min_scrolled_height(ui.available_height()).show(ui, |ui| {
                     for (gi, (g, rows)) in groups.iter().enumerate() {
                         let rows: Vec<&(String, String)> = rows.iter().filter(|(n, v)| q.is_empty() || n.to_lowercase().contains(&q) || v.to_lowercase().contains(&q) || g.to_lowercase().contains(&q)).collect();
                         if rows.is_empty() {
