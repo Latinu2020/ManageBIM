@@ -10,7 +10,9 @@ impl App {
         self.sync.sent = u64::MAX;
         self.sync.seen = [None; 2];
         if on {
-            self.toast("Live Link on: the selection follows Revit / Navisworks (Revit: ManageBIM › Sync Selection; Navisworks: Tool Add-ins › Sync Selection).");
+            // "Send to ManageBIM" din Revit / Navisworks: modelul trimis se adauga imediat in scena.
+            self.scan_inbox();
+            self.toast("Live Link on: selection follows Revit / Navisworks; new models sent from them are added automatically (Revit: ManageBIM › Sync Selection; Navisworks: Tool Add-ins › Sync Selection).");
         }
     }
 

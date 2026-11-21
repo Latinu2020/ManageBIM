@@ -3,7 +3,7 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
-## 0.27.0-beta.1 - 2026-11-21 (test)
+## 0.27.0 - 2026-11-21
 - **Build-ul add-in-urilor reparat**: `cargo build --release --features addins` functionează din nou. Cele trei instalere (`ManageBIM-Revit-AddIn.exe`, `ManageBIM-AutoCAD-AddIn.exe`, `ManageBIM-Navisworks-AddIn.exe`) au sursele în `src/bin/addin/` și includ automat DLL-urile din `installers\payload\`; dacă lipseau DLL-urile, primesți un mesaj clar cu scriptul C# de rulat. Logica de instalare e în `src/addin_install.rs`, cu 5 teste noi (Revit 2023–2027, 2027 folosește DLL-ul de 2026, AutoCAD R24/R25, Navisworks vechi/nou, dezinstalare).
 - **Monoliții sparți în module**: `ui.rs` (10.311 → ~4.600 linii) și `app.rs` (8.811 → ~2.700 linii) au acum 7, respectiv 16 submodule (`src/ui/`, `src/app/`): coordination, tree_props, time, tools, analysis, clash, grids, project, anim, materials etc. Nicio funcționalitate mutată — doar organizare.
 - **Interfață mai prietenoasă**: pagina de start are logo isometric, buton Open evidențiat, carduri „Welcome” cu acțiuni rapide (Open / Demo / Commands) și sublinierea tab-ului activ în ribbon.

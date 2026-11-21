@@ -514,7 +514,7 @@ impl App {
                 ui.style_mut().spacing.item_spacing.x = 3.0;
                 // accentul Nord e deschis (cyan): text inchis pentru contrast
                 let ftxt = match self.settings.theme { Theme::Nord => Color32::from_rgb(46, 52, 64), Theme::TokyoNight => Color32::from_rgb(26, 27, 38), _ => Color32::WHITE };
-                let fb = egui::Button::new(crate::theme::icon_job("≡", crate::i18n::tr("File "), 14.0, ftxt)).fill(accent()).rounding(7.0);
+                let fb = egui::Button::new(crate::theme::icon_job("≡", crate::i18n::tr("File "), 14.0, ftxt)).fill(accent()).rounding(7.0).min_size(EV::new(78.0, 26.0));
                 let r = ui.add(fb);
                 let popup = ui.make_persistent_id("file_menu");
                 if r.clicked() {
@@ -527,7 +527,7 @@ impl App {
                     let on = self.ribbon_tab == i && mode != RibbonMode::Mini;
                     let t = crate::i18n::tr(t);
                     let txt = if on { RichText::new(t).color(accent()).strong() } else { RichText::new(t) };
-                    let b = egui::Button::new(txt).fill(if on { accent().gamma_multiply(0.16) } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(7.0);
+                    let b = egui::Button::new(txt).fill(if on { accent().gamma_multiply(0.16) } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(78.0, 24.0));
                     let r = ui.add(b);
                     if on {
                         // subliniere subtila a tab-ului activ (ca in Office / Navisworks 2024)
@@ -561,15 +561,15 @@ impl App {
                         self.settings.save();
                     }
                     let nt = self.settings.theme.next();
-                    if ui.add(egui::Button::new(RichText::new("⛶ Model focus").size(11.5).color(ui.visuals().text_color())).fill(ui.visuals().window_fill).stroke(Stroke::NONE).rounding(7.0)).on_hover_text("Hide the ribbon and panels, keep Properties floating - maximum space for the model (Esc to exit)").clicked() {
+                    if ui.add(egui::Button::new(RichText::new("⛶ Model focus").size(11.5).color(ui.visuals().text_color())).fill(ui.visuals().window_fill).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(108.0, 24.0))).on_hover_text("Hide the ribbon and panels, keep Properties floating - maximum space for the model (Esc to exit)").clicked() {
                         self.toggle_immersive();
                     }
-                    let chip = egui::Button::new(RichText::new(self.settings.theme.label()).size(11.5).color(ui.visuals().text_color())).fill(ui.visuals().window_fill).stroke(Stroke::NONE).rounding(7.0);
+                    let chip = egui::Button::new(RichText::new(self.settings.theme.label()).size(11.5).color(ui.visuals().text_color())).fill(ui.visuals().window_fill).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(78.0, 24.0));
                     if ui.add(chip).on_hover_text(format!("Theme: {} - click for {}", self.settings.theme.label(), nt.label())).clicked() {
                         self.set_theme(nt);
                     }
                     // cautarea / paleta de comenzi (ca in redesign: "Search or Ctrl+K")
-                    let sb = egui::Button::new(crate::theme::icon_job("🔍", "Search or Ctrl+K", 12.0, ui.visuals().weak_text_color())).fill(ui.visuals().extreme_bg_color).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(200.0, 22.0));
+                    let sb = egui::Button::new(crate::theme::icon_job("🔍", "Search or Ctrl+K", 12.0, ui.visuals().weak_text_color())).fill(ui.visuals().extreme_bg_color).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(200.0, 24.0));
                     if ui.add(sb).on_hover_text("Command palette: type a command (clash, section, pdf, theme...) or an element name").clicked() {
                         self.palette_open = true;
                     }
@@ -1223,25 +1223,17 @@ impl App {
         rgroup(ui, "Visual Style", |ui| {
             use crate::render::VisualStyle as V;
             let cur = self.settings.visual_style;
-            let r = rbtn(ui, "◫", cur.label(), "Choose a visual style", true, true);
-            let id = ui.make_persistent_id("vstyle_menu");
-            if r.clicked() {
-                ui.memory_mut(|m| m.toggle_popup(id));
-            }
-            egui::popup_below_widget(ui, id, &r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                for (s, icon, tip) in [
-                    (V::Realistic, "☀", "Materials, textures, reflections, contact shadows"),
-                    (V::Shaded, "◆", "Model colours with light, no textures"),
-                    (V::Concept, "✏", "White study model with strong edges"),
-                    (V::Hidden, "◫", "Hidden line: neutral surfaces, hidden edges removed"),
-                    (V::Wireframe, "▦", "Triangle edges only - see through the model"),
-                ] {
-                    if ui.selectable_label(cur == s, format!("{icon}  {}", s.label())).on_hover_text(tip).clicked() {
-                        self.set_visual_style(s);
-                        ui.close_menu();
-                    }
+            for (s, icon, tip) in [
+                (V::Realistic, "☀", "Materials, textures, reflections, contact shadows"),
+                (V::Shaded, "◆", "Model colours with light, no textures"),
+                (V::Concept, "✏", "White study model with strong edges"),
+                (V::Hidden, "◫", "Hidden line: neutral surfaces, hidden edges removed"),
+                (V::Wireframe, "▦", "Triangle edges only - see through the model"),
+            ] {
+                if rbtn(ui, icon, s.label(), tip, cur == s, true).clicked() && cur != s {
+                    self.set_visual_style(s);
                 }
-            });
+            }
         });
     }
 
@@ -1317,26 +1309,17 @@ impl App {
         });
         rgroup(ui, "Theme", |ui| {
             let cur = self.settings.theme;
-            let r = rbtn(ui, "🎨", cur.label(), "Choose a colour theme", true, true);
-            let id = ui.make_persistent_id("theme_menu");
-            if r.clicked() {
-                ui.memory_mut(|m| m.toggle_popup(id));
-            }
-            egui::popup_below_widget(ui, id, &r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                for (t, icon, tip) in [
-                    (Theme::Studio, "◆", "Near-black with electric blue, modern BIM look"),
-                    (Theme::Dark, "🌙", "Classic dark"),
-                    (Theme::Nord, "❄", "Calm arctic blue-grey"),
-                    (Theme::TokyoNight, "🌃", "Deep night blue with blue / purple accents"),
-                    (Theme::Light, "☀", "Bright light theme"),
-                ] {
-                    let label = format!("{icon}  {}", t.label());
-                    if ui.selectable_label(cur == t, label).on_hover_text(tip).clicked() {
-                        self.set_theme(t);
-                        ui.close_menu();
-                    }
+            for (t, icon, tip) in [
+                (Theme::Studio, "◆", "Studio theme"),
+                (Theme::Dark, "🌙", "Dark theme"),
+                (Theme::Nord, "❄", "Nord theme"),
+                (Theme::TokyoNight, "🌃", "Tokyo Night theme"),
+                (Theme::Light, "☀", "Light theme"),
+            ] {
+                if rbtn(ui, icon, t.label(), tip, cur == t, true).clicked() && cur != t {
+                    self.set_theme(t);
                 }
-            });
+            }
         });
         rgroup(ui, "Options", |ui| {
             let r = rbtn(ui, "⚙", "Options ⏷", "Cache, converters, file associations", false, true);
@@ -4163,11 +4146,11 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     let enabled = enabled && ui.is_enabled();
     let compact = crate::theme::RIBBON_COMPACT.load(std::sync::atomic::Ordering::Relaxed);
     let font = FontId::proportional(11.5);
+    // Dimensiune FIXA pentru toate butoanele din ribbon: etichetele nu mai schimba latimea.
     let size = if compact {
         egui::vec2(30.0, 30.0)
     } else {
-        let tw = ui.fonts(|f| f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE).size().x);
-        egui::vec2((tw + 10.0).max(38.0), 42.0)
+        egui::vec2(58.0, 42.0)
     };
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let p = ui.painter();
@@ -4183,7 +4166,8 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
         p.text(rect.center(), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), col);
     } else {
         p.text(rect.center_top() + egui::vec2(0.0, 13.0), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), col);
-        p.text(rect.center_bottom() - egui::vec2(0.0, 8.0), Align2::CENTER_CENTER, label, font, col);
+        let shown = if label.chars().count() > 11 { format!("{}…", label.chars().take(10).collect::<String>()) } else { label.to_string() };
+        p.text(rect.center_bottom() - egui::vec2(0.0, 8.0), Align2::CENTER_CENTER, &shown, font, col);
     }
     let tip = if compact { format!("{label}\n{tip}") } else { tip.to_string() };
     if enabled {
