@@ -770,50 +770,57 @@ impl App {
             if rbtn(ui, "🔄", "Orbit", "Orbit: left-drag rotates around the point under the cursor", self.nav == NavMode::Orbit, true).clicked() {
                 self.nav = NavMode::Orbit;
             }
-            if rbtn(ui, "✋", "Pan", "Pan: left-drag moves the model sideways (also: middle-drag or Shift+drag in any mode)", self.nav == NavMode::Pan, true).clicked() {
+            if rbtn(ui, "✋", "Pan", "Pan: left-drag moves the model sideways", self.nav == NavMode::Pan, true).clicked() {
                 self.nav = NavMode::Pan;
             }
-            if rbtn(ui, "🚶", "Walk", "Walk: hold left button and drag up / down to walk, left / right to turn (Ctrl = faster). W A S D / arrows also walk, Q / E up / down.", self.nav == NavMode::Walk, true).clicked() {
+            if rbtn(ui, "🚶", "Walk", "Walk: drag up / down, W A S D / arrows", self.nav == NavMode::Walk, true).clicked() {
                 self.nav = NavMode::Walk;
             }
-            ui.vertical(|ui| {
-                ui.add_space(6.0);
-                ui.label("Walk speed");
+            // Toate controalele sunt butoane de dimensiune fixa; setarile se schimba in popup.
+            let spd = rbtn(ui, "⏩", &format!("{:.1}", self.settings.walk_speed), "Walk speed (m/s)", false, true);
+            let sid = ui.make_persistent_id("walk_speed_pop");
+            if spd.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(sid));
+            }
+            egui::popup_below_widget(ui, sid, &spd, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                ui.set_min_width(220.0);
                 let mut v = self.settings.walk_speed;
+                ui.label("Walk speed");
                 if ui.add(egui::Slider::new(&mut v, 0.2..=20.0).logarithmic(true).suffix(" m/s").max_decimals(1)).changed() {
                     self.settings.walk_speed = v;
                 }
-                if ui.input(|i| i.pointer.any_released()) && (self.settings.walk_speed - self.walk_saved).abs() > 1e-4 {
-                    self.walk_saved = self.settings.walk_speed;
-                    self.settings.save();
-                }
                 ui.horizontal(|ui| {
-                    for (n, v) in [("Slow", 0.7), ("Normal", 1.4), ("Fast", 4.0)] {
-                        if ui.small_button(n).on_hover_text(format!("{v} m/s")).clicked() {
-                            self.settings.walk_speed = v;
-                            self.settings.save();
+                    for (n, x) in [("Slow", 0.7), ("Normal", 1.4), ("Fast", 4.0)] {
+                        if ui.button(n).clicked() {
+                            self.settings.walk_speed = x;
                         }
                     }
                 });
+                if (self.settings.walk_speed - self.walk_saved).abs() > 1e-4 {
+                    self.walk_saved = self.settings.walk_speed;
+                    self.settings.save();
+                }
             });
-            ui.vertical(|ui| {
-                ui.add_space(4.0);
-                let mut c = (self.settings.gravity, self.settings.collision);
-                ui.checkbox(&mut c.0, "Gravity").on_hover_text("Walk on floors and stairs at eye height");
-                ui.checkbox(&mut c.1, "Collision").on_hover_text("Stop at walls and objects");
-                ui.horizontal(|ui| {
-                    ui.label("Eye");
-                    let mut h = self.settings.eye_height;
-                    if ui.add(egui::DragValue::new(&mut h).range(0.5..=3.0).speed(0.01).suffix(" m")).changed() {
-                        self.settings.eye_height = h;
-                    }
-                });
-                if c != (self.settings.gravity, self.settings.collision) {
-                    self.settings.gravity = c.0;
-                    self.settings.collision = c.1;
-                    if c.0 || c.1 {
-                        self.nav = NavMode::Walk;
-                    }
+            if rbtn(ui, "⬇", "Gravity", "Walk on floors and stairs at eye height", self.settings.gravity, true).clicked() {
+                self.settings.gravity = !self.settings.gravity;
+                if self.settings.gravity { self.nav = NavMode::Walk; }
+                self.settings.save();
+            }
+            if rbtn(ui, "▣", "Collision", "Stop at walls and objects", self.settings.collision, true).clicked() {
+                self.settings.collision = !self.settings.collision;
+                if self.settings.collision { self.nav = NavMode::Walk; }
+                self.settings.save();
+            }
+            let eye = rbtn(ui, "👁", &format!("{:.2}", self.settings.eye_height), "Eye height (m)", false, true);
+            let eid = ui.make_persistent_id("eye_pop");
+            if eye.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(eid));
+            }
+            egui::popup_below_widget(ui, eid, &eye, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                ui.set_min_width(180.0);
+                let mut h = self.settings.eye_height;
+                if ui.add(egui::Slider::new(&mut h, 0.5..=3.0).suffix(" m")).changed() {
+                    self.settings.eye_height = h;
                     self.settings.save();
                 }
             });
@@ -888,9 +895,13 @@ impl App {
             self.panel_btn(ui, Panel::Viewpoints, "🖼", "Viewpoints", "Saved viewpoints");
         });
         rgroup(ui, "Camera", |ui| {
-            ui.vertical(|ui| {
-                ui.add_space(8.0);
-                ui.label("Field of view");
+            let fov = rbtn(ui, "◎", &format!("{:.0}°", self.cam.fov_deg), "Field of view", false, true);
+            let id = ui.make_persistent_id("fov_pop");
+            if fov.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(id));
+            }
+            egui::popup_below_widget(ui, id, &fov, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                ui.set_min_width(200.0);
                 ui.add(egui::Slider::new(&mut self.cam.fov_deg, 25.0..=90.0).suffix("°"));
             });
         });
@@ -934,10 +945,21 @@ impl App {
                     }
                 }
             }
-            ui.vertical(|ui| {
-                ui.add_space(4.0);
-                ui.radio_value(&mut self.relocate_selection, false, RichText::new("Model").small()).on_hover_text("Move / rotate the whole model of the first picked point");
-                ui.radio_value(&mut self.relocate_selection, true, RichText::new("Selection").small()).on_hover_text("Move only the selected items (point to point)");
+            let sel = rbtn(ui, "◎", if self.relocate_selection { "Selection" } else { "Model" }, "Relocate: whole model or only the selection", false, true);
+            let sid = ui.make_persistent_id("reloc_sel_pop");
+            if sel.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(sid));
+            }
+            egui::popup_below_widget(ui, sid, &sel, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                ui.set_min_width(180.0);
+                if ui.selectable_label(!self.relocate_selection, "Model").clicked() {
+                    self.relocate_selection = false;
+                    ui.close_menu();
+                }
+                if ui.selectable_label(self.relocate_selection, "Selection").clicked() {
+                    self.relocate_selection = true;
+                    ui.close_menu();
+                }
             });
         });
     }
@@ -989,34 +1011,37 @@ impl App {
         let levels = self.scene_grids().levels;
         if !levels.is_empty() {
             rgroup(ui, "Level", |ui| {
-                ui.vertical(|ui| {
-                    let mut li = self.section_level.unwrap_or(0).min(levels.len() - 1);
-                    egui::ComboBox::from_id_salt("rib_lev").width(118.0).selected_text(levels[li].0.clone()).show_ui(ui, |ui| {
-                        for (i, l) in levels.iter().enumerate().rev() {
-                            if ui.selectable_value(&mut li, i, &l.0).clicked() {
-                                self.section_level_box(i);
-                            }
+                let li = self.section_level.unwrap_or(0).min(levels.len() - 1);
+                let cur = &levels[li].0;
+                let lev = rbtn(ui, "▤", cur, "Current level (click to choose)", false, true);
+                let lid = ui.make_persistent_id("rib_lev_pop");
+                if lev.clicked() {
+                    ui.memory_mut(|m| m.toggle_popup(lid));
+                }
+                egui::popup_below_widget(ui, lid, &lev, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                    ui.set_min_width(180.0);
+                    for (i, l) in levels.iter().enumerate().rev() {
+                        if ui.selectable_label(self.section_level == Some(i), &l.0).clicked() {
+                            self.section_level_box(i);
+                            ui.close_menu();
                         }
-                    });
-                    self.section_level = Some(li);
-                    ui.horizontal(|ui| {
-                        if ui.small_button("▼").on_hover_text("Level below (PgDn)").clicked() {
-                            self.section_level_step(-1);
-                        }
-                        if ui.small_button("▲").on_hover_text("Level above (PgUp)").clicked() {
-                            self.section_level_step(1);
-                        }
-                        if ui.small_button("▣").on_hover_text("Level box (floor to the next level)").clicked() {
-                            self.section_level_box(li);
-                        }
-                        if ui.small_button("✂").on_hover_text(format!("Plan cut at {:.2} m above the level", self.plan_cut_h)).clicked() {
-                            self.section_plan_cut(li, self.plan_cut_h);
-                        }
-                        if ui.small_button("👁").on_hover_text("Only this level's items").clicked() {
-                            self.isolate_level(li);
-                        }
-                    });
+                    }
                 });
+                if rbtn(ui, "▼", "Below", "Level below (PgDn)", false, true).clicked() {
+                    self.section_level_step(-1);
+                }
+                if rbtn(ui, "▲", "Above", "Level above (PgUp)", false, true).clicked() {
+                    self.section_level_step(1);
+                }
+                if rbtn(ui, "▣", "Box", "Section box on this level (floor to next)", false, true).clicked() {
+                    self.section_level_box(li);
+                }
+                if rbtn(ui, "✂", "Cut", "Plan cut at the current height", false, true).clicked() {
+                    self.section_plan_cut(li, self.plan_cut_h);
+                }
+                if rbtn(ui, "👁", "Isolate", "Only this level's items", false, true).clicked() {
+                    self.isolate_level(li);
+                }
             });
         }
         self.visibility_group(ui);
@@ -1482,8 +1507,13 @@ impl App {
             if rbtn(ui, "✖", "Erase", "Click a markup to delete it", self.tool == Tool::RedErase, true).clicked() {
                 self.tool = if self.tool == Tool::RedErase { Tool::Select } else { Tool::RedErase };
             }
-            ui.vertical(|ui| {
-                ui.add_space(4.0);
+            let col = rbtn(ui, "🎨", "Colour", "Markup colour and thickness", false, true);
+            let cid = ui.make_persistent_id("red_col_pop");
+            if col.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(cid));
+            }
+            egui::popup_below_widget(ui, cid, &col, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                ui.set_min_width(220.0);
                 ui.horizontal(|ui| {
                     for c in [[230u8, 40, 40], [245, 190, 20], [40, 170, 70], [40, 110, 230], [20, 20, 20], [250, 250, 250]] {
                         let (r, resp) = ui.allocate_exact_size(EV::splat(16.0), Sense::click());
