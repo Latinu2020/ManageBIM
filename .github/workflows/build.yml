@@ -81,6 +81,25 @@ jobs:
           name: freebsd
           path: dist/*.tar.gz
 
+  quality:
+    # Verificari informationale (nu blocheaza release-ul); datoria de cod se reduce treptat.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Format check
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+      - name: Clippy (-D warnings, informational)
+        continue-on-error: true
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Licences and advisories
+        continue-on-error: true
+        uses: EmbarkStudios/cargo-deny-action@v2
+
   setup:
     # Setup-ul Windows (.exe cu add-in-uri + OpenCascade) se construieste doar la tag,
     # ca release-ul de GitHub sa aiba toate platformele: Windows ZIP + Setup, Linux, FreeBSD.
