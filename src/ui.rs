@@ -23,6 +23,8 @@ mod tools;
 mod help;
 mod output;
 mod table;
+mod script;
+mod settings;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
 fn accent() -> Color32 {
@@ -182,6 +184,8 @@ impl eframe::App for App {
         self.float_windows(ctx);
         self.windows(ctx);
         self.pathtrace_window(ctx);
+        self.script_window(ctx);
+        self.settings_window(ctx);
         self.clash_focus_window(ctx);
         self.tools_window(ctx);
         self.sync_ui_prefs();
@@ -438,6 +442,10 @@ impl App {
             ui.close_menu();
             self.refresh_models(true);
         }
+        if ui.button(crate::i18n::tr("⚙ Settings…")).on_hover_text("Appearance, fonts / DPI, DWG export, navigation, files").clicked() {
+            ui.close_menu();
+            self.settings_open = true;
+        }
         ui.separator();
         if ui.button(crate::i18n::tr("📁 Open Project (.bimr)…")).clicked() {
             ui.close_menu();
@@ -500,7 +508,7 @@ impl App {
 
     fn ribbon(&mut self, ctx: &egui::Context) {
         use crate::theme::RibbonMode;
-        const TABS: [&str; 11] = ["Home", "Select", "Viewpoint", "Review", "Sections", "Coordination", "Analyze", "Render", "Export", "Share", "View"];
+        const TABS: [&str; 12] = ["Home", "Select", "Viewpoint", "Review", "Sections", "Coordination", "Analyze", "Render", "Export", "Share", "Script", "View"];
         // setarile vechi: "ribbon restrans" = treapta Mini
         if self.settings.ribbon_min {
             self.settings.ribbon_min = false;
@@ -525,8 +533,15 @@ impl App {
                 }
                 egui::popup_below_widget(ui, popup, &r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| self.file_menu(ui));
                 ui.add_space(8.0);
-                // tab-uri ca "pastile": activ = nuanta de accent, fara contur
-                for (i, t) in TABS.iter().enumerate() {
+                // Tab-urile stau intr-un scroll orizontal: la ferestre mai inguste se
+                // deruleaza, in loc sa se suprapuna peste search / tema / numele proiectului.
+                let right_w = 580.0_f32;
+                let tabs_w = (ui.available_width() - right_w).max(220.0);
+                ui.allocate_ui_with_layout(EV::new(tabs_w, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    egui::ScrollArea::horizontal().id_salt("ribbon_tabs").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.style_mut().spacing.item_spacing.x = 3.0;
+                            for (i, t) in TABS.iter().enumerate() {
                     let on = self.ribbon_tab == i && mode != RibbonMode::Mini;
                     let t = crate::i18n::tr(t);
                     let txt = if on { RichText::new(t).color(accent()).strong() } else { RichText::new(t) };
@@ -551,7 +566,10 @@ impl App {
                         }
                         self.ribbon_tab = i;
                     }
-                }
+                            }
+                        });
+                    });
+                });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let next = mode.next();
                     let ic = match mode {
@@ -570,6 +588,9 @@ impl App {
                     let chip = egui::Button::new(RichText::new(self.settings.theme.label()).size(11.5).color(ui.visuals().text_color())).fill(ui.visuals().window_fill).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(78.0, 24.0));
                     if ui.add(chip).on_hover_text(format!("Theme: {} - click for {}", self.settings.theme.label(), nt.label())).clicked() {
                         self.set_theme(nt);
+                    }
+                    if ui.add(egui::Button::new("⚙ Settings").frame(false)).on_hover_text("Open application settings: appearance, fonts / DPI, export, navigation, files").clicked() {
+                        self.settings_open = true;
                     }
                     // cautarea / paleta de comenzi (ca in redesign: "Search or Ctrl+K")
                     let sb = egui::Button::new(crate::theme::icon_job("🔍", "Search or Ctrl+K", 12.0, ui.visuals().weak_text_color())).fill(ui.visuals().extreme_bg_color).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(200.0, 24.0));
@@ -660,6 +681,7 @@ impl App {
                         9 => {
                             self.ribbon_share(ui);
                         }
+                        10 => self.ribbon_script(ui),
                         _ => {
                             self.ribbon_view(ui);
                             self.ribbon_view2(ui);
@@ -1002,6 +1024,9 @@ impl App {
             if rbtn(ui, "📄", "Cut on Sheet", "The same cut placed on a drawing sheet (A3 / A2 / A1 / A0) at a standard scale, with frame and the title block (edit it with Title Block)", false, self.section.enabled).clicked() {
                 self.cad_sheet = true;
                 self.request_path(Purpose::ExportSectionCad);
+            }
+            if rbtn(ui, "📄", "Cut to PDF", "Export the cut as a vector PDF sheet (A3–A0) with title block, at the exact cut position", false, self.section.enabled || self.settings.cad_view != crate::app::CadView::Current).clicked() {
+                self.request_path(Purpose::ExportSectionPdf);
             }
             if rbtn(ui, "✏", "Title Block", "Edit the title block, the sheet format (A3 - A0) and the scale", self.title_block_open, true).clicked() {
                 self.title_block_open = !self.title_block_open;
@@ -1348,6 +1373,19 @@ impl App {
                     self.set_theme(t);
                 }
             }
+        });
+        rgroup(ui, "Interface", |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Font / UI size");
+                let mut pct = (self.settings.ui_scale * 100.0).round() as i32;
+                let r = ui.add_sized([110.0, ui.spacing().interact_size.y], egui::Slider::new(&mut pct, 75..=200).step_by(5.0).suffix("%"));
+                if r.changed() {
+                    self.settings.ui_scale = pct as f32 / 100.0;
+                    self.settings.save();
+                }
+            })
+            .response
+            .on_hover_text("Scales the whole interface: fonts, panels, tables and dialogs. 100% = default. Saved between sessions.");
         });
         rgroup(ui, "Options", |ui| {
             let r = rbtn(ui, "⚙", "Options ⏷", "Cache, converters, file associations", false, true);
@@ -2378,6 +2416,86 @@ impl App {
         }
     }
 
+    fn ribbon_script(&mut self, ui: &mut egui::Ui) {
+        rgroup(ui, "Scripts", |ui| {
+            if rbtn(ui, "📜", "Console", "Open the script console: list, create and manage scripts", self.script_open, true).clicked() {
+                self.script_open = !self.script_open;
+            }
+            if rbtn(ui, "➕", "New Script", "Create a new .rhai script in the ManageBIM Scripts folder", false, true).clicked() {
+                match script::create() {
+                    Ok(p) => self.toast(format!("Script created: {}", crate::file_name(&p.to_string_lossy().to_string()))),
+                    Err(e) => self.error(e),
+                }
+            }
+            if rbtn(ui, "📂", "Folder", "Copy the Scripts folder path to the clipboard", false, true).clicked() {
+                ui.ctx().copy_text(script::dir().to_string_lossy().to_string());
+                self.toast("Scripts folder path copied to clipboard.");
+            }
+            if rbtn(ui, "❓", "API Help", "Show the scripting API reference and examples", self.script_help_open, true).clicked() {
+                self.script_help_open = !self.script_help_open;
+                self.script_open = true;
+            }
+        });
+        rgroup(ui, "Run", |ui| {
+            let n = script::list().len();
+            ui.label(format!("{n} script(s) in folder"));
+            ui.add_enabled(false, egui::Button::new("▶ Run all")).on_hover_text("The Rhai engine is enabled in 0.28. Scripts from the Scripts folder will run from here.");
+        });
+    }
+
+    fn script_window(&mut self, ctx: &egui::Context) {
+        if !self.script_open { return; }
+        let mut open = self.script_open;
+        egui::Window::new("📜 Script console")
+            .open(&mut open)
+            .default_size([540.0, 420.0])
+            .min_width(400.0)
+            .min_height(260.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("➕ New script").clicked() {
+                        match script::create() {
+                            Ok(p) => self.toast(format!("Script created: {}", crate::file_name(&p.to_string_lossy().to_string()))),
+                            Err(e) => self.error(e),
+                        }
+                    }
+                    if ui.button("📂 Copy folder path").clicked() {
+                        ui.ctx().copy_text(script::dir().to_string_lossy().to_string());
+                        self.toast("Scripts folder path copied to clipboard.");
+                    }
+                });
+                ui.label(RichText::new(script::dir().display().to_string()).weak().small());
+                ui.separator();
+                let scripts = script::list();
+                if scripts.is_empty() {
+                    ui.label(RichText::new("No .rhai scripts yet. Use „New script” or copy files into the folder above.").weak());
+                } else {
+                    for p in scripts {
+                        let name = crate::file_name(&p.to_string_lossy().to_string());
+                        ui.horizontal(|ui| {
+                            ui.label("📜");
+                            ui.label(&name);
+                            ui.add_enabled(false, egui::Button::new("▶ Run")).on_hover_text("The Rhai engine is enabled in 0.28");
+                        })
+                        .response
+                        .on_hover_text(p.display().to_string());
+                    }
+                }
+                ui.separator();
+                ui.collapsing("API reference (0.28)", |ui| {
+                    ui.label("select_where(category, value) — select all elements whose property matches");
+                    ui.label("set_prop(name, value) — set a property on the current selection");
+                    ui.label("create_clash_test(name, tolerance) — add a clash test");
+                    ui.label("export_bcf(path) / export_excel(path) — write reports");
+                });
+                if self.script_help_open {
+                    ui.label(RichText::new("The engine is not compiled yet in 0.27.1 - this window lists the scripts you will be able to run.").weak());
+                }
+            });
+        self.script_open = open;
+    }
+
     fn pathtrace_window(&mut self, ctx: &egui::Context) {
         let mut open = self.pathtrace_open;
         let running = self.pathtrace.as_ref().map(|j| !j.done.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(false);
@@ -2423,7 +2541,15 @@ impl App {
                     let n = job.count.load(std::sync::atomic::Ordering::Relaxed);
                     let total = job.samples_target;
                     let frac = if total > 0 { n as f32 / total as f32 } else { 0.0 };
-                    ui.add(egui::ProgressBar::new(frac).text(format!("{} / {} samples · {:.1} s", n, total, job.started.elapsed().as_secs_f32())));
+                    let secs = job.started.elapsed().as_secs_f32();
+                    let txt = if n == 0 {
+                        format!("Preparing scene / first sample · {secs:.1} s")
+                    } else if job.done.load(std::sync::atomic::Ordering::Relaxed) {
+                        format!("Finished · {n} samples · {secs:.1} s")
+                    } else {
+                        format!("{n} / {total} samples · {secs:.1} s")
+                    };
+                    ui.add(egui::ProgressBar::new(frac).text(txt));
                 }
                 if let Some(tex) = &self.pathtrace_tex {
                     ui.separator();
@@ -3662,6 +3788,7 @@ impl App {
                 Purpose::ExportWeb => "Web viewer (HTML)",
                 Purpose::ExportAsBuilt => "As-built report (Excel)",
                 Purpose::ExportSectionCad => "Section cut (DWG / DXF)",
+                Purpose::ExportSectionPdf => "Section cut on sheet (PDF)",
                 Purpose::ImportOverlay => "DWG overlay",
                 Purpose::ImportCheckRules => "Import IDS or rules",
                 Purpose::ExportCheckRules => "Save rules",
@@ -4654,6 +4781,9 @@ fn commands() -> Vec<Cmd> {
         }),
         c!("Save project as…", "File", "💾", "salveaza ca save as", |a| a.request_path(Purpose::SaveProject)),
         c!("New project", "File", "📄", "nou new", |a| a.new_project()),
+        c!("Settings…", "View", "⚙", "setari settings font dpi dimensiune fonturi optiuni", |a| a.settings_open = true),
+        c!("Cut section to PDF…", "Export", "📄", "sectiune pdf plansa", |a| a.request_path(Purpose::ExportSectionPdf)),
+        c!("Script console", "Script", "📜", "script rhai consola", |a| a.script_open = true),
         c!("Publish project (.bimd)…", "File", "📦", "publica nwd bimd", |a| a.request_path(Purpose::PublishBimd)),
         c!("Refresh changed models", "File", "⟳", "reincarca refresh f5", |a| a.refresh_models(false)),
         c!("Start page", "File", "🏠", "pagina start recente recent", |a| a.show_start = true),

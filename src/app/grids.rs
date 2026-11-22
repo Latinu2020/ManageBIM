@@ -110,11 +110,22 @@ impl App {
     /// Taietura sectiunii curente (plan / nivel) ca linii 2D in DWG (scriitor integrat) sau DXF:
     /// un layer pe tip de element (Walls, Doors, IfcColumn...), coordonate reale in metri.
     pub fn export_section_cad(&mut self, path: &str) {
-        if !self.section.enabled {
-            return self.error("Turn on a section first: a level (status bar › Level) or a section plane - the cut of that section is exported.");
+        let view = self.settings.cad_view;
+        if view == crate::app::CadView::Current && !self.section.enabled {
+            return self.error("Turn on a section first, or choose Front / Back / Left / Right in Settings › Export.");
         }
         // planul de taiere: axa (0 = X, 1 = Y, 2 = Z), valoarea (coordonate locale) si zona (doar la box)
-        let (axis, value, clip): (usize, f32, Option<([f32; 3], [f32; 3])>) = match self.section.mode {
+        let (axis, value, clip): (usize, f32, Option<([f32; 3], [f32; 3])>) = if let Some(a) = view.axis() {
+            // vedere din directie: taie intregul model, la pozitia exacta din settings
+            let bb = self.scene_aabb();
+            if !bb.is_valid() {
+                return self.error("No model geometry to cut.");
+            }
+            let (lo, hi) = if a == 1 { (bb.min.y, bb.max.y) } else { (bb.min.x, bb.max.x) };
+            let t = self.settings.cad_view_pos.clamp(0.0, 1.0);
+            (a, lo + (hi - lo) * t, None)
+        } else {
+            match self.section.mode {
             SectionMode::Box => {
                 let (a, b) = (self.section.bmin, self.section.bmax);
                 // ca in planurile Revit: taietura la 1.2 m deasupra nivelului
@@ -130,6 +141,7 @@ impl App {
                 };
                 (axis, p.offset, None)
             }
+            }
         };
         let o = self.origin_f64();
         let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
@@ -137,13 +149,19 @@ impl App {
         let mut segs: Vec<(String, [f64; 4])> = Vec::new();
         // elementele taiate: (primul segment, dupa ultimul, se hasureaza, eticheta)
         let mut cut_elems: Vec<(usize, usize, bool, Option<String>)> = Vec::new();
+        // din spate / dreapta axa orizontala se inverseaza (ca in vederea din acea directie)
+        let mirror = view.mirrored();
         let to2d = |p: Vec3| -> [f64; 2] {
             let w = [p.x as f64 + o.x, p.y as f64 + o.y, p.z as f64 + o.z];
-            match axis {
+            let mut r = match axis {
                 2 => [w[0], w[1]],
                 0 => [w[1], w[2]],
                 _ => [w[0], w[2]],
+            };
+            if mirror {
+                r[0] = -r[0];
             }
+            r
         };
         let inside = |p: Vec3| match clip {
             Some((a, b)) => p.x >= a[0] - 1e-3 && p.x <= b[0] + 1e-3 && p.y >= a[1] - 1e-3 && p.y <= b[1] + 1e-3,
@@ -257,16 +275,40 @@ impl App {
             }
             segs.extend(extra);
         }
+        // PDF: aceeasi taietura, desen vectorial pe plansa cu cartus si aceleasi anotatii
+        if path.to_lowercase().ends_with(".pdf") {
+            let n = segs.len();
+            let level = self.section_level.and_then(|i| self.scene_grids().levels.get(i).map(|l| l.0.clone()));
+            let title = if view != crate::app::CadView::Current {
+                format!("{} section", view.label())
+            } else {
+                match (axis, level) {
+                    (2, Some(l)) => format!("Plan - {l}"),
+                    (2, None) => "Plan".to_string(),
+                    _ => "Section".to_string(),
+                }
+            };
+            let project = self.project_path.as_ref().map(|p| model_label(&crate::file_name(p))).unwrap_or_else(|| "ManageBIM".into());
+            let bytes = crate::pdf::section_sheet(&segs, &texts, &self.title_block, &project, &title, &now_string());
+            return match std::fs::write(path, bytes) {
+                Ok(()) => self.toast(format!("Section exported as PDF ({n} lines): {}", crate::file_name(path))),
+                Err(e) => self.error(format!("Cannot write {path}: {e}")),
+            };
+        }
         let dwg = path.to_lowercase().ends_with(".dwg");
         let dxf_path = if dwg { std::path::Path::new(path).with_extension("dxf").to_string_lossy().to_string() } else { with_ext(path, "dxf") };
         let n = segs.len();
         // implicit: 2D in Model space, coordonate reale (m); optional: pe plansa A3 cu cartus, la scara
         let content = if self.cad_sheet {
             let level = self.section_level.and_then(|i| self.scene_grids().levels.get(i).map(|l| l.0.clone()));
-            let title = match (axis, level) {
-                (2, Some(l)) => format!("Plan - {l}"),
-                (2, None) => "Plan".to_string(),
-                _ => "Section".to_string(),
+            let title = if view != crate::app::CadView::Current {
+                format!("{} section", view.label())
+            } else {
+                match (axis, level) {
+                    (2, Some(l)) => format!("Plan - {l}"),
+                    (2, None) => "Plan".to_string(),
+                    _ => "Section".to_string(),
+                }
             };
             let project = self.project_path.as_ref().map(|p| model_label(&crate::file_name(p))).unwrap_or_else(|| "ManageBIM".into());
             cut_sheet_dxf_annot(&segs, &texts, &self.title_block, &project, &title, &now_string()).0
@@ -276,9 +318,13 @@ impl App {
         if let Err(e) = std::fs::write(&dxf_path, content) {
             return self.error(format!("Cannot write {dxf_path}: {e}"));
         }
-        let what = match axis {
-            2 => "plan",
-            _ => "section",
+        let what = if view != crate::app::CadView::Current {
+            format!("{} section", view.label())
+        } else {
+            match axis {
+                2 => "plan".to_string(),
+                _ => "section".to_string(),
+            }
         };
         if !dwg {
             return self.toast(format!("Section cut exported ({what}, {n} lines): {}", crate::file_name(&dxf_path)));

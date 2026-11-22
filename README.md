@@ -77,7 +77,7 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 | **Linux** (x86-64) | `ManageBIM-<version>-x86_64.AppImage` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | One file: `chmod +x`, then run. No installation, no root. |
 | **FreeBSD** (x86-64) | `ManageBIM-<version>-freebsd-x86_64.tar.gz` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | Unpack and run `ManageBIM/ManageBIM`. Needs `pkg install mesa-libs libxkbcommon`. |
 
-> **0.27.1 (hotfix)** — adjustable **interface size / font scaling** (View › Options › Interface size, 75–200%, saved between sessions), a subtle **visible border** on panels and floating windows, and **resizable columns + right-click › Rename** in the Clash Detective and TimeLiner tables. The Windows installer includes the OpenCascade runtime and the Revit, Navisworks and AutoCAD add-ins.
+> **0.27.1 (hotfix)** — dedicated **⚙ Settings window** (fonts / DPI 75–200%, themes, export, navigation), a new **Script** ribbon tab with a console for future `.rhai` scripts, **resizable columns + right-click › Rename** in the Clash and TimeLiner tables, **DWG / DXF / PDF sections from Front / Back / Left / Right** with an exact cut position, optional annotations and vector PDF sheets, subtle borders on panels and windows, and a fixed **Path trace Start** button. The Windows installer includes OpenCascade and all three add-ins.
 >
 > **0.27.0** — progressive CPU path tracing, Navisworks-style clash workflow, Hidden line, uniform ribbon buttons and a full-height Properties panel with all element properties.
 >

@@ -673,6 +673,46 @@ pub enum SectionMode {
     Box,
 }
 
+/// Directia sectiunii exportate in DWG / DXF. `Current` foloseste planul de
+/// taiere activ; celelalte taie modelul dupa o directie, la pozitia aleasa.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum CadView {
+    #[default]
+    Current,
+    Front,
+    Back,
+    Left,
+    Right,
+}
+
+impl CadView {
+    pub const ALL: [CadView; 5] = [CadView::Current, CadView::Front, CadView::Back, CadView::Left, CadView::Right];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            CadView::Current => "Current section",
+            CadView::Front => "Front",
+            CadView::Back => "Back",
+            CadView::Left => "Left",
+            CadView::Right => "Right",
+        }
+    }
+
+    /// axa planului de taiere: 0 = X constant (stanga/dreapta), 1 = Y constant (fata/spate)
+    pub fn axis(self) -> Option<usize> {
+        match self {
+            CadView::Front | CadView::Back => Some(1),
+            CadView::Left | CadView::Right => Some(0),
+            CadView::Current => None,
+        }
+    }
+
+    /// din spate / dreapta axa orizontala e inversata (ca in vederea din acea directie)
+    pub fn mirrored(self) -> bool {
+        matches!(self, CadView::Back | CadView::Right)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct PlaneDef {
     pub enabled: bool,
@@ -1002,6 +1042,7 @@ pub enum Purpose {
     ExportWeb,
     ExportAsBuilt,
     ExportSectionCad,
+    ExportSectionPdf,
     ImportOverlay,
     ImportCheckRules,
     ExportCheckRules,
@@ -1317,6 +1358,11 @@ pub struct App {
     pub pathtrace_tex: Option<eframe::egui::TextureHandle>,
     pub pathtrace_params: (u32, u32, u32, f32),
     pub pathtrace_notified: bool,
+    /// fereastra consolei de scripturi (motorul Rhai se activeaza in 0.28)
+    pub script_open: bool,
+    pub script_help_open: bool,
+    /// fereastra de setari a aplicatiei (View › Settings / butonul ⚙)
+    pub settings_open: bool,
     pub still_path: Option<String>,
     pub pending_capture: Option<(u32, u32)>,
     pub ffmpeg: Option<bool>,
@@ -1600,6 +1646,9 @@ impl App {
             pathtrace_tex: None,
             pathtrace_params: (256, 256, 32, 30.0),
             pathtrace_notified: false,
+            script_open: false,
+            script_help_open: false,
+            settings_open: false,
             still_path: None,
             pending_capture: None,
             ffmpeg: None,

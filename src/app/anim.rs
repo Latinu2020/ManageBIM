@@ -359,8 +359,16 @@ impl App {
 
     /// Drives the export: one captured frame per UI frame. Called before the viewport is drawn.
     pub fn start_pathtrace(&mut self) {
-        if self.pathtrace.is_some() {
-            self.toast("Path trace already running.");
+        // Un job terminat ramane in `self.pathtrace` (ca sa putem exporta PNG-ul),
+        // dar NU trebuie sa blocheze o randare noua.
+        if let Some(j) = &self.pathtrace {
+            if !j.done.load(std::sync::atomic::Ordering::Relaxed) {
+                self.toast("Path trace already running.");
+                return;
+            }
+        }
+        if self.loaded_models().next().is_none() {
+            self.error("Open a model first - path tracing needs geometry.");
             return;
         }
         let scene = std::sync::Arc::new(crate::pathtrace::Scene::build(self));
@@ -386,7 +394,12 @@ impl App {
             ctx.request_repaint();
             return;
         }
-        let buf = job.buf.lock().unwrap();
+        // Worker-ul tine mutex-ul cat timp randreaza un sample intreg. Cu try_lock
+        // nu blocam firul UI (la 512/1024 px altfel aplicatia pare inghetata).
+        let Ok(buf) = job.buf.try_lock() else {
+            ctx.request_repaint();
+            return;
+        };
         let w = job.width as usize;
         let h = job.height as usize;
         let mut pixels = Vec::with_capacity(w * h * 4);

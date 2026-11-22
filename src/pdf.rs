@@ -170,6 +170,77 @@ pub fn sheets(project: &str, items: &[ReportItem], date: &str, tb: &TitleBlock) 
     write_pdf(&pages, tb.project_or(project), W * s, H * s)
 }
 
+/// Plansa PDF cu taietura 2D a sectiunii (linii vectoriale + etichete), cu cartus.
+/// Foloseste aceleasi segmente si texte ca `cut_dxf_annot`, deci pozitia anotatiilor
+/// e exact cea din DWG.
+pub fn section_sheet(segs: &[(String, [f64; 4])], texts: &[crate::app::CadText], tb: &TitleBlock, project: &str, title: &str, date: &str) -> Vec<u8> {
+    let mut c: Vec<u8> = Vec::new();
+    // chenarul plansei si linia de deasupra benzii de jos
+    c.extend_from_slice(format!("0.15 0.17 0.2 RG 1.2 w {M} {M} {:.1} {:.1} re S\n", W - 2.0 * M, H - 2.0 * M).as_bytes());
+    c.extend_from_slice(format!("0.6 w {M} {:.1} m {:.1} {:.1} l S\n", M + STRIP, W - M, M + STRIP).as_bytes());
+
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for (_, p) in segs {
+        x0 = x0.min(p[0]).min(p[2]);
+        y0 = y0.min(p[1]).min(p[3]);
+        x1 = x1.max(p[0]).max(p[2]);
+        y1 = y1.max(p[1]).max(p[3]);
+    }
+    if !segs.is_empty() {
+        let aw = (W - 2.0 * M - 32.0) as f64;
+        let ah = (H - 2.0 * M - STRIP - 32.0) as f64;
+        let sc = (aw / (x1 - x0).max(1e-6)).min(ah / (y1 - y0).max(1e-6));
+        let ox = M as f64 + 16.0 + (aw - (x1 - x0) * sc) / 2.0 - x0 * sc;
+        let oy = (M + STRIP) as f64 + 16.0 + (ah - (y1 - y0) * sc) / 2.0 - y0 * sc;
+        let map = |x: f64, y: f64| -> (f32, f32) { ((x * sc + ox) as f32, (y * sc + oy) as f32) };
+        // liniile taieturii: un stil pentru contururi, unul mai deschis pentru hasura
+        for (layer, p) in segs {
+            let (ax, ay) = map(p[0], p[1]);
+            let (bx, by) = map(p[2], p[3]);
+            let style = if layer.eq_ignore_ascii_case("HATCH") { "0.72 0.74 0.78 RG 0.35 w " } else { "0.10 0.12 0.16 RG 0.7 w " };
+            c.extend_from_slice(format!("{style}{ax:.2} {ay:.2} m {bx:.2} {by:.2} l S\n").as_bytes());
+        }
+        // etichetele: CadText.mm e inaltimea pe hartie (1 mm = 72/25.4 pt)
+        for t in texts {
+            let (x, y) = map(t.x, t.y);
+            let size = (t.mm * 72.0 / 25.4) as f32;
+            let r = (t.rot as f32).to_radians();
+            let (co, si) = (r.cos(), r.sin());
+            c.extend_from_slice(format!("BT /F1 {size:.1} Tf {co:.4} {si:.4} {:.4} {co:.4} {x:.1} {y:.1} Tm (", -si).as_bytes());
+            c.extend_from_slice(&ansi(&t.s));
+            c.extend_from_slice(b") Tj ET\n");
+        }
+    }
+    // ---- cartusul (acelasi continut ca la plansele din viewpoints)
+    let tb_w = 380.0;
+    let tx = W - M - tb_w;
+    c.extend_from_slice(format!("0.6 w {tx:.1} {M} m {tx:.1} {:.1} l S\n", M + STRIP).as_bytes());
+    for y in [M + STRIP - 38.0, M + 78.0, M + 40.0] {
+        c.extend_from_slice(format!("0.4 w {tx:.1} {y:.1} m {:.1} {y:.1} l S\n", W - M).as_bytes());
+    }
+    c.extend_from_slice(format!("0.4 w {:.1} {M} m {:.1} {:.1} l S\n", W - M - 90.0, W - M - 90.0, M + 40.0).as_bytes());
+    if !tb.company.trim().is_empty() {
+        text(&mut c, tx + 10.0, M + STRIP - 13.0, 7.5, false, &tb.company.to_uppercase());
+    }
+    text(&mut c, tx + 10.0, M + STRIP - 30.0, 14.0, true, tb.project_or(project));
+    if !tb.client.trim().is_empty() {
+        text(&mut c, tx + 230.0, M + STRIP - 13.0, 7.5, false, &format!("Client: {}", tb.client));
+    }
+    text(&mut c, tx + 10.0, M + STRIP - 52.0, 7.5, false, "SECTION");
+    text(&mut c, tx + 10.0, M + STRIP - 67.0, 12.0, true, &wrap(title, 12.0, tb_w - 20.0).into_iter().next().unwrap_or_default());
+    text(&mut c, tx + 10.0, M + 64.0, 8.0, false, &format!("Drawn: {}   Checked: {}", if tb.drawn.is_empty() { "-" } else { &tb.drawn }, if tb.checked.is_empty() { "-" } else { &tb.checked }));
+    text(&mut c, tx + 10.0, M + 46.0, 8.0, false, &format!("Date: {}   Rev: {}", date.get(..10).unwrap_or(date), if tb.revision.is_empty() { "-" } else { &tb.revision }));
+    if !tb.notes.trim().is_empty() {
+        text(&mut c, tx + 10.0, M + 25.0, 7.0, false, &wrap(&tb.notes, 7.0, 260.0).into_iter().next().unwrap_or_default());
+    } else {
+        text(&mut c, tx + 10.0, M + 25.0, 7.0, false, "ManageBIM");
+    }
+    text(&mut c, W - M - 45.0, M + 18.0, 16.0, true, &format!("{}{:02}", tb.number_prefix, 1));
+
+    let s = (paper_mm(&tb.paper).0 / 420.0) as f32;
+    write_pdf(&[Page { content: c, image: None }], tb.project_or(project), W * s, H * s)
+}
+
 fn write_pdf(pages: &[Page], title: &str, pw: f32, ph: f32) -> Vec<u8> {
     let mut out: Vec<u8> = b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n".to_vec();
     let mut offs: Vec<usize> = Vec::new();
