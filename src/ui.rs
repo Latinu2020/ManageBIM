@@ -3914,7 +3914,7 @@ impl App {
                         // mers: traseu, redare, viteza - mereu pe bara (latime fixa: butoanele nu se muta sub mouse
                         // cand schimbi modul de navigare)
                         sep(ui);
-                        if big(ui, "✏", "Path", "Draw a walk path: click points on the floor, double-click / Enter to finish (switches to Walk)", self.tool == Tool::WalkPath, true) {
+                        if big(ui, "🛤", "Path", "Draw a walk path: click points on the floor, double-click / Enter to finish (switches to Walk)", self.tool == Tool::WalkPath, true) {
                             self.path_run = None;
                             if self.tool == Tool::WalkPath {
                                 self.tool = Tool::Select;

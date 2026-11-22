@@ -57,7 +57,30 @@ Sursă de inspirație: video-ul Bonsai/bSDD (https://www.youtube.com/watch?v=Eqt
 4. Sprint 3 (IFC 4.3, clasificări, spații).
 5. Sprint 4 (review package, snapshot timeline, conectori cu interfață pregătită).
 
-## ✅ Criterii de calitate — 0.28 trebuie să fie COMPLETĂ, CORECTĂ, FUNCȚIONALĂ, PERFECTĂ
+## 🎨 Icoane distincte în ribbon (duplicatelor actuale li se dau semne proprii)
+
+Surse de confuzie identificate (din `rbtn`): ⬚ ×4, ✏ ×5, ◎ ×4, 📄 ×6, 📥 ×5, 📤 ×3, 📦 ×3, 🏗 ×3, 👁 ×3, 🎞 ×3, 📷 ×3, ➕ ×3, 🎯 ×3, 🔗 ×3.
+
+Atribuiri noi (se adaugă și mapări Phosphor noi unde e nevoie):
+
+| Buton | Icoana veche | Icoana nouă | Motiv |
+|---|---|---|---|
+| Edit Grids | ✏ | **▦** (GRID_FOUR) | grilă, nu creion |
+| Edit Levels | ✏ | **📏** (RULER) | cote/niveluri |
+| Title Block | ✏ | ✏ (rămâne singurul creion din tab) | editare |
+| Draw (walk path) | ✏ | **🛤** (PATH — mapare Phosphor nouă) ✅ aplicat | traseu, nu creion |
+| Hide Unselected | ◎ | **🚫** (EYE_SLASH) | ascundere |
+| Field of view | ◎ | **📷** (CAMERA) | cameră |
+| Relocate Selection/Model | ◎ | **↔** (ARROWS_OUT_CARDINAL) | mutare |
+| Path trace | ◎ | **✨** (SPARKLE — mapare Phosphor nouă) | randare progresivă |
+| Select All | ⬚ | **⊞** (SQUARES_FOUR — mapare nouă) | tot |
+| Orthographic | ⬚ | **🔲** (SQUARE) | proiecție paralelă |
+| Fit Section | ⬚ | **⛶** (CORNERS_OUT) | potrivire |
+| Import Properties vs alte 📥 | 📥 | **⇩** (mapare nouă DOWNLOAD) | importuri diferențiate pe grup |
+
+Regula de implementare: **într-un tab, nicio două butoane cu aceeași iconiță**; între taburi se admite numai dacă acțiunile sunt înrudite.
+
+
 
 **Definiția de „gata" pentru fiecare funcție în parte:**
 1. **Teste scrise** — fiecare funcție nouă vine cu teste (unitare sau integrare); fără teste, funcția nu intră în release.

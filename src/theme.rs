@@ -779,6 +779,7 @@ pub fn ph(s: &str) -> &str {
         "🎞" | "🎬" => P::FILM_STRIP,
         "🌐" => P::GLOBE,
         "⧉" => P::COPY,
+        "🛤" => P::PATH,
         "⟳" => P::ARROW_CLOCKWISE,
         "⟲" => P::ARROW_COUNTER_CLOCKWISE,
         "✋" => P::HAND,
