@@ -188,11 +188,17 @@ impl App {
         }
         // planul de taiere: axa (0 = X, 1 = Y, 2 = Z), valoarea (coordonate locale) si zona (doar la box)
         let (axis, value, clip): (usize, f32, Option<([f32; 3], [f32; 3])>) = if view.axis().is_some() {
-            // vedere din directie: taie intregul model, la pozitia exacta din settings
+            // vedere din directie: taie la pozitia exacta, dar DOAR in interiorul
+            // cubului de sectiune (daca e activ) - ca si cum ai extrage fata lui
             let Some((a, v)) = self.cad_cut_plane() else {
                 return self.error("No model geometry to cut.");
             };
-            (a, v, None)
+            let box_clip = if self.section.enabled && self.section.mode == crate::app::SectionMode::Box {
+                Some((self.section.bmin, self.section.bmax))
+            } else {
+                None
+            };
+            (a, v, box_clip)
         } else {
             match self.section.mode {
             SectionMode::Box => {
@@ -232,9 +238,36 @@ impl App {
             }
             r
         };
-        let inside = |p: Vec3| match clip {
-            Some((a, b)) => p.x >= a[0] - 1e-3 && p.x <= b[0] + 1e-3 && p.y >= a[1] - 1e-3 && p.y <= b[1] + 1e-3,
+        // un element intra in sectiune numai daca AABB-ul lui prinde cubul SI planul
+        let in_box = |e: &crate::model::Element| match clip {
+            Some((a, b)) => (0..3).all(|d| e.aabb.min[d] <= b[d] + 1e-3 && e.aabb.max[d] >= a[d] - 1e-3),
             None => true,
+        };
+        // taierea exacta a fiecarui segment la frontiera cubului (slab method):
+        // nu respingem segmentul daca e in afara, il scurtam pana la perete
+        let clip_seg = |p: Vec3, q: Vec3| -> Option<(Vec3, Vec3)> {
+            let (a, b) = clip?;
+            let d = q - p;
+            let (mut t0, mut t1) = (0.0_f32, 1.0_f32);
+            for ax in 0..3 {
+                if d[ax].abs() < 1e-9 {
+                    if p[ax] < a[ax] - 1e-3 || p[ax] > b[ax] + 1e-3 {
+                        return None;
+                    }
+                } else {
+                    let mut lo = (a[ax] - 1e-3 - p[ax]) / d[ax];
+                    let mut hi = (b[ax] + 1e-3 - p[ax]) / d[ax];
+                    if lo > hi {
+                        std::mem::swap(&mut lo, &mut hi);
+                    }
+                    t0 = t0.max(lo);
+                    t1 = t1.min(hi);
+                    if t0 > t1 {
+                        return None;
+                    }
+                }
+            }
+            Some((p + d * t0, p + d * t1))
         };
         for (mi, m) in &models {
             if m.cloud.is_some() {
@@ -242,7 +275,7 @@ impl App {
             }
             for (ei, e) in m.elements.iter().enumerate() {
                 let id = ElemId { m: *mi as u32, e: ei as u32 };
-                if e.tri_count == 0 || e.default_hidden || self.hidden.contains(&id) {
+                if e.tri_count == 0 || e.default_hidden || self.hidden.contains(&id) || !in_box(e) {
                     continue;
                 }
                 if e.aabb.min[axis] > value || e.aabb.max[axis] < value {
@@ -261,8 +294,15 @@ impl App {
                             pts.push(p + (q - p) * t);
                         }
                     }
-                    if pts.len() == 2 && inside(pts[0]) && inside(pts[1]) && (pts[0] - pts[1]).length_squared() > 1e-8 {
-                        let (p, q) = (to2d(pts[0]), to2d(pts[1]));
+                    if pts.len() == 2 && (pts[0] - pts[1]).length_squared() > 1e-8 {
+                        let (c0, c1) = match clip_seg(pts[0], pts[1]) {
+                            Some(v) => v,
+                            None => continue,
+                        };
+                        if (c0 - c1).length_squared() <= 1e-8 {
+                            continue;
+                        }
+                        let (p, q) = (to2d(c0), to2d(c1));
                         segs.push((layer.clone(), [p[0], p[1], q[0], q[1]]));
                     }
                 }
@@ -384,9 +424,9 @@ impl App {
         } else {
             cut_dxf_annot(&segs, &texts, 0.1)
         };
-        // metadatele taieturii, ca la import sa putem pune desenul EXACT in planul
-        // din care a fost extras (comment 999 - ignorat de alte CAD-uri, citit de noi)
-        if view.axis().is_some() && !self.cad_sheet {
+        // metadatele taieturii pentru TOATE exporturile in model space (si din cub),
+        // ca la import sa punem desenul EXACT in locul din care a fost extras
+        if !self.cad_sheet {
             let o = self.origin_f64();
             let meta = format!("999\nMB_CUT_PLANE axis={axis} value={value:.4} mirror={} origin={:.4},{:.4},{:.4}\n", if mirror { 1 } else { 0 }, o.x, o.y, o.z);
             content = content.replacen("2\nHEADER\n", &format!("2\nHEADER\n{meta}"), 1);
@@ -562,13 +602,35 @@ impl App {
         }
     }
 
-    /// Adauga un desen 2D (plan de arhitectura, de instalatii...) la cota nivelului curent (sau 0).
+    /// Adauga un desen 2D peste model. Daca e o taietura exportata din ManageBIM,
+    /// revine EXACT in planul si la coordonatele din care a fost extras.
     pub fn import_overlay(&mut self, path: &str) {
-        let z = self.section_level.and_then(|i| self.scene_grids().levels.get(i).map(|l| l.1)).unwrap_or(0.0);
-        let mut ov = CadOverlay { name: crate::file_name(path), path: path.to_string(), z, dx: 0.0, dy: 0.0, rot_deg: 0.0, visible: true, color: [255, 120, 60], opacity: 0.85, segs: Default::default() };
+        let mut ov = CadOverlay {
+            name: crate::file_name(path), path: path.to_string(), z: 0.0, dx: 0.0, dy: 0.0,
+            rot_deg: 0.0, vert: None, mirror: false, visible: true,
+            color: [255, 120, 60], opacity: 0.85, segs: Default::default(),
+        };
+        let mut note = String::from("2D overlay");
+        if let Some((ax, val, mir, old)) = crate::formats::read_cut_plane_meta(path) {
+            let cur = self.origin_f64();
+            ov.z = val; // valoarea salvata e deja in coordonate LOCALE
+            ov.mirror = mir;
+            ov.vert = match ax { 0 => Some(1), 1 => Some(0), _ => None };
+            // daca originul s-a schimbat intre export si import, compensam
+            let (ox, oy) = match ax {
+                0 => (cur.y - old.y, cur.z - old.z),
+                1 => (cur.x - old.x, cur.z - old.z),
+                _ => (cur.x - old.x, cur.y - old.y),
+            };
+            ov.dx = ox as f32;
+            ov.dy = oy as f32;
+            note = format!("section cut restored at {:+.3} m", ov.z);
+        }
         match self.load_overlay_segs(&mut ov) {
             Ok(n) => {
-                self.toast(format!("{} added as 2D overlay: {n} lines at {:+.2} m (Sections › DWG Overlay to move it)", ov.name, z));
+                let z = ov.z;
+                self.toast(format!("{} added: {n} lines, {note} (Sections › DWG Overlay)", ov.name));
+                let _ = z;
                 self.overlays.push(ov);
                 self.overlay_open = true;
             }
@@ -583,7 +645,12 @@ impl App {
             return Err("no lines in the drawing".into());
         }
         let o = self.origin_f64();
-        let segs: Vec<[f32; 4]> = lines.iter().map(|(_, p)| [(p[0] - o.x) as f32, (p[1] - o.y) as f32, (p[2] - o.x) as f32, (p[3] - o.y) as f32]).collect();
+        let (sx, sy) = match ov.vert {
+            Some(0) => (o.x, o.z), // YZ: 2D = (x, z)
+            Some(1) => (o.y, o.z), // XZ: 2D = (y, z)
+            _ => (o.x, o.y),       // XY: plan la Z
+        };
+        let segs: Vec<[f32; 4]> = lines.iter().map(|(_, p)| [(p[0] - sx) as f32, (p[1] - sy) as f32, (p[2] - sx) as f32, (p[3] - sy) as f32]).collect();
         let n = segs.len();
         ov.segs = Arc::new(segs);
         Ok(n)

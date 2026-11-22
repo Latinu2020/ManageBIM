@@ -283,6 +283,8 @@ impl App {
                 name: if t.title.is_empty() { format!("BCF {}", n + 1) } else { t.title },
                 cam,
                 section: Section::default(),
+                cad_view: crate::app::CadView::Current,
+                cad_view_pos: 0.0,
                 hidden: Vec::new(),
                 comment: t.description,
                 redlines: Vec::new(),
@@ -377,7 +379,7 @@ impl App {
                 issue.guid = v.guid.clone();
             }
             nred += v.redlines.len();
-            self.viewpoints.push(Viewpoint { name: v.name, cam, section, hidden: Vec::new(), comment, redlines: v.redlines, issue, comments, selected: Vec::new(), measures: Vec::new(), folder: v.folder });
+            self.viewpoints.push(Viewpoint { name: v.name, cam, section, cad_view: crate::app::CadView::Current, cad_view_pos: 0.0, hidden: Vec::new(), comment, redlines: v.redlines, issue, comments, selected: Vec::new(), measures: Vec::new(), folder: v.folder });
             n += 1;
         }
         self.open_panel(crate::layout::Panel::Viewpoints);

@@ -42,6 +42,8 @@ impl App {
             name,
             cam: self.cam,
             section: self.section.clone(),
+            cad_view: self.settings.cad_view,
+            cad_view_pos: self.settings.cad_view_pos,
             hidden: self.hidden.iter().copied().collect(),
             comment,
             redlines: Vec::new(),

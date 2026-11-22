@@ -375,7 +375,17 @@ impl App {
         for ov in self.overlays.iter().filter(|o| o.visible) {
             let col = Color32::from_rgba_unmultiplied(ov.color[0], ov.color[1], ov.color[2], (ov.opacity.clamp(0.05, 1.0) * 255.0) as u8);
             let (s, c) = ov.rot_deg.to_radians().sin_cos();
-            let tr = |x: f32, y: f32| Vec3::new(x * c - y * s + ov.dx, x * s + y * c + ov.dy, ov.z);
+            let tr = |x: f32, y: f32| {
+                let (mut x, y) = (x * c - y * s + ov.dx, x * s + y * c + ov.dy);
+                if ov.mirror {
+                    x = -x; // Back / Right: se intoarce oglindirea de la export
+                }
+                match ov.vert {
+                    Some(0) => Vec3::new(x, ov.z, y), // plan YZ, taietura la Y
+                    Some(1) => Vec3::new(ov.z, x, y), // plan XZ, taietura la X
+                    _ => Vec3::new(x, y, ov.z),       // plan XY la cota Z
+                }
+            };
             for g in ov.segs.iter() {
                 if budget == 0 {
                     return;
@@ -398,7 +408,6 @@ impl App {
         let mut reload = None;
         let mut add = false;
         let mut zoom = None;
-        let levels = self.scene_grids().levels;
         egui::Window::new(crate::theme::icon_job("📐", "DWG overlay", 14.0, ctx.style().visuals.text_color()))
             .id(egui::Id::new("overlay_win"))
             .open(&mut open)
@@ -429,16 +438,14 @@ impl App {
                             });
                         });
                         egui::Grid::new(("ov_grid", i)).num_columns(4).spacing([8.0, 4.0]).show(ui, |ui| {
-                            ui.label("Level");
-                            let cur = levels.iter().find(|l| (l.1 - ov.z).abs() < 1e-3).map(|l| l.0.clone()).unwrap_or_else(|| "custom".into());
-                            egui::ComboBox::from_id_salt(("ov_lvl", i)).width(120.0).selected_text(cur).show_ui(ui, |ui| {
-                                for l in &levels {
-                                    if ui.selectable_label((l.1 - ov.z).abs() < 1e-3, format!("{}  {:+.2}", l.0, l.1)).clicked() {
-                                        ov.z = l.1;
-                                    }
-                                }
+                            ui.label("Plane");
+                            let plane = match ov.vert { Some(0) => "Front / Back (YZ)", Some(1) => "Left / Right (XZ)", _ => "Horizontal (XY)" };
+                            egui::ComboBox::from_id_salt(("ov_plane", i)).width(150.0).selected_text(plane).show_ui(ui, |ui| {
+                                if ui.selectable_label(ov.vert.is_none(), "Horizontal (XY)").clicked() { ov.vert = None; }
+                                if ui.selectable_label(ov.vert == Some(0), "Front / Back (YZ)").clicked() { ov.vert = Some(0); }
+                                if ui.selectable_label(ov.vert == Some(1), "Left / Right (XZ)").clicked() { ov.vert = Some(1); }
                             });
-                            ui.label("Z");
+                            ui.label(if ov.vert.is_some() { "Cut at" } else { "Z" });
                             ui.add(egui::DragValue::new(&mut ov.z).speed(0.01).suffix(" m"));
                             ui.end_row();
                             ui.label("Move X");
@@ -448,6 +455,9 @@ impl App {
                             ui.end_row();
                             ui.label("Rotate");
                             ui.add(egui::DragValue::new(&mut ov.rot_deg).speed(0.1).suffix("°"));
+                            ui.label("Mirror X");
+                            ui.checkbox(&mut ov.mirror, "");
+                            ui.end_row();
                             ui.label("Colour");
                             ui.horizontal(|ui| {
                                 ui.color_edit_button_srgb(&mut ov.color);

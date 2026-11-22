@@ -37,6 +37,8 @@ impl App {
             name: format!("Viewpoint {n}"),
             cam: self.cam,
             section: self.section.clone(),
+            cad_view: self.settings.cad_view,
+            cad_view_pos: self.settings.cad_view_pos,
             hidden,
             comment: String::new(),
             redlines: Vec::new(),
@@ -190,6 +192,9 @@ impl App {
         if let Some(v) = self.viewpoints.get(i).cloned() {
             self.cam = v.cam;
             self.section = v.section;
+            // si planul de taiere revine cu viewpoint-ul (ca in Navisworks)
+            self.settings.cad_view = v.cad_view;
+            self.settings.cad_view_pos = v.cad_view_pos;
             self.hidden = v.hidden.into_iter().collect();
             // cotele salvate cu viewpoint-ul (viewpoint-urile vechi, fara cote, pastreaza masuratorile curente)
             if !v.measures.is_empty() {

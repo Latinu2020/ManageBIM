@@ -817,6 +817,11 @@ pub struct Viewpoint {
     pub name: String,
     pub cam: Camera,
     pub section: Section,
+    /// planul de taiere ales (Cut View) la momentul salvarii
+    #[serde(default)]
+    pub cad_view: CadView,
+    #[serde(default)]
+    pub cad_view_pos: f32,
     pub hidden: Vec<ElemId>,
     #[serde(default)]
     pub comment: String,
@@ -2749,6 +2754,13 @@ pub struct CadOverlay {
     pub dy: f32,
     #[serde(default)]
     pub rot_deg: f32,
+    /// None = plan orizontal la Z; Some(0) = plan vertical YZ la Y=z (Front/Back);
+    /// Some(1) = plan vertical XZ la X=z (Left/Right)
+    #[serde(default)]
+    pub vert: Option<u8>,
+    /// desenul a fost exportat oglindit (Back / Right) la intoarcere se oglindeste inapoi
+    #[serde(default)]
+    pub mirror: bool,
     #[serde(default = "yes_bool")]
     pub visible: bool,
     #[serde(default = "overlay_color")]

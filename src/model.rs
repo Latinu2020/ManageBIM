@@ -90,7 +90,7 @@ impl RawModel {
         for e in &mut self.elements {
             for t in &mut e.tris {
                 for p in t {
-                    let (mut a, mut b) = (p.x, p.y);
+                    let (mut a, b) = (p.x, p.y);
                     if mirror { a = -a; }
                     let local = match axis {
                         // 2D-ul exportat e in coordonatele LUMII (local + origin).

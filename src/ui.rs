@@ -1016,15 +1016,19 @@ impl App {
                     let mut tmp = v;
                     if ui.selectable_value(&mut tmp, cur, label).clicked() {
                         self.settings.cad_view = v;
-                        // fata nou aleasa => planul chiar pe fata (0% inset)
+                        // fata nou aleasa => planul chiar pe fata (0% inset) si evidentierea se aprinde
                         if v != crate::app::CadView::Current {
                             self.settings.cad_view_pos = 0.0;
+                            self.settings.show_cad_plane = true;
                         }
                         self.settings.save();
                     }
                 }
             });
-            if ui.checkbox(&mut self.settings.show_cad_plane, crate::i18n::tr("Highlight plane")).on_hover_text("Off by default: the orange plane appears only when you pick a face of the section box (Top / Bottom / Front / Back / Left / Right) in Cut View above.").changed() {
+            if ui.checkbox(&mut self.settings.show_cad_plane, crate::i18n::tr("Highlight plane")).on_hover_text("Off by default: picking a face in Cut View turns it on.").changed() {
+                self.settings.save();
+            }
+            if ui.checkbox(&mut self.settings.show_section_box, "Hide section box").on_hover_text("Hides only the box drawing and its face arrows in 3D. The cut and all exports stay active.").changed() {
                 self.settings.save();
             }
             if cur != crate::app::CadView::Current && cur.axis().is_some() {
@@ -2966,7 +2970,7 @@ impl App {
         }
         // section box ca in Revit: cate o sageata pe fiecare fata; tragi de ea si fata se muta pe axa ei
         let mut handle_hover: Option<usize> = None;
-        if self.section.enabled && self.section.mode == SectionMode::Box && self.report_job.is_none() {
+        if self.section.enabled && self.section.mode == SectionMode::Box && self.settings.show_section_box && self.report_job.is_none() {
             let vpm = params.view_proj;
             let (a, b) = (Vec3::from(self.section.bmin), Vec3::from(self.section.bmax));
             let c = (a + b) * 0.5;
@@ -3456,7 +3460,7 @@ impl App {
                 }
             }
         }
-        if self.section.enabled && self.section.mode == SectionMode::Box {
+        if self.section.enabled && self.section.mode == SectionMode::Box && self.settings.show_section_box {
             let (a, b) = (Vec3::from(self.section.bmin), Vec3::from(self.section.bmax));
             let c = |i: u32| Vec3::new(if i & 1 == 0 { a.x } else { b.x }, if i & 2 == 0 { a.y } else { b.y }, if i & 4 == 0 { a.z } else { b.z });
             for (i, j) in [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)] {

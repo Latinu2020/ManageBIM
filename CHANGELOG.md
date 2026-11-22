@@ -3,6 +3,14 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.7 - 2026-11-22
+- **Overlay DWG la locul tăieturii**: desenul exportat prin „Cut to DWG" revine **exact în planul și la coordonatele de unde a fost extras** (metadate citite din DXF / sidecar). Suport de **plan vertical** (Front/Back → YZ, Left/Right → XZ) și oglindire inversată. Din fereastra DWG Overlay a fost eliminat câmpul „Level" — poziția se păstrează, nu se mai atribuie un nivel.
+- **Secțiunea limitată la cub**: exportul DWG/PDF conține **doar ce e în interiorul section box-ului** și numai elementele care prind cubul + planul; segmentele se taie **exact la peretele cubului** (clipping parametric), nu doar se resping.
+- **Viewpoint-ul păstrează planul de tăiere**: se salvează/restaurează Cut View (Top/Front/…) și poziția lui, ca la viewpoint-urile Navisworks.
+- **Hide section box**: opțiune nouă care ascunde doar sârma cubului și săgețile fetelor în 3D — **secțiunea și exporturile rămân active**.
+- **Highlight plan implicit oprit**: se aprinde automat când alegi o față în Cut View.
+- **OSNAP-urile și unitățile mm/m/in/ft** rămân în planul 0.28 (nu au fost incluse aici ca să păstrăm stabilitatea).
+
 ## 0.27.5 - 2026-11-22
 - **Tăietura aliniată cu grila**: planul de tăiere (evidențiere + export DWG/PDF) se fixează automat pe **axa de grila / nivelul cel mai apropiat** — Top/Bottom pe niveluri, Front/Back/Left/Right pe liniile de grilă. Muting grila, planul o urmărește; se poate dezactiva din Settings („Snap the cut plane to grids / levels"). Înălțimea în cubul de secțiune rămâne reglabilă („Cut height in box").
 - **Cubul de secțiune e format din planuri**: alegând **Top / Bottom / Front / Back / Left / Right** în meniul Cut View, planul portocaliu stă **exact pe fața respectivă a section box-ului** (0% = pe față) și **o urmează când tragi fața cu săgeata**. Îl poți muta și direct în 3D cu mânerul cu săgeți din centru, iar **exportul DWG / PDF taie exact acolo**. Fără cub activ, vederile se aliniaza la grile/niveluri. În modul Current, planul e la cota reglabilă din cub („Cut height in box").
