@@ -37,6 +37,12 @@ if (Test-Path $nbin) {
     Copy-Item (Join-Path $root 'navis-addin\README.md') $nd -ErrorAction SilentlyContinue
 }
 if (Test-Path (Join-Path $root 'samples')) { Copy-Item (Join-Path $root 'samples') (Join-Path $app 'examples') -Recurse }
+# scripturile exemplu (Rhai) - consola le instaleaza de aici in folderul de scripturi
+$exScripts = Join-Path $root 'examples\scripts'
+if (Test-Path $exScripts) {
+    New-Item -ItemType Directory -Force (Join-Path $app 'examples\scripts') | Out-Null
+    Copy-Item (Join-Path $exScripts '*.rhai') (Join-Path $app 'examples\scripts') -Force
+}
 Copy-Item (Join-Path $root 'README.md'), (Join-Path $root 'BIMC_FORMAT.md'), (Join-Path $root 'CHANGELOG.md'), (Join-Path $root 'THIRD_PARTY.md') (Join-Path $app 'docs')
 $size = (Get-ChildItem $pkg -Recurse -File | Measure-Object Length -Sum).Sum
 
