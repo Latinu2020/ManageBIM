@@ -1408,7 +1408,7 @@ impl App {
                 ui.label("Font / UI size");
                 let mut pct = (self.settings.ui_scale * 100.0).round() as i32;
                 let r = ui.add_sized([110.0, ui.spacing().interact_size.y], egui::Slider::new(&mut pct, 75..=200).step_by(5.0).suffix("%"));
-                if r.changed() {
+                if r.changed() && (!r.dragged() || r.drag_stopped()) {
                     self.settings.ui_scale = pct as f32 / 100.0;
                     self.settings.save();
                 }
@@ -1435,7 +1435,7 @@ impl App {
                     ui.label("Interface size");
                     let mut pct = (self.settings.ui_scale * 100.0).round() as i32;
                     let r = ui.add_sized([140.0, ui.spacing().interact_size.y], egui::Slider::new(&mut pct, 75..=200).step_by(5.0).suffix("%"));
-                    if r.changed() {
+                    if r.changed() && (!r.dragged() || r.drag_stopped()) {
                         self.settings.ui_scale = pct as f32 / 100.0;
                         self.settings.save();
                     }
@@ -2466,9 +2466,14 @@ impl App {
             }
         });
         rgroup(ui, "Run", |ui| {
-            let n = script::list(&self.settings.scripts_dir).len();
+            let scripts = script::list(&self.settings.scripts_dir);
+            let n = scripts.len();
             ui.label(format!("{n} script(s) in folder"));
-            ui.add_enabled(false, egui::Button::new("▶ Run all")).on_hover_text("The Rhai engine is enabled in 0.28. Scripts from the Scripts folder will run from here.");
+            if ui.button("▶ Run all").clicked() {
+                for p in scripts {
+                    self.run_script(&p.to_string_lossy().to_string());
+                }
+            }
         });
     }
 
@@ -2511,7 +2516,9 @@ impl App {
                         ui.horizontal(|ui| {
                             ui.label("📜");
                             ui.label(&name);
-                            ui.add_enabled(false, egui::Button::new("▶ Run")).on_hover_text("The Rhai engine is enabled in 0.28");
+                            if ui.button("▶ Run").on_hover_text("Execute this .rhai script with the Rhai engine").clicked() {
+                                self.run_script(&p.to_string_lossy().to_string());
+                            }
                         })
                         .response
                         .on_hover_text(p.display().to_string());
@@ -3302,9 +3309,9 @@ impl App {
                 }
             }
         }
-        // planul de taiere ales pentru exportul DWG / PDF: suprafata portocalie
-        // translucida + contur, ca sa vezi exact unde cade taietura in model
-        if self.settings.show_cad_plane && self.report_job.is_none() {
+        // Evidentierea e OPRITA in mod normal: apare doar cand Sectiunea e in
+        // modul Box (adica „intrii in section box"), si doar planul efectiv taiat.
+        if self.settings.show_cad_plane && self.section.enabled && self.section.mode == SectionMode::Box && self.report_job.is_none() {
             if let Some((axis, value)) = self.cad_cut_plane() {
                 let bb = self.scene_aabb();
                 let lo = bb.min - Vec3::splat(0.5);

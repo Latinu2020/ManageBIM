@@ -397,6 +397,7 @@ impl App {
         let mut remove = None;
         let mut reload = None;
         let mut add = false;
+        let mut zoom = None;
         let levels = self.scene_grids().levels;
         egui::Window::new(crate::theme::icon_job("📐", "DWG overlay", 14.0, ctx.style().visuals.text_color()))
             .id(egui::Id::new("overlay_win"))
@@ -416,6 +417,9 @@ impl App {
                             ui.checkbox(&mut ov.visible, RichText::new(&ov.name).strong());
                             ui.label(RichText::new(format!("{} lines", ov.segs.len())).small().weak());
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.small_button("🎯").on_hover_text("Zoom to this overlay (if you cannot see it)").clicked() {
+                                    zoom = Some(i);
+                                }
                                 if ui.small_button("🗑").on_hover_text("Remove").clicked() {
                                     remove = Some(i);
                                 }
@@ -457,6 +461,25 @@ impl App {
             });
         if !open {
             self.overlay_open = false;
+        }
+        if let Some(i) = zoom {
+            let ov = self.overlays[i].clone();
+            let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+            for s in ov.segs.iter() {
+                x0 = x0.min(s[0] as f64).min(s[2] as f64);
+                y0 = y0.min(s[1] as f64).min(s[3] as f64);
+                x1 = x1.max(s[0] as f64).max(s[2] as f64);
+                y1 = y1.max(s[1] as f64).max(s[3] as f64);
+            }
+            if x0 <= x1 && y0 <= y1 {
+                let m = 2.0_f64;
+                let bb = crate::model::Aabb {
+                    min: glam::Vec3::new((x0 - m) as f32, (y0 - m) as f32, ov.z - 1.0),
+                    max: glam::Vec3::new((x1 + m) as f32, (y1 + m) as f32, ov.z + 1.0),
+                };
+                self.cam.fit(&bb);
+                self.toast(format!("Zoomed to overlay {} ({} lines).", ov.name, ov.segs.len()));
+            }
         }
         if let Some(i) = remove {
             self.overlays.remove(i);

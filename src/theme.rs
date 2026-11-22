@@ -197,7 +197,7 @@ fn default_vp_root() -> String {
 }
 
 fn default_cad_view_pos() -> f32 {
-    0.5
+    0.25
 }
 
 fn default_eye() -> f32 {

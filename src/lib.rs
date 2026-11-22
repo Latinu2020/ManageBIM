@@ -26,6 +26,7 @@ pub mod plant3d_db;
 pub mod profiler;
 pub mod qto;
 pub mod shared;
+pub mod scripting;
 pub mod step;
 pub mod sync;
 pub mod tables;

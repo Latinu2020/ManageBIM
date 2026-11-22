@@ -4,6 +4,13 @@ Versiunea apare în **View › Help › About** și în proprietățile fișieru
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
 ## 0.27.1 - 2026-11-22
+- **Motor Rhai activat**: scripturile `.rhai` din consola Script chiar se executa. API expus: `select_where`, `select_ids`, `selected_count`, `find_where_empty`, `set_prop`, `create_clash_test`, `zoom_to_selection`, `export_bcf`, `export_excel`, `log`. Butoanele **▶ Run** / **Run all** sunt functionale; actiunile se aplica in ordinea inregistrata (selectie, proprietati, teste clash, zoom). 3 teste unitare noi.
+- **Fix path trace**: bucla de repaint nu mai continua dupa terminare (aplicatia nu mai „merge" continuu); preview-ul foloseste acum acelasi spatiu de coordonate ca rendererul (nu doar cer); ETA + anunt de finalizare; textele EN/RO.
+- **Planuri de taiere opuse**: Front/Back si Left/Right dau acum planuri DIFERITE (distanta fata de latura aleasa, 25% implicit); la fel Top/Bottom.
+- **Highlight doar in Section Box**: planul portocaliu de taiere apare doar cand sectiunea e in modul **Box**, nu permanent in vizualizare.
+- **Fix overlay DWG**: buton **🎯** in fereastra de overlay pentru zoom la desen (daca nu se vede la cota curenta).
+- **Fix clipire UI size**: schimbarea font/UI size se aplica la eliberarea sliderului, nu la fiecare pas de tractiune.
+- **Roadmap 0.28 notat** in `docs/ROADMAP_0.28.md` (BIM complet + functionalitati + performanta, fara instancing).
 - **Mărimea interfeței / fonturi (DPI)**: setare nouă în **View › Options › Interface size** (75%–200%, pas de 5%), salvată în `settings.json` și aplicată întregii interfețe prin `egui::Context::set_zoom_factor` — texte, tabele, panouri și ferestre se scalează împreună. O valoare invalidă dintr-un `settings.json` stricat revine la 100%.
 - **Panouri și ferestre mai vizibile**: contur subtil de 1 px, specific fiecărei teme (`theme::border()`), aplicat panourilor dockuite și tuturor ferestrelor plutitoare — ies în evidență fără să pară grele.
 - **Coloane trăsăbile (stretch) în tabele**: componenta comună `src/ui/table.rs` folosește `TableBuilder::resizable(true)` + `Column::initial` în loc de `Column::exact` (care bloca lățimea). Aplicată în tabelul de teste Clash Detective și în TimeLiner; tabelul de rezultate Clash avea deja suport.

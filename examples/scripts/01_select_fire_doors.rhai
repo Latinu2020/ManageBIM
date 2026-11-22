@@ -8,12 +8,12 @@ let prop = "FireRating";
 // selectare dupa categorie, apoi doar cele care au proprietatea specificata
 select_where("Category", category);
 let doors = selected_count();
-log("Usi in model: " + doors);
+log("Usi in model: " + doors.to_string());
 
 // restrange selectia la cele cu FiringRating = EI30
 select_where(prop, "EI30");
 let fire_doors = selected_count();
-log("Usi EI30: " + fire_doors);
+log("Usi EI30: " + fire_doors.to_string());
 
 // evidentiere in model si zoom
 zoom_to_selection();

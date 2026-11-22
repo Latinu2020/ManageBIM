@@ -61,7 +61,118 @@ pub fn create(override_dir: &str) -> Result<PathBuf, String> {
         n += 1;
         p = d.join(format!("script_{n}.rhai"));
     }
-    let template = "// ManageBIM script (Rhai) - the scripting engine is enabled in 0.28\n// select_where(\"Category\", \"Walls\");\n// set_prop(\"FireRating\", \"2h\");\n// create_clash_test(\"Structure vs MEP\", 25.0);\n";
+    let template = "// ManageBIM script (Rhai)\n// select_where(\"Category\", \"Walls\");\n// set_prop(\"FireRating\", \"2h\");\n// create_clash_test(\"Structure vs MEP\", 25.0);\n";
     std::fs::write(&p, template).map_err(|e| format!("Cannot write {}: {e}", p.display()))?;
     Ok(p)
+}
+
+// ---------------------------------------------------------------- motorul de executie
+
+use crate::app::App;
+use crate::model::ElemId;
+use crate::scripting::Action as ScriptAction;
+
+impl App {
+    /// Fotografia modelului vazuta de script: proprietatile elementelor si
+    /// indexii globali ai selectiei curente.
+    fn script_input(&self) -> crate::scripting::Input {
+        let mut elements = Vec::new();
+        let mut selected = Vec::new();
+        let mut idx = 0i32;
+        for (mi, m) in self.loaded_models() {
+            for (ei, e) in m.elements.iter().enumerate() {
+                let mut props = vec![
+                    ("Category".to_string(), e.ifc_type.clone()),
+                    ("Name".to_string(), e.name.clone()),
+                    ("Level".to_string(), e.storey.clone()),
+                    ("GlobalId".to_string(), e.guid.clone()),
+                ];
+                for p in &e.props {
+                    props.push((p.name.clone(), p.value.clone()));
+                    props.push((format!("{}|{}", p.group, p.name), p.value.clone()));
+                }
+                elements.push((idx, props));
+                if self.selected.contains(&ElemId { m: mi as u32, e: ei as u32 }) {
+                    selected.push(idx);
+                }
+                idx += 1;
+            }
+        }
+        crate::scripting::Input { elements, selected }
+    }
+
+    /// index global -> ElemId (acelasi parcurs ca in script_input)
+    fn script_ids(&self, idx: &[i32]) -> Vec<ElemId> {
+        let mut out = Vec::new();
+        let mut i = 0i32;
+        for (mi, m) in self.loaded_models() {
+            for ei in 0..m.elements.len() {
+                if idx.contains(&i) {
+                    out.push(ElemId { m: mi as u32, e: ei as u32 });
+                }
+                i += 1;
+            }
+        }
+        out
+    }
+
+    pub(super) fn run_script(&mut self, path: &str) {
+        let source = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => return self.error(format!("Cannot read script: {e}")),
+        };
+        let input = self.script_input();
+        let result = match crate::scripting::run(&source, &input) {
+            Ok(o) => o,
+            Err(e) => return self.error(format!("{}: {e}", crate::file_name(path))),
+        };
+        for l in &result.logs {
+            self.toast(l.clone());
+        }
+        let n = result.actions.len();
+        for action in result.actions {
+            match action {
+                ScriptAction::SelectIds(idx) => {
+                    let ids = self.script_ids(&idx);
+                    self.selected = ids.into_iter().collect();
+                    self.colors_dirty = true;
+                }
+                ScriptAction::SelectWhere(k, v) => {
+                    let idx: Vec<i32> = input
+                        .elements
+                        .iter()
+                        .filter(|(_, props)| props.iter().any(|(pk, pv)| pk.eq_ignore_ascii_case(&k) && pv.eq_ignore_ascii_case(&v)))
+                        .map(|(i, _)| *i)
+                        .collect();
+                    let ids = self.script_ids(&idx);
+                    self.selected = ids.into_iter().collect();
+                    self.colors_dirty = true;
+                }
+                ScriptAction::SetProp(name, value) => {
+                    let ids: Vec<ElemId> = self.selected.iter().copied().collect();
+                    let changed = self.set_user_param(&ids, &name, &value);
+                    self.toast(format!("Set {name} on {changed} elements."));
+                }
+                ScriptAction::CreateClash(name, tol) => {
+                    self.clash_tests.push(crate::app::ClashTest::new(name));
+                    if let Some(t) = self.clash_tests.last_mut() {
+                        t.tol_mm = tol as f32;
+                    }
+                }
+                ScriptAction::ZoomToSelection => {
+                    if !self.selected.is_empty() {
+                        let ids: Vec<ElemId> = self.selected.iter().copied().collect();
+                        let bb = self.ids_aabb(&ids);
+                        if bb.is_valid() {
+                            self.cam.fit(&bb);
+                        }
+                    }
+                }
+                ScriptAction::ExportBcf(p) | ScriptAction::ExportExcel(p) => {
+                    self.toast(format!("Script asked for export to {p} — use the Export menu to save the file."));
+                }
+            }
+        }
+        self.toast(format!("Script finished: {n} action(s)."));
+    }
 }

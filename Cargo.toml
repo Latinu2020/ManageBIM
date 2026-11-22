@@ -36,6 +36,8 @@ acadrust = "0.6.8"
 rusqlite = { version = "0.32", features = ["bundled"] }
 # iconite vectoriale (Phosphor, MIT) in locul emoji-urilor
 egui-phosphor = "0.7.3"
+# motorul de scripturi pentru consola Script (Rhai, MIT/Apache-2.0)
+rhai = { version = "1.20", default-features = false, features = ["std", "no_module", "no_custom_syntax"] }
 
 # dialogurile de fisiere: Windows nativ; Linux / FreeBSD prin xdg-desktop-portal
 [target.'cfg(any(windows, unix))'.dependencies]

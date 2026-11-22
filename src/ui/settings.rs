@@ -30,7 +30,7 @@ impl App {
                         ui.label("Interface size (fonts / DPI)");
                         let mut pct = (self.settings.ui_scale * 100.0).round() as i32;
                         let r = ui.add(egui::Slider::new(&mut pct, 75..=200).step_by(5.0).suffix("%"));
-                        if r.changed() {
+                        if r.changed() && (!r.dragged() || r.drag_stopped()) {
                             self.settings.ui_scale = pct as f32 / 100.0;
                             self.settings.save();
                         }
@@ -74,7 +74,7 @@ impl App {
                             }
                         })
                         .response
-                        .on_hover_text("Exact position of the cutting plane in the model bounding box: 0% = near side (front / left), 100% = far side (back / right).");
+                        .on_hover_text("Distance from the chosen face: 0% = exactly on that face (front / left / top), 100% = the opposite face.");
                     }
                     ui.checkbox(&mut self.cad_annotate, "Annotations: hatch, element tags, grids, levels")
                         .on_hover_text("Turn off for a clean outline (only the cut edges, one DWG layer per element type).");

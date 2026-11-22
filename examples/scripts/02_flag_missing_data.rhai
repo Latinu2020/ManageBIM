@@ -3,7 +3,7 @@
 // de utilizator, ca sa fie usor de gasit ulterior in Find Items.
 
 let unchecked = find_where_empty("Classification");
-log("Elemente fara clasificare: " + unchecked.len());
+log("Elemente fara clasificare: " + unchecked.len().to_string());
 
 for id in unchecked {
     select_ids([id]);
@@ -14,4 +14,4 @@ for id in unchecked {
 // Selectia finala = toate elementele marcate, ca sa le vezi in model
 select_where("NeedsReview", "yes");
 zoom_to_selection();
-log("Marcate " + unchecked.len() + " elemente. Exporta un raport cu export_excel(\"review.xlsx\").");
+log("Marcate " + unchecked.len().to_string() + " elemente. Exporta un raport cu export_excel(\"review.xlsx\").");

@@ -75,7 +75,7 @@ pub fn class_label(class: &str) -> String {
     let s = class.strip_prefix("ACPP").unwrap_or(class);
     let mut c = s.chars();
     match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + &c.as_str().to_lowercase(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str().to_lowercase().as_str(),
         None => class.to_string(),
     }
 }

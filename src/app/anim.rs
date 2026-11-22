@@ -424,9 +424,11 @@ impl App {
                 self.toast(format!("✅ {} · {} {} · {:.1}s — {}", crate::i18n::tr("Path trace FINISHED"), job.count.load(std::sync::atomic::Ordering::Relaxed), crate::i18n::tr("samples"), job.started.elapsed().as_secs_f32(), crate::i18n::tr("Export PNG is ready")));
             }
         }
-        // si la final trebuie un cadru nou: textrura poate fi construita exact
-        // in cadrul in care worker-ul a eliberat mutex-ul
-        ctx.request_repaint();
+        // Repaint doar cat timp randarea e activa. Daca o cerem si dupa
+        // terminare, egui ramane intr-o bucla permanenta si aplicatia "merge" continuu.
+        if !job.done.load(std::sync::atomic::Ordering::Relaxed) {
+            ctx.request_repaint();
+        }
     }
 
     pub fn export_pathtrace(&mut self, path: &str) {

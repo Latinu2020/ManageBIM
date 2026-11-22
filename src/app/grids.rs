@@ -112,22 +112,33 @@ impl App {
     pub fn cad_cut_plane(&self) -> Option<(usize, f32)> {
         use crate::app::CadView;
         let view = self.settings.cad_view;
+        // In modul "Current", daca sectiunea e Box, planul taietii folosit la
+        // export e planul orizontal la nivel + 1.2 m (ca in planurile Revit).
+        if view == crate::app::CadView::Current {
+            if self.section.enabled && self.section.mode == crate::app::SectionMode::Box {
+                let (a, b) = (self.section.bmin, self.section.bmax);
+                let z = (a[2] + self.level_below.max(0.0) + 0.01 + 1.2).min(b[2] - 0.01).max(a[2] + 0.01);
+                return Some((2, z));
+            }
+            return None;
+        }
         let a = view.axis()?;
         let bb = self.scene_aabb();
         if !bb.is_valid() {
             return None;
         }
+        let t = self.settings.cad_view_pos.clamp(0.0, 1.0);
+        let (lo, hi) = (bb.min, bb.max);
+        // Directiile opuse trebuie sa dea planuri DIFERITE, altfel nu se vede
+        // nicio schimbare cand alegi Front/Back sau Left/Right.
         let value = match view {
-            CadView::Top => bb.max.z,
-            CadView::Bottom => bb.min.z,
-            _ => {
-                let (lo, hi) = match a {
-                    1 => (bb.min.y, bb.max.y),
-                    2 => (bb.min.z, bb.max.z),
-                    _ => (bb.min.x, bb.max.x),
-                };
-                lo + (hi - lo) * self.settings.cad_view_pos.clamp(0.0, 1.0)
-            }
+            CadView::Front => lo.y + (hi.y - lo.y) * t,
+            CadView::Back => hi.y - (hi.y - lo.y) * t,
+            CadView::Left => lo.x + (hi.x - lo.x) * t,
+            CadView::Right => hi.x - (hi.x - lo.x) * t,
+            CadView::Top => hi.z - (hi.z - lo.z) * t,
+            CadView::Bottom => lo.z + (hi.z - lo.z) * t,
+            CadView::Current => unreachable!(),
         };
         Some((a, value))
     }
