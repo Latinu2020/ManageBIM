@@ -1,36 +1,61 @@
-# Plan 0.28 (nu intrăm încă în 0.28 — seria rămâne 0.27.x până la stabilizare)
+# Plan versiunea finală (0.28) — actualizat după 0.27.5
 
-> Notat la cerere. Elementele de mai jos NU sunt implementate în 0.27.1.
+> Starea la 22.11.2026. Marcate cu ✅ cele livrate deja în 0.27.5.
 
 ## 🏗️ BIM / interoperabilitate
 
-1. **Export COBie** (xlsx) — pachet de predare către facility management; reutilizează `qto.rs` / `tables.rs`.
-2. **IFC 4.3 (IFC4X3_ADD2) + validare buildingSMART** — readerul e declarat IFC2x3/IFC4; exportul IDS menționează deja IFC4X3_ADD2. Validator de conformitate (GUID-uri, Pset-uri, structură spațială).
-3. **BCF 3.0 export** — importul suportă 2.1 + 3.0 (`markup.rs:1063`), exportul scrie doar `VersionId="2.1"` (`markup.rs:403`). Quick-win.
-4. **Conectori cloud** — Speckle / BIMcollab / ACC, peste sincronizarea prin folder partajat din `shared.rs`.
-5. **Sisteme de clasificare** — Uniclass / Omniclass / SFG20, mapaj pe proprietăți + culori per diviziune.
-6. **Verificări de spațiu și accesibilitate** — arii `IfcSpace`, adiacențe, lățimi minime de coridor, accesibilitate; reguli BIM reale în Model Checker.
-7. **5D / cost codes** — cost code per element + raport cost pe fază/disciplină, pe lângă qto + 4D existente.
+| # | Funcționalitate | Stare | Efort | Prioritate |
+|---|---|---|---|---|
+| 1 | Export COBie 2.4 (Contact, Facility, Floor, Type, Component, System) | ✅ gata | — | — |
+| 2 | Export BCF 2.1 / 3.0 (comentarii în `<Topic>` la 3.0) | ✅ gata | — | — |
+| 3 | **IFC 4.3 (IFC4X3_ADD2) complet** + validare buildingSMART (GUID, Pset, structură spațială) | de făcut | mare | 🔶 medie |
+| 4 | **Clasificări Uniclass / Omniclass / SFG20** — mapaj pe proprietăți, culori per diviziune | de făcut | mediu | 🔶 medie |
+| 5 | **Verificări de spațiu/accesibilitate** — arii IfcSpace, adiacențe, lățimi minime | de făcut | mediu-mare | 🔶 medie |
+| 6 | **5D cost codes** — cost code per element + raport pe fază/disciplină | de făcut | mediu | 🔷 mică |
+| 7 | **Conectori cloud** Speckle / BIMcollab / ACC (peste folderul partajat) | de făcut | mare | 🔷 mică |
 
 ## 🧩 Funcționalitate
 
-1. **Export BCF 3.0** (vezi mai sus, pct. 3).
-2. **Motorul Rhai propriu-zis** — consola, folderul și 3 exemple există deja; se activează API-ul `select_where`, `set_prop`, `create_clash_test`, `export_bcf`, `log` etc.
-3. **Review package** — fișier `.bimr` read-only, publicabil (model + issue-uri + viewpoint-uri), deschis fără surse; se bazează pe `.bimd` existent.
-4. **Editor de scurtături** — rebind + detectare de conflicte (shortcut-urile sunt hardcodate în `shortcuts()`).
-5. **Teme pentru daltonism / contrast mare** — 2 variante noi, palettele sunt deja centralizate în `theme::Palette`.
-6. **Timeline de snapshot-uri** — versiuni etichetate, diff între revizii și restore (pe baza `compare.rs`).
+| # | Funcționalitate | Stare | Efort |
+|---|---|---|---|
+| 1 | Motor Rhai + consola + 3 exemple + folder configurabil | ✅ gata | — |
+| 2 | Fonturi (Inter/Lato/sistem) + înălțime text 10–26 px | ✅ gata | — |
+| 3 | Tăietura aliniată cu grila/nivelurile + highlight în Section Box | ✅ gata | — |
+| 4 | **Review package** — `.bimr` read-only publicabil (pe baza `.bimd`) | de făcut | mediu |
+| 5 | **Editor de scurtături** — rebind + detectare conflicte | de făcut | mediu |
+| 6 | **Teme noi**: Solarized, Dracula, High Contrast (+ daltonism) | de făcut | mic |
+| 7 | **Timeline de snapshot-uri** — versiuni etichetate, diff, restore | de făcut | mare |
+| 8 | **„Copy diagnostics"** în Help › About (versiune, GPU, crash.log) | de făcut | mic |
 
-## ⚡ Performanță (fără instancing — exclus la cerere)
+## ⚡ Performanță
 
-1. **Path trace pe mai multe thread-uri** — înlocuit bucla secvențială din `pathtrace.rs` cu `rayon` (`par_chunks_mut`); câștig ~8× pe 8 core. `rayon` e deja dependență.
-2. **Cache BVH** — `Scene::build` reconstruiește BVH-ul la fiecare randare; ținut în `Model` / `OnceLock`, invalidat doar la schimbarea geometriei.
-3. **Clash incremental cu broad-phase** — folosit `Bvh` din `model.rs`; se re-testează doar elementele al căror AABB s-a schimbat (`run_key` / `last_run` există deja în `ClashTest`).
+| # | Item | Stare | Efort |
+|---|---|---|---|
+| 1 | Path trace multi-core (rayon) + rezoluții până la 4096 | ✅ gata | — |
+| 2 | **Cache BVH în `Model`** (invalidat la schimbarea geometriei) — „Update All" ~2× mai rapid | de făcut | mic-mediu |
+| 3 | **Clash incremental cu broad-phase** — doar elementele mutate (`run_key`/`last_run` există) | de făcut | mediu |
+| 4 | Instancing | ❌ exclus la cerere | — |
 
-## 🐞 Debugging în curs (seria 0.27.x)
+## 🧪 Calitate (zero-risc, aditive)
 
-- Path trace nu se oprește după finish (buclă de repaint).
-- Planurile Left/Right și Front/Back nu se schimbă la export DWG.
-- Overlay-ul DWG nu se vede la import.
-- Ecranul clipeste la schimbarea font/UI size.
-- Scripturile exemplu nu rulează (motorul nu e încă activ).
+| # | Item | Efort |
+|---|---|---|
+| 1 | `cargo clippy -D warnings` + `cargo fmt --check` în CI (prinde regresii devreme) | 10 min |
+| 2 | `cargo-deny` în CI — audit automat de licențe | 15 min |
+| 3 | Scripturi exemplu 04–06 (cantități, hide MEP, clash-uri active) | 30 min |
+| 4 | Cheatsheet complet de scurtături în Help | 1 h |
+| 5 | Traduceri DE/FR în `i18n.rs` (tabelul e aditiv) | 2-4 h |
+| 6 | Icoană de aplicație desenată (înlocuiește cuburile procedurale) | 1 h |
+
+## 🧹 Igienă repo (după publicarea 0.27.5, nu în timpul unui release)
+
+- **Istoric git: 582 MB** instalere vechi în `download/` → `git filter-repo --path download --invert-paths` + **force-push** + re-clone de către colaboratori. Numai după ce release-ul 0.27.5 e publicat.
+- Șterge tag-urile locale inutile dacă nu mai trebuie.
+
+## Ordinea recomandată pentru versiunea finală
+
+1. **Sprint 1 (stabilizare):** clippy+fmt+deny în CI, diagnostics, scripturi 04–06 — tot aditiv.
+2. **Sprint 2 (valoare):** teme noi, editor de scurtături, cache BVH, clash incremental.
+3. **Sprint 3 (BIM greu):** IFC 4.3 + validare, clasificări, verificări de spațiu.
+4. **Sprint 4 (colaborare):** review package, snapshot timeline, conectori cloud.
+5. **La final:** curățarea istoricului git + versiunea finală 0.28.
