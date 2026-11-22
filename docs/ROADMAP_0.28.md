@@ -74,6 +74,20 @@ Starea curentă: snapuri la **Vertex / Midpoint / Edge / Surface**, rază fixă 
 
 > Sursă vizuală: capturile trimise cu dialogul AutoCAD Object Snap (lista completă de moduri) și marcajul „Vertex" lângă cursor. Compatibilitate: `units_mm` existent se migrează la sistemul metric mm; proiectele vechi își păstrează unitatea afișată.
 
+## 🖼️ Branding pentru versiunea finală (iconiță + installer)
+
+Starea curentă: iconița e desenată procedural (3 cuburi colorate) în `main.rs::icon()` și `installers/setup/main.rs::icon()`; installerul e egui cu tema Nord, 720×560, fără logo.
+
+| # | Item | Detaliu |
+|---|---|---|
+| 1 | **Iconiță nouă, profesională** | înlocuiește cuburile procedurale cu un design real: fundal navy închis, cub isometric BIM cu accente albastru (#3b82f6) / portocaliu (#eb8730) / verde (#46be64) — culorile brandului existent; livrat ca `.ico` multi-dimensiune (**16, 32, 48, 64, 128, 256 px**) pentru Windows + `.png` 512 pentru Linux/FreeBSD |
+| 2 | **Aceeași iconiță peste tot** | `ManageBIM.exe`, `ManageBIM-Setup.exe`, installerul `install.ps1` (Start Menu / Desktop shortcut), web viewer (favicon), documentație README |
+| 3 | **Installer mai profesionist** | header cu **logo + nume + versiune** (în loc de text simplu), bară de progres cu pași evidențiați, panou lateral cu „Ce se instalează" (app + OCCT + add-in-uri detectate), pagină Finish cu „Ce e nou în 0.28" și buton „Open ManageBIM" / „View release notes" |
+| 4 | **Coerență vizuală** | aceleași culori Nord/Studio, spațieri și glife Phosphor ca în aplicație; fonturile incluse (Inter/Lato) folosite și în installer |
+| 5 | **Detalii de încredere** | badge „No admin required", „MIT License", dimensiunea pachetului și lista componentelor afișate înainte de Install |
+
+> Regulă pentru 0.28: branding-ul e **parte din criteriile de calitate** — iconița și installerul se verifică odată cu funcțiile, nu la final.
+
 ## 🎨 Icoane distincte în ribbon (duplicatelor actuale li se dau semne proprii)
 
 Surse de confuzie identificate (din `rbtn`): ⬚ ×4, ✏ ×5, ◎ ×4, 📄 ×6, 📥 ×5, 📤 ×3, 📦 ×3, 🏗 ×3, 👁 ×3, 🎞 ×3, 📷 ×3, ➕ ×3, 🎯 ×3, 🔗 ×3.
