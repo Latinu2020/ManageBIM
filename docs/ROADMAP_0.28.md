@@ -65,12 +65,14 @@ Starea curentă: snapuri la **Vertex / Midpoint / Edge / Surface**, rază fixă 
 |---|---|---|
 | 1 | **Rază de snap mai mare + reglabilă** | setare în Settings (px, ex. 6–24, implicit ~12); markerul vizual se mărește odată cu raza, ca să vezi ce ai prins |
 | 2 | **Snapuri exacte pe geometrie** | se calculează pe coordonatele reale ale triunghiurilor (nu aproximare pe ecran): capăt de muchie, mijloc, centru de cerc/arc, intersecție de muchii, picior de perpendiculară pe muchie, punctul cel mai apropiat pe suprafață |
-| 3 | **Tipuri de snap selectabile (ca OSNAP)** | listă cu checkboxuri în Settings: Endpoint, Midpoint, Center, Intersection, Perpendicular, Nearest, Quadrant, Node, plus intersecții de grilă/nivel; **F3** = pornit/oprit rapid (convenție AutoCAD) |
-| 4 | **Prioritate / ciclare** | când mai multe snapuri cad în rază, se afișează markerul celui mai apropiat și se poate cicla cu Tab între candidați |
-| 5 | **Unități: mm / m / in / ft** | setare în Settings (înlocuiește `units_mm`, cu migrare la mm); distanțele, ariile și coordonatele se afișează cu sufixul unității; precizie (număr de zecimale) configurabilă |
-| 6 | **Afișare consecventă** | aceeași unitate în measure, Properties, status bar, QTO și în etichetele de pe imagine/video |
+| 3 | **Tipuri de snap selectabile (ca OSNAP)** | dialog în Settings cu checkboxuri + glifele din AutoCAD: **Endpoint** (─), **Midpoint** (△), **Center** (○), **Geometric Center**, **Node**, **Quadrant** (◇), **Intersection** (X), **Extension**, **Insertion**, **Perpendicular** (⊥), **Tangent**, **Nearest**, **Apparent intersection**, **Parallel** (//); butoane **Select All / Clear All**; **F3** = Object Snap On/Off |
+| 4 | **Marcaj + etichetă pe ecran** | ca în captura ta: la punctul prins apare **glifa + numele tipului** („Vertex", „Midpoint"…) lângă cursor, nu doar un punct |
+| 5 | **Snap tracking** | opțional 0.28: pauză peste punct → vector de tracking (F11 în AutoCAD); **atenție: F11 e deja „hide all panels" în ManageBIM → Model focus se mută pe altă tastă** |
+| 6 | **Prioritate / ciclare** | când mai multe snapuri cad în rază, se arată cel mai apropiat și se poate cicla cu Tab între candidați |
+| 7 | **Unități: mm / m / in / ft** | setare în Settings (înlocuiește `units_mm`, cu migrare la mm); distanțele, ariile și coordonatele se afișează cu sufixul unității; precizie (număr de zecimale) configurabilă |
+| 8 | **Afișare consecventă** | aceeași unitate în measure, Properties, status bar, QTO și în etichetele de pe imagine/video |
 
-> Compatibilitate: `units_mm` existent se migrează la sistemul metric mm; proiectele vechi își păstrează unitatea afișată.
+> Sursă vizuală: capturile trimise cu dialogul AutoCAD Object Snap (lista completă de moduri) și marcajul „Vertex" lângă cursor. Compatibilitate: `units_mm` existent se migrează la sistemul metric mm; proiectele vechi își păstrează unitatea afișată.
 
 ## 🎨 Icoane distincte în ribbon (duplicatelor actuale li se dau semne proprii)
 
