@@ -56,3 +56,24 @@ Sursă de inspirație: video-ul Bonsai/bSDD (https://www.youtube.com/watch?v=Eqt
 3. bSDD (căutare + atribuire + cache) — cel mai mare câștig BIM, se integrează cu Search/Properties/Model Checker existente.
 4. Sprint 3 (IFC 4.3, clasificări, spații).
 5. Sprint 4 (review package, snapshot timeline, conectori cu interfață pregătită).
+
+## ✅ Criterii de calitate — 0.28 trebuie să fie COMPLETĂ, CORECTĂ, FUNCȚIONALĂ, PERFECTĂ
+
+**Definiția de „gata" pentru fiecare funcție în parte:**
+1. **Teste scrise** — fiecare funcție nouă vine cu teste (unitare sau integrare); fără teste, funcția nu intră în release.
+2. **Verificare în aplicație** — fiecare funcție e testată manual pe proiectul demo (Help › Demo): se deschide, se folosește, se exportă.
+3. **Fără regresii** — suita completă (152+ teste) trece la FIECARE commit de feature; orice eșec se corectează înainte de a continua.
+4. **`cargo check --all-targets` + `cargo clippy`** fără erori; avertismentele noi nu se acceptă.
+5. **Compatibilitate** — proiectele și setările vechi (0.27.x) se încarcă fără pierderi (serde defaults pe toate câmpurile noi).
+6. **Performanță** — modelele mari se deschid în timp comparabil cu 0.27.5 (fără regresii >10%).
+
+**Definiția de „gata" pentru release-ul 0.28:**
+- Toate itemele din Sprint 1/3/4 + bSDD implementate și testate.
+- Suita completă verde (0 eșuate) pe Windows.
+- CI verde pe toate cele 3 platforme (Windows / Linux / FreeBSD).
+- Installer construit local, verificat (versiune, hash, conținut OCCT + add-in-uri).
+- `docs/ROADMAP_0.28.md` actualizat cu starea finală; CHANGELOG complet.
+- Push cu tag `v0.28.0` → CI publică automat Windows + Linux + FreeBSD.
+
+> Regula de aur: **nimic nu se livrează „aproape gata"** — dacă o funcție nu trece de toate cele 6 criterii, rămâne pe roadmap, nu în release.
+
