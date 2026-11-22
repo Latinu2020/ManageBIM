@@ -3,6 +3,11 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.8 - 2026-11-23
+- **Viewpoints ca în Navisworks**: click pe un viewpoint → camera și secțiunea se restaurează imediat în 3D; **click dreapta › Rename** (sau dublu-click) → editare inline, Enter confirmă / Esc anulează.
+- **Geometria din spatele tăieturii**: între planul de tăiere și peretele opus al cubului, muchiile reale ale elementelor se **proiectează pe plan și se desenează punctat** în 3D; în DWG/DXF se scriu pe stratul **BEHIND** cu linetipul **HIDDEN** (aplatizate pe planul de tăiere).
+- Letățurile adiționale: **Hide section box** (ascunde doar cubul, secțiunea rămâne) și **Behind edges** (pornit implicit), ambele în grupul Cut View.
+
 ## 0.27.7 - 2026-11-22
 - **Overlay DWG la locul tăieturii**: desenul exportat prin „Cut to DWG" revine **exact în planul și la coordonatele de unde a fost extras** (metadate citite din DXF / sidecar). Suport de **plan vertical** (Front/Back → YZ, Left/Right → XZ) și oglindire inversată. Din fereastra DWG Overlay a fost eliminat câmpul „Level" — poziția se păstrează, nu se mai atribuie un nivel.
 - **Secțiunea limitată la cub**: exportul DWG/PDF conține **doar ce e în interiorul section box-ului** și numai elementele care prind cubul + planul; segmentele se taie **exact la peretele cubului** (clipping parametric), nu doar se resping.

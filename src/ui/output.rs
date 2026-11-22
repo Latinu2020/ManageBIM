@@ -89,6 +89,7 @@ impl App {
         let mut act: Option<(String, &'static str)> = None;
         let rename_id = egui::Id::new("vp_folder_rename");
         let mut renaming: Option<(String, String)> = ui.data(|d| d.get_temp(rename_id));
+        let mut rename_vp: Option<usize> = None;
         if let Some(p) = self.vp_rename_pending.take() {
             renaming = Some(p);
         }
@@ -100,33 +101,69 @@ impl App {
         };
         egui::ScrollArea::vertical().id_salt("vp_list").auto_shrink([false, false]).show(ui, |ui| {
             // ---- un rand de viewpoint (se poate trage)
-            let item = |ui: &mut egui::Ui, i: usize, depth: usize, this: &mut App, restore: &mut Option<usize>, move_to: &mut Option<(usize, String)>| {
-                let v = &this.viewpoints[i];
-                let col = status_col(&v.issue.status);
-                let mut t = format!("{}. {}", i + 1, v.name);
-                if !v.redlines.is_empty() {
-                    t.push_str(&format!("  ✏{}", v.redlines.len()));
+            let item = |ui: &mut egui::Ui, i: usize, depth: usize, this: &mut App, restore: &mut Option<usize>, move_to: &mut Option<(usize, String)>, rename_vp: &mut Option<usize>| {
+                let status = this.viewpoints[i].issue.status.clone();
+                let name = this.viewpoints[i].name.clone();
+                let nred = this.viewpoints[i].redlines.len();
+                let ncom = this.viewpoints[i].comments.len();
+                let col = status_col(&status);
+                let mut t = format!("{}. {}", i + 1, name);
+                if nred > 0 {
+                    t.push_str(&format!("  ✏{nred}"));
                 }
-                if !v.comments.is_empty() {
-                    t.push_str(&format!("  💬{}", v.comments.len()));
+                if ncom > 0 {
+                    t.push_str(&format!("  💬{ncom}"));
                 }
                 let sel = this.vp_sel == i;
+                let editing = *rename_vp == Some(i);
                 let r = ui
                     .dnd_drag_source(egui::Id::new(("vp_drag", i)), i, |ui| {
                         ui.horizontal(|ui| {
                             ui.add_space(depth as f32 * 14.0);
-                            let (r, _) = ui.allocate_exact_size(EV::splat(10.0), Sense::hover());
-                            ui.painter().circle_filled(r.center(), 4.5, col);
-                            ui.selectable_label(sel, t).on_hover_text("Click: go to the viewpoint · drag it onto a folder")
+                            let (dot, _) = ui.allocate_exact_size(EV::splat(10.0), Sense::hover());
+                            ui.painter().circle_filled(dot.center(), 4.5, col);
+                            if editing {
+                                let id = egui::Id::new(("vp_rename_buf", i));
+                                let mut buf: String = ui.data(|d| d.get_temp(id)).unwrap_or_else(|| this.viewpoints[i].name.clone());
+                                let te = ui.add(egui::TextEdit::singleline(&mut buf).desired_width(120.0));
+                                te.request_focus();
+                                ui.data_mut(|d| d.insert_temp(id, buf.clone()));
+                                if let Some(new) = te.lost_focus().then(|| buf.trim().to_string()).filter(|s| !s.is_empty()) {
+                                    this.viewpoints[i].name = new;
+                                    *rename_vp = None;
+                                    ui.data_mut(|d| d.remove::<String>(id));
+                                } else if ui.input(|k| k.key_pressed(Key::Enter)) {
+                                    let new = buf.trim().to_string();
+                                    if !new.is_empty() {
+                                        this.viewpoints[i].name = new;
+                                    }
+                                    *rename_vp = None;
+                                    ui.data_mut(|d| d.remove::<String>(id));
+                                } else if ui.input(|k| k.key_pressed(Key::Escape)) {
+                                    *rename_vp = None;
+                                    ui.data_mut(|d| d.remove::<String>(id));
+                                }
+                                te
+                            } else {
+                                ui.selectable_label(sel, t).on_hover_text("Click: go to the viewpoint · double-click: rename · drag onto a folder")
+                            }
                         })
                         .inner
                     })
                     .inner;
-                if r.clicked() {
+                if r.clicked() && !editing {
                     this.vp_sel = i;
                     *restore = Some(i);
                 }
+                if r.double_clicked() {
+                    *rename_vp = Some(i);
+                }
                 r.context_menu(|ui| {
+                    if ui.button("✏ Rename").clicked() {
+                        *rename_vp = Some(i);
+                        ui.close_menu();
+                    }
+                    ui.separator();
                     ui.label(RichText::new("Move to folder").small().weak());
                     if ui.button("(no folder)").clicked() {
                         *move_to = Some((i, String::new()));
@@ -219,7 +256,7 @@ impl App {
             header(ui, "", &root_label, 0, root_n, self, &mut act, &mut renaming, &mut move_to);
             for i in 0..self.viewpoints.len() {
                 if self.viewpoints[i].folder.is_empty() {
-                    item(ui, i, 1, self, restore, &mut move_to);
+                    item(ui, i, 1, self, restore, &mut move_to, &mut rename_vp);
                 }
             }
             // folderele (sortate: parintii inaintea copiilor); cele din folderele inchise nu se arata
@@ -238,7 +275,7 @@ impl App {
                 }
                 for i in 0..self.viewpoints.len() {
                     if self.viewpoints[i].folder == *f {
-                        item(ui, i, depth + 1, self, restore, &mut move_to);
+                        item(ui, i, depth + 1, self, restore, &mut move_to, &mut rename_vp);
                     }
                 }
             }

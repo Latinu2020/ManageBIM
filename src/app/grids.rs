@@ -179,6 +179,55 @@ impl App {
         Some((a, value))
     }
 
+    /// Muchiile geometriei aflate IN SPATELE planului de taiere, intre plan si
+    /// peretele opus al cubului, proiectate PE plan. Se deseneaza punctat in 3D
+    /// si se scriu pe stratul BEHIND (linetip HIDDEN) in DWG.
+    /// `sign`: +1 daca „in spate" inseamna coordonata mai mare pe axa taieturii.
+    pub fn section_behind_edges(&self, axis: usize, value: f32, sign: f32) -> Vec<(Vec3, Vec3)> {
+        if !self.section.enabled || self.section.mode != crate::app::SectionMode::Box {
+            return Vec::new();
+        }
+        let (bmin, bmax) = (self.section.bmin, self.section.bmax);
+        let mut out: Vec<(Vec3, Vec3)> = Vec::new();
+        let mut seen: std::collections::HashSet<[i32; 6]> = std::collections::HashSet::new();
+        for (mi, m) in self.loaded_models() {
+            for (ei, e) in m.elements.iter().enumerate() {
+                if e.tri_count == 0 || e.default_hidden || self.hidden.contains(&ElemId { m: mi as u32, e: ei as u32 }) {
+                    continue;
+                }
+                if (0..3).any(|d| e.aabb.min[d] > bmax[d] || e.aabb.max[d] < bmin[d]) {
+                    continue;
+                }
+                for t in e.tri_start..e.tri_start + e.tri_count {
+                    let i = t as usize * 3;
+                    let (Some(a), Some(b), Some(c)) = (m.pos.get(i).copied(), m.pos.get(i + 1).copied(), m.pos.get(i + 2).copied()) else { continue };
+                    for (p, q) in [(a, b), (b, c), (c, a)] {
+                        if sign * (p[axis] - value) <= 1e-4 || sign * (q[axis] - value) <= 1e-4 {
+                            continue;
+                        }
+                        let (mut pp, mut qq) = (p, q);
+                        pp[axis] = value;
+                        qq[axis] = value;
+                        if (0..3).any(|d| pp[d] < bmin[d] - 1e-3 || pp[d] > bmax[d] + 1e-3 || qq[d] < bmin[d] - 1e-3 || qq[d] > bmax[d] + 1e-3) {
+                            continue;
+                        }
+                        let key = [
+                            (pp.x * 1000.0).round() as i32, (pp.y * 1000.0).round() as i32, (pp.z * 1000.0).round() as i32,
+                            (qq.x * 1000.0).round() as i32, (qq.y * 1000.0).round() as i32, (qq.z * 1000.0).round() as i32,
+                        ];
+                        if seen.insert(key) {
+                            out.push((pp, qq));
+                        }
+                        if out.len() >= 40000 {
+                            return out;
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Taietura sectiunii curente (plan / nivel) ca linii 2D in DWG (scriitor integrat) sau DXF:
     /// un layer pe tip de element (Walls, Doors, IfcColumn...), coordonate reale in metri.
     pub fn export_section_cad(&mut self, path: &str) {
@@ -310,6 +359,21 @@ impl App {
                     let tag = if axis == 2 { cut_tag(e) } else { None };
                     cut_elems.push((first, segs.len(), cut_is_hatched(&e.ifc_type), tag));
                 }
+            }
+        }
+        // Muchiile din spatele planului, aplatizate pe planul de taiere, pe stratul
+        // BEHIND (linetip HIDDEN in DXF) - ce e acoperit ramane vizibil punctat.
+        if self.settings.show_section_behind {
+            let sign = match view {
+                crate::app::CadView::Front | crate::app::CadView::Left | crate::app::CadView::Bottom => 1.0,
+                crate::app::CadView::Back | crate::app::CadView::Right | crate::app::CadView::Top => -1.0,
+                crate::app::CadView::Current => 1.0,
+            };
+            let behind = self.section_behind_edges(axis, value, sign);
+            for (p, q) in behind {
+                let a = to2d(p);
+                let b = to2d(q);
+                segs.push(("BEHIND".to_string(), [a[0], a[1], b[0], b[1]]));
             }
         }
         if segs.is_empty() {

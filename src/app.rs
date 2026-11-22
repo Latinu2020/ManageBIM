@@ -2377,10 +2377,16 @@ pub fn cut_dxf_layers(segs: &[(String, [f64; 4])], extra: &[&str]) -> String {
     let mut layers: Vec<&str> = segs.iter().map(|s| s.0.as_str()).chain(extra.iter().copied()).collect();
     layers.sort();
     layers.dedup();
-    let mut s = String::from("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n6\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n");
+    // tabel LTYPE: solid +Hidden (punctat) pentru stratul „BEHIND"
+    let mut s = String::from("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n6\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n");
+    s.push_str("0\nTABLE\n2\nLTYPE\n70\n2\n0\nLTYPE\n2\nCONTINUOUS\n70\n0\n3\nSolid line\n72\n65\n73\n0\n40\n0.0\n0\nLTYPE\n2\nHIDDEN\n70\n0\n3\nHidden line __ __\n72\n65\n73\n2\n40\n1.0\n49\n0.5\n74\n0\n49\n-0.5\n74\n0\n0\nENDTAB\n");
+    s.push_str("0\nTABLE\n2\nLAYER\n");
     s.push_str(&format!("70\n{}\n", layers.len()));
     for (i, l) in layers.iter().enumerate() {
-        s.push_str(&format!("0\nLAYER\n2\n{l}\n70\n0\n62\n{}\n6\nCONTINUOUS\n", [1, 2, 3, 4, 5, 6, 30, 140, 200, 40][i % 10]));
+        let behind = l.eq_ignore_ascii_case("BEHIND");
+        let ltype = if behind { "HIDDEN" } else { "CONTINUOUS" };
+        let color = if behind { 8 } else { [1, 2, 3, 4, 5, 6, 30, 140, 200, 40][i % 10] };
+        s.push_str(&format!("0\nLAYER\n2\n{l}\n70\n0\n62\n{color}\n6\n{ltype}\n"));
     }
     s.push_str("0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
     for (l, p) in segs {
