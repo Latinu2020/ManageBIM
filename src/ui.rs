@@ -2555,7 +2555,7 @@ impl App {
                     ui.label("Resolution");
                     let mut w = self.pathtrace_params.0;
                     egui::ComboBox::from_id_salt("pt_res").selected_text(format!("{}×{}", w, w)).show_ui(ui, |ui| {
-                        for r in [128u32, 256, 512, 1024] {
+                        for r in [128u32, 256, 512, 1024, 2048, 4096] {
                             ui.selectable_value(&mut w, r, format!("{}×{}", r, r));
                         }
                     });
@@ -2586,11 +2586,12 @@ impl App {
                     let n = job.count.load(std::sync::atomic::Ordering::Relaxed);
                     let total = job.samples_target;
                     let frac = if total > 0 { n as f32 / total as f32 } else { 0.0 };
-                    let secs = job.started.elapsed().as_secs_f32();
+                    let done = job.done.load(std::sync::atomic::Ordering::Relaxed);
+                    // timerul se opreste la „Ready": pastram secundele de la terminare
+                    let secs = if done { self.pathtrace_done_at.unwrap_or(job.started.elapsed().as_secs_f32()) } else { job.started.elapsed().as_secs_f32() };
                     let fmt_dur = |s: f32| -> String {
                         if s < 60.0 { format!("{s:.0}s") } else { format!("{}m {:02}s", (s / 60.0) as u32, (s % 60.0) as u32) }
                     };
-                    let done = job.done.load(std::sync::atomic::Ordering::Relaxed);
                     let eta = if n > 0 && !done {
                         let rate = n as f32 / secs.max(0.1);
                         let by_samples = total.saturating_sub(n) as f32 / rate.max(1e-6);

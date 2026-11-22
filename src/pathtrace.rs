@@ -126,10 +126,13 @@ fn trace(job: &PathTraceJob, o: Vec3, d: Vec3) -> [f32; 3] {
         // shadow ray to sun
         let sun_dir = job.sun.normalize();
         let shadow = if sun_dir.length() > 0.0 {
-            if job.scene.bvh.raycast(&job.scene.tris, p + n * 1e-3, sun_dir, 1e6, &|_| true).is_none() { 1.0 } else { 0.2 }
+            // 0.35 = penumbra moale (nu negru total), ca la umbre difuze reale
+            if job.scene.bvh.raycast(&job.scene.tris, p + n * 1e-3, sun_dir, 1e6, &|_| true).is_none() { 1.0 } else { 0.35 }
         } else { 1.0 };
         let ndotl = n.dot(sun_dir).max(0.0);
-        let ambient = 0.18;
+        // ambient pe emisfera: elementele indreptate in sus primesc lumina de la cer,
+        // cele indreptate in jos doar reflexia solului (nu mai e un gri plat peste tot)
+        let ambient = if n.y >= 0.0 { 0.22 * (0.6 + 0.4 * n.y) + 0.06 } else { 0.10 };
         let diffuse = ndotl * job.light * shadow;
         [base[0] * (ambient + diffuse), base[1] * (ambient + diffuse), base[2] * (ambient + diffuse)]
     } else {

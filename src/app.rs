@@ -1364,6 +1364,8 @@ pub struct App {
     pub pathtrace_tex: Option<eframe::egui::TextureHandle>,
     pub pathtrace_params: (u32, u32, u32, f32),
     pub pathtrace_notified: bool,
+    /// secundele scurse la momentul terminarii (ca timerul sa nu mai creasca dupa „Ready")
+    pub pathtrace_done_at: Option<f32>,
     /// fereastra consolei de scripturi (motorul Rhai se activeaza in 0.28)
     pub script_open: bool,
     pub script_help_open: bool,
@@ -1652,6 +1654,7 @@ impl App {
             pathtrace_tex: None,
             pathtrace_params: (256, 256, 32, 30.0),
             pathtrace_notified: false,
+            pathtrace_done_at: None,
             script_open: false,
             script_help_open: false,
             settings_open: false,

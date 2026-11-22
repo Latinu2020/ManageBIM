@@ -169,6 +169,9 @@ pub struct Settings {
     /// inaltimea planului de taiere masurata de la fundul cubului de sectiune
     #[serde(default = "default_cut_offset")]
     pub section_cut_offset: f32,
+    /// aliniaza planul de taiere la axa de grila / nivelul cel mai apropiat
+    #[serde(default = "yes")]
+    pub snap_cut_to_grid: bool,
     /// folderul cu scripturi .rhai (gol = %APPDATA%\ManageBIM\Scripts)
     #[serde(default)]
     pub scripts_dir: String,
@@ -225,7 +228,7 @@ fn default_walk() -> f32 {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), scripts_dir: String::new(), show_cad_plane: true, vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default() }
+        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), snap_cut_to_grid: true, scripts_dir: String::new(), show_cad_plane: true, vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default() }
     }
 }
 

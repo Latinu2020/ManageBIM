@@ -377,7 +377,8 @@ impl App {
         let (w, h, samples, tlimit) = self.pathtrace_params;
         self.pathtrace_tex = None;
         self.pathtrace_notified = false;
-        self.pathtrace = Some(crate::pathtrace::start_arc((w, h, samples, tlimit), scene, cam.eye(), cam.fwd(), cam.up(), cam.right(), cam.fov_deg, sun, 1.0));
+        self.pathtrace_done_at = None;
+        self.pathtrace = Some(crate::pathtrace::start_arc((w, h, samples, tlimit), scene, cam.eye(), cam.fwd(), cam.up(), cam.right(), cam.fov_deg, sun, self.render.sun_power.clamp(0.1, 3.0)));
         self.toast(format!("Path tracing {}×{} · {} samples · {} s max", w, h, samples, tlimit));
     }
 
@@ -421,7 +422,8 @@ impl App {
         if job.done.load(std::sync::atomic::Ordering::Relaxed) {
             if !self.pathtrace_notified {
                 self.pathtrace_notified = true;
-                self.toast(format!("✅ {} · {} {} · {:.1}s — {}", crate::i18n::tr("Path trace FINISHED"), job.count.load(std::sync::atomic::Ordering::Relaxed), crate::i18n::tr("samples"), job.started.elapsed().as_secs_f32(), crate::i18n::tr("Export PNG is ready")));
+                self.pathtrace_done_at = Some(job.started.elapsed().as_secs_f32());
+                self.toast(format!("✅ {} · {} {} · {:.1}s — {}", crate::i18n::tr("Path trace FINISHED"), job.count.load(std::sync::atomic::Ordering::Relaxed), crate::i18n::tr("samples"), self.pathtrace_done_at.unwrap_or(0.0), crate::i18n::tr("Export PNG is ready")));
             }
         }
         // Repaint doar cat timp randarea e activa. Daca o cerem si dupa

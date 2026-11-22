@@ -109,6 +109,30 @@ impl App {
 
     /// Planul de taiere pentru exportul DWG / PDF cand directia nu e "Current".
     /// Coordonate LOCALE, ca in camera si in viewport (fara origin).
+    /// Cea mai apropiata axa de grila / nivel pentru planul de taiere.
+    /// Top / Bottom se aliniaza la niveluri; Front / Back / Left / Right la liniile
+    /// de grila (axiale). Planul astfel „urmareste" grila: muti grila, se muta si planul.
+    pub fn snap_cut(&self, axis: usize, v: f32) -> f32 {
+        if !self.settings.snap_cut_to_grid {
+            return v;
+        }
+        let g = self.scene_grids();
+        let mut cands: Vec<f32> = Vec::new();
+        if axis == 2 {
+            cands.extend(g.levels.iter().map(|(_, z)| *z));
+        } else {
+            for (_, a, b) in &g.grids {
+                if axis == 0 && (a.x - b.x).abs() < 0.01 {
+                    cands.push(a.x); // linie verticala in plan (X constant)
+                }
+                if axis == 1 && (a.y - b.y).abs() < 0.01 {
+                    cands.push(a.y); // linie orizontala (Y constant)
+                }
+            }
+        }
+        cands.into_iter().min_by(|a, b| (a - v).abs().total_cmp(&(b - v).abs())).unwrap_or(v)
+    }
+
     pub fn cad_cut_plane(&self) -> Option<(usize, f32)> {
         use crate::app::CadView;
         let view = self.settings.cad_view;
@@ -117,9 +141,9 @@ impl App {
         if view == crate::app::CadView::Current {
             if self.section.enabled && self.section.mode == crate::app::SectionMode::Box {
                 let (a, b) = (self.section.bmin, self.section.bmax);
-                // Planul e extras DIN CUB: se muta odata cu el cand tragi de fete.
+                // Planul e extras DIN CUB si se aliniaza la nivelul cel mai apropiat.
                 let z = (a[2] + self.settings.section_cut_offset.max(0.01)).min(b[2] - 0.01).max(a[2] + 0.01);
-                return Some((2, z));
+                return Some((2, self.snap_cut(2, z)));
             }
             return None;
         }
@@ -131,8 +155,9 @@ impl App {
         let t = self.settings.cad_view_pos.clamp(0.0, 1.0);
         let (lo, hi) = (bb.min, bb.max);
         // Directiile opuse trebuie sa dea planuri DIFERITE, altfel nu se vede
-        // nicio schimbare cand alegi Front/Back sau Left/Right.
-        let value = match view {
+        // nicio schimbare cand alegi Front/Back sau Left/Right. Apoi planul se
+        // aliniaza la axa de grila / nivelul cel mai apropiat.
+        let raw = match view {
             CadView::Front => lo.y + (hi.y - lo.y) * t,
             CadView::Back => hi.y - (hi.y - lo.y) * t,
             CadView::Left => lo.x + (hi.x - lo.x) * t,
@@ -141,7 +166,7 @@ impl App {
             CadView::Bottom => lo.z + (hi.z - lo.z) * t,
             CadView::Current => unreachable!(),
         };
-        Some((a, value))
+        Some((a, self.snap_cut(a, raw)))
     }
 
     /// Taietura sectiunii curente (plan / nivel) ca linii 2D in DWG (scriitor integrat) sau DXF:

@@ -76,6 +76,9 @@ impl App {
                         .response
                         .on_hover_text("Distance from the chosen face: 0% = exactly on that face (front / left / top), 100% = the opposite face.");
                     }
+                    if ui.checkbox(&mut self.settings.snap_cut_to_grid, "Snap the cut plane to grids / levels").changed() {
+                        self.settings.save();
+                    }
                     ui.checkbox(&mut self.cad_annotate, "Annotations: hatch, element tags, grids, levels")
                         .on_hover_text("Turn off for a clean outline (only the cut edges, one DWG layer per element type).");
                     ui.horizontal(|ui| {

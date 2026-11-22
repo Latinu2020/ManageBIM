@@ -568,6 +568,10 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                                 if ui.selectable_label(cur == n, format!("{n}  ({w}×{h})")).clicked() {
                                     self.render.width = w;
                                     self.render.height = h;
+                                    // la 4K+ supersampling ar randa la 7680×4320 (de 4-8 ori mai lent); il oprim
+                                    if w >= 3840 {
+                                        self.render.supersample = false;
+                                    }
                                 }
                             }
                         });
@@ -609,7 +613,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                     });
                     ui.end_row();
                     ui.label("Anti-aliasing");
-                    ui.checkbox(&mut self.render.supersample, "2× supersampling");
+                    ui.checkbox(&mut self.render.supersample, "2× supersampling").on_hover_text("Sharper edges, but renders the frame at double size - about 3-4x slower. Off is usually enough at 2K and above.");
                     ui.end_row();
                 });
             if video && !ff {
