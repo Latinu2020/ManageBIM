@@ -3,6 +3,13 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.10 - 2026-11-23
+- **Panoul Viewpoints restructurat**: mâner de drag separat de etichetă — clickul și dublu-clickul (rename) pe nume funcționează sigur, dragul mută în folders.
+- **Desen tehnic în 3D**: după ce setezi cubul și planul, muchiile tăieturii (intersecția triunghiurilor cu planul, strict în cub) se calculează și se desenează **solid cian**; ce e în spate se desenează **întrerupt (dashed)** — același limbaj ca desenul din DWG.
+- **Cote în lanț în DWG**: sectiunile verticale au acum cote între niveluri consecutive și cote orizontale între axele de grilă (linie de cota + linii ajutătoare + bifa 45° + text), ca într-o secțiune arhitecturală; hașurile, nivelurile, grilele și etichetele rămân neschimbate.
+- **Butonul Behind edges curățat**: eliminat afișajul vechi `0%` (poziția planului rămânease blocată și părea parte din buton); funcția Behind edges rămâne activă și desenează corect liniile întrerupte.
+- **Vederea Hidden line corectată**: stilul „Hidden line" (View › visual style) randază acum **doar muchiile** — fundal închis cu linii luminoase (contur + crease), fără suprafețe umbrite, ca în AutoCAD / desenul tehnic.
+
 ## 0.27.9 - 2026-11-23
 - **Viewpoints: clickul funcționează** — `dnd_drag_source` Returna un `Response` cu sens de drag, deci `clicked()` nu se declanșa; acum se folosește `Response`-ul etichetei → click pe viewpoint = go to 3D, dublu-click / click dreapta = rename.
 - **Muchiile din spate se VĂD** imediat ce cubul e activ (nu mai depind de highlightul planului, care e inchis implicit); linii punctate albastru, cu contrast crescut.

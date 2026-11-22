@@ -179,6 +179,48 @@ impl App {
         Some((a, value))
     }
 
+    /// Calculeaza SECTIONEA propriu-zisa: intersectia triunghiurilor cu planul,
+    /// limitata strict la cub. Intoarce segmentele 3D pe plan (aceleasi pe care
+    /// le scrie exportul DWG), ca sa le putem desena in viewport.
+    pub fn section_cut_lines(&self, axis: usize, value: f32) -> Vec<(Vec3, Vec3)> {
+        if !self.section.enabled || self.section.mode != crate::app::SectionMode::Box {
+            return Vec::new();
+        }
+        let (bmin, bmax) = (self.section.bmin, self.section.bmax);
+        let mut out = Vec::new();
+        for (_, m) in self.loaded_models() {
+            for e in &m.elements {
+                if e.tri_count == 0 {
+                    continue;
+                }
+                if (0..3).any(|d| e.aabb.min[d] > bmax[d] || e.aabb.max[d] < bmin[d]) {
+                    continue;
+                }
+                for t in e.tri_start..e.tri_start + e.tri_count {
+                    let i = t as usize * 3;
+                    let (Some(a), Some(b), Some(c)) = (m.pos.get(i).copied(), m.pos.get(i + 1).copied(), m.pos.get(i + 2).copied()) else { continue };
+                    let d = [a[axis] - value, b[axis] - value, c[axis] - value];
+                    let mut pts: Vec<Vec3> = Vec::with_capacity(2);
+                    for (p, q, dp, dq) in [(a, b, d[0], d[1]), (b, c, d[1], d[2]), (c, a, d[2], d[0])] {
+                        if (dp < 0.0) != (dq < 0.0) {
+                            let k = dp / (dp - dq);
+                            pts.push(p + (q - p) * k);
+                        }
+                    }
+                    if pts.len() == 2 && (pts[0] - pts[1]).length_squared() > 1e-8 {
+                        if (0..3).all(|ax| pts.iter().all(|p| p[ax] >= bmin[ax] - 1e-3 && p[ax] <= bmax[ax] + 1e-3)) {
+                            out.push((pts[0], pts[1]));
+                        }
+                    }
+                    if out.len() >= 60000 {
+                        return out;
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Muchiile geometriei aflate IN SPATELE planului de taiere, intre plan si
     /// peretele opus al cubului, proiectate PE plan. Se deseneaza punctat in 3D
     /// si se scriu pe stratul BEHIND (linetip HIDDEN) in DWG.

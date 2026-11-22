@@ -116,71 +116,69 @@ impl App {
                 }
                 let sel = this.vp_sel == i;
                 let editing = *rename_vp == Some(i);
-                let mut label_clicked = false;
-                let mut label_double = false;
-                let r = ui
-                    .dnd_drag_source(egui::Id::new(("vp_drag", i)), i, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.add_space(depth as f32 * 14.0);
-                            let (dot, _) = ui.allocate_exact_size(EV::splat(10.0), Sense::hover());
-                            ui.painter().circle_filled(dot.center(), 4.5, col);
-                            let resp = if editing {
-                                let id = egui::Id::new(("vp_rename_buf", i));
-                                let mut buf: String = ui.data(|d| d.get_temp(id)).unwrap_or_else(|| this.viewpoints[i].name.clone());
-                                let te = ui.add(egui::TextEdit::singleline(&mut buf).desired_width(120.0));
-                                te.request_focus();
-                                ui.data_mut(|d| d.insert_temp(id, buf.clone()));
-                                if let Some(new) = te.lost_focus().then(|| buf.trim().to_string()).filter(|s| !s.is_empty()) {
-                                    this.viewpoints[i].name = new;
-                                    *rename_vp = None;
-                                    ui.data_mut(|d| d.remove::<String>(id));
-                                } else if ui.input(|k| k.key_pressed(Key::Enter)) {
-                                    let new = buf.trim().to_string();
-                                    if !new.is_empty() {
-                                        this.viewpoints[i].name = new;
-                                    }
-                                    *rename_vp = None;
-                                    ui.data_mut(|d| d.remove::<String>(id));
-                                } else if ui.input(|k| k.key_pressed(Key::Escape)) {
-                                    *rename_vp = None;
-                                    ui.data_mut(|d| d.remove::<String>(id));
-                                }
-                                te
-                            } else {
-                                ui.selectable_label(sel, t).on_hover_text("Click: go to the viewpoint · double-click: rename · drag onto a folder")
-                            };
-                            label_clicked = resp.clicked();
-                            label_double = resp.double_clicked();
-                            resp
-                        })
-                        .inner
-                    })
-                    .inner;
-                if label_clicked && !editing {
-                    this.vp_sel = i;
-                    *restore = Some(i);
-                }
-                if label_double {
-                    *rename_vp = Some(i);
-                }
-                r.context_menu(|ui| {
-                    if ui.button("✏ Rename").clicked() {
+                let mut resp_out: Option<egui::Response> = None;
+                ui.horizontal(|ui| {
+                    ui.add_space(depth as f32 * 14.0);
+                    // MANERUL DE DRAG e separat de eticheta: altfel dnd-ul mananca clickul.
+                    let _drag = ui.dnd_drag_source(egui::Id::new(("vp_drag", i)), i, |ui| {
+                        let (dr, _) = ui.allocate_exact_size(EV::splat(12.0), egui::Sense::hover());
+                        ui.painter().circle_filled(dr.center(), 4.5, col);
+                        dr
+                    });
+                    let resp = if editing {
+                        let id = egui::Id::new(("vp_rename_buf", i));
+                        let mut buf: String = ui.data(|d| d.get_temp(id)).unwrap_or_else(|| this.viewpoints[i].name.clone());
+                        let te = ui.add(egui::TextEdit::singleline(&mut buf).desired_width(120.0));
+                        te.request_focus();
+                        ui.data_mut(|d| d.insert_temp(id, buf.clone()));
+                        if let Some(new) = te.lost_focus().then(|| buf.trim().to_string()).filter(|s| !s.is_empty()) {
+                            this.viewpoints[i].name = new;
+                            *rename_vp = None;
+                            ui.data_mut(|d| d.remove::<String>(id));
+                        } else if ui.input(|k| k.key_pressed(Key::Enter)) {
+                            let new = buf.trim().to_string();
+                            if !new.is_empty() {
+                                this.viewpoints[i].name = new;
+                            }
+                            *rename_vp = None;
+                            ui.data_mut(|d| d.remove::<String>(id));
+                        } else if ui.input(|k| k.key_pressed(Key::Escape)) {
+                            *rename_vp = None;
+                            ui.data_mut(|d| d.remove::<String>(id));
+                        }
+                        te
+                    } else {
+                        ui.selectable_label(sel, t.clone()).on_hover_text("Click: go to the viewpoint · double-click: rename · drag the dot onto a folder")
+                    };
+                    if resp.clicked() && !editing {
+                        this.vp_sel = i;
+                        *restore = Some(i);
+                    }
+                    if resp.double_clicked() {
                         *rename_vp = Some(i);
-                        ui.close_menu();
                     }
-                    ui.separator();
-                    ui.label(RichText::new("Move to folder").small().weak());
-                    if ui.button("(no folder)").clicked() {
-                        *move_to = Some((i, String::new()));
-                        ui.close_menu();
-                    }
-                    for f in &folders {
-                        if ui.button(format!("📁 {f}")).clicked() {
-                            *move_to = Some((i, f.clone()));
+                    resp_out = Some(resp);
+                });
+                if let Some(resp) = resp_out {
+                    resp.context_menu(|ui| {
+                        if ui.button("✏ Rename").clicked() {
+                            *rename_vp = Some(i);
                             ui.close_menu();
                         }
-                    }
-                });
+                        ui.separator();
+                        ui.label(RichText::new("Move to folder").small().weak());
+                        if ui.button("(no folder)").clicked() {
+                            *move_to = Some((i, String::new()));
+                            ui.close_menu();
+                        }
+                        for f in &folders {
+                            if ui.button(format!("📁 {f}")).clicked() {
+                                *move_to = Some((i, f.clone()));
+                                ui.close_menu();
+                            }
+                        }
+                    });
+                }
             };
             // ---- antetul unui folder: tinta de plasare + meniu
             let header = |ui: &mut egui::Ui, f: &str, label: &str, depth: usize, count: usize, this: &mut App, act: &mut Option<(String, &'static str)>, renaming: &mut Option<(String, String)>, move_to: &mut Option<(usize, String)>| -> bool {

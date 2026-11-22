@@ -2720,6 +2720,7 @@ pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: u
         segs.push(("LEVELS".into(), [tx - 2.0 * u, *z + 2.5 * u, tx, *z]));
         texts.push(CadText::new("LEVELS_TEXT", tx + 3.5 * u, *z + 0.5 * u, 2.5, 0.0, format!("{name}  {}{:.3}", if *z >= 0.0 { "+" } else { "" }, z)));
     }
+    let mut grid_x: Vec<f64> = Vec::new();
     for g in grids {
         // intersectia axei (2D) cu planul sectiunii
         let (a, b) = (g.a[axis] - value, g.b[axis] - value);
@@ -2732,9 +2733,51 @@ pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: u
         if h < x0 - 2.0 || h > x1 + 2.0 {
             continue;
         }
+        grid_x.push(h);
         segs.push(("GRIDS".into(), [h, y0 - 5.0 * u, h, y1 + 10.0 * u]));
         circle_segs("GRIDS", [h, y1 + 14.5 * u], 4.5 * u, segs);
         texts.push(CadText::new("GRID_TEXT", h - text_w(&g.name, 2.5, u) / 2.0, y1 + 13.25 * u, 2.5, 0.0, g.name.clone()));
+    }
+    // ---- COTE IN LANT (desen tehnic): linie de cota + linii ajutatoare + bifa 45° + text.
+    // Verticale: intre niveluri consecutiv; Orizontale: intre axele de grila taiete de plan.
+    let tick = |x: f64, y: f64, segs: &mut Vec<(String, [f64; 4])>| {
+        segs.push(("DIMS".into(), [x - 1.2 * u, y - 1.2 * u, x + 1.2 * u, y + 1.2 * u]));
+    };
+    // verticale (stanga desenului)
+    let mut zs: Vec<f64> = levels.iter().map(|(_, z)| *z).filter(|z| *z > y0 - 5.0 && *z < y1 + 5.0).collect();
+    zs.sort_by(|a, b| a.total_cmp(b));
+    zs.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+    if zs.len() >= 2 {
+        let dx = x0 - 14.0 * u;
+        segs.push(("DIMS".into(), [dx, zs[0], dx, zs[zs.len() - 1]]));
+        for &z in &zs {
+            segs.push(("DIMS".into(), [dx - 2.0 * u, z, x0 - 1.0 * u, z]));
+            tick(dx, z, segs);
+        }
+        for w in zs.windows(2) {
+            let d = (w[1] - w[0]).abs();
+            if d < 0.01 { continue; }
+            let label = format!("{:.2}", d);
+            texts.push(CadText::new("DIMS_TEXT", dx - 1.5 * u, (w[0] + w[1]) * 0.5, 2.5, 90.0, label));
+        }
+    }
+    // orizontale (sub desen)
+    grid_x.sort_by(|a, b| a.total_cmp(b));
+    grid_x.dedup_by(|a, b| (*a - *b).abs() < 1e-3);
+    if grid_x.len() >= 2 {
+        let dy = y0 - 16.0 * u;
+        segs.push(("DIMS".into(), [grid_x[0], dy, grid_x[grid_x.len() - 1], dy]));
+        for &x in &grid_x {
+            segs.push(("DIMS".into(), [x, dy - 2.0 * u, x, y0 - 2.0 * u]));
+            tick(x, dy, segs);
+        }
+        for w in grid_x.windows(2) {
+            let d = (w[1] - w[0]).abs();
+            if d < 0.01 { continue; }
+            let label = format!("{:.2}", d);
+            let half = text_w(&label, 2.5, u) / 2.0;
+            texts.push(CadText::new("DIMS_TEXT", (w[0] + w[1]) * 0.5 - half, dy - 4.0 * u, 2.5, 0.0, label));
+        }
     }
 }
 

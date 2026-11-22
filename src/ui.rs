@@ -1035,9 +1035,8 @@ impl App {
             if ui.checkbox(&mut self.settings.show_section_behind, "Behind edges").on_hover_text("Shows/copies the geometry behind the cut plane, up to the far face of the section box, as dotted lines on the plan and on the BEHIND layer in DWG.").changed() {
                 self.settings.save();
             }
-            if cur != crate::app::CadView::Current && cur.axis().is_some() {
-                ui.label(format!("{}%", (self.settings.cad_view_pos * 100.0).round() as i32));
-            }
+            // Artefactul vechi `cad_view_pos %` a fost eliminat: pozitia planului
+            // vine din cubul de sectiune, iar acel 0% ramanea blocat si confuza butonul.
         });
         rgroup(ui, "Sectioning", |ui| {
             let sec = self.section.enabled;
@@ -3537,6 +3536,19 @@ impl App {
                             4.0,
                             3.0,
                         ));
+                    }
+                }
+            }
+        }
+        // DESEN TEHNIC: ce e IN CUB (in fata planului) = linie SOLIDA cian ;
+        // ce e IN SPATE = linie INTRERUPTA (dashed, bloca mai sus). Same limbaj vizual.
+        // Muchiile sunt exact cele scrise in DWG (layer-ul de taiere).
+        if self.section.enabled && self.section.mode == SectionMode::Box && self.report_job.is_none() {
+            if let Some((ax, val)) = self.cad_cut_plane() {
+                let solid = Color32::from_rgb(190, 235, 255);
+                for (p3, q3) in self.section_cut_lines(ax, val) {
+                    if let (Some(sa), Some(sb)) = (to_screen(&vp, rect, p3), to_screen(&vp, rect, q3)) {
+                        painter.line_segment([sa, sb], Stroke::new(1.9_f32, solid));
                     }
                 }
             }

@@ -774,6 +774,7 @@ uniform vec4 u_k;      // P22, P32, ortografic (1/0), P11
 uniform float u_h;     // inaltimea in pixeli
 uniform float u_str;   // taria
 uniform float u_edge;  // margini (0 = oprite)
+uniform int u_style;   // 4 = hidden-line (desen tehnic)
 out vec4 o_col;
 float lin(float d) {
     float z = d * 2.0 - 1.0;
@@ -824,6 +825,15 @@ void main() {
         float pix = 2.0 / max(u_k.w * u_h, 1e-3);
         float crease = ortho ? smoothstep(0.3, 1.0, lapAbs / pix) : smoothstep(0.0009, 0.004, lapAbs / max(abs(q0), 1e-6));
         edge = max(smoothstep(0.02, 0.06, jump), crease * 0.8);
+    }
+    if (u_style == 4) {
+        // HIDDEN LINE curat (ca in AutoCAD): fundal inchis + DOAR muchiile luminoase.
+        // Nu se vede nicio suprafata umbrita - doar contururi si crease (linii de desen).
+        float ink = clamp(edge * 1.6, 0.0, 1.0);
+        vec3 paper = vec3(0.062, 0.078, 0.125);   // acelasi ton cu fundalul temei
+        vec3 line = vec3(0.86, 0.92, 1.0);        // muchie luminoasa, rece
+        o_col = vec4(mix(paper, line, ink), c.a);
+        return;
     }
     o_col = vec4(c.rgb * ao * (1.0 - 0.45 * u_edge * edge), c.a);
 }
@@ -891,6 +901,7 @@ impl Renderer {
         gl.uniform_1_f32(gl.get_uniform_location(aoprog, "u_h").as_ref(), h as f32);
         gl.uniform_1_f32(gl.get_uniform_location(aoprog, "u_str").as_ref(), p.ao.clamp(0.0, 1.0));
         gl.uniform_1_f32(gl.get_uniform_location(aoprog, "u_edge").as_ref(), p.edges.clamp(0.0, 1.0));
+        gl.uniform_1_i32(gl.get_uniform_location(aoprog, "u_style").as_ref(), p.style.code());
         gl.disable(glow::DEPTH_TEST);
         gl.enable(glow::BLEND);
         gl.blend_func(glow::ONE, glow::ONE_MINUS_SRC_ALPHA);
