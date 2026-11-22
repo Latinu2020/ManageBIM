@@ -1020,7 +1020,7 @@ impl App {
                     }
                 }
             });
-            if ui.checkbox(&mut self.settings.show_cad_plane, crate::i18n::tr("Highlight plane")).changed() {
+            if ui.checkbox(&mut self.settings.show_cad_plane, crate::i18n::tr("Highlight plane")).on_hover_text("Off by default: the orange plane appears only when you pick a face of the section box (Top / Bottom / Front / Back / Left / Right) in Cut View above.").changed() {
                 self.settings.save();
             }
             if cur != crate::app::CadView::Current && cur.axis().is_some() {
@@ -3323,9 +3323,12 @@ impl App {
         }
         // Planul de taiere FACE PARTE DIN CUB: se deseneaza in interiorul lui, se
         // misca odata cu el si se TRAGE DIRECT cu mouse-ul (manerul cu sageti din centru).
+        // Highlightul e INCHIS implicit: apare doar cand utilizatorul a ales o
+        // FATA a cubului in Cut View (Top / Bottom / Front / Back / Left / Right).
+        // In modul Current (implicit) nu se vede niciun plan.
         let cut_show = self.settings.show_cad_plane
             && self.report_job.is_none()
-            && (self.settings.cad_view != crate::app::CadView::Current || (self.section.enabled && self.section.mode == SectionMode::Box));
+            && self.settings.cad_view != crate::app::CadView::Current;
         if cut_show {
             let view = self.settings.cad_view;
             let (axis, raw): (usize, f32) = if view == crate::app::CadView::Current {
@@ -3337,7 +3340,12 @@ impl App {
                     (ax, 0.0)
                 } else {
                     let t = self.settings.cad_view_pos.clamp(0.0, 1.0);
-                    let (lo, hi) = (bb.min[ax], bb.max[ax]);
+                    // la fel ca la export: fetele CUBULUI cand e activ, altfel scena
+                    let (lo, hi) = if self.section.enabled && self.section.mode == SectionMode::Box {
+                        (self.section.bmin[ax], self.section.bmax[ax])
+                    } else {
+                        (bb.min[ax], bb.max[ax])
+                    };
                     let v = match view {
                         crate::app::CadView::Front => lo + (hi - lo) * t,
                         crate::app::CadView::Back => hi - (hi - lo) * t,
@@ -3352,10 +3360,10 @@ impl App {
             } else {
                 (2, 0.0)
             };
-            // In modul cub planul sta EXACT unde l-a pus utilizatorul (fara salturi
-            // pe grila); vederile denumite (Top / Front...) se aliniaza la grila,
-            // iar in timpul tragerii urmareste mouse-ul. Exportul foloseste aceeasi valoare.
-            let value = if self.cut_drag || view == crate::app::CadView::Current { raw } else { self.snap_cut(axis, raw) };
+            // In modul cub planul sta EXACT unde e fata cubului (cubul e format din
+            // planuri; fara salturi pe grila). Fara cub, vederile denumite se
+            // aliniaza la grila / nivel; in timpul tragerii urmareste mouse-ul.
+            let value = if self.cut_drag || view == crate::app::CadView::Current || (self.section.enabled && self.section.mode == SectionMode::Box) { raw } else { self.snap_cut(axis, raw) };
             // intinderea planului: IN INTERIORUL CUBULUI daca e activ, altfel al scenei
             let (lo, hi) = if self.section.enabled && self.section.mode == SectionMode::Box {
                 (Vec3::from(self.section.bmin) - Vec3::splat(0.02), Vec3::from(self.section.bmax) + Vec3::splat(0.02))
@@ -3424,9 +3432,14 @@ impl App {
                             let (za, zb) = (self.section.bmin[2], self.section.bmax[2]);
                             self.settings.section_cut_offset = (self.settings.section_cut_offset + dm).clamp(0.05, (zb - za).max(0.06));
                         } else {
-                            // pozitia de-a lungul axei, cu directia vederea alese
-                            let sbb = self.scene_aabb();
-                            let span = (sbb.max[axis] - sbb.min[axis]).max(1e-3);
+                            // pozitia de-a lungul axei (span-ul cubului cand e activ),
+                            // cu directia vederea alese
+                            let span = if self.section.enabled && self.section.mode == SectionMode::Box {
+                                (self.section.bmax[axis] - self.section.bmin[axis]).max(1e-3)
+                            } else {
+                                let sbb = self.scene_aabb();
+                                (sbb.max[axis] - sbb.min[axis]).max(1e-3)
+                            };
                             let inv = matches!(view, crate::app::CadView::Back | crate::app::CadView::Right | crate::app::CadView::Top);
                             let dt = if inv { -dm } else { dm } / span;
                             self.settings.cad_view_pos = (self.settings.cad_view_pos + dt).clamp(0.0, 1.0);

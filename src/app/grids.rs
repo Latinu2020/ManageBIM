@@ -154,20 +154,29 @@ impl App {
             return None;
         }
         let t = self.settings.cad_view_pos.clamp(0.0, 1.0);
-        let (lo, hi) = (bb.min, bb.max);
-        // Directiile opuse trebuie sa dea planuri DIFERITE, altfel nu se vede
-        // nicio schimbare cand alegi Front/Back sau Left/Right. Apoi planul se
+        // CAND CUBUL DE SECTIUNE E ACTIV, vederile denumite se pozitioneaza pe
+        // FETELE CUBULUI (nu pe scena): Top = fata de sus a cubului, Front = fata
+        // din fata etc. Tragi fata cubului cu sageata -> planul o urmareste.
+        let (lo, hi) = if self.section.enabled && self.section.mode == crate::app::SectionMode::Box {
+            (self.section.bmin[a], self.section.bmax[a])
+        } else {
+            (bb.min[a], bb.max[a])
+        };
+        // Directiile opuse trebuie sa dea planuri DIFERITE; apoi planul se
         // aliniaza la axa de grila / nivelul cel mai apropiat.
         let raw = match view {
-            CadView::Front => lo.y + (hi.y - lo.y) * t,
-            CadView::Back => hi.y - (hi.y - lo.y) * t,
-            CadView::Left => lo.x + (hi.x - lo.x) * t,
-            CadView::Right => hi.x - (hi.x - lo.x) * t,
-            CadView::Top => hi.z - (hi.z - lo.z) * t,
-            CadView::Bottom => lo.z + (hi.z - lo.z) * t,
+            CadView::Front => lo + (hi - lo) * t,
+            CadView::Back => hi - (hi - lo) * t,
+            CadView::Left => lo + (hi - lo) * t,
+            CadView::Right => hi - (hi - lo) * t,
+            CadView::Top => hi - (hi - lo) * t,
+            CadView::Bottom => lo + (hi - lo) * t,
             CadView::Current => unreachable!(),
         };
-        Some((a, self.snap_cut(a, raw)))
+        // Cand cubul e activ, planul e chiar o FATA a cubului: exact unde a pus
+        // utilizatorul cubul, fara aliniere la grila. Fara cub, se aliniaza.
+        let value = if self.section.enabled && self.section.mode == crate::app::SectionMode::Box { raw } else { self.snap_cut(a, raw) };
+        Some((a, value))
     }
 
     /// Taietura sectiunii curente (plan / nivel) ca linii 2D in DWG (scriitor integrat) sau DXF:

@@ -227,7 +227,8 @@ fn default_vp_root() -> String {
 }
 
 fn default_cad_view_pos() -> f32 {
-    0.25
+    // 0 = planul EXACT pe fata aleasa a cubului (cubul e format din planuri)
+    0.0
 }
 
 fn default_cut_offset() -> f32 {
