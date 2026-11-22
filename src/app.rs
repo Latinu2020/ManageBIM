@@ -683,10 +683,12 @@ pub enum CadView {
     Back,
     Left,
     Right,
+    Top,
+    Bottom,
 }
 
 impl CadView {
-    pub const ALL: [CadView; 5] = [CadView::Current, CadView::Front, CadView::Back, CadView::Left, CadView::Right];
+    pub const ALL: [CadView; 7] = [CadView::Current, CadView::Front, CadView::Back, CadView::Left, CadView::Right, CadView::Top, CadView::Bottom];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -695,14 +697,17 @@ impl CadView {
             CadView::Back => "Back",
             CadView::Left => "Left",
             CadView::Right => "Right",
+            CadView::Top => "Top",
+            CadView::Bottom => "Bottom",
         }
     }
 
-    /// axa planului de taiere: 0 = X constant (stanga/dreapta), 1 = Y constant (fata/spate)
+    /// axa planului de taiere: 0 = X constant, 1 = Y constant, 2 = Z constant (plan)
     pub fn axis(self) -> Option<usize> {
         match self {
             CadView::Front | CadView::Back => Some(1),
             CadView::Left | CadView::Right => Some(0),
+            CadView::Top | CadView::Bottom => Some(2),
             CadView::Current => None,
         }
     }

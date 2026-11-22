@@ -733,6 +733,31 @@ fn dxf_entities(pairs: &[(i32, String)], start: usize) -> (Vec<Ent>, usize) {
     (out, i)
 }
 
+/// Citeste metadatele lasate de „Cut to DWG”: planul din care a fost extras
+/// desenul 2D. Cauta mai intai sidecar-ul `.mbplane`, apoi comentariul din DXF.
+pub fn read_cut_plane_meta(path: &str) -> Option<(usize, f32, bool, glam::DVec3)> {
+    let parse = |line: &str| -> Option<(usize, f32, bool, glam::DVec3)> {
+        if !line.starts_with("MB_CUT_PLANE") { return None; }
+        let (mut axis, mut value, mut mirror, mut origin) = (None, None, false, glam::DVec3::ZERO);
+        for part in line.split_whitespace().skip(1) {
+            if let Some(v) = part.strip_prefix("axis=") { axis = v.parse::<usize>().ok(); }
+            else if let Some(v) = part.strip_prefix("value=") { value = v.parse::<f32>().ok(); }
+            else if let Some(v) = part.strip_prefix("mirror=") { mirror = v == "1"; }
+            else if let Some(v) = part.strip_prefix("origin=") {
+                let c: Vec<f64> = v.split(',').filter_map(|x| x.parse().ok()).collect();
+                if c.len() == 3 { origin = glam::DVec3::new(c[0], c[1], c[2]); }
+            }
+        }
+        Some((axis?, value?, mirror, origin))
+    };
+    if let Ok(s) = std::fs::read_to_string(format!("{path}.mbplane")) {
+        if let Some(m) = parse(s.lines().next().unwrap_or("")) { return Some(m); }
+    }
+    let b = std::fs::read(path).ok()?;
+    let text = String::from_utf8_lossy(&b);
+    text.lines().find_map(parse)
+}
+
 pub fn load_dxf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     load_dxf_with(path, progress, None, Vec::new())
 }

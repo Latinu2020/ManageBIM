@@ -421,11 +421,12 @@ impl App {
         if job.done.load(std::sync::atomic::Ordering::Relaxed) {
             if !self.pathtrace_notified {
                 self.pathtrace_notified = true;
-                self.toast("Path trace finished - Export PNG is available.");
+                self.toast(format!("✅ {} · {} {} · {:.1}s — {}", crate::i18n::tr("Path trace FINISHED"), job.count.load(std::sync::atomic::Ordering::Relaxed), crate::i18n::tr("samples"), job.started.elapsed().as_secs_f32(), crate::i18n::tr("Export PNG is ready")));
             }
-        } else {
-            ctx.request_repaint();
         }
+        // si la final trebuie un cadru nou: textrura poate fi construita exact
+        // in cadrul in care worker-ul a eliberat mutex-ul
+        ctx.request_repaint();
     }
 
     pub fn export_pathtrace(&mut self, path: &str) {

@@ -160,6 +160,15 @@ impl App {
                             if ui.input(|i| i.key_pressed(Key::Escape)) {
                                 *act = Some((String::new(), "rename_cancel"));
                             }
+                            // confirmarea si la click in afara (nu doar Enter), altfel
+                            // redenumirea se pierde daca utilizatorul apasa in alta parte
+                            if te.lost_focus() && act.is_none() {
+                                if buf.trim().is_empty() {
+                                    *act = Some((String::new(), "rename_cancel"));
+                                } else {
+                                    *act = Some((format!("{old}\u{1}{buf}"), "rename_done"));
+                                }
+                            }
                         } else {
                             let col = if cur { accent() } else { ui.visuals().text_color() };
                             let r = ui.add(egui::Button::new(crate::theme::icon_job(if f.is_empty() { "📋" } else { "📁" }, &format!("{label}  ({count})"), 13.0, col)).frame(false));
@@ -168,8 +177,17 @@ impl App {
                             }
                             r.on_hover_text(if f.is_empty() { "All viewpoints without a folder - drop here to take one out of its folder" } else { "Click: new viewpoints go into this folder · drop viewpoints here" });
                         }
-                        if !f.is_empty() {
-                            ui.menu_button("⋯", |ui| {
+                        ui.menu_button("⋯", |ui| {
+                            if f.is_empty() {
+                                // radacina virtuala: nu are nume de sters, dar putem
+                                // crea foldere si schimba eticheta afisata
+                                for (lbl, key) in [("➕ New folder", "sub"), ("✏ Rename label", "rename")] {
+                                    if ui.button(lbl).clicked() {
+                                        *act = Some((f.to_string(), key));
+                                        ui.close_menu();
+                                    }
+                                }
+                            } else {
                                 for (lbl, key) in [
                                     ("➕ New subfolder", "sub"),
                                     ("✏ Rename", "rename"),
@@ -185,8 +203,8 @@ impl App {
                                         ui.close_menu();
                                     }
                                 }
-                            });
-                        }
+                            }
+                        });
                     });
                 });
                 if let Some(i) = dropped {
@@ -197,7 +215,8 @@ impl App {
             };
             // radacina: viewpoint-urile fara folder
             let root_n = self.viewpoints.iter().filter(|v| v.folder.is_empty()).count();
-            header(ui, "", "No folder", 0, root_n, self, &mut act, &mut renaming, &mut move_to);
+            let root_label = self.settings.vp_root_label.clone();
+            header(ui, "", &root_label, 0, root_n, self, &mut act, &mut renaming, &mut move_to);
             for i in 0..self.viewpoints.len() {
                 if self.viewpoints[i].folder.is_empty() {
                     item(ui, i, 1, self, restore, &mut move_to);
@@ -237,10 +256,10 @@ impl App {
             match key {
                 "sub" => {
                     let mut k = 1;
-                    let mut name = format!("{f}/New folder");
+                    let mut name = if f.is_empty() { "New folder".to_string() } else { format!("{f}/New folder") };
                     while self.vp_all_folders().contains(&name) {
                         k += 1;
-                        name = format!("{f}/New folder {k}");
+                        name = if f.is_empty() { format!("New folder {k}") } else { format!("{f}/New folder {k}") };
                     }
                     self.vp_folders.push(name.clone());
                     renaming = Some((name.clone(), name.rsplit('/').next().unwrap_or("").to_string()));
@@ -250,7 +269,11 @@ impl App {
                 "rename_done" => {
                     if let Some((old, new)) = f.split_once('\u{1}') {
                         let new = new.trim().replace('/', "-");
-                        if !new.is_empty() {
+                        if !new.is_empty() && old.is_empty() {
+                            // radacina virtuala: doar eticheta se schimba
+                            self.settings.vp_root_label = new;
+                            self.settings.save();
+                        } else if !new.is_empty() {
                             let parent = old.rsplit_once('/').map(|(p, _)| format!("{p}/")).unwrap_or_default();
                             let target = format!("{parent}{new}");
                             let re = |s: &str| -> Option<String> {

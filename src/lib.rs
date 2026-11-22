@@ -41,6 +41,14 @@ pub fn load_any(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
     // gratarele Plant 3D sunt salvate in DWG doar ca un dreptunghi plat (barele se genereaza la afisare):
     // le dam grosime, ca sa se vada din orice unghi - pentru toate sursele (DWG nativ, add-in .bimc, NWC)
     r.map(|mut m| {
+        // Daca fisierul e o taietura exportata din ManageBIM, repunem desenul 2D
+        // in planul 3D exact din care a fost extras (metadatele sint in DXF / sidecar).
+        if matches!(ext.as_str(), "dxf" | "dwg") {
+            if let Some((axis, value, mirror, origin)) = formats::read_cut_plane_meta(path) {
+                m.place_on_cut_plane(axis, value, mirror, origin);
+                m.info.insert(0, ("Cut plane".into(), format!("Restored on axis {axis} at {value:.3} m")));
+            }
+        }
         m.thicken_flat_gratings(0.03);
         m
     })

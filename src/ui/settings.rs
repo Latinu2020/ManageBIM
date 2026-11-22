@@ -106,6 +106,18 @@ impl App {
 
                     // ------------------------------------------------ fisiere / sync
                     ui.separator();
+                    ui.heading("Scripts");
+                    ui.horizontal(|ui| {
+                        ui.label("Scripts folder");
+                        if ui.add(egui::TextEdit::singleline(&mut self.settings.scripts_dir).desired_width(280.0).hint_text("default: %APPDATA%\\ManageBIM\\Scripts")).changed() {
+                            self.settings.save();
+                        }
+                    })
+                    .response
+                    .on_hover_text("Leave empty for the default folder. Change it any time - the Script console picks it up immediately.");
+                    ui.label(RichText::new(super::script::dir(&self.settings.scripts_dir).display().to_string()).weak().small());
+
+                    ui.separator();
                     ui.heading("Files & live link");
                     if ui.checkbox(&mut self.settings.auto_cache, "Create a .bimc cache when opening a model").changed() { self.settings.save(); }
                     if ui.checkbox(&mut self.settings.use_cache, "Open the up-to-date .bimc cache instead of the source").changed() { self.settings.save(); }

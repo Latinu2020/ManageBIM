@@ -82,6 +82,29 @@ pub struct RawModel {
 }
 
 impl RawModel {
+    /// Repune un desen 2D (extras prin „Cut to DWG”) in planul 3D de taiere.
+    /// Coordonatele 2D sint in metri, in spatiul lumii; aplicatia le pastreaza
+    /// locale, deci scadem origin-ul (ca in tot restul modelului).
+    pub fn place_on_cut_plane(&mut self, axis: usize, value: f32, mirror: bool, origin: glam::DVec3) {
+        let v = value as f64;
+        for e in &mut self.elements {
+            for t in &mut e.tris {
+                for p in t {
+                    let (mut a, mut b) = (p.x, p.y);
+                    if mirror { a = -a; }
+                    let local = match axis {
+                        // 2D-ul exportat e in coordonatele LUMII (local + origin).
+                        // `value` e deja local, deci nu i se scade origin-ul.
+                        0 => glam::DVec3::new(v, a - origin.y, b - origin.z),
+                        1 => glam::DVec3::new(a - origin.x, v, b - origin.z),
+                        _ => glam::DVec3::new(a - origin.x, b - origin.y, v),
+                    };
+                    *p = local;
+                }
+            }
+        }
+    }
+
     /// Gratar plat (toate triunghiurile in acelasi plan, grosime < 1 mm): devine placa de `thick` metri,
     /// in jos fata de suprafata de calcare: fata de sus, cea de jos (normale inversate) si laturile pe
     /// conturul exterior (muchiile folosite o singura data).

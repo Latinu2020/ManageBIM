@@ -163,6 +163,15 @@ pub struct Settings {
     /// pozitia planului de taiere intre 0 (latura minima) si 1 (latura maxima) a modelului
     #[serde(default = "default_cad_view_pos")]
     pub cad_view_pos: f32,
+    /// folderul cu scripturi .rhai (gol = %APPDATA%\ManageBIM\Scripts)
+    #[serde(default)]
+    pub scripts_dir: String,
+    /// afiseaza in 3D planul de taiere ales pentru export
+    #[serde(default = "yes")]
+    pub show_cad_plane: bool,
+    /// eticheta folderului virtual „fară folder” din Viewpoints
+    #[serde(default = "default_vp_root")]
+    pub vp_root_label: String,
     /// unitatea XML-ului pentru Navisworks: "auto" (din modelul Navisworks) sau m / cm / mm / ft / in
     #[serde(default = "auto")]
     pub navis_units: String,
@@ -183,6 +192,10 @@ fn default_ui_scale() -> f32 {
     1.0
 }
 
+fn default_vp_root() -> String {
+    "No folder".into()
+}
+
 fn default_cad_view_pos() -> f32 {
     0.5
 }
@@ -198,7 +211,7 @@ fn default_walk() -> f32 {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), clash_ui: ClashUiPrefs::default() }
+        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), scripts_dir: String::new(), show_cad_plane: true, vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default() }
     }
 }
 

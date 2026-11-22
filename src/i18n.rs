@@ -247,4 +247,22 @@ pub const PAIRS: &[(&str, &str)] = &[
     ("🏠 Start Page", "🏠 Pagina de start"),
     ("🌐 Română / English", "🌐 English / Română"),
     ("Interface language: English / Română", "Limba interfeței: English / Română"),
+    // ---- path trace (progres / ETA / finalizare)
+    ("Path trace FINISHED", "Path trace GATA"),
+    ("Export PNG is ready", "Export PNG este disponibil"),
+    ("samples", "mostre"),
+    ("Preparing scene / first sample", "Pregătire scenă / prima mostră"),
+    ("Finished", "Terminat"),
+    ("left", "rămase"),
+    ("Ready - press Export PNG to save the image.", "Gata — apasă Export PNG pentru a salva imaginea."),
+    ("Cut View", "Vedere tăietură"),
+    ("Highlight plane", "Evidențiază planul"),
+    // ---- sectiuni / alte functii noi
+    ("Current section", "Secțiunea curentă"),
+    ("Front", "Față"),
+    ("Back", "Spate"),
+    ("Left", "Stânga"),
+    ("Right", "Dreapta"),
+    ("Top", "Sus"),
+    ("Bottom", "Jos"),
 ];

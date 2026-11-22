@@ -15,7 +15,10 @@ pub struct Scene {
 
 impl Scene {
     pub fn build(app: &crate::app::App) -> Self {
-        let origin = app.origin_f64();
+        // Camera si geometria trebuie sa fie in ACELASI spatiu de coordonate.
+        // Renderer-ul OpenGL foloseste vertecsi locali (m.pos) si cam.eye() local,
+        // fara origin (origin e doar pentru export / coordonate reale). Daca adaugam
+        // origin aici, razele nu mai lovesc modelul si imaginea ramane doar "cer".
         let mut tris = Vec::new();
         let mut colors = Vec::new();
         for (_, m) in app.loaded_models() {
@@ -23,9 +26,9 @@ impl Scene {
             for t in 0..n {
                 let i = t * 3;
                 let (Some(a), Some(b), Some(c)) = (m.pos.get(i).copied(), m.pos.get(i + 1).copied(), m.pos.get(i + 2).copied()) else { continue };
-                tris.push(a + origin.as_vec3());
-                tris.push(b + origin.as_vec3());
-                tris.push(c + origin.as_vec3());
+                tris.push(a);
+                tris.push(b);
+                tris.push(c);
                 let col = m.tri_color.get(t).copied().unwrap_or([200, 200, 200, 255]);
                 colors.push(col);
             }

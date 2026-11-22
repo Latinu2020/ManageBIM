@@ -506,6 +506,51 @@ impl App {
         }
     }
 
+    /// Bara de sus, deasupra ribbonului: cautare, Model focus, tema, Setari si
+    /// numele proiectului. E mutata aici ca sa nu impinga / suprapuna taburile.
+    fn app_bar(&mut self, ctx: &egui::Context) {
+        use crate::theme::RibbonMode;
+        let mode = self.settings.ribbon_mode;
+        egui::TopBottomPanel::top("appbar")
+            .show_separator_line(false)
+            .frame(egui::Frame::none().fill(ctx.style().visuals.panel_fill).inner_margin(egui::Margin::symmetric(8.0, 3.0)))
+            .show(ctx, |ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    let next = mode.next();
+                    let ic = match mode {
+                        RibbonMode::Full => "⏶",
+                        RibbonMode::Compact => "⏶",
+                        RibbonMode::Mini => "⏷",
+                    };
+                    if ui.add(egui::Button::new(RichText::new(ic).size(13.0)).frame(false)).on_hover_text(format!("Ribbon: {} - click for {} (Full = icons + labels, Compact = icons only, Mini = tabs only)", mode.label(), next.label())).clicked() {
+                        self.settings.ribbon_mode = next;
+                        self.settings.save();
+                    }
+                    if ui.add(egui::Button::new(RichText::new("⛶ Model focus").size(11.5).color(ui.visuals().text_color())).fill(ui.visuals().window_fill).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(108.0, 22.0))).on_hover_text("Hide the ribbon and panels, keep Properties floating - maximum space for the model (Esc to exit)").clicked() {
+                        self.toggle_immersive();
+                    }
+                    let nt = self.settings.theme.next();
+                    let chip = egui::Button::new(RichText::new(self.settings.theme.label()).size(11.5).color(ui.visuals().text_color())).fill(ui.visuals().window_fill).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(78.0, 22.0));
+                    if ui.add(chip).on_hover_text(format!("Theme: {} - click for {}", self.settings.theme.label(), nt.label())).clicked() {
+                        self.set_theme(nt);
+                    }
+                    if ui.add(egui::Button::new("⚙ Settings").frame(false)).on_hover_text("Application settings: fonts / DPI, export, navigation, files").clicked() {
+                        self.settings_open = true;
+                    }
+                    let sb = egui::Button::new(crate::theme::icon_job("🔍", "Search or Ctrl+K", 12.0, ui.visuals().weak_text_color())).fill(ui.visuals().extreme_bg_color).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(190.0, 22.0));
+                    if ui.add(sb).on_hover_text("Command palette: type a command or an element name").clicked() {
+                        self.palette_open = true;
+                    }
+                    ui.label(RichText::new("ManageBIM").strong().color(accent()));
+                    if let Some(p) = &self.project_path {
+                        ui.add_space(4.0);
+                        ui.label(RichText::new(crate::file_name(p)).weak());
+                    }
+                });
+            });
+    }
+
     fn ribbon(&mut self, ctx: &egui::Context) {
         use crate::theme::RibbonMode;
         const TABS: [&str; 12] = ["Home", "Select", "Viewpoint", "Review", "Sections", "Coordination", "Analyze", "Render", "Export", "Share", "Script", "View"];
@@ -520,6 +565,8 @@ impl App {
         let mode = self.settings.ribbon_mode;
         crate::theme::RIBBON_COMPACT.store(mode == RibbonMode::Compact, std::sync::atomic::Ordering::Relaxed);
         let fill = ctx.style().visuals.panel_fill;
+        // bara de sus: cautare / focus / tema / setari / proiect - separata de ribbon
+        self.app_bar(ctx);
         egui::TopBottomPanel::top("ribbon").show_separator_line(false).frame(egui::Frame::none().fill(fill).inner_margin(egui::Margin { left: 8.0, right: 8.0, top: 5.0, bottom: 5.0 })).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.style_mut().spacing.item_spacing.x = 3.0;
@@ -533,15 +580,12 @@ impl App {
                 }
                 egui::popup_below_widget(ui, popup, &r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| self.file_menu(ui));
                 ui.add_space(8.0);
-                // Tab-urile stau intr-un scroll orizontal: la ferestre mai inguste se
-                // deruleaza, in loc sa se suprapuna peste search / tema / numele proiectului.
-                let right_w = 580.0_f32;
-                let tabs_w = (ui.available_width() - right_w).max(220.0);
-                ui.allocate_ui_with_layout(EV::new(tabs_w, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    egui::ScrollArea::horizontal().id_salt("ribbon_tabs").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.style_mut().spacing.item_spacing.x = 3.0;
-                            for (i, t) in TABS.iter().enumerate() {
+                // Tab-urile au acum toata latimea: bara de sus e separata.
+                // Scroll-ul ramane doar pentru ferestre foarte inguste.
+                egui::ScrollArea::horizontal().id_salt("ribbon_tabs").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.style_mut().spacing.item_spacing.x = 3.0;
+                        for (i, t) in TABS.iter().enumerate() {
                     let on = self.ribbon_tab == i && mode != RibbonMode::Mini;
                     let t = crate::i18n::tr(t);
                     let txt = if on { RichText::new(t).color(accent()).strong() } else { RichText::new(t) };
@@ -570,40 +614,6 @@ impl App {
                         });
                     });
                 });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let next = mode.next();
-                    let ic = match mode {
-                        RibbonMode::Full => "⏶",
-                        RibbonMode::Compact => "⏶",
-                        RibbonMode::Mini => "⏷",
-                    };
-                    if ui.add(egui::Button::new(RichText::new(ic).size(13.0)).frame(false)).on_hover_text(format!("Ribbon: {} - click for {} (Full = icons + labels, Compact = icons only, Mini = tabs only)", mode.label(), next.label())).clicked() {
-                        self.settings.ribbon_mode = next;
-                        self.settings.save();
-                    }
-                    let nt = self.settings.theme.next();
-                    if ui.add(egui::Button::new(RichText::new("⛶ Model focus").size(11.5).color(ui.visuals().text_color())).fill(ui.visuals().window_fill).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(108.0, 24.0))).on_hover_text("Hide the ribbon and panels, keep Properties floating - maximum space for the model (Esc to exit)").clicked() {
-                        self.toggle_immersive();
-                    }
-                    let chip = egui::Button::new(RichText::new(self.settings.theme.label()).size(11.5).color(ui.visuals().text_color())).fill(ui.visuals().window_fill).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(78.0, 24.0));
-                    if ui.add(chip).on_hover_text(format!("Theme: {} - click for {}", self.settings.theme.label(), nt.label())).clicked() {
-                        self.set_theme(nt);
-                    }
-                    if ui.add(egui::Button::new("⚙ Settings").frame(false)).on_hover_text("Open application settings: appearance, fonts / DPI, export, navigation, files").clicked() {
-                        self.settings_open = true;
-                    }
-                    // cautarea / paleta de comenzi (ca in redesign: "Search or Ctrl+K")
-                    let sb = egui::Button::new(crate::theme::icon_job("🔍", "Search or Ctrl+K", 12.0, ui.visuals().weak_text_color())).fill(ui.visuals().extreme_bg_color).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(200.0, 24.0));
-                    if ui.add(sb).on_hover_text("Command palette: type a command (clash, section, pdf, theme...) or an element name").clicked() {
-                        self.palette_open = true;
-                    }
-                    ui.label(RichText::new("ManageBIM").strong().color(accent()));
-                    if let Some(p) = &self.project_path {
-                        ui.add_space(6.0);
-                        ui.label(RichText::new(crate::file_name(p)).weak());
-                    }
-                });
-            });
             if mode == RibbonMode::Mini {
                 return;
             }
@@ -990,6 +1000,25 @@ impl App {
     }
 
     fn ribbon_sections(&mut self, ui: &mut egui::Ui) {
+        rgroup(ui, crate::i18n::tr("Cut View"), |ui| {
+            let cur = self.settings.cad_view;
+            egui::ComboBox::from_id_salt("cad_cut_view").selected_text(crate::i18n::tr(cur.label())).show_ui(ui, |ui| {
+                for v in crate::app::CadView::ALL {
+                    let label = crate::i18n::tr(v.label());
+                    let mut tmp = v;
+                    if ui.selectable_value(&mut tmp, cur, label).clicked() {
+                        self.settings.cad_view = v;
+                        self.settings.save();
+                    }
+                }
+            });
+            if ui.checkbox(&mut self.settings.show_cad_plane, crate::i18n::tr("Highlight plane")).changed() {
+                self.settings.save();
+            }
+            if cur != crate::app::CadView::Current && cur.axis().is_some() {
+                ui.label(format!("{}%", (self.settings.cad_view_pos * 100.0).round() as i32));
+            }
+        });
         rgroup(ui, "Sectioning", |ui| {
             let sec = self.section.enabled;
             if rbtn(ui, "✂", "Enable", "Turn sectioning on / off", sec, true).clicked() {
@@ -2422,13 +2451,13 @@ impl App {
                 self.script_open = !self.script_open;
             }
             if rbtn(ui, "➕", "New Script", "Create a new .rhai script in the ManageBIM Scripts folder", false, true).clicked() {
-                match script::create() {
+                match script::create(&self.settings.scripts_dir) {
                     Ok(p) => self.toast(format!("Script created: {}", crate::file_name(&p.to_string_lossy().to_string()))),
                     Err(e) => self.error(e),
                 }
             }
             if rbtn(ui, "📂", "Folder", "Copy the Scripts folder path to the clipboard", false, true).clicked() {
-                ui.ctx().copy_text(script::dir().to_string_lossy().to_string());
+                ui.ctx().copy_text(script::dir(&self.settings.scripts_dir).to_string_lossy().to_string());
                 self.toast("Scripts folder path copied to clipboard.");
             }
             if rbtn(ui, "❓", "API Help", "Show the scripting API reference and examples", self.script_help_open, true).clicked() {
@@ -2437,7 +2466,7 @@ impl App {
             }
         });
         rgroup(ui, "Run", |ui| {
-            let n = script::list().len();
+            let n = script::list(&self.settings.scripts_dir).len();
             ui.label(format!("{n} script(s) in folder"));
             ui.add_enabled(false, egui::Button::new("▶ Run all")).on_hover_text("The Rhai engine is enabled in 0.28. Scripts from the Scripts folder will run from here.");
         });
@@ -2455,19 +2484,25 @@ impl App {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     if ui.button("➕ New script").clicked() {
-                        match script::create() {
+                        match script::create(&self.settings.scripts_dir) {
                             Ok(p) => self.toast(format!("Script created: {}", crate::file_name(&p.to_string_lossy().to_string()))),
                             Err(e) => self.error(e),
                         }
                     }
                     if ui.button("📂 Copy folder path").clicked() {
-                        ui.ctx().copy_text(script::dir().to_string_lossy().to_string());
+                        ui.ctx().copy_text(script::dir(&self.settings.scripts_dir).to_string_lossy().to_string());
                         self.toast("Scripts folder path copied to clipboard.");
                     }
+                    if ui.button("📥 Install examples").clicked() {
+                        match script::install_examples(&self.settings.scripts_dir) {
+                            Ok(n) => self.toast(format!("Installed {n} example scripts.")),
+                            Err(e) => self.error(e),
+                        }
+                    }
                 });
-                ui.label(RichText::new(script::dir().display().to_string()).weak().small());
+                ui.label(RichText::new(script::dir(&self.settings.scripts_dir).display().to_string()).weak().small());
                 ui.separator();
-                let scripts = script::list();
+                let scripts = script::list(&self.settings.scripts_dir);
                 if scripts.is_empty() {
                     ui.label(RichText::new("No .rhai scripts yet. Use „New script” or copy files into the folder above.").weak());
                 } else {
@@ -2542,14 +2577,30 @@ impl App {
                     let total = job.samples_target;
                     let frac = if total > 0 { n as f32 / total as f32 } else { 0.0 };
                     let secs = job.started.elapsed().as_secs_f32();
-                    let txt = if n == 0 {
-                        format!("Preparing scene / first sample · {secs:.1} s")
-                    } else if job.done.load(std::sync::atomic::Ordering::Relaxed) {
-                        format!("Finished · {n} samples · {secs:.1} s")
+                    let fmt_dur = |s: f32| -> String {
+                        if s < 60.0 { format!("{s:.0}s") } else { format!("{}m {:02}s", (s / 60.0) as u32, (s % 60.0) as u32) }
+                    };
+                    let done = job.done.load(std::sync::atomic::Ordering::Relaxed);
+                    let eta = if n > 0 && !done {
+                        let rate = n as f32 / secs.max(0.1);
+                        let by_samples = total.saturating_sub(n) as f32 / rate.max(1e-6);
+                        let by_limit = if job.time_limit_secs > 0.0 { (job.time_limit_secs - secs).max(0.0) } else { f32::INFINITY };
+                        let e = by_samples.min(by_limit);
+                        if e.is_finite() { format!(" · ~{} {}", fmt_dur(e), crate::i18n::tr("left")) } else { String::new() }
                     } else {
-                        format!("{n} / {total} samples · {secs:.1} s")
+                        String::new()
+                    };
+                    let txt = if n == 0 {
+                        format!("{} · {:.1} s", crate::i18n::tr("Preparing scene / first sample"), secs)
+                    } else if done {
+                        format!("{} · {n} {} · {:.1} s", crate::i18n::tr("Finished"), crate::i18n::tr("samples"), secs)
+                    } else {
+                        format!("{n} / {total} {} · {:.1} s{eta}", crate::i18n::tr("samples"), secs)
                     };
                     ui.add(egui::ProgressBar::new(frac).text(txt));
+                    if done && n > 0 {
+                        ui.label(RichText::new(crate::i18n::tr("Ready - press Export PNG to save the image.")).strong().color(Color32::from_rgb(80, 200, 120)));
+                    }
                 }
                 if let Some(tex) = &self.pathtrace_tex {
                     ui.separator();
@@ -3248,6 +3299,39 @@ impl App {
                     for k in 0..4 {
                         line(quad[k], quad[(k + 1) % 4], Color32::from_rgb(70, 210, 100), 1.5);
                     }
+                }
+            }
+        }
+        // planul de taiere ales pentru exportul DWG / PDF: suprafata portocalie
+        // translucida + contur, ca sa vezi exact unde cade taietura in model
+        if self.settings.show_cad_plane && self.report_job.is_none() {
+            if let Some((axis, value)) = self.cad_cut_plane() {
+                let bb = self.scene_aabb();
+                let lo = bb.min - Vec3::splat(0.5);
+                let hi = bb.max + Vec3::splat(0.5);
+                let quad: [Vec3; 4] = match axis {
+                    0 => [Vec3::new(value, lo.y, lo.z), Vec3::new(value, hi.y, lo.z), Vec3::new(value, hi.y, hi.z), Vec3::new(value, lo.y, hi.z)],
+                    1 => [Vec3::new(lo.x, value, lo.z), Vec3::new(hi.x, value, lo.z), Vec3::new(hi.x, value, hi.z), Vec3::new(lo.x, value, hi.z)],
+                    _ => [Vec3::new(lo.x, lo.y, value), Vec3::new(hi.x, lo.y, value), Vec3::new(hi.x, hi.y, value), Vec3::new(lo.x, hi.y, value)],
+                };
+                let n = 8;
+                let fill = Color32::from_rgba_unmultiplied(255, 170, 50, 32);
+                for i in 0..n {
+                    for j in 0..n {
+                        let at = |u: f32, v: f32| {
+                            let a = quad[0].lerp(quad[1], u);
+                            let b = quad[3].lerp(quad[2], u);
+                            a.lerp(b, v)
+                        };
+                        let (u0, u1, v0, v1) = (i as f32 / n as f32, (i + 1) as f32 / n as f32, j as f32 / n as f32, (j + 1) as f32 / n as f32);
+                        let pts: Option<Vec<Pos2>> = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)].iter().map(|q| to_screen(&vp, rect, *q)).collect();
+                        if let Some(pts) = pts {
+                            painter.add(egui::Shape::convex_polygon(pts, fill, Stroke::NONE));
+                        }
+                    }
+                }
+                for k in 0..4 {
+                    line(quad[k], quad[(k + 1) % 4], Color32::from_rgb(255, 180, 70), 2.0);
                 }
             }
         }

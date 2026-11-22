@@ -107,6 +107,31 @@ impl App {
         self.scene_grids_models().grids.iter().map(|(n, a, b)| UserGrid { name: n.clone(), a: [a.x as f64 + o.x, a.y as f64 + o.y], b: [b.x as f64 + o.x, b.y as f64 + o.y] }).collect()
     }
 
+    /// Planul de taiere pentru exportul DWG / PDF cand directia nu e "Current".
+    /// Coordonate LOCALE, ca in camera si in viewport (fara origin).
+    pub fn cad_cut_plane(&self) -> Option<(usize, f32)> {
+        use crate::app::CadView;
+        let view = self.settings.cad_view;
+        let a = view.axis()?;
+        let bb = self.scene_aabb();
+        if !bb.is_valid() {
+            return None;
+        }
+        let value = match view {
+            CadView::Top => bb.max.z,
+            CadView::Bottom => bb.min.z,
+            _ => {
+                let (lo, hi) = match a {
+                    1 => (bb.min.y, bb.max.y),
+                    2 => (bb.min.z, bb.max.z),
+                    _ => (bb.min.x, bb.max.x),
+                };
+                lo + (hi - lo) * self.settings.cad_view_pos.clamp(0.0, 1.0)
+            }
+        };
+        Some((a, value))
+    }
+
     /// Taietura sectiunii curente (plan / nivel) ca linii 2D in DWG (scriitor integrat) sau DXF:
     /// un layer pe tip de element (Walls, Doors, IfcColumn...), coordonate reale in metri.
     pub fn export_section_cad(&mut self, path: &str) {
@@ -115,15 +140,12 @@ impl App {
             return self.error("Turn on a section first, or choose Front / Back / Left / Right in Settings › Export.");
         }
         // planul de taiere: axa (0 = X, 1 = Y, 2 = Z), valoarea (coordonate locale) si zona (doar la box)
-        let (axis, value, clip): (usize, f32, Option<([f32; 3], [f32; 3])>) = if let Some(a) = view.axis() {
+        let (axis, value, clip): (usize, f32, Option<([f32; 3], [f32; 3])>) = if view.axis().is_some() {
             // vedere din directie: taie intregul model, la pozitia exacta din settings
-            let bb = self.scene_aabb();
-            if !bb.is_valid() {
+            let Some((a, v)) = self.cad_cut_plane() else {
                 return self.error("No model geometry to cut.");
-            }
-            let (lo, hi) = if a == 1 { (bb.min.y, bb.max.y) } else { (bb.min.x, bb.max.x) };
-            let t = self.settings.cad_view_pos.clamp(0.0, 1.0);
-            (a, lo + (hi - lo) * t, None)
+            };
+            (a, v, None)
         } else {
             match self.section.mode {
             SectionMode::Box => {
@@ -299,7 +321,7 @@ impl App {
         let dxf_path = if dwg { std::path::Path::new(path).with_extension("dxf").to_string_lossy().to_string() } else { with_ext(path, "dxf") };
         let n = segs.len();
         // implicit: 2D in Model space, coordonate reale (m); optional: pe plansa A3 cu cartus, la scara
-        let content = if self.cad_sheet {
+        let mut content = if self.cad_sheet {
             let level = self.section_level.and_then(|i| self.scene_grids().levels.get(i).map(|l| l.0.clone()));
             let title = if view != crate::app::CadView::Current {
                 format!("{} section", view.label())
@@ -315,6 +337,15 @@ impl App {
         } else {
             cut_dxf_annot(&segs, &texts, 0.1)
         };
+        // metadatele taieturii, ca la import sa putem pune desenul EXACT in planul
+        // din care a fost extras (comment 999 - ignorat de alte CAD-uri, citit de noi)
+        if view.axis().is_some() && !self.cad_sheet {
+            let o = self.origin_f64();
+            let meta = format!("999\nMB_CUT_PLANE axis={axis} value={value:.4} mirror={} origin={:.4},{:.4},{:.4}\n", if mirror { 1 } else { 0 }, o.x, o.y, o.z);
+            content = content.replacen("2\nHEADER\n", &format!("2\nHEADER\n{meta}"), 1);
+            // sidecar pentru DWG (conversia poate elimina comentariile DXF)
+            let _ = std::fs::write(format!("{path}.mbplane"), meta.lines().nth(1).unwrap_or("").to_string());
+        }
         if let Err(e) = std::fs::write(&dxf_path, content) {
             return self.error(format!("Cannot write {dxf_path}: {e}"));
         }
