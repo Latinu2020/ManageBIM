@@ -1016,6 +1016,10 @@ impl App {
                     let mut tmp = v;
                     if ui.selectable_value(&mut tmp, cur, label).clicked() {
                         self.settings.cad_view = v;
+                        // fata nou aleasa => planul chiar pe fata (0% inset)
+                        if v != crate::app::CadView::Current {
+                            self.settings.cad_view_pos = 0.0;
+                        }
                         self.settings.save();
                     }
                 }

@@ -283,6 +283,11 @@ impl Settings {
         if !s.ui_scale.is_finite() || !(0.75..=2.0).contains(&s.ui_scale) {
             s.ui_scale = default_ui_scale();
         }
+        // vechile implicituri ale pozitiei planului (0.5 / 0.25 = in interiorul
+        // cubului) migram pe 0 = planul chiar pe fata aleasa
+        if (s.cad_view_pos - 0.5).abs() < 1e-6 || (s.cad_view_pos - 0.25).abs() < 1e-6 {
+            s.cad_view_pos = 0.0;
+        }
         if !s.cad_view_pos.is_finite() || !(0.0..=1.0).contains(&s.cad_view_pos) {
             s.cad_view_pos = default_cad_view_pos();
         }
