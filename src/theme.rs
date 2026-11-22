@@ -163,6 +163,12 @@ pub struct Settings {
     /// pozitia planului de taiere intre 0 (latura minima) si 1 (latura maxima) a modelului
     #[serde(default = "default_cad_view_pos")]
     pub cad_view_pos: f32,
+    /// versiunea BCF la export: 2 sau 3
+    #[serde(default = "default_bcf_version")]
+    pub bcf_version: u8,
+    /// inaltimea planului de taiere masurata de la fundul cubului de sectiune
+    #[serde(default = "default_cut_offset")]
+    pub section_cut_offset: f32,
     /// folderul cu scripturi .rhai (gol = %APPDATA%\ManageBIM\Scripts)
     #[serde(default)]
     pub scripts_dir: String,
@@ -200,6 +206,14 @@ fn default_cad_view_pos() -> f32 {
     0.25
 }
 
+fn default_cut_offset() -> f32 {
+    1.2
+}
+
+fn default_bcf_version() -> u8 {
+    2
+}
+
 fn default_eye() -> f32 {
     1.7
 }
@@ -211,7 +225,7 @@ fn default_walk() -> f32 {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), scripts_dir: String::new(), show_cad_plane: true, vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default() }
+        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), scripts_dir: String::new(), show_cad_plane: true, vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default() }
     }
 }
 
@@ -246,6 +260,9 @@ impl Settings {
         }
         if !s.cad_view_pos.is_finite() || !(0.0..=1.0).contains(&s.cad_view_pos) {
             s.cad_view_pos = default_cad_view_pos();
+        }
+        if s.bcf_version != 2 && s.bcf_version != 3 {
+            s.bcf_version = default_bcf_version();
         }
         s
     }

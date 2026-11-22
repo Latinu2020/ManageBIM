@@ -1030,7 +1030,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "managebim-setup"
-version = "0.27.1"
+version = "0.27.5"
 dependencies = [
  "eframe",
  "miniz_oxide 0.8.9",

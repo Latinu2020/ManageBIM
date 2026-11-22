@@ -1,6 +1,7 @@
 //! Randare progresiva (CPU) pentru o imagine statica, cu anulare si export PNG.
 //! Implementare de baza: Lambert + lumina directa (soare) + ambianta, pe BVH global.
 
+use rayon::prelude::*;
 use crate::model::Bvh;
 use glam::Vec3;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -88,23 +89,24 @@ fn run(job: Arc<PathTraceJob>) {
             break;
         }
         let mut buf = job.buf.lock().unwrap();
-        for py in 0..job.height {
-            for px in 0..job.width {
-                // stratified jitter
-                let jx = (s as f32 * 0.7548777).fract();
-                let jy = (s as f32 * 0.5698403).fract();
-                let u = (px as f32 + jx) / w;
-                let v = (py as f32 + jy) / h;
-                let ndc_x = u * 2.0 - 1.0;
-                let ndc_y = 1.0 - v * 2.0;
-                let dir = (job.cam_fwd + job.cam_right * (ndc_x * half_w) + job.cam_up * (ndc_y * half_h)).normalize();
-                let col = trace(&job, job.cam_eye, dir);
-                let idx = ((py * job.width + px) * 3) as usize;
-                buf[idx] += col[0];
-                buf[idx + 1] += col[1];
-                buf[idx + 2] += col[2];
-            }
-        }
+        let width = job.width as usize;
+        // Un sample = toate pixelii, impartiti pe toate nucleele (rayon).
+        buf.par_chunks_mut(3).enumerate().for_each(|(i, p)| {
+            let px = (i % width) as u32;
+            let py = (i / width) as u32;
+            // stratified jitter
+            let jx = (s as f32 * 0.7548777).fract();
+            let jy = (s as f32 * 0.5698403).fract();
+            let u = (px as f32 + jx) / w;
+            let v = (py as f32 + jy) / h;
+            let ndc_x = u * 2.0 - 1.0;
+            let ndc_y = 1.0 - v * 2.0;
+            let dir = (job.cam_fwd + job.cam_right * (ndc_x * half_w) + job.cam_up * (ndc_y * half_h)).normalize();
+            let col = trace(&job, job.cam_eye, dir);
+            p[0] += col[0];
+            p[1] += col[1];
+            p[2] += col[2];
+        });
         job.count.fetch_add(1, Ordering::Relaxed);
         s += 1;
     }

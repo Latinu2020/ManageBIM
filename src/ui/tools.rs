@@ -162,6 +162,15 @@ impl App {
                         self.section.bmax[ax] = self.section.bmin[ax];
                     }
                 }
+                let h = (self.section.bmax[2] - self.section.bmin[2]).max(0.02);
+                ui.horizontal(|ui| {
+                    ui.label("Cut height in box");
+                    if ui.add(egui::Slider::new(&mut self.settings.section_cut_offset, 0.05..=h).suffix(" m").fixed_decimals(2)).changed() {
+                        self.settings.save();
+                    }
+                })
+                .response
+                .on_hover_text("The orange highlighted plane AND the DWG/PDF cut are taken from here. Stretch the Z faces of the box and the section follows.");
             }
         }
     }

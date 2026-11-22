@@ -3,6 +3,14 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.5 - 2026-11-22
+- **Tăietura din cubul de secțiune**: planul evidențiat în 3D ȘI exportul DWG/PDF folosesc aceeași înălțime, reglabilă în panoul Sections („Cut height in box"). Când tragi fețele Z ale cubului, secțiunea se mută odată cu el.
+- **Path trace pe toate nucleele**: pixelii unui sample sunt împărțiți prin `rayon` — de ~6–8× mai rapid pe procesoarele obișnuite (era un singur fir de execuție).
+- **Export BCF 3.0**: în Settings › Export alegi 2.1 sau 3.0; la 3.0 comentariile stau în interiorul `<Topic>`, conform specificației (BIMcollab / Solibri noi).
+- **Export COBie 2.4**: buton nou în tabul Export („COBie…") — registru xlsx cu Contact, Facility, Floor, Type, Component, System, pentru predarea către facility management.
+- **Installer mai prietenos**: pagina de bun venit are carduri colorate cu recomandările aplicației (Clash, review federat, scripturi, path trace) și pagina de final are „Getting started"; fereastra e mai mare și defilabilă. Rămâne **per-utilizator, fără drepturi de administrator**.
+- **Verificări**: 156 de teste trec, `cargo check` curat pe aplicație și pe installer.
+
 ## 0.27.1 - 2026-11-22
 - **Motor Rhai activat**: scripturile `.rhai` din consola Script chiar se executa. API expus: `select_where`, `select_ids`, `selected_count`, `find_where_empty`, `set_prop`, `create_clash_test`, `zoom_to_selection`, `export_bcf`, `export_excel`, `log`. Butoanele **▶ Run** / **Run all** sunt functionale; actiunile se aplica in ordinea inregistrata (selectie, proprietati, teste clash, zoom). 3 teste unitare noi.
 - **Fix path trace**: bucla de repaint nu mai continua dupa terminare (aplicatia nu mai „merge" continuu); preview-ul foloseste acum acelasi spatiu de coordonate ca rendererul (nu doar cer); ETA + anunt de finalizare; textele EN/RO.

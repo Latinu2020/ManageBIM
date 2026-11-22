@@ -399,8 +399,14 @@ fn bcf_component(g: &str) -> String {
 }
 
 pub fn bcf_zip(project: &str, items: &[ReportItem]) -> Vec<u8> {
+    bcf_zip_version(project, items, 2)
+}
+
+/// Export BCF 2.1 sau 3.0. In 3.0 comentariile stau in interiorul `<Topic>`.
+pub fn bcf_zip_version(project: &str, items: &[ReportItem], version: u8) -> Vec<u8> {
+    let ver = if version == 3 { "3.0" } else { "2.1" };
     let mut z = Zip::default();
-    z.add("bcf.version", b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Version VersionId=\"2.1\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><DetailedVersion>2.1</DetailedVersion></Version>");
+    z.add("bcf.version", format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Version VersionId=\"{ver}\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><DetailedVersion>{ver}</DetailedVersion></Version>").as_bytes());
     z.add("project.bcfp", format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ProjectExtension xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><Project ProjectId=\"{}\"><Name>{}</Name></Project><ExtensionSchema></ExtensionSchema></ProjectExtension>", new_guid(), esc(project)).as_bytes());
     for it in items {
         let tg = if it.issue.guid.len() == 36 { it.issue.guid.clone() } else { new_guid() };
@@ -415,15 +421,16 @@ pub fn bcf_zip(project: &str, items: &[ReportItem]) -> Vec<u8> {
         if !it.description.is_empty() {
             m.push_str(&format!("<Description>{}</Description>", esc(&it.description)));
         }
+        let comments: String = it.comments.iter().map(|c| format!(
+            "<Comment Guid=\"{}\"><Date>{}</Date><Author>{}</Author><Comment>{}</Comment><Viewpoint Guid=\"{vg}\"/></Comment>",
+            new_guid(), esc(&c.date), esc(&c.author), esc(&c.text)
+        )).collect();
+        if version == 3 && !comments.is_empty() {
+            m.push_str(&format!("<Comments>{comments}</Comments>"));
+        }
         m.push_str("</Topic>");
-        for c in &it.comments {
-            m.push_str(&format!(
-                "<Comment Guid=\"{}\"><Date>{}</Date><Author>{}</Author><Comment>{}</Comment><Viewpoint Guid=\"{vg}\"/></Comment>",
-                new_guid(),
-                esc(&c.date),
-                esc(&c.author),
-                esc(&c.text)
-            ));
+        if version != 3 {
+            m.push_str(&comments);
         }
         let snap = if it.image.is_empty() { "" } else { "<Snapshot>snapshot.png</Snapshot>" };
         m.push_str(&format!("<Viewpoints Guid=\"{vg}\"><Viewpoint>viewpoint.bcfv</Viewpoint>{snap}</Viewpoints></Markup>"));

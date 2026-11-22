@@ -326,11 +326,32 @@ impl Wizard {
                         ui.label(RichText::new(format!("This wizard installs ManageBIM {VERSION} for {}.", std::env::var("USERNAME").unwrap_or_default())).size(14.0));
                     }
                 }
-                ui.add_space(12.0);
-                ui.label("• No administrator rights needed - installed only for your Windows user.");
-                ui.label("• IFC, Revit / Navisworks / AutoCAD models, STEP, FBX, E57 point clouds…");
-                ui.label("• Add-ins: Send to ManageBIM, issues and markups back in Revit / Navisworks.");
-                ui.add_space(12.0);
+                ui.add_space(10.0);
+                let card = |ui: &mut egui::Ui, icon: &str, title: &str, desc: &str, col: Color32| {
+                    egui::Frame::none()
+                        .fill(NORD_PANEL)
+                        .rounding(8.0)
+                        .stroke(egui::Stroke::new(1.0, col.gamma_multiply(0.55)))
+                        .inner_margin(egui::Margin::symmetric(10.0, 6.0))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new(icon).size(17.0).color(col));
+                                ui.vertical(|ui| {
+                                    ui.label(RichText::new(title).strong().size(13.0));
+                                    ui.label(RichText::new(desc).small().color(NORD_TEXT.gamma_multiply(0.72)));
+                                });
+                            });
+                        });
+                    ui.add_space(5.0);
+                };
+                ui.label(RichText::new("What you can do with ManageBIM").size(15.0).strong().color(NORD_ACCENT));
+                ui.add_space(6.0);
+                card(ui, "⚔", "Clash Detective", "Hard & clearance tests, Navisworks-style workflow, BCF reports", NORD_RED);
+                card(ui, "🧭", "Federated review", "IFC, DWG, Revit / Navisworks, STEP, point clouds in one view", NORD_ACCENT);
+                card(ui, "📜", "Scripts (Rhai)", "Automate selection, properties and clash tests from the Script tab", NORD_GREEN);
+                card(ui, "🎞", "Path trace & 4D", "Progressive CPU renders, animations, TimeLiner and PDF sheets", NORD_YELLOW);
+                ui.add_space(8.0);
+                ui.label(RichText::new("No administrator rights - ManageBIM is installed only for your Windows user.").small().color(NORD_GREEN));
                 ui.label(RichText::new(format!("Folder: {}", self.paths.app_dir.display())).small().color(NORD_TEXT.gamma_multiply(0.7)));
             }
             Page::Components => {
@@ -391,6 +412,10 @@ impl Wizard {
                             }
                         }
                         ui.add_space(12.0);
+                        ui.label(RichText::new("Getting started").strong().color(NORD_ACCENT));
+                        ui.label(RichText::new("• Help › Demo — open a sample federated project").small());
+                        ui.label(RichText::new("• Ctrl+K — search any command or element").small());
+                        ui.label(RichText::new("• ⚙ Settings — fonts / DPI, DWG export, scripts folder").small());
                         drop(j);
                         ui.checkbox(&mut self.launch, "Start ManageBIM now");
                     }
@@ -465,7 +490,7 @@ impl eframe::App for Wizard {
         egui::SidePanel::left("steps").exact_width(170.0).resizable(false).frame(egui::Frame::none().fill(NORD_PANEL).inner_margin(egui::Margin::symmetric(18.0, 8.0))).show(ctx, |ui| self.steps(ui));
         egui::CentralPanel::default().frame(egui::Frame::none().fill(NORD_BG).inner_margin(egui::Margin::symmetric(24.0, 8.0))).show(ctx, |ui| {
             let c = ui.ctx().clone();
-            self.page_ui(ui, &c);
+            egui::ScrollArea::vertical().show(ui, |ui| self.page_ui(ui, &c));
         });
         // un clic pe X in timpul instalarii nu opreste instalarea la jumatate
         if ctx.input(|i| i.viewport().close_requested()) && self.page == Page::Installing {
@@ -527,7 +552,7 @@ fn main() {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(format!("ManageBIM {VERSION} Setup"))
-            .with_inner_size([660.0, 440.0])
+            .with_inner_size([720.0, 560.0])
             .with_resizable(false)
             .with_maximize_button(false)
             .with_icon(icon()),

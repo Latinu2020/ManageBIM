@@ -175,7 +175,7 @@ impl App {
                 crate::markup::xlsx_report(&project, &job.items, &thumbs)
             }
             3 => crate::pdf::sheets(&project, &job.items, &now_string(), &self.title_block),
-            _ => crate::markup::bcf_zip(&project, &job.items),
+            _ => crate::markup::bcf_zip_version(&project, &job.items, self.settings.bcf_version),
         };
         match std::fs::write(&path, data) {
             Ok(()) => self.toast(format!("{} viewpoints exported to {}", job.items.len(), crate::file_name(&path))),

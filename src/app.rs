@@ -1048,6 +1048,7 @@ pub enum Purpose {
     ExportAsBuilt,
     ExportSectionCad,
     ExportSectionPdf,
+    ExportCobie,
     ImportOverlay,
     ImportCheckRules,
     ExportCheckRules,

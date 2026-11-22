@@ -581,7 +581,7 @@ impl App {
             .collect();
         let path = if path.to_lowercase().ends_with(".bcf") || path.to_lowercase().ends_with(".bcfzip") { path.to_string() } else { format!("{path}.bcf") };
         let project = self.project_path.as_ref().map(|p| crate::file_name(p)).unwrap_or_else(|| "ManageBIM clashes".into());
-        match std::fs::write(&path, crate::markup::bcf_zip(&project, &items)) {
+        match std::fs::write(&path, crate::markup::bcf_zip_version(&project, &items, self.settings.bcf_version)) {
             Ok(()) => self.toast(format!("{} clashes exported as BCF topics: {}", items.len(), crate::file_name(&path))),
             Err(e) => self.error(format!("Cannot write {path}: {e}")),
         }

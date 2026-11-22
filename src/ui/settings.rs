@@ -78,6 +78,19 @@ impl App {
                     }
                     ui.checkbox(&mut self.cad_annotate, "Annotations: hatch, element tags, grids, levels")
                         .on_hover_text("Turn off for a clean outline (only the cut edges, one DWG layer per element type).");
+                    ui.horizontal(|ui| {
+                        ui.label("BCF export version");
+                        if ui.selectable_label(self.settings.bcf_version == 2, "2.1").clicked() {
+                            self.settings.bcf_version = 2;
+                            self.settings.save();
+                        }
+                        if ui.selectable_label(self.settings.bcf_version == 3, "3.0").clicked() {
+                            self.settings.bcf_version = 3;
+                            self.settings.save();
+                        }
+                    })
+                    .response
+                    .on_hover_text("BCF 3.0 places comments inside the Topic (newer BIMcollab / Solibri).");
                     if ui.button("Title block & sheet format (A3 – A0)…").clicked() {
                         self.title_block_open = true;
                     }

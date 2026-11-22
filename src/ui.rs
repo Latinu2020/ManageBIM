@@ -1261,6 +1261,9 @@ impl App {
             if rbtn(ui, "📤", "Export Properties", "Excel template: one row per element (selection, or all visible) with its key and its user properties", false, self.loaded_models().next().is_some()).clicked() {
                 self.request_path(Purpose::ExportUserProps);
             }
+            if rbtn(ui, "🏗", "COBie…", "COBie 2.4 handover workbook (xlsx): Contact, Facility, Floor, Type, Component, System — for facility management", false, self.loaded_models().next().is_some()).clicked() {
+                self.request_path(Purpose::ExportCobie);
+            }
             let r = rbtn(ui, "📋", "Sets ⏷", "Import / export selection and search sets", false, true);
             let pid = ui.make_persistent_id("data_sets_menu");
             if r.clicked() {
@@ -3880,6 +3883,7 @@ impl App {
                 Purpose::ExportAsBuilt => "As-built report (Excel)",
                 Purpose::ExportSectionCad => "Section cut (DWG / DXF)",
                 Purpose::ExportSectionPdf => "Section cut on sheet (PDF)",
+                Purpose::ExportCobie => "COBie handover (Excel)",
                 Purpose::ImportOverlay => "DWG overlay",
                 Purpose::ImportCheckRules => "Import IDS or rules",
                 Purpose::ExportCheckRules => "Save rules",

@@ -117,7 +117,8 @@ impl App {
         if view == crate::app::CadView::Current {
             if self.section.enabled && self.section.mode == crate::app::SectionMode::Box {
                 let (a, b) = (self.section.bmin, self.section.bmax);
-                let z = (a[2] + self.level_below.max(0.0) + 0.01 + 1.2).min(b[2] - 0.01).max(a[2] + 0.01);
+                // Planul e extras DIN CUB: se muta odata cu el cand tragi de fete.
+                let z = (a[2] + self.settings.section_cut_offset.max(0.01)).min(b[2] - 0.01).max(a[2] + 0.01);
                 return Some((2, z));
             }
             return None;
@@ -161,8 +162,8 @@ impl App {
             match self.section.mode {
             SectionMode::Box => {
                 let (a, b) = (self.section.bmin, self.section.bmax);
-                // ca in planurile Revit: taietura la 1.2 m deasupra nivelului
-                let z = (a[2] + self.level_below.max(0.0) + 0.01 + 1.2).min(b[2] - 0.01).max(a[2] + 0.01);
+                // acelasi plan ca cel evidentiat in 3D (din cub, nu din nivel)
+                let z = self.cad_cut_plane().map(|(_, v)| v).unwrap_or(a[2] + 1.2);
                 (2, z, Some((a, b)))
             }
             SectionMode::Planes => {
