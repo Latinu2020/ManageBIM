@@ -11,6 +11,7 @@ param(
     [string]$Out = (Join-Path $env:USERPROFILE 'Downloads')
 )
 $ErrorActionPreference = 'Stop'
+New-Item -ItemType Directory -Force $Out | Out-Null
 $root = Split-Path -Parent $PSScriptRoot
 $rel = Join-Path $root 'target\release'
 $pkg = Join-Path $root 'target\setup-package'

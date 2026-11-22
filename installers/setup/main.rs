@@ -331,7 +331,7 @@ impl Wizard {
                     egui::Frame::none()
                         .fill(NORD_PANEL)
                         .rounding(8.0)
-                        .stroke(egui::Stroke::new(1.0, col.gamma_multiply(0.55)))
+                        .stroke(egui::Stroke::new(1.0_f32, col.gamma_multiply(0.55)))
                         .inner_margin(egui::Margin::symmetric(10.0, 6.0))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
