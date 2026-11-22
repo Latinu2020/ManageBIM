@@ -121,10 +121,16 @@ impl App {
             Ok(s) => s,
             Err(e) => return self.error(format!("Cannot read script: {e}")),
         };
+        let name = crate::file_name(path);
+        self.run_source(&name, &source);
+    }
+
+    /// Executa o sursa Rhai (din fisier sau generata de catalogul grafic).
+    pub(super) fn run_source(&mut self, name: &str, source: &str) {
         let input = self.script_input();
-        let result = match crate::scripting::run(&source, &input) {
+        let result = match crate::scripting::run(source, &input) {
             Ok(o) => o,
-            Err(e) => return self.error(format!("{}: {e}", crate::file_name(path))),
+            Err(e) => return self.error(format!("{name}: {e}")),
         };
         for l in &result.logs {
             self.toast(l.clone());

@@ -147,6 +147,12 @@ impl App {
             Purpose::ExportIds => self.export_ids(&path),
             Purpose::ExportCheckXlsx => self.export_check_xlsx(&path),
             Purpose::ExportCheckBcf => self.export_check_bcf(&path),
+            Purpose::SelectScriptsDir => {
+                self.settings.scripts_dir = path.clone();
+                self.settings.save();
+                self.script_open = true;
+                self.toast(format!("Scripts folder: {path}"));
+            }
             Purpose::SharedFolder => {
                 self.shared_dir = Some(path.clone());
                 self.shared = Default::default();
@@ -450,6 +456,7 @@ impl App {
                 Purpose::ImportGridsCad => d.set_title("Import grid axes from DWG / DXF").add_filter("DWG / DXF", &["dwg", "dxf"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportGrids => d.set_title("Export grid axes").add_filter("DXF (AutoCAD, any CAD)", &["dxf"]).add_filter("AutoCAD DWG (2018)", &["dwg"]).set_file_name("grids.dxf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::SharedFolder => d.set_title("Shared issues folder (network / SharePoint / OneDrive)").pick_folder().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::SelectScriptsDir => d.set_title("Folder with your .rhai scripts").pick_folder().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportIfc => d.set_title("Export to IFC4").add_filter("IFC", &["ifc"]).set_file_name("export.ifc").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashBcf => d.set_title("Export clashes as BCF").add_filter("BIM Collaboration Format", &["bcf", "bcfzip"]).set_file_name("clashes.bcf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashNavis => d.set_title("Export clashes as Navisworks viewpoints").add_filter("Navisworks viewpoints XML", &["xml"]).set_file_name("clashes_viewpoints.xml").save_file().map(|p| vec![p.to_string_lossy().to_string()]),

@@ -25,6 +25,7 @@ mod output;
 mod table;
 mod script;
 mod settings;
+mod script_catalog;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
 fn accent() -> Color32 {
@@ -2502,23 +2503,27 @@ impl App {
     fn script_window(&mut self, ctx: &egui::Context) {
         if !self.script_open { return; }
         let mut open = self.script_open;
-        egui::Window::new("📜 Script console")
+        egui::Window::new("📜 Script Library")
             .open(&mut open)
-            .default_size([540.0, 420.0])
-            .min_width(400.0)
-            .min_height(260.0)
+            .default_size([620.0, 540.0])
+            .min_width(450.0)
+            .min_height(320.0)
             .resizable(true)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
+                    if ui.button("📁 Choose folder…").on_hover_text("Pick the folder with your .rhai scripts").clicked() {
+                        self.request_path(Purpose::SelectScriptsDir);
+                    }
+                    if ui.button("↺ Default").on_hover_text("Use %APPDATA%\\ManageBIM\\Scripts").clicked() {
+                        self.settings.scripts_dir.clear();
+                        self.settings.save();
+                        self.toast("Scripts folder reset to default.");
+                    }
                     if ui.button("➕ New script").clicked() {
                         match script::create(&self.settings.scripts_dir) {
                             Ok(p) => self.toast(format!("Script created: {}", crate::file_name(&p.to_string_lossy().to_string()))),
                             Err(e) => self.error(e),
                         }
-                    }
-                    if ui.button("📂 Copy folder path").clicked() {
-                        ui.ctx().copy_text(script::dir(&self.settings.scripts_dir).to_string_lossy().to_string());
-                        self.toast("Scripts folder path copied to clipboard.");
                     }
                     if ui.button("📥 Install examples").clicked() {
                         match script::install_examples(&self.settings.scripts_dir) {
@@ -2527,35 +2532,88 @@ impl App {
                         }
                     }
                 });
-                ui.label(RichText::new(script::dir(&self.settings.scripts_dir).display().to_string()).weak().small());
-                ui.separator();
-                let scripts = script::list(&self.settings.scripts_dir);
-                if scripts.is_empty() {
-                    ui.label(RichText::new("No .rhai scripts yet. Use „New script” or copy files into the folder above.").weak());
-                } else {
-                    for p in scripts {
-                        let name = crate::file_name(&p.to_string_lossy().to_string());
-                        ui.horizontal(|ui| {
-                            ui.label("📜");
-                            ui.label(&name);
-                            if ui.button("▶ Run").on_hover_text("Execute this .rhai script with the Rhai engine").clicked() {
-                                self.run_script(&p.to_string_lossy().to_string());
-                            }
-                        })
-                        .response
-                        .on_hover_text(p.display().to_string());
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Folder:").small().strong());
+                    ui.label(RichText::new(script::dir(&self.settings.scripts_dir).display().to_string()).small().color(crate::theme::accent()));
+                    if ui.small_button("📋").on_hover_text("Copy folder path").clicked() {
+                        ui.ctx().copy_text(script::dir(&self.settings.scripts_dir).to_string_lossy().to_string());
+                        self.toast("Scripts folder path copied to clipboard.");
                     }
-                }
-                ui.separator();
-                ui.collapsing("API reference (0.28)", |ui| {
-                    ui.label("select_where(category, value) — select all elements whose property matches");
-                    ui.label("set_prop(name, value) — set a property on the current selection");
-                    ui.label("create_clash_test(name, tolerance) — add a clash test");
-                    ui.label("export_bcf(path) / export_excel(path) — write reports");
                 });
-                if self.script_help_open {
-                    ui.label(RichText::new("The engine is not compiled yet in 0.27.1 - this window lists the scripts you will be able to run.").weak());
-                }
+                ui.separator();
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.label(RichText::new("BUILT-IN SCRIPTS").size(12.0).strong().color(ui.visuals().weak_text_color()));
+                    let mut last_cat = "";
+                    for spec in script_catalog::CATALOG {
+                        if spec.category != last_cat {
+                            ui.add_space(4.0);
+                            ui.label(RichText::new(spec.category).strong().size(13.0));
+                            last_cat = spec.category;
+                        }
+                        let accent = crate::theme::accent();
+                        egui::Frame::none().fill(ui.visuals().faint_bg_color).rounding(7.0).inner_margin(egui::Margin::symmetric(9.0, 6.0)).show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new(spec.name).strong());
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.button(RichText::new("▶ Run").color(accent)).clicked() {
+                                        let src = script_catalog::source(spec, &self.settings.script_params);
+                                        self.run_source(spec.name, &src);
+                                    }
+                                });
+                            });
+                            ui.label(RichText::new(spec.desc).small().weak());
+                            if !spec.params.is_empty() {
+                                ui.collapsing("Parameters", |ui| {
+                                    egui::Grid::new(("script_params", spec.id)).num_columns(2).spacing([8.0, 3.0]).show(ui, |ui| {
+                                        for p in spec.params {
+                                            let mut changed = false;
+                                            {
+                                                let val = self.settings.script_params.entry(p.key.to_string()).or_insert_with(|| p.default.to_string());
+                                                ui.label(p.label);
+                                                if ui.add(egui::TextEdit::singleline(val).desired_width(190.0)).changed() {
+                                                    changed = true;
+                                                }
+                                            }
+                                            if changed { self.settings.save(); }
+                                            ui.end_row();
+                                        }
+                                    });
+                                });
+                            }
+                        });
+                        ui.add_space(3.0);
+                    }
+                    ui.separator();
+                    ui.label(RichText::new("MY SCRIPTS (.rhai)").size(12.0).strong().color(ui.visuals().weak_text_color()));
+                    let scripts = script::list(&self.settings.scripts_dir);
+                    if scripts.is_empty() {
+                        ui.label(RichText::new("No .rhai files yet — use New script or Install examples.").weak().small());
+                    } else {
+                        for p in scripts {
+                            let name = crate::file_name(&p.to_string_lossy().to_string());
+                            ui.horizontal(|ui| {
+                                ui.label("📜");
+                                ui.label(&name);
+                                if ui.button("▶ Run").clicked() {
+                                    self.run_script(&p.to_string_lossy().to_string());
+                                }
+                                if ui.small_button("🗑").on_hover_text("Delete this script").clicked() {
+                                    let _ = std::fs::remove_file(&p);
+                                    self.toast(format!("Deleted {name}"));
+                                }
+                            })
+                            .response
+                            .on_hover_text(p.display().to_string());
+                        }
+                    }
+                    ui.separator();
+                    ui.collapsing("API reference", |ui| {
+                        ui.label("select_where(key, value) / select_ids([...]) / selected_count()");
+                        ui.label("find_where_empty(key) / set_prop(name, value)");
+                        ui.label("create_clash_test(name, tolerance) / zoom_to_selection()");
+                        ui.label("export_bcf(path) / export_excel(path) / log(text)");
+                    });
+                });
             });
         self.script_open = open;
     }
@@ -4007,6 +4065,7 @@ impl App {
                 Purpose::ExportClashBcf => "Export clashes as BCF",
                 Purpose::ExportIfc => "Export to IFC4",
                 Purpose::SharedFolder => "Shared issues folder",
+                Purpose::SelectScriptsDir => "Scripts folder",
                 Purpose::PublishBimd => "Publish project (.bimd)",
                 Purpose::ExportGrids => "Export grid axes",
                 Purpose::ImportGridsCad => "Import grid axes (DWG / DXF)",

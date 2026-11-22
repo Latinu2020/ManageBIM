@@ -7,6 +7,8 @@ La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Ca
 - **Viewpoints ca în Navisworks**: click pe un viewpoint → camera și secțiunea se restaurează imediat în 3D; **click dreapta › Rename** (sau dublu-click) → editare inline, Enter confirmă / Esc anulează.
 - **Geometria din spatele tăieturii**: între planul de tăiere și peretele opus al cubului, muchiile reale ale elementelor se **proiectează pe plan și se desenează punctat** în 3D; în DWG/DXF se scriu pe stratul **BEHIND** cu linetipul **HIDDEN** (aplatizate pe planul de tăiere).
 - Letățurile adiționale: **Hide section box** (ascunde doar cubul, secțiunea rămâne) și **Behind edges** (pornit implicit), ambele în grupul Cut View.
+- **Bibliotecă de scripturi cu interfață grafică**: fereastra Script arată acum 9 scripturi grupate pe categorii, cu **descriere**, buton **▶ Run** și **parametri editabili** (ex. categorie, nivel, toleranță, cale BCF) — nu mai trebuie scris cod Rhai manual. Secțiunea „My scripts" listează fișierele `.rhai` cu Run/Delete.
+- **Folder de scripturi alegibil din UI**: buton **📁 Choose folder…** (dialog nativ) + **↺ Default** + buton copiere cale, direct în fereastra Script.
 
 ## 0.27.7 - 2026-11-22
 - **Overlay DWG la locul tăieturii**: desenul exportat prin „Cut to DWG" revine **exact în planul și la coordonatele de unde a fost extras** (metadate citite din DXF / sidecar). Suport de **plan vertical** (Front/Back → YZ, Left/Right → XZ) și oglindire inversată. Din fereastra DWG Overlay a fost eliminat câmpul „Level" — poziția se păstrează, nu se mai atribuie un nivel.

@@ -1041,6 +1041,7 @@ pub enum Purpose {
     ExportClashBcf,
     ExportIfc,
     SharedFolder,
+    SelectScriptsDir,
     PublishBimd,
     ImportGridsCad,
     ExportReference,
