@@ -3321,36 +3321,121 @@ impl App {
                 }
             }
         }
-        // Evidentierea e OPRITA in mod normal: apare doar cand Sectiunea e in
-        // modul Box (adica „intrii in section box"), si doar planul efectiv taiat.
-        if self.settings.show_cad_plane && self.section.enabled && self.section.mode == SectionMode::Box && self.report_job.is_none() {
-            if let Some((axis, value)) = self.cad_cut_plane() {
+        // Planul de taiere FACE PARTE DIN CUB: se deseneaza in interiorul lui, se
+        // misca odata cu el si se TRAGE DIRECT cu mouse-ul (manerul cu sageti din centru).
+        let cut_show = self.settings.show_cad_plane
+            && self.report_job.is_none()
+            && (self.settings.cad_view != crate::app::CadView::Current || (self.section.enabled && self.section.mode == SectionMode::Box));
+        if cut_show {
+            let view = self.settings.cad_view;
+            let (axis, raw): (usize, f32) = if view == crate::app::CadView::Current {
+                let (a, b) = (self.section.bmin[2], self.section.bmax[2]);
+                (2, (a + self.settings.section_cut_offset.max(0.01)).min(b - 0.01).max(a + 0.01))
+            } else if let Some(ax) = view.axis() {
                 let bb = self.scene_aabb();
-                let lo = bb.min - Vec3::splat(0.5);
-                let hi = bb.max + Vec3::splat(0.5);
-                let quad: [Vec3; 4] = match axis {
-                    0 => [Vec3::new(value, lo.y, lo.z), Vec3::new(value, hi.y, lo.z), Vec3::new(value, hi.y, hi.z), Vec3::new(value, lo.y, hi.z)],
-                    1 => [Vec3::new(lo.x, value, lo.z), Vec3::new(hi.x, value, lo.z), Vec3::new(hi.x, value, hi.z), Vec3::new(lo.x, value, hi.z)],
-                    _ => [Vec3::new(lo.x, lo.y, value), Vec3::new(hi.x, lo.y, value), Vec3::new(hi.x, hi.y, value), Vec3::new(lo.x, hi.y, value)],
-                };
-                let n = 8;
-                let fill = Color32::from_rgba_unmultiplied(255, 170, 50, 32);
-                for i in 0..n {
-                    for j in 0..n {
-                        let at = |u: f32, v: f32| {
-                            let a = quad[0].lerp(quad[1], u);
-                            let b = quad[3].lerp(quad[2], u);
-                            a.lerp(b, v)
-                        };
-                        let (u0, u1, v0, v1) = (i as f32 / n as f32, (i + 1) as f32 / n as f32, j as f32 / n as f32, (j + 1) as f32 / n as f32);
-                        let pts: Option<Vec<Pos2>> = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)].iter().map(|q| to_screen(&vp, rect, *q)).collect();
-                        if let Some(pts) = pts {
-                            painter.add(egui::Shape::convex_polygon(pts, fill, Stroke::NONE));
-                        }
+                if !bb.is_valid() {
+                    (ax, 0.0)
+                } else {
+                    let t = self.settings.cad_view_pos.clamp(0.0, 1.0);
+                    let (lo, hi) = (bb.min[ax], bb.max[ax]);
+                    let v = match view {
+                        crate::app::CadView::Front => lo + (hi - lo) * t,
+                        crate::app::CadView::Back => hi - (hi - lo) * t,
+                        crate::app::CadView::Left => lo + (hi - lo) * t,
+                        crate::app::CadView::Right => hi - (hi - lo) * t,
+                        crate::app::CadView::Top => hi - (hi - lo) * t,
+                        crate::app::CadView::Bottom => lo + (hi - lo) * t,
+                        crate::app::CadView::Current => lo,
+                    };
+                    (ax, v)
+                }
+            } else {
+                (2, 0.0)
+            };
+            // In modul cub planul sta EXACT unde l-a pus utilizatorul (fara salturi
+            // pe grila); vederile denumite (Top / Front...) se aliniaza la grila,
+            // iar in timpul tragerii urmareste mouse-ul. Exportul foloseste aceeasi valoare.
+            let value = if self.cut_drag || view == crate::app::CadView::Current { raw } else { self.snap_cut(axis, raw) };
+            // intinderea planului: IN INTERIORUL CUBULUI daca e activ, altfel al scenei
+            let (lo, hi) = if self.section.enabled && self.section.mode == SectionMode::Box {
+                (Vec3::from(self.section.bmin) - Vec3::splat(0.02), Vec3::from(self.section.bmax) + Vec3::splat(0.02))
+            } else {
+                let bb = self.scene_aabb();
+                if bb.is_valid() {
+                    (bb.min - Vec3::splat(0.5), bb.max + Vec3::splat(0.5))
+                } else {
+                    (Vec3::splat(-1.0), Vec3::splat(1.0))
+                }
+            };
+            let quad: [Vec3; 4] = match axis {
+                0 => [Vec3::new(value, lo.y, lo.z), Vec3::new(value, hi.y, lo.z), Vec3::new(value, hi.y, hi.z), Vec3::new(value, lo.y, hi.z)],
+                1 => [Vec3::new(lo.x, value, lo.z), Vec3::new(hi.x, value, lo.z), Vec3::new(hi.x, value, hi.z), Vec3::new(lo.x, value, hi.z)],
+                _ => [Vec3::new(lo.x, lo.y, value), Vec3::new(hi.x, lo.y, value), Vec3::new(hi.x, hi.y, value), Vec3::new(lo.x, hi.y, value)],
+            };
+            let n = 8;
+            let fill = Color32::from_rgba_unmultiplied(255, 170, 50, 32);
+            for i in 0..n {
+                for j in 0..n {
+                    let at = |u: f32, v: f32| {
+                        let a = quad[0].lerp(quad[1], u);
+                        let b = quad[3].lerp(quad[2], u);
+                        a.lerp(b, v)
+                    };
+                    let (u0, u1, v0, v1) = (i as f32 / n as f32, (i + 1) as f32 / n as f32, j as f32 / n as f32, (j + 1) as f32 / n as f32);
+                    let pts: Option<Vec<Pos2>> = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)].iter().map(|q| to_screen(&vp, rect, *q)).collect();
+                    if let Some(pts) = pts {
+                        painter.add(egui::Shape::convex_polygon(pts, fill, Stroke::NONE));
                     }
                 }
-                for k in 0..4 {
-                    line(quad[k], quad[(k + 1) % 4], Color32::from_rgb(255, 180, 70), 2.0);
+            }
+            for k in 0..4 {
+                line(quad[k], quad[(k + 1) % 4], Color32::from_rgb(255, 180, 70), 2.0);
+            }
+            // ---- manerul de tragere: bareta pe axa planului, cu sageti in ambele capete
+            let mut c = (lo + hi) * 0.5;
+            c[axis] = value;
+            let mut e = Vec3::ZERO;
+            e[axis] = 1.0;
+            if let (Some(p0), Some(p1)) = (to_screen(&vp, rect, c), to_screen(&vp, rect, c + e)) {
+                let sv = p1 - p0;
+                let ppm = sv.length();
+                let d = sv / ppm.max(1e-6);
+                let near = hover.map_or(false, |h| rect.contains(h) && h.distance(p0) < 22.0);
+                let active = self.cut_drag || near;
+                if active {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                    let col = Color32::from_rgb(255, 200, 90);
+                    let (tip, tip2) = (p0 + d * 30.0, p0 - d * 30.0);
+                    painter.line_segment([tip2, tip], Stroke::new(5.0_f32, col));
+                    let nn = EV::new(-d.y, d.x) * 8.0;
+                    painter.add(egui::Shape::convex_polygon(vec![tip, tip - d * 12.0 + nn, tip - d * 12.0 - nn], col, Stroke::new(1.0_f32, Color32::WHITE)));
+                    painter.add(egui::Shape::convex_polygon(vec![tip2, tip2 + d * 12.0 + nn, tip2 + d * 12.0 - nn], col, Stroke::new(1.0_f32, Color32::WHITE)));
+                    painter.circle(p0, 7.0, col, Stroke::new(1.5_f32, Color32::WHITE));
+                }
+                // prinderea si tragerea planului
+                if near && !self.cut_drag && self.box_drag.is_none() && resp.drag_started_by(egui::PointerButton::Primary) {
+                    self.cut_drag = true;
+                }
+                if self.cut_drag && ppm > 1e-3 {
+                    if resp.dragged_by(egui::PointerButton::Primary) {
+                        let dm = resp.drag_delta().dot(d) / ppm;
+                        if view == crate::app::CadView::Current {
+                            // inaltimea planului in interiorul cubului
+                            let (za, zb) = (self.section.bmin[2], self.section.bmax[2]);
+                            self.settings.section_cut_offset = (self.settings.section_cut_offset + dm).clamp(0.05, (zb - za).max(0.06));
+                        } else {
+                            // pozitia de-a lungul axei, cu directia vederea alese
+                            let sbb = self.scene_aabb();
+                            let span = (sbb.max[axis] - sbb.min[axis]).max(1e-3);
+                            let inv = matches!(view, crate::app::CadView::Back | crate::app::CadView::Right | crate::app::CadView::Top);
+                            let dt = if inv { -dm } else { dm } / span;
+                            self.settings.cad_view_pos = (self.settings.cad_view_pos + dt).clamp(0.0, 1.0);
+                        }
+                    }
+                    if resp.drag_stopped() || !resp.dragged_by(egui::PointerButton::Primary) {
+                        self.cut_drag = false;
+                        self.settings.save();
+                    }
                 }
             }
         }

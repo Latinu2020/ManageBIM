@@ -141,9 +141,10 @@ impl App {
         if view == crate::app::CadView::Current {
             if self.section.enabled && self.section.mode == crate::app::SectionMode::Box {
                 let (a, b) = (self.section.bmin, self.section.bmax);
-                // Planul e extras DIN CUB si se aliniaza la nivelul cel mai apropiat.
+                // FARA aliniere la grila in modul cub: planul sta EXACT unde l-a pus
+                // utilizatorul (chiar si pe fata cubului), iar exportul taie exact acolo.
                 let z = (a[2] + self.settings.section_cut_offset.max(0.01)).min(b[2] - 0.01).max(a[2] + 0.01);
-                return Some((2, self.snap_cut(2, z)));
+                return Some((2, z));
             }
             return None;
         }

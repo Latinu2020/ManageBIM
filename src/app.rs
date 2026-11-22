@@ -1368,6 +1368,8 @@ pub struct App {
     pub pathtrace_done_at: Option<f32>,
     /// ultimul font aplicat (ca sa reinstalam fonturile doar la schimbare)
     pub font_family_cur: String,
+    /// planul de taiere se trage cu mouse-ul in 3D (partea din cub)
+    pub cut_drag: bool,
     /// fereastra consolei de scripturi (motorul Rhai se activeaza in 0.28)
     pub script_open: bool,
     pub script_help_open: bool,
@@ -1658,6 +1660,7 @@ impl App {
             pathtrace_notified: false,
             pathtrace_done_at: None,
             font_family_cur: "Inter".into(),
+            cut_drag: false,
             script_open: false,
             script_help_open: false,
             settings_open: false,
