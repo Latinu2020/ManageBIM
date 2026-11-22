@@ -28,18 +28,20 @@ impl App {
         // ---- lista testelor: Name | Status | Clashes | New | Active | Reviewed | Approved | Resolved
         let mut pick: Option<usize> = None;
         let mut ctx_action: Option<(usize, u8)> = None;
+        // redenumire cu clic dreapta > Rename: randul care se redenumeste, tinut intre cadre
+        let rename_key = egui::Id::new("mb_clash_rename");
+        let mut renaming: Option<usize> = ui.data(|d| d.get_temp(rename_key));
+        let mut rename_to: Option<(usize, String)> = None;
         egui::Frame::group(ui.style()).inner_margin(2.0).show(ui, |ui| {
             let h = (24.0 + 20.0 * self.clash_tests.len() as f32).clamp(70.0, 190.0);
-            TableBuilder::new(ui)
+            super::table::table(ui)
                 .id_salt("clash_tests_tbl")
-                .striped(true)
-                .sense(egui::Sense::click())
                 .max_scroll_height(h)
                 .min_scrolled_height(h.min(70.0))
                 .column(Column::remainder().at_least(150.0).clip(true))
-                .column(Column::exact(52.0))
-                .column(Column::exact(58.0))
-                .columns(Column::exact(76.0), 5)
+                .column(super::table::num(52.0))
+                .column(super::table::num(58.0))
+                .columns(super::table::num(76.0), 5)
                 .header(20.0, |mut hd| {
                     hd.col(|ui| {
                         ui.strong("Name");
@@ -71,7 +73,9 @@ impl App {
                         let running = self.clash_job.as_ref().map_or(false, |j| j.test == i);
                         row.set_selected(i == ti);
                         row.col(|ui| {
-                            ui.label(&t.name);
+                            if let Some(new) = super::table::name_cell(ui, egui::Id::new("mb_clash_tests"), i, &mut renaming, &t.name) {
+                                rename_to = Some((i, new));
+                            }
                         });
                         row.col(|ui| {
                             let (txt, col) = if running {
@@ -108,6 +112,8 @@ impl App {
                                     ui.close_menu();
                                 }
                             }
+                            ui.separator();
+                            super::table::rename_item(ui, &mut renaming, i);
                         });
                     });
                 });
@@ -121,6 +127,22 @@ impl App {
                 self.colors_dirty = true;
             }
         }
+        // numele se aplica dupa randul de tabel (in interior s-a citit doar `&self`)
+        if let Some((i, name)) = rename_to {
+            if let Some(t) = self.clash_tests.get_mut(i) {
+                t.name = name;
+            }
+        }
+        // starea redenumirii trebuie sa treaca intre cadre: meniul contextual se
+        // deschide intr-un strat ulterior, deci celula o citeste abia urmatorul cadru
+        ui.data_mut(|d| match renaming {
+            Some(r) => {
+                d.insert_temp(rename_key, r);
+            }
+            None => {
+                d.remove::<usize>(rename_key);
+            }
+        });
         if let Some((i, a)) = ctx_action {
             match a {
                 0 => {

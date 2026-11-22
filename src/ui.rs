@@ -22,6 +22,7 @@ mod time;
 mod tools;
 mod help;
 mod output;
+mod table;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
 fn accent() -> Color32 {
@@ -84,6 +85,8 @@ impl eframe::App for App {
             theme::apply(ctx, self.settings.theme);
             self.theme_dirty = false;
         }
+        // marimea intregii interfate (fonturi + tabele + panouri); egui o aplica la finalul cadrului
+        ctx.set_zoom_factor(self.settings.ui_scale);
         crate::app::set_units_mm(self.settings.units_mm);
         self.poll_jobs();
         self.check_file_changes();
@@ -131,7 +134,7 @@ impl eframe::App for App {
         let mut strips: [Option<Rect>; 3] = [None; 3];
         if !self.settings.layout.hide_all {
             let ah = self.settings.layout.autohide;
-            let pf = egui::Frame::side_top_panel(&ctx.style()).inner_margin(egui::Margin::symmetric(6.0, 4.0));
+            let pf = egui::Frame::side_top_panel(&ctx.style()).inner_margin(egui::Margin::symmetric(6.0, 4.0)).stroke(egui::Stroke::new(1.0_f32, theme::border()));
             if !self.settings.layout.in_area(Dock::Bottom).is_empty() {
                 if ah[2] {
                     strips[2] = Some(egui::TopBottomPanel::bottom("bottom_strip").exact_height(26.0).resizable(false).show(ctx, |ui| self.dock_strip(ui, Dock::Bottom)).response.rect);
@@ -1361,6 +1364,17 @@ impl App {
                     self.settings.units_mm = c.units_mm;
                     self.settings.save();
                 }
+                ui.horizontal(|ui| {
+                    ui.label("Interface size");
+                    let mut pct = (self.settings.ui_scale * 100.0).round() as i32;
+                    let r = ui.add_sized([140.0, ui.spacing().interact_size.y], egui::Slider::new(&mut pct, 75..=200).step_by(5.0).suffix("%"));
+                    if r.changed() {
+                        self.settings.ui_scale = pct as f32 / 100.0;
+                        self.settings.save();
+                    }
+                })
+                .response
+                .on_hover_text("Scales the whole interface: text, panels, tables and dialogs (100% = default). Same as the DPI setting of Windows, but only for ManageBIM.");
                 ui.horizontal(|ui| {
                     ui.label("Navisworks XML units");
                     let cur = self.settings.navis_units.clone();

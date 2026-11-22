@@ -56,21 +56,22 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                 ui.set_max_width(avail.x * 0.52);
                 let mut clicked = None;
                 let mut changed = false;
+                // clic dreapta > Rename: randul care se redenumeste, tinut intre cadre
+                let rename_key = egui::Id::new("mb_tasks_rename");
+                let mut renaming: Option<usize> = ui.data(|d| d.get_temp(rename_key));
                 let cur = self.cur_task;
                 let tasks = &mut self.tasks;
                 let mh = (ui.available_height() - 30.0).max(60.0);
-                TableBuilder::new(ui)
+                super::table::table(ui)
                     .id_salt("tasks")
                     .max_scroll_height(mh)
                     .auto_shrink([false, true])
-                    .striped(true)
-                    .sense(Sense::click())
                     .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-                    .column(Column::initial(140.0).clip(true))
-                    .column(Column::exact(84.0))
-                    .column(Column::exact(84.0))
-                    .column(Column::exact(100.0))
-                    .column(Column::initial(140.0).clip(true))
+                    .column(super::table::text(140.0))
+                    .column(super::table::num(84.0))
+                    .column(super::table::num(84.0))
+                    .column(super::table::num(100.0))
+                    .column(super::table::text(140.0))
                     .column(Column::remainder().at_least(50.0))
                     .header(20.0, |mut h| {
                         for n in ["Name", "Start", "End", "Type", "Rule", "Items"] {
@@ -85,7 +86,10 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                             row.set_selected(cur == Some(i));
                             let t = &mut tasks[i];
                             row.col(|ui| {
-                                ui.add(egui::TextEdit::singleline(&mut t.name).desired_width(f32::INFINITY));
+                                if let Some(new) = super::table::name_cell(ui, egui::Id::new("mb_tasks"), i, &mut renaming, &t.name) {
+                                    t.name = new;
+                                    changed = true;
+                                }
                             });
                             row.col(|ui| {
                                 changed |= date_edit(ui, egui::Id::new(("ts", i)), &mut t.start);
@@ -106,11 +110,26 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                             row.col(|ui| {
                                 ui.label(t.elems.len().to_string());
                             });
-                            if row.response().clicked() {
+                            let r = row.response();
+                            if r.clicked() {
                                 clicked = Some(i);
                             }
+                            // mouse: click dreapta > Rename
+                            r.context_menu(|ui| {
+                                super::table::rename_item(ui, &mut renaming, i);
+                            });
                         });
                     });
+                // starea redenumirii trebuie sa treaca intre cadre (meniul contextual
+                // se deschide intr-un strat ulterior, celula o citeste urmatorul cadru)
+                ui.data_mut(|d| match renaming {
+                    Some(r) => {
+                        d.insert_temp(rename_key, r);
+                    }
+                    None => {
+                        d.remove::<usize>(rename_key);
+                    }
+                });
                 if changed {
                     for t in self.tasks.iter_mut() {
                         t.end = t.end.max(t.start);

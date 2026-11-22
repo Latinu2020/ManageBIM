@@ -49,6 +49,15 @@ pub fn accent() -> Color32 {
     Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
 }
 
+/// Conturul panourilor si ferestrelor temei curente - setata de `apply`.
+/// Panourile si ferestrele il folosesc ca sa iasa putin in evidenta fata de fundal.
+static BORDER_RGB: AtomicU32 = AtomicU32::new(0x404754);
+
+pub fn border() -> Color32 {
+    let v = BORDER_RGB.load(Ordering::Relaxed);
+    Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
+}
+
 /// Preferintele UI care trebuie sa supravietuiasca unei restartari (Clash + 4D).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ClashUiPrefs {
@@ -145,6 +154,9 @@ pub struct Settings {
     /// interfata in romana (altfel engleza)
     #[serde(default)]
     pub romanian: bool,
+    /// marimea intregii interfate: 1.0 = 100% (Setari > Interface size / DPI)
+    #[serde(default = "default_ui_scale")]
+    pub ui_scale: f32,
     /// unitatea XML-ului pentru Navisworks: "auto" (din modelul Navisworks) sau m / cm / mm / ft / in
     #[serde(default = "auto")]
     pub navis_units: String,
@@ -161,6 +173,10 @@ fn yes() -> bool {
     true
 }
 
+fn default_ui_scale() -> f32 {
+    1.0
+}
+
 fn default_eye() -> f32 {
     1.7
 }
@@ -172,7 +188,7 @@ fn default_walk() -> f32 {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, clash_ui: ClashUiPrefs::default() }
+        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), clash_ui: ClashUiPrefs::default() }
     }
 }
 
@@ -200,6 +216,10 @@ impl Settings {
         // vechiul implicit (3 m/s) -> viteza de mers normala; o valoare aleasa de utilizator ramane
         if s.walk_speed == 3.0 {
             s.walk_speed = default_walk();
+        }
+        // marimea interfetei: doar valori rezonabile, altfel revenim la 100%
+        if !s.ui_scale.is_finite() || !(0.75..=2.0).contains(&s.ui_scale) {
+            s.ui_scale = default_ui_scale();
         }
         s
     }
@@ -237,6 +257,8 @@ pub struct Palette {
     pub gantt_grid: Color32,
     pub gantt_text: Color32,
     pub label_bg: Color32,
+    /// conturul vizibil al panourilor si ferestrelor (le face sa iasa usor in evidenta)
+    pub border: Color32,
 }
 
 pub fn palette(t: Theme) -> Palette {
@@ -254,6 +276,7 @@ pub fn palette(t: Theme) -> Palette {
             gantt_grid: Color32::from_rgb(50, 55, 64),
             gantt_text: Color32::from_rgb(220, 224, 232),
             label_bg: Color32::from_rgba_unmultiplied(15, 18, 24, 215),
+            border: Color32::from_rgb(64, 71, 84),
         },
         Theme::Light => Palette {
             accent: Color32::from_rgb(37, 99, 235),
@@ -268,6 +291,7 @@ pub fn palette(t: Theme) -> Palette {
             gantt_grid: Color32::from_rgb(221, 226, 234),
             gantt_text: Color32::from_rgb(40, 46, 58),
             label_bg: Color32::from_rgba_unmultiplied(20, 26, 36, 220),
+            border: Color32::from_rgb(201, 209, 221),
         },
         // Nord: varianta usor mai inchisa (Polar Night adancit), Snow Storm (text), Frost (accent)
         Theme::Nord => Palette {
@@ -283,6 +307,7 @@ pub fn palette(t: Theme) -> Palette {
             gantt_grid: Color32::from_rgb(57, 65, 82),
             gantt_text: Color32::from_rgb(229, 233, 240),
             label_bg: Color32::from_rgba_unmultiplied(36, 41, 52, 225),
+            border: Color32::from_rgb(68, 77, 96),
         },
         // Tokyo Night: bg #1a1b26, fg #c0caf5, blue #7aa2f7, red #f7768e, green #9ece6a
         Theme::TokyoNight => Palette {
@@ -298,6 +323,7 @@ pub fn palette(t: Theme) -> Palette {
             gantt_grid: Color32::from_rgb(41, 46, 66),
             gantt_text: Color32::from_rgb(192, 202, 245),
             label_bg: Color32::from_rgba_unmultiplied(22, 22, 30, 225),
+            border: Color32::from_rgb(54, 60, 86),
         },
         // Studio: aproape negru, albastru electric
         Theme::Studio => Palette {
@@ -313,6 +339,7 @@ pub fn palette(t: Theme) -> Palette {
             gantt_grid: Color32::from_rgb(52, 58, 69),
             gantt_text: Color32::from_rgb(226, 230, 239),
             label_bg: Color32::from_rgba_unmultiplied(17, 19, 23, 230),
+            border: Color32::from_rgb(48, 54, 65),
         },
     }
 }
@@ -329,6 +356,7 @@ fn widget(v: &mut egui::style::WidgetVisuals, bg: Color32, stroke: Color32, fg: 
 pub fn apply(ctx: &egui::Context, t: Theme) {
     let p = palette(t);
     ACCENT_RGB.store(((p.accent.r() as u32) << 16) | ((p.accent.g() as u32) << 8) | p.accent.b() as u32, Ordering::Relaxed);
+    BORDER_RGB.store(((p.border.r() as u32) << 16) | ((p.border.g() as u32) << 8) | p.border.b() as u32, Ordering::Relaxed);
     let mut style = (*ctx.style()).clone();
     let mut v = if t.is_dark() { egui::Visuals::dark() } else { egui::Visuals::light() };
     match t {
@@ -460,8 +488,8 @@ pub fn apply(ctx: &egui::Context, t: Theme) {
         v.selection.stroke = Stroke::new(1.0_f32, if dark { Color32::from_rgb(light(a.r()), light(a.g()), light(a.b())) } else { a });
         // dunga tabelelor: se simte, nu se vede
         v.faint_bg_color = tone(pf, 4);
-        // ferestrele plutitoare: chenar subtile, nu contur dur
-        v.window_stroke = Stroke::new(1.0_f32, tone(pf, 12));
+        // ferestrele si panourile: contur vizibil, ca sa iasa usor in evidenta fata de fundal
+        v.window_stroke = Stroke::new(1.0_f32, p.border);
         // design system comun tuturor temelor: colturi rotunjite, densitate compacta, umbre
         for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
             w.rounding = Rounding::same(8.0);
