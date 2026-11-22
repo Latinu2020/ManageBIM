@@ -53,11 +53,11 @@ pub fn run(source: &str, input: &Input) -> Result<Output, String> {
     }
     {
         let elems = input.elements.clone();
-        engine.register_fn("find_where_empty", move |key: &str| -> Vec<i32> {
+        engine.register_fn("find_where_empty", move |key: &str| -> rhai::Array {
             elems
                 .iter()
                 .filter(|(_, props)| !props.iter().any(|(k, v)| k.eq_ignore_ascii_case(key) && !v.trim().is_empty()))
-                .map(|(i, _)| *i)
+                .map(|(i, _)| rhai::Dynamic::from(*i))
                 .collect()
         });
     }
@@ -73,9 +73,12 @@ pub fn run(source: &str, input: &Input) -> Result<Output, String> {
     }
     {
         let o = out.clone();
-        engine.register_fn("select_ids", move |ids: Vec<i32>| {
+        engine.register_fn("select_ids", move |ids: rhai::Array| {
+            let ids: Vec<i32> = ids.iter().filter_map(|d| d.clone().try_cast::<i32>()).collect();
             o.borrow_mut().actions.push(Action::SelectIds(ids));
         });
+        // `len()` pentru array-uri (Rhai cu feature-uri reduse nu il inregistreaza)
+        engine.register_fn("len", |a: rhai::Array| -> i64 { a.len() as i64 });
     }
     {
         let o = out.clone();
