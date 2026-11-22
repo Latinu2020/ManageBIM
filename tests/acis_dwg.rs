@@ -272,8 +272,13 @@ fn write(name: &str, solids: Vec<(SatDocument, &str, i16)>, fmt: Fmt, sab: bool)
     p
 }
 
+/// OCCT are stare globala in libraria C++: incarcarile concurente din teste
+/// pot returna modelul altui fixture. Le serializam (ca in smoke.rs).
+static ACIS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// None daca ManageBIM a fost compilat fara OCCT - testele se sar atunci.
 fn load(p: &PathBuf) -> Option<RawModel> {
+    let _guard = ACIS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if !occt::BUILT_WITH_OCCT {
         eprintln!("OpenCascade not built - skipping {}", p.display());
         return None;
