@@ -9,6 +9,7 @@ La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Ca
 - **Timerul se oprește la „Ready"**: secundele rămân înghețate la valoarea de la terminare, nu mai cresc la infinit.
 - **Luminile path trace**: ambient pe emisferă (cer deasupra, sol dedesubt — nu mai e gri plat), penumbră moale (0.35 în loc de negru total) și intensitatea din Lighting (Sun power).
 - **Video mai rapid la rezoluții mari**: la 4K se dezactivează automat supersampling-ul (ar fi randat la 7680×4320) și checkbox-ul explică costul.
+- **Fontul și înălțimea textului, din Settings**: alegi **Inter**, **Lato** (nou, inclus, SIL OFL), fontul implicit egui sau **orice font din Windows** (listă cu filtrare); plus **înălțimea textului 10–26 px**. Se aplică imediat, fără repornire.
 - **Tăietura din cubul de secțiune**: planul evidențiat în 3D ȘI exportul DWG/PDF folosesc aceeași înălțime, reglabilă în panoul Sections („Cut height in box"). Când tragi fețele Z ale cubului, secțiunea se mută odată cu el.
 - **Path trace pe toate nucleele**: pixelii unui sample sunt împărțiți prin `rayon` — de ~6–8× mai rapid pe procesoarele obișnuite (era un singur fir de execuție).
 - **Export BCF 3.0**: în Settings › Export alegi 2.1 sau 3.0; la 3.0 comentariile stau în interiorul `<Topic>`, conform specificației (BIMcollab / Solibri noi).

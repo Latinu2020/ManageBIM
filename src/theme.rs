@@ -58,6 +58,13 @@ pub fn border() -> Color32 {
     Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
 }
 
+/// Inaltimea de baza a textului (px); 0 = implicitul egui. Setata din `update()`.
+static FONT_BASE_PX: AtomicU32 = AtomicU32::new(0);
+
+pub fn set_font_base(px: f32) {
+    FONT_BASE_PX.store(px.to_bits(), Ordering::Relaxed);
+}
+
 /// Preferintele UI care trebuie sa supravietuiasca unei restartari (Clash + 4D).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ClashUiPrefs {
@@ -157,6 +164,12 @@ pub struct Settings {
     /// marimea intregii interfate: 1.0 = 100% (Setari > Interface size / DPI)
     #[serde(default = "default_ui_scale")]
     pub ui_scale: f32,
+    /// fontul interfetei: „Inter” (folosit implicit) sau „Default” (al egui)
+    #[serde(default = "default_font_family")]
+    pub font_family: String,
+    /// inaltimea de baza a textului in px (0 = 14 px, implicitul)
+    #[serde(default = "default_font_size")]
+    pub font_size: f32,
     /// directia sectiunii exportate in DWG / DXF (Current = planul de taiere activ)
     #[serde(default)]
     pub cad_view: crate::app::CadView,
@@ -201,6 +214,14 @@ fn default_ui_scale() -> f32 {
     1.0
 }
 
+fn default_font_family() -> String {
+    "Inter".into()
+}
+
+fn default_font_size() -> f32 {
+    0.0
+}
+
 fn default_vp_root() -> String {
     "No folder".into()
 }
@@ -228,7 +249,7 @@ fn default_walk() -> f32 {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), snap_cut_to_grid: true, scripts_dir: String::new(), show_cad_plane: true, vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default() }
+        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), font_family: default_font_family(), font_size: default_font_size(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), snap_cut_to_grid: true, scripts_dir: String::new(), show_cad_plane: true, vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default() }
     }
 }
 
@@ -263,6 +284,12 @@ impl Settings {
         }
         if !s.cad_view_pos.is_finite() || !(0.0..=1.0).contains(&s.cad_view_pos) {
             s.cad_view_pos = default_cad_view_pos();
+        }
+        if !s.font_size.is_finite() || !(0.0..=32.0).contains(&s.font_size) {
+            s.font_size = default_font_size();
+        }
+        if s.font_family.trim().is_empty() {
+            s.font_family = default_font_family();
         }
         if s.bcf_version != 2 && s.bcf_version != 3 {
             s.bcf_version = default_bcf_version();
@@ -558,6 +585,16 @@ pub fn apply(ctx: &egui::Context, t: Theme) {
     style.spacing.menu_margin = egui::Margin::same(5.0);
     style.spacing.window_margin = egui::Margin::same(6.0);
     style.interaction.selectable_labels = false;
+    // inaltimea textului aleasa de utilizator (0 = implicitul egui: Body 14 px)
+    let base = f32::from_bits(FONT_BASE_PX.load(Ordering::Relaxed));
+    if base > 0.0 && base.is_finite() {
+        use egui::TextStyle::*;
+        style.text_styles.insert(Small, egui::FontId::proportional(base * 0.85));
+        style.text_styles.insert(Body, egui::FontId::proportional(base));
+        style.text_styles.insert(Button, egui::FontId::proportional(base));
+        style.text_styles.insert(Heading, egui::FontId::proportional(base * 1.3));
+        style.text_styles.insert(Monospace, egui::FontId::monospace(base * 0.95));
+    }
     ctx.set_style(style);
 }
 
@@ -606,10 +643,69 @@ pub static RIBBON_COMPACT: std::sync::atomic::AtomicBool = std::sync::atomic::At
 /// Fontul Inter (OFL, github.com/rsms/inter) pentru text si iconitele vectoriale Phosphor (MIT)
 /// in locul emoji-urilor; fonturile implicite raman ca rezerva pentru caracterele rare.
 pub fn install_fonts(ctx: &egui::Context) {
+    install_fonts_with(ctx, "Inter");
+}
+
+/// Fonturile din sistem (Windows: C:\Windows\Fonts + cele per-utilizator), citite o singura data.
+pub fn system_fonts() -> &'static Vec<(String, String)> {
+    static SYS: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+    SYS.get_or_init(|| {
+        let mut out: Vec<(String, String)> = Vec::new();
+        let dirs = [
+            std::path::PathBuf::from(std::env::var_os("WINDIR").unwrap_or_else(|| "C:\\Windows".into())).join("Fonts"),
+            std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("Microsoft\\Windows\\Fonts")).unwrap_or_default(),
+        ];
+        for d in dirs {
+            if let Ok(rd) = std::fs::read_dir(&d) {
+                for e in rd.flatten() {
+                    let p = e.path();
+                    let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
+                    if ext == "ttf" || ext == "otf" {
+                        let name = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                        if !name.is_empty() {
+                            out.push((name, p.to_string_lossy().to_string()));
+                        }
+                    }
+                }
+            }
+        }
+        out.sort();
+        out.dedup();
+        out
+    })
+}
+
+/// Fontul proportional al interfetei: „Inter” (implicit), „IBM Plex Sans”,
+/// „Default” (fonturile egui) sau orice font din sistem (vezi `system_fonts`).
+pub fn install_fonts_with(ctx: &egui::Context, family: &str) {
     let mut f = egui::FontDefinitions::default();
-    f.font_data.insert("Inter".into(), egui::FontData::from_static(include_bytes!("../assets/fonts/Inter-Regular.ttf")));
-    if let Some(p) = f.families.get_mut(&egui::FontFamily::Proportional) {
-        p.insert(0, "Inter".into());
+    let name = family.trim();
+    // fonturile incluse in aplicatie (embed in executabil, fara fisiere externe)
+    let bundled: Option<(&'static str, Vec<u8>)> = match name.to_ascii_lowercase().as_str() {
+        "inter" => Some(("Inter", include_bytes!("../assets/fonts/Inter-Regular.ttf").to_vec())),
+        "lato" => Some(("Lato", include_bytes!("../assets/fonts/Lato-Regular.ttf").to_vec())),
+        _ => None,
+    };
+    if let Some((key, bytes)) = bundled {
+        f.font_data.insert(key.into(), egui::FontData::from_owned(bytes));
+        if let Some(p) = f.families.get_mut(&egui::FontFamily::Proportional) {
+            p.insert(0, key.into());
+        }
+    } else if !name.eq_ignore_ascii_case("default") {
+        // font din sistem: incarcat din fisierul lui; daca nu exista, revenim la Inter
+        let hit = system_fonts().iter().find(|(n, _)| n.eq_ignore_ascii_case(name));
+        let bytes = hit.and_then(|(_, p)| std::fs::read(p).ok());
+        if let Some(bytes) = bytes {
+            f.font_data.insert(name.into(), egui::FontData::from_owned(bytes));
+            if let Some(p) = f.families.get_mut(&egui::FontFamily::Proportional) {
+                p.insert(0, name.into());
+            }
+        } else {
+            f.font_data.insert("Inter".into(), egui::FontData::from_owned(include_bytes!("../assets/fonts/Inter-Regular.ttf").to_vec()));
+            if let Some(p) = f.families.get_mut(&egui::FontFamily::Proportional) {
+                p.insert(0, "Inter".into());
+            }
+        }
     }
     // iconitele au familia lor ("icons"): Phosphor contine si litere goale (pentru ligaturi), iar Inter
     // are glife proprii in zona privata (U+E000...) - amestecate in aceeasi familie s-ar "fura" reciproc.

@@ -89,6 +89,14 @@ impl eframe::App for App {
         }
         // marimea intregii interfate (fonturi + tabele + panouri); egui o aplica la finalul cadrului
         ctx.set_zoom_factor(self.settings.ui_scale);
+        // inaltimea textului (0 = implicit); temele o citesc la aplicare
+        theme::set_font_base(self.settings.font_size);
+        // schimbarea fontului se aplica imediat (refontuirea e scumpa, doar la schimbare)
+        if self.font_family_cur != self.settings.font_family {
+            self.font_family_cur = self.settings.font_family.clone();
+            theme::install_fonts_with(ctx, &self.settings.font_family);
+            self.theme_dirty = true;
+        }
         crate::app::set_units_mm(self.settings.units_mm);
         self.poll_jobs();
         self.check_file_changes();

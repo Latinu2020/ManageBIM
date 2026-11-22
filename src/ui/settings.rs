@@ -37,6 +37,73 @@ impl App {
                     })
                     .response
                     .on_hover_text("Scales the whole interface: text, tables, panels and dialogs. 100% = default.");
+                    // fontul interfetei: cele incluse + toate fonturile din sistem
+                    let mut pick: Option<String> = None;
+                    ui.horizontal(|ui| {
+                        ui.label("Font");
+                        let r = ui.add(egui::TextEdit::singleline(&mut self.settings.font_family).desired_width(120.0));
+                        if r.changed() {
+                            self.settings.save();
+                        }
+                        let btn = ui.small_button("⏷");
+                        let id = ui.make_persistent_id("mb_font_list");
+                        if btn.clicked() {
+                            ui.memory_mut(|m| m.toggle_popup(id));
+                        }
+                        egui::popup_below_widget(ui, id, &btn, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                            ui.set_min_width(230.0);
+                            egui::ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
+                                for name in ["Inter", "Lato", "Default"] {
+                                    let label = match name {
+                                        "Default" => "Default (egui)".to_string(),
+                                        n => format!("{n}  (included)"),
+                                    };
+                                    if ui.selectable_label(self.settings.font_family == name, label).clicked() {
+                                        pick = Some(name.to_string());
+                                    }
+                                }
+                                ui.separator();
+                                let q = self.settings.font_family.trim().to_lowercase();
+                                let q = if q.is_empty() || q == "inter" || q == "lato" || q == "default" { String::new() } else { q };
+                                let mut shown = 0;
+                                for (n, _) in theme::system_fonts() {
+                                    if !q.is_empty() && !n.to_lowercase().contains(&q) {
+                                        continue;
+                                    }
+                                    if ui.selectable_label(false, n).clicked() {
+                                        pick = Some(n.clone());
+                                    }
+                                    shown += 1;
+                                    if shown >= 400 {
+                                        break;
+                                    }
+                                }
+                                if shown == 0 {
+                                    ui.label(RichText::new("No system font matches.").weak().small());
+                                }
+                            });
+                        });
+                    })
+                    .response
+                    .on_hover_text("Type a name or pick from the list: the two fonts included with ManageBIM, or any font installed in Windows.");
+                    if let Some(f) = pick {
+                        self.settings.font_family = f;
+                        self.settings.save();
+                        // forteaza reinstalarea fontului la urmatorul cadru
+                        self.font_family_cur.clear();
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label("Font size (px)");
+                        let mut px = if self.settings.font_size > 0.0 { self.settings.font_size } else { 14.0 };
+                        let r = ui.add(egui::Slider::new(&mut px, 10.0..=26.0));
+                        if r.changed() && (!r.dragged() || r.drag_stopped()) {
+                            self.settings.font_size = px;
+                            self.settings.save();
+                            self.theme_dirty = true;
+                        }
+                    })
+                    .response
+                    .on_hover_text("The height of the text itself. Interface size scales the whole window; this sets the base text height (14 = default).");
                     ui.horizontal(|ui| {
                         ui.label("Language");
                         if ui.button(if self.settings.romanian { "Română" } else { "English" }).clicked() {

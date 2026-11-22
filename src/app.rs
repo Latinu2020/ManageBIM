@@ -1366,6 +1366,8 @@ pub struct App {
     pub pathtrace_notified: bool,
     /// secundele scurse la momentul terminarii (ca timerul sa nu mai creasca dupa „Ready")
     pub pathtrace_done_at: Option<f32>,
+    /// ultimul font aplicat (ca sa reinstalam fonturile doar la schimbare)
+    pub font_family_cur: String,
     /// fereastra consolei de scripturi (motorul Rhai se activeaza in 0.28)
     pub script_open: bool,
     pub script_help_open: bool,
@@ -1655,6 +1657,7 @@ impl App {
             pathtrace_params: (256, 256, 32, 30.0),
             pathtrace_notified: false,
             pathtrace_done_at: None,
+            font_family_cur: "Inter".into(),
             script_open: false,
             script_help_open: false,
             settings_open: false,
