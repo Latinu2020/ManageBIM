@@ -57,6 +57,21 @@ Sursă de inspirație: video-ul Bonsai/bSDD (https://www.youtube.com/watch?v=Eqt
 4. Sprint 3 (IFC 4.3, clasificări, spații).
 5. Sprint 4 (review package, snapshot timeline, conectori cu interfață pregătită).
 
+## 📐 Măsurători — snapuri tip AutoCAD (OSNAP) și unități (0.28)
+
+Starea curentă: snapuri la **Vertex / Midpoint / Edge / Surface**, rază fixă mică, afișare doar în metri (cu `units_mm` simplu).
+
+| # | Îmbunătățire | Detaliu |
+|---|---|---|
+| 1 | **Rază de snap mai mare + reglabilă** | setare în Settings (px, ex. 6–24, implicit ~12); markerul vizual se mărește odată cu raza, ca să vezi ce ai prins |
+| 2 | **Snapuri exacte pe geometrie** | se calculează pe coordonatele reale ale triunghiurilor (nu aproximare pe ecran): capăt de muchie, mijloc, centru de cerc/arc, intersecție de muchii, picior de perpendiculară pe muchie, punctul cel mai apropiat pe suprafață |
+| 3 | **Tipuri de snap selectabile (ca OSNAP)** | listă cu checkboxuri în Settings: Endpoint, Midpoint, Center, Intersection, Perpendicular, Nearest, Quadrant, Node, plus intersecții de grilă/nivel; **F3** = pornit/oprit rapid (convenție AutoCAD) |
+| 4 | **Prioritate / ciclare** | când mai multe snapuri cad în rază, se afișează markerul celui mai apropiat și se poate cicla cu Tab între candidați |
+| 5 | **Unități: mm / m / in / ft** | setare în Settings (înlocuiește `units_mm`, cu migrare la mm); distanțele, ariile și coordonatele se afișează cu sufixul unității; precizie (număr de zecimale) configurabilă |
+| 6 | **Afișare consecventă** | aceeași unitate în measure, Properties, status bar, QTO și în etichetele de pe imagine/video |
+
+> Compatibilitate: `units_mm` existent se migrează la sistemul metric mm; proiectele vechi își păstrează unitatea afișată.
+
 ## 🎨 Icoane distincte în ribbon (duplicatelor actuale li se dau semne proprii)
 
 Surse de confuzie identificate (din `rbtn`): ⬚ ×4, ✏ ×5, ◎ ×4, 📄 ×6, 📥 ×5, 📤 ×3, 📦 ×3, 🏗 ×3, 👁 ×3, 🎞 ×3, 📷 ×3, ➕ ×3, 🎯 ×3, 🔗 ×3.
