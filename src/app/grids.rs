@@ -190,9 +190,9 @@ impl App {
         let (bmin, bmax) = (self.section.bmin, self.section.bmax);
         let mut out: Vec<(Vec3, Vec3)> = Vec::new();
         let mut seen: std::collections::HashSet<[i32; 6]> = std::collections::HashSet::new();
-        for (mi, m) in self.loaded_models() {
-            for (ei, e) in m.elements.iter().enumerate() {
-                if e.tri_count == 0 || e.default_hidden || self.hidden.contains(&ElemId { m: mi as u32, e: ei as u32 }) {
+        for (_, m) in self.loaded_models() {
+            for e in &m.elements {
+                if e.tri_count == 0 {
                     continue;
                 }
                 if (0..3).any(|d| e.aabb.min[d] > bmax[d] || e.aabb.max[d] < bmin[d]) {
@@ -202,12 +202,25 @@ impl App {
                     let i = t as usize * 3;
                     let (Some(a), Some(b), Some(c)) = (m.pos.get(i).copied(), m.pos.get(i + 1).copied(), m.pos.get(i + 2).copied()) else { continue };
                     for (p, q) in [(a, b), (b, c), (c, a)] {
-                        if sign * (p[axis] - value) <= 1e-4 || sign * (q[axis] - value) <= 1e-4 {
+                        let dp = sign * (p[axis] - value);
+                        let dq = sign * (q[axis] - value);
+                        if dp <= 1e-4 && dq <= 1e-4 {
                             continue;
                         }
-                        let (mut pp, mut qq) = (p, q);
+                        // partea din spate a muchiei (daca o traverseaza, o taiem la plan)
+                        let (pp0, qq0) = if dp > 1e-4 && dq > 1e-4 {
+                            (p, q)
+                        } else if dp > 1e-4 {
+                            let t = dp / (dp - dq);
+                            (p, p + (q - p) * t)
+                        } else {
+                            let t = dp / (dp - dq);
+                            (q + (p - q) * t, q)
+                        };
+                        let (mut pp, mut qq) = (pp0, qq0);
                         pp[axis] = value;
                         qq[axis] = value;
+                        // STRICT: ambele capete trebuie sa fie in cub (toate cele 3 axe)
                         if (0..3).any(|d| pp[d] < bmin[d] - 1e-3 || pp[d] > bmax[d] + 1e-3 || qq[d] < bmin[d] - 1e-3 || qq[d] > bmax[d] + 1e-3) {
                             continue;
                         }

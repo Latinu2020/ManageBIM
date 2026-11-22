@@ -74,6 +74,18 @@ Starea curentă: snapuri la **Vertex / Midpoint / Edge / Surface**, rază fixă 
 
 > Sursă vizuală: capturile trimise cu dialogul AutoCAD Object Snap (lista completă de moduri) și marcajul „Vertex" lângă cursor. Compatibilitate: `units_mm` existent se migrează la sistemul metric mm; proiectele vechi își păstrează unitatea afișată.
 
+## 🎨 Restilizarea interfeței existente (prototip aprobat)
+
+Sursă: `docs/prototype/design-preview-actual.html` (prototipul cu **taburile și butoanele reale** ale aplicației). Se implementează **fără Tauri**, direct în egui:
+
+1. **Design tokens în `theme.rs`** — `RADIUS_SM/MD`, `GAP`, culori `panel2`/`border` per temă; înlocuiesc cele 7 valori de rounding hardcodate cu 3 constante.
+2. **`rbtn()` restilizat o singură dată** — card button: fundal `panel2`, border 1px pe temă, iconiță 15px + etichetă 9px sub, hover cu border accent, activ cu fundal accent 18%, înălțime fixă 42px → **toate butoanele din ribbon se schimbă instant**.
+3. **Carduri în panouri** — `Frame::fill(faint_bg).rounding(9).stroke(...)` pentru Clash Detective, Properties, Script Library (deja început în 0.27.8).
+4. **Temele existente rămân** — se completează doar câmpurile lipsă din `Palette`.
+5. **Borduri subtile pe panouri** deja făcute; se extind la carduri și grupuri.
+
+> Regulă: 80% din aspectul prototipului cu modificări în 3-4 fișiere, fără rescriere, fără risc funcțional.
+
 ## 🖼️ Branding pentru versiunea finală (iconiță + installer)
 
 Starea curentă: iconița e desenată procedural (3 cuburi colorate) în `main.rs::icon()` și `installers/setup/main.rs::icon()`; installerul e egui cu tema Nord, 720×560, fără logo.

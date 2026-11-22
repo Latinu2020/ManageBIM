@@ -116,13 +116,15 @@ impl App {
                 }
                 let sel = this.vp_sel == i;
                 let editing = *rename_vp == Some(i);
+                let mut label_clicked = false;
+                let mut label_double = false;
                 let r = ui
                     .dnd_drag_source(egui::Id::new(("vp_drag", i)), i, |ui| {
                         ui.horizontal(|ui| {
                             ui.add_space(depth as f32 * 14.0);
                             let (dot, _) = ui.allocate_exact_size(EV::splat(10.0), Sense::hover());
                             ui.painter().circle_filled(dot.center(), 4.5, col);
-                            if editing {
+                            let resp = if editing {
                                 let id = egui::Id::new(("vp_rename_buf", i));
                                 let mut buf: String = ui.data(|d| d.get_temp(id)).unwrap_or_else(|| this.viewpoints[i].name.clone());
                                 let te = ui.add(egui::TextEdit::singleline(&mut buf).desired_width(120.0));
@@ -146,16 +148,19 @@ impl App {
                                 te
                             } else {
                                 ui.selectable_label(sel, t).on_hover_text("Click: go to the viewpoint · double-click: rename · drag onto a folder")
-                            }
+                            };
+                            label_clicked = resp.clicked();
+                            label_double = resp.double_clicked();
+                            resp
                         })
                         .inner
                     })
                     .inner;
-                if r.clicked() && !editing {
+                if label_clicked && !editing {
                     this.vp_sel = i;
                     *restore = Some(i);
                 }
-                if r.double_clicked() {
+                if label_double {
                     *rename_vp = Some(i);
                 }
                 r.context_menu(|ui| {

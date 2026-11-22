@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ManageBIM — Design Concept 0.28</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #161d2c; --panel2: #1d2638; --line: #2a3549;
+    --text: #e6ecf5; --muted: #8d9bb3; --accent: #3b82f6; --accent2: #22d3ee;
+    --green: #4ade80; --orange: #fb923c; --red: #f87171; --radius: 12px;
+  }
+  :root.light { --bg:#f3f6fb; --panel:#fff; --panel2:#eef2f8; --line:#dbe3ef; --text:#162032; --muted:#61708a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); height:100vh; overflow:hidden; }
+  .app { display:grid; grid-template-rows:52px 1fr 30px; height:100vh; }
+  header { display:flex; align-items:center; gap:14px; padding:0 16px; background:var(--panel); border-bottom:1px solid var(--line); }
+  .logo { font-weight:800; letter-spacing:.3px; font-size:16px; background:linear-gradient(90deg,var(--accent),var(--accent2)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .tabs { display:flex; gap:2px; margin-left:18px; }
+  .tab { padding:7px 12px; border-radius:8px; color:var(--muted); cursor:pointer; }
+  .tab.active { color:var(--accent); background:rgba(59,130,246,.12); font-weight:700; box-shadow:inset 0 -2px var(--accent); }
+  .spacer { flex:1; }
+  .search { background:var(--panel2); border:1px solid var(--line); border-radius:9px; padding:7px 12px; color:var(--muted); min-width:210px; }
+  .chip { padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:var(--panel2); cursor:pointer; }
+  .main { display:grid; grid-template-columns:56px 250px 1fr 300px; min-height:0; }
+  .rail { background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; align-items:center; gap:8px; padding:12px 0; }
+  .ric { width:38px; height:38px; border-radius:10px; display:grid; place-items:center; color:var(--muted); cursor:pointer; font-size:17px; }
+  .ric:hover,.ric.on { background:rgba(59,130,246,.15); color:var(--accent); }
+  .panel { background:var(--panel); border-right:1px solid var(--line); padding:14px; overflow:auto; }
+  .panel h3 { margin:0 0 12px; font-size:11px; letter-spacing:1.2px; color:var(--muted); text-transform:uppercase; }
+  .tree { display:flex; flex-direction:column; gap:3px; }
+  .node { display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:8px; cursor:pointer; }
+  .node:hover { background:var(--panel2); }
+  .node.sel { background:rgba(59,130,246,.14); color:var(--accent); }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--accent2); }
+  .count { margin-left:auto; color:var(--muted); font-size:11px; }
+  .viewport { position:relative; overflow:hidden; background:radial-gradient(ellipse at 50% 35%,#263348 0%,#121a28 70%); }
+  .viewport:after { content:""; position:absolute; inset:0; pointer-events:none; background:linear-gradient(transparent 96%,rgba(255,255,255,.03) 97%),linear-gradient(90deg,transparent 96%,rgba(255,255,255,.03) 97%); background-size:40px 40px; opacity:.5; }
+  svg.scene { position:absolute; inset:0; width:100%; height:100%; }
+  .vp-btn { position:absolute; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:7px 11px; color:var(--text); cursor:pointer; z-index:2; }
+  .vp-tools { left:16px; top:16px; display:flex; gap:6px; }
+  .cube { right:18px; top:16px; width:66px; height:66px; display:grid; place-items:center; font-size:12px; color:var(--muted); }
+  .legend { left:16px; bottom:16px; display:flex; gap:12px; font-size:11px; color:var(--muted); }
+  .legend i { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; }
+  .right { background:var(--panel); border-left:1px solid var(--line); padding:14px; overflow:auto; }
+  .card { background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius); padding:12px; margin-bottom:10px; }
+  .card .t { font-weight:700; display:flex; align-items:center; gap:8px; }
+  .card .d { color:var(--muted); font-size:12px; margin-top:4px; }
+  .pill { font-size:11px; padding:3px 8px; border-radius:20px; background:rgba(74,222,128,.14); color:var(--green); }
+  .pill.warn { background:rgba(251,146,60,.14); color:var(--orange); }
+  .pill.bad { background:rgba(248,113,113,.14); color:var(--red); }
+  .run { background:linear-gradient(90deg,var(--accent),#2563eb); color:#fff; border:0; border-radius:8px; padding:6px 12px; cursor:pointer; font-weight:700; float:right; }
+  .prop { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--line); font-size:12px; }
+  .prop span:last-child { color:var(--muted); }
+  footer { background:var(--panel); border-top:1px solid var(--line); display:flex; align-items:center; gap:16px; padding:0 14px; font-size:11px; color:var(--muted); }
+  .badge { background:rgba(74,222,128,.12); color:var(--green); padding:2px 8px; border-radius:10px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">◆ ManageBIM</div>
+    <div class="tabs"><div class="tab">Home</div><div class="tab">Select</div><div class="tab">Viewpoint</div><div class="tab active">Sections</div><div class="tab">Coordination</div><div class="tab">Analyze</div><div class="tab">Script</div></div>
+    <div class="spacer"></div>
+    <div class="search">⌕ Search or Ctrl+K</div>
+    <div class="chip" id="themeBtn">◐ Theme</div>
+    <div class="chip">⚙ Settings</div>
+  </header>
+
+  <div class="main">
+    <div class="rail">
+      <div class="ric on">▦</div><div class="ric">⌕</div><div class="ric">⛶</div><div class="ric">✂</div><div class="ric">◈</div><div class="ric">📏</div><div class="ric">⚙</div>
+    </div>
+
+    <div class="panel">
+      <h3>Selection tree</h3>
+      <div class="tree">
+        <div class="node"><span class="dot"></span> Architecture <span class="count">128</span></div>
+        <div class="node sel"><span class="dot" style="background:#fb923c"></span> Level 2 — Walls <span class="count">42</span></div>
+        <div class="node"><span class="dot" style="background:#4ade80"></span> Structure <span class="count">96</span></div>
+        <div class="node"><span class="dot" style="background:#22d3ee"></span> MEP — HVAC <span class="count">214</span></div>
+        <div class="node"><span class="dot" style="background:#a78bfa"></span> Plant 3D <span class="count">73</span></div>
+      </div>
+      <h3 style="margin-top:24px">Cut view</h3>
+      <div class="tree">
+        <div class="node sel">▲ Top — fața cubului</div>
+        <div class="node">◀ Left</div>
+        <div class="node">▶ Right</div>
+        <div class="node">Front / Back</div>
+      </div>
+      <div class="card" style="margin-top:18px">
+        <div class="t">Cut height in box</div>
+        <input type="range" min="0" max="100" value="72" style="width:100%">
+        <div class="d">Highlight + DWG cut follow the box face.</div>
+      </div>
+    </div>
+
+    <div class="viewport">
+      <svg class="scene" viewBox="0 0 900 600" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="box" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fbbf2466"/><stop offset="1" stop-color="#f9731655"/></linearGradient>
+          <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#94a3b8"/><stop offset="1" stop-color="#475569"/></linearGradient>
+        </defs>
+        <!-- building isometric -->
+        <g transform="translate(450 330)">
+          <polygon points="0,-150 170,-65 0,20 -170,-65" fill="#64748b" stroke="#94a3b8" stroke-width="1.5"/>
+          <polygon points="-170,-65 0,20 0,150 -170,65" fill="url(#wall)" stroke="#cbd5e1" stroke-width="1"/>
+          <polygon points="0,20 170,-65 170,65 0,150" fill="#3f4c60" stroke="#cbd5e1" stroke-width="1"/>
+          <g stroke="#e2e8f0" stroke-width="1" opacity=".7">
+            <path d="M-120,-43 L-120,90 M-70,-18 L-70,115 M50,-18 L50,115 M100,-43 L100,90"/>
+            <path d="M-170,10 L0,95 M0,95 L170,10"/>
+          </g>
+          <!-- section box -->
+          <polygon points="-200,-175 200,-15 200,175 -200,15" fill="url(#box)" stroke="#fbbf24" stroke-width="2" stroke-dasharray="7 4"/>
+          <!-- cut plane (top face) -->
+          <polygon points="-200,-175 200,-15 215,-30 -185,-190" fill="#fbbf2433" stroke="#fde68a" stroke-width="2.5"/>
+        </g>
+        <!-- behind edges dotted -->
+        <g stroke="#7dd3fc" stroke-width="1.3" stroke-dasharray="4 4" opacity=".85">
+          <path d="M330 300 L470 370 M360 270 L500 340 M395 285 L535 355"/>
+        </g>
+      </svg>
+      <div class="vp-tools"><div class="vp-btn">⛶ Fit</div><div class="vp-btn">▣ Section</div><div class="vp-btn">📏 Measure</div><div class="vp-btn">✏ Path</div></div>
+      <div class="cube">VIEWCUBE<br><b>TOP</b></div>
+      <div class="legend"><span><i style="background:#fbbf24"></i>Cut plane</span><span><i style="background:#7dd3fc"></i>Behind (dotted)</span><span><i style="background:#4ade80"></i>Built</span></div>
+    </div>
+
+    <div class="right">
+      <h3 style="margin-top:0">Clash Detective</h3>
+      <div class="card"><div class="t">Structure vs HVAC <span class="pill bad">12 new</span></div><div class="d">Hard clash · 25 mm · 3 resolved</div></div>
+      <div class="card"><div class="t">Arch vs Structure <span class="pill warn">5 active</span></div><div class="d">Clearance test · 50 mm</div></div>
+      <h3>Script library</h3>
+      <div class="card"><div class="t">Select by category <button class="run">▶ Run</button></div><div class="d">Category: <b>Walls</b> · one click, no code</div></div>
+      <div class="card"><div class="t">Clash suite <button class="run">▶ Run</button></div><div class="d">4 standard discipline tests</div></div>
+      <h3>Properties</h3>
+      <div class="prop"><span>Name</span><span>Wall 42</span></div>
+      <div class="prop"><span>Level</span><span>Level 2</span></div>
+      <div class="prop"><span>FireRating</span><span>EI30</span></div>
+      <div class="prop"><span>GlobalId</span><span>2x9k…A1</span></div>
+    </div>
+  </div>
+
+  <footer><span class="badge">● No admin required</span><span>MIT License</span><span>OCCT 8.0.1 · Revit / Navisworks / AutoCAD add-ins</span><div class="spacer"></div><span>v0.28 concept</span></footer>
+</div>
+<script>
+document.getElementById('themeBtn').onclick = () => document.documentElement.classList.toggle('light');
+</script>
+</body>
+</html>

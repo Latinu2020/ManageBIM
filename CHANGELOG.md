@@ -3,6 +3,12 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.9 - 2026-11-23
+- **Viewpoints: clickul funcționează** — `dnd_drag_source` Returna un `Response` cu sens de drag, deci `clicked()` nu se declanșa; acum se folosește `Response`-ul etichetei → click pe viewpoint = go to 3D, dublu-click / click dreapta = rename.
+- **Muchiile din spate se VĂD** imediat ce cubul e activ (nu mai depind de highlightul planului, care e inchis implicit); linii punctate albastru, cu contrast crescut.
+- **Exportul din spate e complet**: toată geometria din cub (inclusiv elementele ascunse) și muchiile care traversează planul (partea din spate), proiectate pe plan — **strict numai ce e în interiorul cubului** (verificare pe toate 3 axe).
+- Prototipul de restilizare UI aprobat e în `docs/prototype/design-preview-actual.html` și intră în planul 0.28.
+
 ## 0.27.8 - 2026-11-23
 - **Viewpoints ca în Navisworks**: click pe un viewpoint → camera și secțiunea se restaurează imediat în 3D; **click dreapta › Rename** (sau dublu-click) → editare inline, Enter confirmă / Esc anulează.
 - **Geometria din spatele tăieturii**: între planul de tăiere și peretele opus al cubului, muchiile reale ale elementelor se **proiectează pe plan și se desenează punctat** în 3D; în DWG/DXF se scriu pe stratul **BEHIND** cu linetipul **HIDDEN** (aplatizate pe planul de tăiere).

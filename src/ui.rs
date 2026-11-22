@@ -3468,25 +3468,6 @@ impl App {
             for k in 0..4 {
                 line(quad[k], quad[(k + 1) % 4], Color32::from_rgb(255, 180, 70), 2.0);
             }
-            // Ce e IN SPATELE taieturii (pana la peretele opus al cubului) se
-            // proiecteaza pe plan si se deseneaza PUNCTAT, ca in Navisworks/DWG.
-            if self.settings.show_section_behind {
-                let sign = match view {
-                    crate::app::CadView::Front | crate::app::CadView::Left | crate::app::CadView::Bottom => 1.0,
-                    crate::app::CadView::Back | crate::app::CadView::Right | crate::app::CadView::Top => -1.0,
-                    crate::app::CadView::Current => 1.0,
-                };
-                for (p3, q3) in self.section_behind_edges(axis, value, sign) {
-                    if let (Some(sa), Some(sb)) = (to_screen(&vp, rect, p3), to_screen(&vp, rect, q3)) {
-                        painter.extend(egui::Shape::dashed_line(
-                            &[sa, sb],
-                            Stroke::new(1.1_f32, Color32::from_rgba_unmultiplied(120, 220, 255, 175)),
-                            4.0,
-                            4.0,
-                        ));
-                    }
-                }
-            }
             // ---- manerul de tragere: bareta pe axa planului, cu sageti in ambele capete
             let mut c = (lo + hi) * 0.5;
             c[axis] = value;
@@ -3536,6 +3517,26 @@ impl App {
                     if resp.drag_stopped() || !resp.dragged_by(egui::PointerButton::Primary) {
                         self.cut_drag = false;
                         self.settings.save();
+                    }
+                }
+            }
+        }
+        // Muchiile din spate se VAD imediat ce cubul e activ - nu depind de
+        // highlightul planului (care e inchis implicit).
+        if self.settings.show_section_behind && self.section.enabled && self.section.mode == SectionMode::Box && self.report_job.is_none() {
+            if let Some((ax, val)) = self.cad_cut_plane() {
+                let sign = match self.settings.cad_view {
+                    crate::app::CadView::Front | crate::app::CadView::Left | crate::app::CadView::Bottom => 1.0,
+                    crate::app::CadView::Back | crate::app::CadView::Right | crate::app::CadView::Top | crate::app::CadView::Current => -1.0,
+                };
+                for (p3, q3) in self.section_behind_edges(ax, val, sign) {
+                    if let (Some(sa), Some(sb)) = (to_screen(&vp, rect, p3), to_screen(&vp, rect, q3)) {
+                        painter.extend(egui::Shape::dashed_line(
+                            &[sa, sb],
+                            Stroke::new(1.2_f32, Color32::from_rgba_unmultiplied(125, 211, 252, 220)),
+                            4.0,
+                            3.0,
+                        ));
                     }
                 }
             }
