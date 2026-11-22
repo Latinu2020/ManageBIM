@@ -74,6 +74,17 @@ Starea curentă: snapuri la **Vertex / Midpoint / Edge / Surface**, rază fixă 
 
 > Sursă vizuală: capturile trimise cu dialogul AutoCAD Object Snap (lista completă de moduri) și marcajul „Vertex" lângă cursor. Compatibilitate: `units_mm` existent se migrează la sistemul metric mm; proiectele vechi își păstrează unitatea afișată.
 
+## 🪟 Ferestre, docking și iconițe colorate (0.28)
+
+- **Păstrez comportamentul actual**: panouri dock left/right/bottom, **stretch** cu mouse-ul, **floating** cu redimensionare, auto-hide, Model focus — `layout.rs` + `dock_*` rămân intacte.
+- **Stilizez și ferestrele plutitoare** cu același limbaj vizual: header card cu titlu + iconiță, border 1px pe temă, umbră subtilă, colțuri 9px — fără să schimb logica de dock/float.
+- **Ribbon: iconițe curate, vizibile, colorate**:
+  - `rbtn()` primește o **culoare de categorie** (parametru opțional): File = albastru, Sections = portocaliu, Coordination = violet, View = cyan, Render = roz, Export = verde, Tools = gri
+  - iconițele Phosphor se desenează cu `icon_job(icon, label, size, color)` — deja existent, se folosește per categorie
+  - contrast adaptiv pe tema Light (culori gamma-multiply / întunecate automat)
+  - etichetele rămân sub iconiță, mici și uniforme (densitatea din prototipul aprobat)
+- **Regulă**: nicio iconiță duplicată în același grup (vezi tabelul de atribuiri din secțiunea „Icoane distincte").
+
 ## 🎨 Restilizarea interfeței existente (prototip aprobat)
 
 Sursă: `docs/prototype/design-preview-actual.html` (prototipul cu **taburile și butoanele reale** ale aplicației). Se implementează **fără Tauri**, direct în egui:
