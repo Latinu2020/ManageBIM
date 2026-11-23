@@ -619,8 +619,56 @@ impl App {
             self.mat_sel = 0;
         }
         let mut changed = false;
-        let mut pick_tex = false;
+        let mut pick_tex: Option<Purpose> = None;
         let mut lib_io: Option<Purpose> = None;
+        // fereastra de asignare dupa importul unui pachet PBR
+        if !self.pending_mat_assign.is_empty() {
+            let names = self.pending_mat_assign.clone();
+            let mut choice: Option<u8> = None;
+            egui::Window::new("🎨 PBR material imported")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .show(ui.ctx(), |ui| {
+                    ui.label(RichText::new(format!("Where should {} be applied?", names.join(", "))).strong());
+                    ui.label(RichText::new("You can change this later in Assignments. The material is already in your library.").small().weak());
+                    ui.add_space(6.0);
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.add_enabled(!self.selected.is_empty(), egui::Button::new(format!("🎯 Selection ({})", self.selected.len()))).clicked() {
+                            choice = Some(0);
+                        }
+                        if ui.button("🌐 All visible items").clicked() {
+                            choice = Some(1);
+                        }
+                        if ui.button("🏗 By IFC type…").on_hover_text("Opens the IFC type menu in Assignments").clicked() {
+                            choice = Some(2);
+                        }
+                        if ui.button("Later").clicked() {
+                            choice = Some(3);
+                        }
+                    });
+                });
+            if let Some(c) = choice {
+                let all = self.pending_mat_assign.clone();
+                self.pending_mat_assign.clear();
+                match c {
+                    0 => {
+                        let v: Vec<_> = self.selected.iter().copied().collect();
+                        for n in &all {
+                            self.assign_material(MatTarget::Items(v.clone()), n);
+                        }
+                    }
+                    1 => {
+                        let v: Vec<_> = self.all_ids().into_iter().filter(|id| self.is_visible(*id)).collect();
+                        for n in &all {
+                            self.assign_material(MatTarget::Items(v.clone()), n);
+                        }
+                        self.toast(format!("{} applied to all visible items.", all.join(", ")));
+                    }
+                    _ => {}
+                }
+            }
+        }
         ui.columns(2, |cols| {
             // ---- library + editor
             let ui = &mut cols[0];
@@ -649,8 +697,11 @@ impl App {
                 if ui.small_button("📥 Images…").on_hover_text("Import PNG / JPG images as new texture materials").clicked() {
                     lib_io = Some(Purpose::ImportTextures);
                 }
-                if ui.small_button("📦 PBR pack…").on_hover_text("Import downloaded PBR packs (.zip from freepbr.com, ambientCG, Poly Haven...) - you can pick several.\nThe images are copied to your material library (%APPDATA%\\ManageBIM\\Materials) and the materials are available in every project.\nColour map = texture, roughness map = gloss, metallic map = metal.").clicked() {
+                if ui.small_button("📦 PBR pack…").on_hover_text("Import a PBR pack (.zip from freepbr.com, ambientCG, Poly Haven...) or an already unzipped folder. All maps are kept: albedo, normal, roughness, metallic, AO and height. You choose where to apply it after import.").clicked() {
                     lib_io = Some(Purpose::ImportPbr);
+                }
+                if ui.small_button("📁 PBR folder…").on_hover_text("Import an already unzipped PBR folder").clicked() {
+                    lib_io = Some(Purpose::ImportPbrFolder);
                 }
                 ui.menu_button("Library ⏷", |ui| {
                     if ui.button("📦 Import PBR pack (.zip)…").clicked() {
@@ -757,10 +808,53 @@ impl App {
                                     }
                                 }
                                 if ui.small_button("🖼 Choose…").on_hover_text("PNG / JPG texture, repeated every \"Texture size\" metres").clicked() {
-                                    pick_tex = true;
+                                    pick_tex = Some(Purpose::MaterialTexture);
                                 }
                             });
                             ui.end_row();
+                            // ---- hartile PBR (freepbr.com, ambientCG, Poly Haven)
+                            let is_pbr = m.is_pbr();
+                            let mut map_row = |ui: &mut egui::Ui, label: &str, path: &mut String, purpose: Purpose| {
+                                ui.label(label);
+                                ui.horizontal(|ui| {
+                                    if path.is_empty() {
+                                        ui.label(RichText::new("—").weak());
+                                    } else {
+                                        ui.label(RichText::new(crate::file_name(path)).small()).on_hover_text(path.as_str());
+                                        if ui.small_button("✖").clicked() {
+                                            path.clear();
+                                            changed = true;
+                                        }
+                                    }
+                                    if ui.small_button("📁").on_hover_text(format!("Choose the {label} image (PNG / JPG)")).clicked() {
+                                        pick_tex = Some(purpose);
+                                    }
+                                });
+                                ui.end_row();
+                            };
+                            map_row(ui, "Normal", &mut m.normal_map, Purpose::MaterialNormal);
+                            map_row(ui, "Roughness", &mut m.roughness_map, Purpose::MaterialRoughness);
+                            map_row(ui, "Metallic", &mut m.metallic_map, Purpose::MaterialMetallic);
+                            map_row(ui, "AO", &mut m.ao_map, Purpose::MaterialAo);
+                            map_row(ui, "Height", &mut m.height_map, Purpose::MaterialHeight);
+                            if is_pbr {
+                                ui.label(RichText::new("Normal strength").small());
+                                changed |= ui.add(egui::Slider::new(&mut m.normal_strength, 0.0..=2.0).step_by(0.05).suffix("×")).on_hover_text("How strong the surface relief looks (0 = flat, 1 = normal, 2 = exaggerated)").changed();
+                                ui.end_row();
+                                ui.label(RichText::new("Roughness ×").small());
+                                changed |= ui.add(egui::Slider::new(&mut m.rough_mult, 0.0..=2.0).step_by(0.05).suffix("×")).on_hover_text("Multiply the roughness map: below 1 = shinier, above 1 = more matte").changed();
+                                ui.end_row();
+                                ui.label(RichText::new("Metallic ×").small());
+                                changed |= ui.add(egui::Slider::new(&mut m.metal_mult, 0.0..=2.0).step_by(0.05).suffix("×")).on_hover_text("Multiply the metallic map: below 1 = less metal, above 1 = more metal").changed();
+                                ui.end_row();
+                                if ui.button("↺ Reset PBR strength").clicked() {
+                                    m.normal_strength = 1.0;
+                                    m.rough_mult = 1.0;
+                                    m.metal_mult = 1.0;
+                                    changed = true;
+                                }
+                                ui.end_row();
+                            }
                         });
                         if m.name != old_name {
                             let new = m.name.clone();
@@ -768,6 +862,30 @@ impl App {
                                 a.material = new.clone();
                             }
                             changed = true;
+                        }
+                        // previzualizarea hartii de culoare ( imaginea reala, nu doar un swatch )
+                        let mat = &self.materials[self.mat_sel];
+                        let tex = if (!mat.texture.is_empty() || mat.is_pbr()) && self.tex_loaded_res == crate::materials::tex_size() {
+                            self.tex_layers.iter().find(|(k, _)| k == &mat.texture).map(|(_, px)| px.clone())
+                        } else {
+                            None
+                        };
+                        let need = self.mat_preview.as_ref().map(|(p, _)| p != &mat.texture).unwrap_or(true);
+                        if !mat.texture.is_empty() && need {
+                            if let Some(px) = tex {
+                                let n = crate::materials::tex_size() as usize;
+                                let img = eframe::egui::ColorImage::from_rgba_unmultiplied([n, n], &px);
+                                let t = ui.ctx().load_texture(format!("mat_preview_{}", mat.texture), img, egui::TextureOptions::LINEAR);
+                                self.mat_preview = Some((mat.texture.clone(), t));
+                            }
+                        }
+                        if let Some((p, t)) = &self.mat_preview {
+                            if p == &mat.texture {
+                                ui.add_space(4.0);
+                                ui.label(RichText::new("Preview (albedo)").small().weak());
+                                let s = 96.0_f32;
+                                ui.image((t.id(), egui::vec2(s, s)));
+                            }
                         }
                     }
                 });
@@ -858,8 +976,8 @@ impl App {
                 changed |= ui.add(egui::Slider::new(&mut self.render.sun_el, 5.0..=90.0).text("height °")).changed();
             });
         });
-        if pick_tex {
-            self.request_path(Purpose::MaterialTexture);
+        if let Some(p) = pick_tex {
+            self.request_path(p);
         }
         if let Some(p) = lib_io {
             self.request_path(p);

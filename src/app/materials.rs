@@ -27,34 +27,45 @@ impl App {
         self.mat_cache.as_ref().unwrap()
     }
 
+    /// Calea reala a unei texturi (daca fisierul a fost mutat, o cauta langa proiect).
+    fn texture_path(&self, path: &str) -> String {
+        if std::path::Path::new(path).exists() {
+            return path.to_string();
+        }
+        if let Some(d) = self.project_path.as_ref().and_then(|p| std::path::Path::new(p).parent().map(|d| d.to_path_buf())) {
+            let alt = d.join(crate::file_name(path));
+            if alt.exists() {
+                return alt.to_string_lossy().to_string();
+            }
+        }
+        path.to_string()
+    }
+
     /// GPU layer of an image texture (loaded on first use).
     pub fn texture_layer(&mut self, path: &str) -> Option<u8> {
-        if path.is_empty() || self.tex_failed.contains(path) {
-            return None;
+        if path.is_empty() || self.tex_failed.contains(path) || self.tex_loaded_res != crate::materials::tex_size() {
+            if self.tex_loaded_res != crate::materials::tex_size() {
+                self.tex_layers.clear();
+                self.pbr_layers.clear();
+                self.tex_failed.clear();
+                self.tex_loaded_res = crate::materials::tex_size();
+            }
+            if path.is_empty() || self.tex_failed.contains(path) {
+                return None;
+            }
         }
         if let Some(i) = self.tex_layers.iter().position(|t| t.0 == path) {
             return Some(i as u8);
         }
-        if self.tex_layers.len() >= crate::materials::MAX_TEXTURES {
-            self.error("Too many image textures (max 64).");
+        if self.tex_layers.len() >= crate::materials::max_textures() {
+            self.error(format!("Too many image textures for {} px (max {}). Lower the texture resolution in Settings.", crate::materials::tex_size(), crate::materials::max_textures()));
             self.tex_failed.insert(path.to_string());
             return None;
         }
-        // cauta si langa proiect daca fisierul a fost mutat
-        let mut real = path.to_string();
-        if !std::path::Path::new(&real).exists() {
-            if let Some(d) = self.project_path.as_ref().and_then(|p| std::path::Path::new(p).parent().map(|d| d.to_path_buf())) {
-                let alt = d.join(crate::file_name(path));
-                if alt.exists() {
-                    real = alt.to_string_lossy().to_string();
-                }
-            }
-        }
-        match crate::materials::load_texture(&real) {
+        match crate::materials::load_texture(&self.texture_path(path)) {
             Ok(px) => {
                 self.tex_layers.push((path.to_string(), px));
-                let all: Vec<Vec<u8>> = self.tex_layers.iter().map(|t| t.1.clone()).collect();
-                self.renderer.lock().unwrap_or_else(|e| e.into_inner()).pending.push(Upload::Textures(all));
+                self.push_textures();
                 Some((self.tex_layers.len() - 1) as u8)
             }
             Err(e) => {
@@ -63,6 +74,51 @@ impl App {
                 None
             }
         }
+    }
+
+    fn push_textures(&mut self) {
+        let all: Vec<Vec<u8>> = self.tex_layers.iter().map(|t| t.1.clone()).collect();
+        self.renderer.lock().unwrap_or_else(|e| e.into_inner()).pending.push(Upload::Textures(all));
+    }
+
+    /// Material PBR: doua straturi impachetate (albedo+A0+roughness in A / normal+metallic in A).
+    /// intoarce primul strat; shader-ul il stie pe al doilea ca layer+1 (cod 128+layer).
+    pub fn pbr_layer(&mut self, m: &crate::materials::Material) -> Option<u8> {
+        if !m.is_pbr() || m.texture.is_empty() {
+            return self.texture_layer(&m.texture);
+        }
+        let sig = format!("{}|{}|{}|{}|{}|{}|{}|{}|{}", m.texture, m.normal_map, m.roughness_map, m.metallic_map, m.ao_map, m.height_map, m.normal_strength, m.rough_mult, m.metal_mult);
+        if self.tex_loaded_res != crate::materials::tex_size() {
+            self.tex_layers.clear();
+            self.pbr_layers.clear();
+            self.tex_failed.clear();
+            self.tex_loaded_res = crate::materials::tex_size();
+        }
+        if let Some(l) = self.pbr_layers.get(&sig) {
+            return Some(*l);
+        }
+        if self.tex_layers.len() + 2 > crate::materials::max_textures() {
+            self.error(format!("Not enough GPU texture layers at {} px (max {}). Lower the texture resolution in Settings.", crate::materials::tex_size(), crate::materials::max_textures()));
+            return None;
+        }
+        let load = |p: &str| {
+            if p.is_empty() { None } else { crate::materials::load_texture(&self.texture_path(p)).ok() }
+        };
+        let albedo = match load(&m.texture) {
+            Some(a) => a,
+            None => return self.texture_layer(&m.texture),
+        };
+        let normal = load(&m.normal_map);
+        let rough = load(&m.roughness_map);
+        let metal = load(&m.metallic_map);
+        let ao = load(&m.ao_map);
+        let (a, b) = crate::materials::pack_pbr(&albedo, normal.as_deref(), rough.as_deref(), metal.as_deref(), ao.as_deref(), m.normal_strength, m.rough_mult, m.metal_mult);
+        let first = self.tex_layers.len() as u8;
+        self.tex_layers.push((format!("{sig}#base"), a));
+        self.tex_layers.push((format!("{sig}#surf"), b));
+        self.push_textures();
+        self.pbr_layers.insert(sig, first);
+        Some(first)
     }
 
     /// One material per image file (named after the file).
@@ -113,8 +169,9 @@ impl App {
         }
         let last = added.last().map(|m| m.name.clone()).unwrap_or_default();
         self.mat_sel = self.materials.iter().position(|m| m.name == last).unwrap_or(0);
+        self.pending_mat_assign = added.iter().map(|m| m.name.clone()).collect();
         self.materials_changed();
-        self.toast(format!("{} PBR materials added to your library ({}) - available in every project. Set the real size in \"Texture size\".", added.len(), added.iter().map(|m| m.name.clone()).collect::<Vec<_>>().join(", ")));
+        self.toast(format!("{} PBR material(s) added: {} - choose where to apply them in the Materials panel.", added.len(), added.iter().map(|m| m.name.clone()).collect::<Vec<_>>().join(", ")));
     }
 
     /// Salveaza materialul ales in biblioteca ta (disponibil in orice proiect).
@@ -170,9 +227,9 @@ impl App {
         }
         let mat_gpu: Vec<[u8; 4]> = (0..self.materials.len())
             .map(|i| {
-                let t = self.materials[i].texture.clone();
-                let layer = if t.is_empty() { None } else { self.texture_layer(&t) };
-                self.materials[i].gpu(layer)
+                let m = self.materials[i].clone();
+                let layer = if m.texture.is_empty() { None } else { self.pbr_layer(&m) };
+                m.gpu(layer)
             })
             .collect();
         let roles = self.clash_roles();

@@ -1,11 +1,11 @@
 use bimrust::layout::{Dock, Panel, UiLayout};
-use bimrust::materials::{library, load_texture, TEX_SIZE};
+use bimrust::materials::{library, load_texture, tex_size};
 
 #[test]
 fn textures_png_and_jpg_load_and_resample() {
     for f in ["tests/fixtures/tex/tiles_test.png", "tests/fixtures/tex/tiles_test.jpg"] {
         let px = load_texture(f).expect(f);
-        assert_eq!(px.len(), (TEX_SIZE * TEX_SIZE * 4) as usize);
+        assert_eq!(px.len(), (tex_size() * tex_size() * 4) as usize);
         assert!(px.chunks_exact(4).all(|c| c[3] == 255));
     }
     assert!(load_texture("Cargo.toml").is_err());

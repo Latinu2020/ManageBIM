@@ -69,6 +69,30 @@ impl App {
                             }
                         }
                     });
+                    ui.horizontal(|ui| {
+                        ui.label("PBR texture size");
+                        let tier = self.settings.tex_res;
+                        let mut changed = false;
+                        for (t, label) in [(0u32, "512 px"), (1, "1024 px"), (2, "2048 px")] {
+                            let tip = match t {
+                                2 => "Sharp textures from freepbr.com 2K packs. Uses more GPU memory, so fewer textures can be loaded at once.",
+                                1 => "Good detail without using too much GPU memory.",
+                                _ => "Fastest, lowest memory. Textures are resampled down to 512 px.",
+                            };
+                            changed |= ui.selectable_label(tier == t, label).on_hover_text(tip).clicked();
+                        }
+                        if changed {
+                            self.settings.tex_res = tier;
+                            crate::materials::set_tex_tier(tier);
+                            self.tex_layers.clear();
+                            self.pbr_layers.clear();
+                            self.tex_failed.clear();
+                            self.tex_loaded_res = crate::materials::tex_size();
+                            self.materials_changed();
+                            self.settings.save();
+                        }
+                        ui.label(RichText::new(format!("(max {} layers)", crate::materials::max_textures())).small().weak());
+                    });
                     ui.add_space(6.0);
                     section_title(ui, "Selection");
                     let mut sel_changed = false;

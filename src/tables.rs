@@ -297,6 +297,9 @@ pub fn materials_from_rows(rows: &[Vec<String>]) -> Result<Vec<Material>, String
             pattern: get(&cols, r, &["texture", "pattern"]).map(pattern_of).unwrap_or(Pattern::None),
             scale: num(get(&cols, r, &["texture size m", "texture size", "scale"])).map(|x| x.clamp(0.05, 4.0) as f32).unwrap_or(1.0),
             texture: get(&cols, r, &["image"]).unwrap_or("").to_string(),
+            normal_map: String::new(), roughness_map: String::new(), metallic_map: String::new(),
+            ao_map: String::new(), height_map: String::new(),
+            normal_strength: 1.0, rough_mult: 1.0, metal_mult: 1.0,
         });
     }
     if out.is_empty() {

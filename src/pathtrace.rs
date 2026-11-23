@@ -107,29 +107,44 @@ impl Scene {
         k
     }
 
-    /// culoarea de baza in punctul p: textura imagine sau model procedural (aceleasi formule ca shader-ul)
-    fn base_color(&self, tri: usize, p: Vec3, n: Vec3) -> [f32; 3] {
+    /// (albedo, rugozitate, metalicitate, normala tangenta) in punctul p, din hartile PBR sau din textura simpla
+    fn surface(&self, tri: usize, p: Vec3, n: Vec3) -> ([f32; 3], f32, f32, Option<Vec3>) {
         let c = self.colors[tri];
         let base = [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0];
         let m = self.mats[tri];
         let code = m[0];
         if code == 0 {
-            return base;
+            return (base, 1.0 - m[1] as f32 / 255.0, m[2] as f32 / 255.0, None);
         }
         let sc = 0.05 + m[3] as f32 / 255.0 * 4.0;
         let an = n.abs();
-        let uv = if an.z >= an.x && an.z >= an.y { glam::Vec2::new(p.x, p.y) } else if an.x >= an.y { glam::Vec2::new(p.y, p.z) } else { glam::Vec2::new(p.x, p.z) } / sc;
-        if code >= 16 {
-            let Some(tex) = self.textures.get((code - 16) as usize) else { return base };
-            let s = crate::materials::TEX_SIZE as usize;
-            let (x, y) = ((uv.x.rem_euclid(1.0) * s as f32) as usize % s, (uv.y.rem_euclid(1.0) * s as f32) as usize % s);
+        let uv = (if an.z >= an.x && an.z >= an.y { glam::Vec2::new(p.x, p.y) } else if an.x >= an.y { glam::Vec2::new(p.y, p.z) } else { glam::Vec2::new(p.x, p.z) }) / sc;
+        let s = crate::materials::tex_size() as usize;
+        let sample = |layer: usize| -> Option<[u8; 4]> {
+            let tex = self.textures.get(layer)?;
+            let x = (uv.x.rem_euclid(1.0) * s as f32) as usize % s;
+            let y = (uv.y.rem_euclid(1.0) * s as f32) as usize % s;
             let i = (y * s + x) * 4;
-            return match tex.get(i..i + 3) {
-                Some(px) => [px[0] as f32 / 255.0, px[1] as f32 / 255.0, px[2] as f32 / 255.0],
-                None => base,
-            };
+            Some([tex.get(i)?.to_owned(), tex.get(i + 1)?.to_owned(), tex.get(i + 2)?.to_owned(), tex.get(i + 3)?.to_owned()])
+        };
+        if code >= 128 {
+            let l = (code - 128) as usize;
+            if let (Some(ca), Some(cs)) = (sample(l), sample(l + 1)) {
+                let f = |b: u8| b as f32 / 255.0;
+                let albedo = [f(ca[0]), f(ca[1]), f(ca[2])];
+                // normala din spatiul tangent: construim baza TBN din normala geometrica
+                let (t, b) = basis(n);
+                let tn = Vec3::new(f(cs[0]) * 2.0 - 1.0, f(cs[1]) * 2.0 - 1.0, (f(cs[2]) * 2.0 - 1.0).max(0.05)).normalize_or_zero();
+                let nm = (t * tn.x + b * tn.y + n * tn.z).normalize_or_zero();
+                return (albedo, f(ca[3]), f(cs[3]), Some(nm));
+            }
+        } else if code >= 16 {
+            if let Some(px) = sample((code - 16) as usize) {
+                let f = |b: u8| b as f32 / 255.0;
+                return ([f(px[0]), f(px[1]), f(px[2])], 1.0 - m[1] as f32 / 255.0, m[2] as f32 / 255.0, None);
+            }
         }
-        pattern(code, base, uv)
+        (pattern(code, base, uv), 1.0 - m[1] as f32 / 255.0, m[2] as f32 / 255.0, None)
     }
 }
 
@@ -367,10 +382,15 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
         n = -n;
     }
     let hit = o + d * t;
-    let base = sc.base_color(ti, hit, n);
     let alpha = sc.colors[ti][3] as f32 / 255.0;
+    let (base, rough, metal, mapped_n) = sc.surface(ti, hit, n);
     let m = sc.mats[ti];
-    let (gloss, metal) = (m[1] as f32 / 255.0, m[2] as f32 / 255.0);
+    // normala din harta inlocuieste normala geometrica pentru umbrire / reflexii
+    if let Some(nm) = mapped_n {
+        n = nm;
+    }
+    // rugozitatea din harta (0 = oglinda) e inversul luciului global
+    let gloss = if m[0] >= 128 { (1.0 - rough).clamp(0.03, 1.0) } else { m[1] as f32 / 255.0 };
     // sticla / materiale transparente: raza trece mai departe cu probabilitatea (1 - opacitate)
     if alpha < 0.99 && depth < MAX_DEPTH && rng.next() > alpha {
         let (behind, _, _) = trace_d(job, hit + d * 1e-3, d, rng, depth + 1);

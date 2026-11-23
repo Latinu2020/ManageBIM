@@ -1,6 +1,38 @@
 //! Render materials (Navisworks Presenter-style): library + assignment rules.
 use crate::model::ElemId;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU32, Ordering};
+
+/// Rezolutia texturilor pe GPU: toate straturile array-ului au aceeasi marime.
+/// 512 = 1 MB/strat, 1024 = 4 MB, 2048 = 16 MB (la 2048 limitam numarul de straturi).
+pub const DEFAULT_TEX_SIZE: u32 = 512;
+static TEX_RES: AtomicU32 = AtomicU32::new(DEFAULT_TEX_SIZE);
+
+pub fn tex_size() -> u32 {
+    TEX_RES.load(Ordering::Relaxed)
+}
+
+/// 0 = 512, 1 = 1024, 2 = 2048. Intoarce valoarea actuala.
+pub fn set_tex_tier(tier: u32) -> u32 {
+    let s = match tier { 1 => 1024, 2 => 2048, _ => 512 };
+    TEX_RES.store(s, Ordering::Relaxed);
+    s
+}
+
+pub fn tex_tier() -> u32 {
+    match tex_size() { 1024 => 1, 2048 => 2, _ => 0 }
+}
+
+/// Numarul maxim de straturi din array, ca sa nu depasim ~256 MB de memorie GPU.
+pub fn max_textures() -> usize {
+    match tex_size() {
+        2048 => 12,
+        1024 => 28,
+        _ => 64,
+    }
+}
+
+fn one() -> f32 { 1.0 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Pattern {
@@ -55,11 +87,45 @@ pub struct Material {
     /// external image texture (PNG / JPG); empty = procedural pattern
     #[serde(default)]
     pub texture: String,
+    /// PBR (freepbr.com, ambientCG, Poly Haven...): toate hartile se pastreaza si se folosesc in 3D / randare
+    #[serde(default)]
+    pub normal_map: String,
+    #[serde(default)]
+    pub roughness_map: String,
+    #[serde(default)]
+    pub metallic_map: String,
+    #[serde(default)]
+    pub ao_map: String,
+    #[serde(default)]
+    pub height_map: String,
+    /// intensitatile ajustabile in interfata (0..2); se aplica la incarcarea texturilor pe GPU
+    #[serde(default = "one")]
+    pub normal_strength: f32,
+    #[serde(default = "one")]
+    pub rough_mult: f32,
+    #[serde(default = "one")]
+    pub metal_mult: f32,
 }
 
 impl Material {
     fn new(name: &str, color: [u8; 3], transparency: u8, gloss: u8, metal: u8, pattern: Pattern, scale: f32) -> Material {
-        Material { name: name.into(), color, transparency, gloss, metal, pattern, scale, texture: String::new() }
+        Material {
+            name: name.into(), color, transparency, gloss, metal, pattern, scale, texture: String::new(),
+            normal_map: String::new(), roughness_map: String::new(), metallic_map: String::new(),
+            ao_map: String::new(), height_map: String::new(),
+            normal_strength: 1.0, rough_mult: 1.0, metal_mult: 1.0,
+        }
+    }
+
+    /// Are harti PBR dincolo de albedo?
+    pub fn is_pbr(&self) -> bool {
+        !self.normal_map.is_empty() || !self.roughness_map.is_empty() || !self.metallic_map.is_empty() || !self.ao_map.is_empty()
+    }
+
+    /// Toate imaginile materialului (pentru gasirea fisierelor mutate).
+    pub fn maps(&self) -> Vec<&str> {
+        [self.texture.as_str(), self.normal_map.as_str(), self.roughness_map.as_str(), self.metallic_map.as_str(), self.ao_map.as_str(), self.height_map.as_str()]
+            .into_iter().filter(|s| !s.is_empty()).collect()
     }
     pub fn rgba(&self) -> [u8; 4] {
         let a = (255.0 * (1.0 - self.transparency.min(90) as f32 / 100.0)).round() as u8;
@@ -70,7 +136,8 @@ impl Material {
     pub fn gpu(&self, layer: Option<u8>) -> [u8; 4] {
         let s = ((self.scale.clamp(0.05, 4.05) - 0.05) / 4.0 * 255.0).round() as u8;
         let code = match layer {
-            Some(l) => 16 + l.min(200),
+            Some(l) if self.is_pbr() => 128 + l.min(127), // doua straturi: albedo/rough + normal/metal
+            Some(l) => 16 + l.min(111),                 // textura simpla
             None => self.pattern.code(),
         };
         [code, (self.gloss.min(100) as f32 * 2.55) as u8, (self.metal.min(100) as f32 * 2.55) as u8, s]
@@ -163,7 +230,6 @@ fn yes() -> bool {
     true
 }
 
-pub const TEX_SIZE: u32 = 512;
 pub const MAX_TEXTURES: usize = 64;
 
 /// Loads a PNG / JPG and resamples it to TEX_SIZE x TEX_SIZE RGBA (bilinear).
@@ -203,7 +269,7 @@ pub fn load_texture(path: &str) -> Result<Vec<u8>, String> {
     if w == 0 || h == 0 {
         return Err("Empty image".into());
     }
-    let n = TEX_SIZE;
+    let n = tex_size();
     let mut out = vec![0u8; (n * n * 4) as usize];
     for y in 0..n {
         let fy = (y as f32 + 0.5) * h as f32 / n as f32 - 0.5;
@@ -224,6 +290,39 @@ pub fn load_texture(path: &str) -> Result<Vec<u8>, String> {
         }
     }
     Ok(out)
+}
+
+/// Imparte hartile PBR in 2 straturi GPU de aceeasi marime:
+/// - strat A: RGB = albedo * AO, A = rugozitate * rough_mult
+/// - strat B: RGB = normala tangenta (xy * normal_strength), A = metalicitate * metal_mult
+/// Shader-ul si path trace-ul decodeaza ambele straturi; modificarile de intensitate se vad imediat.
+pub fn pack_pbr(
+    albedo: &[u8], normal: Option<&[u8]>, rough: Option<&[u8]>, metal: Option<&[u8]>, ao: Option<&[u8]>,
+    normal_strength: f32, rough_mult: f32, metal_mult: f32,
+) -> (Vec<u8>, Vec<u8>) {
+    let n = tex_size() as usize;
+    let len = n * n * 4;
+    let mut a = vec![0u8; len];
+    let mut b = vec![0u8; len];
+    let px = |src: Option<&[u8]>, i: usize, ch: usize, dflt: u8| src.map_or(dflt, |v| v.get(i + ch).copied().unwrap_or(dflt));
+    for i in (0..len).step_by(4) {
+        let ao_v = ao.map_or(1.0, |v| v.get(i).copied().unwrap_or(255) as f32 / 255.0);
+        for c in 0..3 {
+            a[i + c] = (albedo.get(i + c).copied().unwrap_or(200) as f32 * ao_v).round() as u8;
+        }
+        // rugozitate: 0 = luciu oglinda, 1 = mat; valoarea din harta e deja 0..255
+        a[i + 3] = (px(rough, i, 0, 128) as f32 * rough_mult.clamp(0.0, 2.0)).round().clamp(0.0, 255.0) as u8;
+        // normala OpenGL: (0.5, 0.5, 1) = plana; harta DirectX (normal-dx) are canalul Y inversat
+        let nx = (px(normal, i, 0, 128) as f32 / 255.0 * 2.0 - 1.0) * normal_strength.clamp(0.0, 2.0);
+        let ny = (px(normal, i, 1, 128) as f32 / 255.0 * 2.0 - 1.0) * normal_strength.clamp(0.0, 2.0);
+        let nz = (px(normal, i, 2, 255) as f32 / 255.0 * 2.0 - 1.0).max(0.05);
+        let inv = 1.0 / nx.hypot(ny).hypot(nz).max(1e-4);
+        b[i] = ((nx * inv + 1.0) * 127.5).round().clamp(0.0, 255.0) as u8;
+        b[i + 1] = ((ny * inv + 1.0) * 127.5).round().clamp(0.0, 255.0) as u8;
+        b[i + 2] = ((nz * inv + 1.0) * 127.5).round().clamp(0.0, 255.0) as u8;
+        b[i + 3] = (px(metal, i, 0, 0) as f32 * metal_mult.clamp(0.0, 2.0)).round().clamp(0.0, 255.0) as u8;
+    }
+    (a, b)
 }
 
 // ===================================================================== biblioteca utilizatorului
@@ -304,8 +403,15 @@ pub fn pbr_name(path: &str) -> String {
     let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
     let stem = file.rsplit_once('.').map(|(a, _)| a).unwrap_or(file).to_string();
     let mut words: Vec<String> = stem.split(['-', '_', ' ', '.']).filter(|w| !w.is_empty()).map(|w| w.to_string()).collect();
-    while words.len() > 1 && matches!(words.last().map(|w| w.to_ascii_lowercase()).as_deref(), Some("bl" | "ue" | "unity" | "png" | "jpg" | "1k" | "2k" | "4k" | "8k" | "pbr")) {
-        words.pop();
+    while words.len() > 1 {
+        let last = words.last().map(|w| w.to_ascii_lowercase()).unwrap_or_default();
+        // sufixe cunoscute + hash-uri de genul "xqucc9" (freepbr.com)
+        let hash = last.len() >= 5 && last.chars().any(|c| c.is_ascii_digit()) && last.chars().all(|c| c.is_ascii_alphanumeric());
+        if matches!(last.as_str(), "bl" | "ue" | "unity" | "png" | "jpg" | "1k" | "2k" | "4k" | "8k" | "pbr" | "freepbr" | "material" | "diffuse") || hash {
+            words.pop();
+        } else {
+            break;
+        }
     }
     let s = words.join(" ");
     let mut c = s.chars();
@@ -362,14 +468,30 @@ pub fn import_pbr(path: &str, dest_root: &std::path::Path) -> Result<Material, S
         std::fs::write(&f, b).map_err(|e| format!("Cannot write {}: {e}", f.display()))?;
         paths.push((pbr_role(n), f));
     }
+    let get = |role: &str| paths.iter().find(|(r, _)| *r == Some(role)).map(|(_, f)| f.to_string_lossy().to_string()).unwrap_or_default();
     let tex = paths[albedo].1.to_string_lossy().to_string();
+    // validare: imaginea de culoare trebuie sa fie citibila la rezolutia curenta
     load_texture(&tex)?;
-    let map = |role: &str| paths.iter().find(|(r, _)| *r == Some(role)).and_then(|(_, f)| load_texture(&f.to_string_lossy()).ok());
+    let map = |role: &str| {
+        let p = get(role);
+        if p.is_empty() { None } else { load_texture(&p).ok() }
+    };
     let gloss = match (map("roughness"), map("gloss")) {
         (Some(r), _) => (100.0 - avg(&r, 0) / 2.55).clamp(2.0, 95.0) as u8,
         (None, Some(g)) => (avg(&g, 0) / 2.55).clamp(2.0, 95.0) as u8,
         _ => 20,
     };
     let metal = map("metallic").map(|m| (avg(&m, 0) / 2.55).clamp(0.0, 100.0) as u8).unwrap_or(0);
-    Ok(Material { name, color: [255, 255, 255], transparency: 0, gloss, metal, pattern: Pattern::None, scale: 1.0, texture: tex })
+    Ok(Material {
+        name,
+        color: [255, 255, 255], transparency: 0, gloss, metal,
+        pattern: Pattern::None, scale: 1.0,
+        texture: tex,
+        normal_map: get("normal"),
+        roughness_map: get("roughness"),
+        metallic_map: get("metallic"),
+        ao_map: get("ao"),
+        height_map: get("height"),
+        normal_strength: 1.0, rough_mult: 1.0, metal_mult: 1.0,
+    })
 }

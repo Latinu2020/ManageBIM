@@ -324,13 +324,33 @@ void main() {
     if (u_style == 1 || u_style == 3 || u_style == 4) pt = 0;
     if (u_style == 2) { pt = 0; base = mix(base, vec3(0.94, 0.94, 0.92), 0.78); }
     if (u_style == 4) { base = vec3(0.86, 0.88, 0.91); }
-    if (pt >= 16) {
-        vec3 an = abs(n);
-        vec2 uv;
-        if (an.z >= an.x && an.z >= an.y) uv = v_pos.xy;
-        else if (an.x >= an.y) uv = v_pos.yz;
-        else uv = v_pos.xz;
-        uv /= (0.05 + v_mat.w * 4.0);
+    float pbr_rough = -1.0;
+    float pbr_metal = 0.0;
+    vec3 an = abs(n);
+    vec2 uv = an.z >= an.x && an.z >= an.y ? v_pos.xy : (an.x >= an.y ? v_pos.yz : v_pos.xz);
+    uv /= (0.05 + v_mat.w * 4.0);
+    if (pt >= 128) {
+        // PBR: doua straturi impachetate (albedo*AO + roughness / normal + metallic)
+        int l = pt - 128;
+        vec4 ca = texture(u_tex, vec3(uv, float(l)));
+        vec4 cs = texture(u_tex, vec3(uv, float(l + 1)));
+        base = ca.rgb;
+        pbr_rough = ca.a;
+        pbr_metal = cs.a;
+        // baza tangenta din derivatele pozitiei si ale UV-ului (normal mapping fara atribute UV)
+        vec3 dp1 = dFdx(v_pos), dp2 = dFdy(v_pos);
+        vec2 du1 = dFdx(uv), du2 = dFdy(uv);
+        vec3 T = dp1 * du2.y - dp2 * du1.y;
+        vec3 B = dp2 * du1.x - dp1 * du2.x;
+        float det = dot(T, T) + dot(B, B);
+        if (det > 1e-12) {
+            T = normalize(T - n * dot(n, T));
+            B = normalize(cross(n, T));
+            vec3 tn = cs.rgb * 2.0 - 1.0;
+            vec3 mapped = normalize(T * tn.x + B * tn.y + n * max(tn.z, 0.05));
+            n = normalize(mix(n, mapped, 0.9));
+        }
+    } else if (pt >= 16) {
         base = texture(u_tex, vec3(uv, float(pt - 16))).rgb;
     } else if (pt > 0) base = pattern(pt, base, v_pos, n, 0.05 + v_mat.w * 4.0);
     float head = abs(dot(n, vd));
@@ -346,8 +366,9 @@ void main() {
     // umbra aruncata: fetele intoarse spre soare dar acoperite devin vizibil mai inchise (ca afara, unde soarele domina)
     k *= mix(1.0, mix(0.62, 1.0, shv), smoothstep(0.0, 0.25, dot(n, u_sun)) * step(0.5, u_sp.z));
     // un luciu mic pentru orice material (suprafetele nu mai par plate / de hartie)
-    float gloss = u_style == 0 ? max(v_mat.y, 0.07) : ((u_style == 2 || u_style == 4) ? 0.0 : 0.07);
-    float metal = u_style == 0 ? v_mat.z : 0.0;
+    // harta de rugozitate (0 = oglinda) e inversul luciului; harta de metalicitate inlocuieste valoarea globala
+    float gloss = pbr_rough >= 0.0 ? clamp(1.0 - pbr_rough, 0.03, 1.0) : (u_style == 0 ? max(v_mat.y, 0.07) : ((u_style == 2 || u_style == 4) ? 0.0 : 0.07));
+    float metal = u_style == 0 ? (pbr_rough >= 0.0 ? pbr_metal : v_mat.z) : 0.0;
     if (u_style == 2 || u_style == 4) {
         // concept / hidden-line: lumina moale, fara reflexii
         vec3 cc = base * (0.62 + 0.30 * head + 0.10 * sky + 0.08 * sun) * u_light.x;
@@ -426,7 +447,8 @@ impl Renderer {
         self.ao_vao = gl.create_vertex_array().ok();
         // umbre: fara ele, desenarea ramane cea obisnuita
         self.sprog = compile_program(gl, header, VS_S, FS_S).ok();
-        self.upload_textures(gl, &[vec![200u8; (crate::materials::TEX_SIZE * crate::materials::TEX_SIZE * 4) as usize]]);
+        let n = crate::materials::tex_size() as usize;
+        self.upload_textures(gl, &[vec![200u8; n * n * 4]]);
     }
 
     unsafe fn upload_textures(&mut self, gl: &glow::Context, layers: &[Vec<u8>]) {
@@ -436,7 +458,7 @@ impl Renderer {
         if let Some(t) = self.tex.take() {
             gl.delete_texture(t);
         }
-        let n = crate::materials::TEX_SIZE as i32;
+        let n = crate::materials::tex_size() as i32;
         let Ok(t) = gl.create_texture() else { return };
         gl.active_texture(glow::TEXTURE1);
         gl.bind_texture(glow::TEXTURE_2D_ARRAY, Some(t));

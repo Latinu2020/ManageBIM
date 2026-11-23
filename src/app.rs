@@ -1117,6 +1117,11 @@ pub enum Purpose {
     ExportMaterials,
     ImportMaterials,
     MaterialTexture,
+    MaterialNormal,
+    MaterialRoughness,
+    MaterialMetallic,
+    MaterialAo,
+    MaterialHeight,
     ExportProfile,
     ImportProfile,
     ExportCompare,
@@ -1465,6 +1470,14 @@ pub struct App {
     pub show_tools: bool,
     pub sets_sig: u64,
     pub tex_layers: Vec<(String, Vec<u8>)>,
+    /// cheie material PBR (toate hartile + intensitati + rezolutie) -> primul strat din pair-ul albedo/normal
+    pub pbr_layers: HashMap<String, u8>,
+    /// rezolutia cu care au fost incarcate tex_layers (la schimbare se reincarca tot)
+    pub tex_loaded_res: u32,
+    /// materiale PBR importate recent, care asteapta o alegere de asignare
+    pub pending_mat_assign: Vec<String>,
+    /// previzualizarea hartii de culoare a materialului selectat
+    pub mat_preview: Option<(String, eframe::egui::TextureHandle)>,
     pub tex_failed: HashSet<String>,
     pub pending_csv: Vec<String>,
     pub settings: crate::theme::Settings,
@@ -1773,6 +1786,10 @@ impl App {
             show_tools: false,
             sets_sig: 0,
             tex_layers: Vec::new(),
+            pbr_layers: HashMap::new(),
+            tex_loaded_res: crate::materials::tex_size(),
+            pending_mat_assign: Vec::new(),
+            mat_preview: None,
             tex_failed: HashSet::new(),
             pending_csv: Vec::new(),
             settings: crate::theme::Settings::load(),

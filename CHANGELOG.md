@@ -3,6 +3,14 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.20 - 2026-11-23
+- **Proper PBR materials**: importing a PBR pack (freepbr.com, ambientCG, Poly Haven - .zip or unzipped folder) now keeps **all six maps** (albedo, normal, roughness, metallic, AO, height). Previously only the colour map was kept; roughness and metallic were reduced to one average value and the normal map was discarded.
+- **PBR rendering**: the two packed GPU layers feed a shader with **per-pixel normal mapping, roughness and metallic** (in the Realistic style), and the CPU path tracer uses the same maps. The albedo, normal, roughness, metallic, AO and height images can each be replaced or removed individually from the material editor.
+- **Adjustable at last**: sliders for **Normal strength**, **Roughness ×** and **Metallic ×** (0..2) with a reset button; changing them updates the GPU layers immediately. A real **albedo preview** is shown in the material editor instead of just a colour swatch.
+- **Auto-assign after import**: a dialog asks where to apply the imported material - the current selection, all visible items, by IFC type, or later. Material names are cleaned ("white-gold-ue-xqucc9" → "White gold").
+- **Texture resolution**: new option in Settings › Appearance - **512 / 1024 / 2048 px** for the PBR texture array. At 2048 the layer count is reduced (12) to keep GPU memory under control; at 1024 it is 28, at 512 it is 64. Changing the resolution reloads all textures.
+- Fixed: importing a PBR pack added the material but never applied it; the "Texture size" field was the only thing you could adjust.
+
 ## 0.27.19 - 2026-11-23
 - **Path trace with materials**: the CPU render now uses what you see in the 3D view - assigned materials and colour overrides, image textures and the brick / tile / wood / stone / grass / panel patterns, gloss (sun highlight + real reflections of the scene), metal and **glass** (light and the view pass through, soft tinted shadows). Hidden elements are no longer rendered and the **section is respected**. New "🎨 Render with materials" option in the Path trace window (materials are added automatically by IFC type when none are assigned).
 - **Render Image with materials**: the "🎨 Render with materials" option is now also in Render › Image (before it existed only for video) - the PNG is made in the Realistic style with materials, without the blue selection tint, and the 3D view goes back to how it was. The path-trace PNG export adds the `.png` extension when it is missing.

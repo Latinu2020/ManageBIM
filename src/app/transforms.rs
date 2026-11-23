@@ -250,6 +250,23 @@ impl App {
             Purpose::ImportNavisXml => self.import_navis_xml(&path),
             Purpose::ExportNavisSets => self.export_navis_sets(&path),
             Purpose::ExportNavisClash => self.export_navis_clash(&path),
+            Purpose::MaterialNormal | Purpose::MaterialRoughness | Purpose::MaterialMetallic | Purpose::MaterialAo | Purpose::MaterialHeight => {
+                if crate::materials::load_texture(&path).is_ok() {
+                    if let Some(m) = self.materials.get_mut(self.mat_sel) {
+                        match purpose {
+                            Purpose::MaterialNormal => m.normal_map = path.clone(),
+                            Purpose::MaterialRoughness => m.roughness_map = path.clone(),
+                            Purpose::MaterialMetallic => m.metallic_map = path.clone(),
+                            Purpose::MaterialAo => m.ao_map = path.clone(),
+                            _ => m.height_map = path.clone(),
+                        }
+                    }
+                    self.pbr_layers.clear();
+                    self.materials_changed();
+                } else {
+                    self.error("The file could not be read as a texture (PNG / JPG only).");
+                }
+            }
             Purpose::MaterialTexture => {
                 if crate::materials::load_texture(&path).is_ok() {
                     if let Some(m) = self.materials.get_mut(self.mat_sel) {
@@ -257,6 +274,7 @@ impl App {
                         m.color = [255, 255, 255];
                     }
                     self.tex_failed.remove(&path);
+                    self.pbr_layers.clear();
                     self.materials_changed();
                 } else {
                     self.error("Choose a PNG or JPG image.");
@@ -575,7 +593,7 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                     None
                 }
                 Purpose::ImportPbrFolder => d.set_title("Folder with the PBR images (albedo, normal, roughness...)").pick_folder().map(|p| vec![p.to_string_lossy().to_string()]),
-                Purpose::MaterialTexture => d.set_title("Choose texture image").add_filter("Images", &["png", "jpg", "jpeg"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::MaterialTexture | Purpose::MaterialNormal | Purpose::MaterialRoughness | Purpose::MaterialMetallic | Purpose::MaterialAo | Purpose::MaterialHeight => d.set_title("Choose texture image").add_filter("Images", &["png", "jpg", "jpeg"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportMaterials => d.set_title("Export material library").add_filter("ManageBIM materials", &["bimmat"]).add_filter("Excel workbook", &["xlsx"]).add_filter("CSV (Excel)", &["csv"]).set_file_name("materials.bimmat").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportMaterials => d.set_title("Import material library").add_filter("Materials / Excel / CSV", &["bimmat", "json", "xlsx", "csv"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpHtml => d.set_title("Viewpoints report (HTML)").add_filter("HTML report", &["html"]).set_file_name("viewpoints_report.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
