@@ -152,6 +152,14 @@ impl App {
                     ui.checkbox(&mut self.cad_annotate, "Annotations: hatch, element tags, grids, levels")
                         .on_hover_text("Turn off for a clean outline (only the cut edges, one DWG layer per element type).");
                     ui.horizontal(|ui| {
+                        ui.checkbox(&mut self.cad_dims, "Dimensions (chains)")
+                            .on_hover_text("Include dimension chains in the exported DWG / PDF cut.");
+                        ui.checkbox(&mut self.cad_levels, "Levels")
+                            .on_hover_text("Include level lines and labels in the exported DWG / PDF cut.");
+                    });
+                    ui.checkbox(&mut self.settings.show_cad_plane, "Highlight cut plane in 3D")
+                        .on_hover_text("Off by default: the cut plane quad and drag handle appear only when you turn this on.");
+                    ui.horizontal(|ui| {
                         ui.label("BCF export version");
                         if ui.selectable_label(self.settings.bcf_version == 2, "2.1").clicked() {
                             self.settings.bcf_version = 2;

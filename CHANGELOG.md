@@ -3,6 +3,15 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.11 - 2026-11-23
+- **Tab nou „Annotation"** (imediat după Sections, ușor de găsit): grupuri *Cut & Export* (Cut to DWG, Cut on Sheet, Cut to PDF, 2D Preview), *Cut View* și *Annotations* (Title Block, Grids, Levels, Filled cuts, DWG Overlay). Comenzile sunt și în Ctrl+K sub categoria „Annotation".
+- **Secțiunea din cub**: eliminat butonul „Behind edges" — tot ce e în cub de la planul de tăiere încolo se vede direct ca geometrie 3D (shaderul taie la cub și desenează capacul hașurat pe plan); nu se mai desenează liniile aplatizate „preview 2D în 3D".
+- **Fereastră mică „2D Section Preview"** de tip minimap, închizabilă, cu liniile reale ale tăieturii înainte de export.
+- **Vederea Hidden line stil Rhino 3D**: hârtie albă, suprafețe albe cu umbrire fină și **doar conturul general negru** (fără muchii interne / crease); fundalul viewport-ului devine alb în acest stil.
+- **Preview 2D refăcut**: fereastră **fixă, proporțională** (470×340, ~A4 landscape), fundal alb, cu hașură ANSI31, cote în lanț, niveluri, grile și cartuș — ca exportul. Nu se mai întinde pe toată aplicația.
+- **Butoane separate în Annotation / Settings** pentru **Dimensions** (cote) și **Levels** (niveluri) în exportul DWG/PDF — le poți debifa pe ce nu vrei.
+- **Highlight plan**: rămâne **închis by default** și nu se mai aprinde automat când alegi o față; îl deschizi doar când ai nevoie (buton în Annotation / Settings).
+
 ## 0.27.10 - 2026-11-23
 - **Panoul Viewpoints restructurat**: mâner de drag separat de etichetă — clickul și dublu-clickul (rename) pe nume funcționează sigur, dragul mută în folders.
 - **Desen tehnic în 3D**: după ce setezi cubul și planul, muchiile tăieturii (intersecția triunghiurilor cu planul, strict în cub) se calculează și se desenează **solid cian**; ce e în spate se desenează **întrerupt (dashed)** — același limbaj ca desenul din DWG.

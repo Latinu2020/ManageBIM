@@ -562,7 +562,8 @@ impl App {
 
     fn ribbon(&mut self, ctx: &egui::Context) {
         use crate::theme::RibbonMode;
-        const TABS: [&str; 12] = ["Home", "Select", "Viewpoint", "Review", "Sections", "Coordination", "Analyze", "Render", "Export", "Share", "Script", "View"];
+        // „Annotation" e imediat după Sections ca să fie ușor de găsit (secțiuni + export PDF/DWG).
+        const TABS: [&str; 13] = ["Home", "Select", "Viewpoint", "Review", "Sections", "Annotation", "Coordination", "Analyze", "Render", "Export", "Share", "Script", "View"];
         // setarile vechi: "ribbon restrans" = treapta Mini
         if self.settings.ribbon_min {
             self.settings.ribbon_min = false;
@@ -687,20 +688,21 @@ impl App {
                             self.ribbon_sections(ui);
                             self.ribbon_grids(ui);
                         }
-                        5 => self.ribbon_coord(ui),
-                        6 => {
+                        5 => self.ribbon_annotation(ui),
+                        6 => self.ribbon_coord(ui),
+                        7 => {
                             self.ribbon_models(ui);
                             self.ribbon_relocate(ui);
                         }
-                        7 => self.ribbon_render(ui),
-                        8 => {
+                        8 => self.ribbon_render(ui),
+                        9 => {
                             self.ribbon_output(ui);
                             self.ribbon_output2(ui);
                         }
-                        9 => {
+                        10 => {
                             self.ribbon_share(ui);
                         }
-                        10 => self.ribbon_script(ui),
+                        11 => self.ribbon_script(ui),
                         _ => {
                             self.ribbon_view(ui);
                             self.ribbon_view2(ui);
@@ -1017,10 +1019,10 @@ impl App {
                     let mut tmp = v;
                     if ui.selectable_value(&mut tmp, cur, label).clicked() {
                         self.settings.cad_view = v;
-                        // fata nou aleasa => planul chiar pe fata (0% inset) si evidentierea se aprinde
+                        // fata nou aleasa => planul chiar pe fata (0% inset).
+                        // Highlightul RAMANE inchis: utilizatorul il deschide doar cand are nevoie.
                         if v != crate::app::CadView::Current {
                             self.settings.cad_view_pos = 0.0;
-                            self.settings.show_cad_plane = true;
                         }
                         self.settings.save();
                     }
@@ -1032,11 +1034,8 @@ impl App {
             if ui.checkbox(&mut self.settings.show_section_box, "Hide section box").on_hover_text("Hides only the box drawing and its face arrows in 3D. The cut and all exports stay active.").changed() {
                 self.settings.save();
             }
-            if ui.checkbox(&mut self.settings.show_section_behind, "Behind edges").on_hover_text("Shows/copies the geometry behind the cut plane, up to the far face of the section box, as dotted lines on the plan and on the BEHIND layer in DWG.").changed() {
-                self.settings.save();
-            }
-            // Artefactul vechi `cad_view_pos %` a fost eliminat: pozitia planului
-            // vine din cubul de sectiune, iar acel 0% ramanea blocat si confuza butonul.
+            // „Behind edges" a fost eliminat ca buton: tot ce e in cub de la plan
+            // incolo se vede mereu (linii continue), cu hasura pe planul de taiere.
         });
         rgroup(ui, "Sectioning", |ui| {
             let sec = self.section.enabled;
@@ -1082,6 +1081,9 @@ impl App {
             if rbtn(ui, "🗺", "DWG Overlay", "Lay a 2D drawing (DWG / DXF) over the model at a level: compare the plan with the model", self.overlay_open, true).clicked() {
                 self.overlay_open = !self.overlay_open;
             }
+            if rbtn(ui, "🗺", "2D Preview", "Small closable map-style preview of the section cut, before exporting to DWG / PDF", self.section_preview_open, self.section.enabled).clicked() {
+                self.section_preview_open = !self.section_preview_open;
+            }
         });
         // acces rapid: nivelul, sus / jos, box de nivel sau taietura de plan
         let levels = self.scene_grids().levels;
@@ -1121,6 +1123,70 @@ impl App {
             });
         }
         self.visibility_group(ui);
+    }
+
+    /// Tab-ul Annotation: tot ce tine de desenul 2D al sectiunii - export DWG / PDF,
+    /// anotatii (cote, niveluri, grile, hasura) si previewul mic, usor de gasit.
+    fn ribbon_annotation(&mut self, ui: &mut egui::Ui) {
+        rgroup(ui, "Cut & Export", |ui| {
+            if rbtn(ui, "📐", "Cut to DWG", "Export the section cut as 2D lines (DWG / DXF), one layer per element type - with hatching, dimension chains, levels and tags", false, self.section.enabled).clicked() {
+                self.cad_sheet = false;
+                self.request_path(Purpose::ExportSectionCad);
+            }
+            if rbtn(ui, "📄", "Cut on Sheet", "The same cut on a drawing sheet (A3 - A0) at a standard scale, with frame and title block (DWG / DXF)", false, self.section.enabled).clicked() {
+                self.cad_sheet = true;
+                self.request_path(Purpose::ExportSectionCad);
+            }
+            if rbtn(ui, "📄", "Cut to PDF", "Export the cut as a vector PDF sheet (A3 - A0) with title block, at the exact cut position", false, self.section.enabled || self.settings.cad_view != crate::app::CadView::Current).clicked() {
+                self.request_path(Purpose::ExportSectionPdf);
+            }
+            if rbtn(ui, "🗺", "2D Preview", "Small closable map-style preview of the cut, before exporting", self.section_preview_open, self.section.enabled).clicked() {
+                self.section_preview_open = !self.section_preview_open;
+            }
+        });
+        rgroup(ui, "Cut View", |ui| {
+            let cur = self.settings.cad_view;
+            egui::ComboBox::from_id_salt("annot_cut_view").selected_text(crate::i18n::tr(cur.label())).show_ui(ui, |ui| {
+                for v in crate::app::CadView::ALL {
+                    let label = crate::i18n::tr(v.label());
+                    let mut tmp = v;
+                    if ui.selectable_value(&mut tmp, cur, label).clicked() {
+                        self.settings.cad_view = v;
+                        // highlightul nu se aprinde automat - doar utilizatorul il deschide
+                        if v != crate::app::CadView::Current {
+                            self.settings.cad_view_pos = 0.0;
+                        }
+                        self.settings.save();
+                    }
+                }
+            });
+            if ui.checkbox(&mut self.settings.show_cad_plane, crate::i18n::tr("Highlight plane")).on_hover_text("Shows the cut plane quad and its drag handle in 3D").changed() {
+                self.settings.save();
+            }
+        });
+        rgroup(ui, "Annotations", |ui| {
+            if rbtn(ui, "✏", "Title Block", "Edit the title block, sheet format (A3 - A0) and scale", self.title_block_open, true).clicked() {
+                self.title_block_open = !self.title_block_open;
+            }
+            if rbtn(ui, "#", "Grids", "Show / hide grid axes on the section sheet", self.show_grids, true).clicked() {
+                self.show_grids = !self.show_grids;
+            }
+            if rbtn(ui, "≡", "Levels", "Show / hide level lines and elevation marks", self.show_levels, true).clicked() {
+                self.show_levels = !self.show_levels;
+            }
+            if rbtn(ui, "▤", "Filled cuts", "Cut faces drawn solid and hatched (closed solids), instead of seeing inside the elements", self.section_caps, true).clicked() {
+                self.section_caps = !self.section_caps;
+            }
+            if rbtn(ui, "📐", "Dimensions", "Include dimension chains (mm / m) in the exported DWG / PDF cut", self.cad_dims, true).clicked() {
+                self.cad_dims = !self.cad_dims;
+            }
+            if rbtn(ui, "≡", "Levels", "Include level lines and elevation labels in the exported DWG / PDF cut", self.cad_levels, true).clicked() {
+                self.cad_levels = !self.cad_levels;
+            }
+            if rbtn(ui, "🗺", "DWG Overlay", "Lay a 2D drawing (DWG / DXF) over the model at a level: compare the plan with the model", self.overlay_open, true).clicked() {
+                self.overlay_open = !self.overlay_open;
+            }
+        });
     }
 
     fn ribbon_coord(&mut self, ui: &mut egui::Ui) {
@@ -2865,8 +2931,10 @@ impl App {
         // fundal: degrade pe trei benzi, cu o "linie de orizont" usor luminata (mai elegant decat doua culori)
         let mut mesh = egui::Mesh::default();
         let pal = self.pal();
-        let top = pal.vp_top;
-        let bot = pal.vp_bottom;
+        // Hidden line (Rhino): fundal alb ca hartia, ca sa se vada liniile negre.
+        let rhino = self.settings.visual_style == crate::render::VisualStyle::Hidden;
+        let top = if rhino { Color32::from_rgb(252, 252, 253) } else { pal.vp_top };
+        let bot = if rhino { Color32::from_rgb(240, 242, 245) } else { pal.vp_bottom };
         let lift = |c: Color32, d: i16| {
             let f = |x: u8| (x as i16 + d).clamp(0, 255) as u8;
             Color32::from_rgb(f(c.r()), f(c.g()), f(c.b()))
@@ -3520,39 +3588,9 @@ impl App {
                 }
             }
         }
-        // Muchiile din spate se VAD imediat ce cubul e activ - nu depind de
-        // highlightul planului (care e inchis implicit).
-        if self.settings.show_section_behind && self.section.enabled && self.section.mode == SectionMode::Box && self.report_job.is_none() {
-            if let Some((ax, val)) = self.cad_cut_plane() {
-                let sign = match self.settings.cad_view {
-                    crate::app::CadView::Front | crate::app::CadView::Left | crate::app::CadView::Bottom => 1.0,
-                    crate::app::CadView::Back | crate::app::CadView::Right | crate::app::CadView::Top | crate::app::CadView::Current => -1.0,
-                };
-                for (p3, q3) in self.section_behind_edges(ax, val, sign) {
-                    if let (Some(sa), Some(sb)) = (to_screen(&vp, rect, p3), to_screen(&vp, rect, q3)) {
-                        painter.extend(egui::Shape::dashed_line(
-                            &[sa, sb],
-                            Stroke::new(1.2_f32, Color32::from_rgba_unmultiplied(125, 211, 252, 220)),
-                            4.0,
-                            3.0,
-                        ));
-                    }
-                }
-            }
-        }
-        // DESEN TEHNIC: ce e IN CUB (in fata planului) = linie SOLIDA cian ;
-        // ce e IN SPATE = linie INTRERUPTA (dashed, bloca mai sus). Same limbaj vizual.
-        // Muchiile sunt exact cele scrise in DWG (layer-ul de taiere).
-        if self.section.enabled && self.section.mode == SectionMode::Box && self.report_job.is_none() {
-            if let Some((ax, val)) = self.cad_cut_plane() {
-                let solid = Color32::from_rgb(190, 235, 255);
-                for (p3, q3) in self.section_cut_lines(ax, val) {
-                    if let (Some(sa), Some(sb)) = (to_screen(&vp, rect, p3), to_screen(&vp, rect, q3)) {
-                        painter.line_segment([sa, sb], Stroke::new(1.9_f32, solid));
-                    }
-                }
-            }
-        }
+        // 27.11: NU mai desenam liniile aplatizate pe plan („previewul 2D in 3D").
+        // Sectiunea e acum GEOMETRIE 3D reala: shaderul taie la cub si deseneaza
+        // capacul hasurat pe plan; tot ce e in cub de la plan incolo se vede direct.
         if self.section.enabled && self.section.mode == SectionMode::Box && self.settings.show_section_box {
             let (a, b) = (Vec3::from(self.section.bmin), Vec3::from(self.section.bmax));
             let c = |i: u32| Vec3::new(if i & 1 == 0 { a.x } else { b.x }, if i & 2 == 0 { a.y } else { b.y }, if i & 4 == 0 { a.z } else { b.z });
@@ -4061,6 +4099,7 @@ impl App {
 
     fn windows(&mut self, ctx: &egui::Context) {
         self.manual_window(ctx);
+        self.section_preview_window(ctx);
         self.overlay_window(ctx);
         self.title_block_window(ctx);
         self.command_palette(ctx);
@@ -5163,8 +5202,10 @@ fn commands() -> Vec<Cmd> {
             a.request_path(Purpose::ExportSectionCad);
         }),
         c!("Language: Română / English", "View", "🌐", "limba romana engleza interfata language", |a| a.toggle_language()),
-        c!("Title block & sheet format", "Sections", "✏", "cartus format a3 a2 a1 a0 scara editare", |a| a.title_block_open = true),
-        c!("DWG overlay (2D drawing over the model)", "Sections", "🗺", "suprapunere plan dwg dxf 2d", |a| a.overlay_open = true),
+        c!("Title block & sheet format", "Annotation", "✏", "cartus format a3 a2 a1 a0 scara editare", |a| a.title_block_open = true),
+        c!("DWG overlay (2D drawing over the model)", "Annotation", "🗺", "suprapunere plan dwg dxf 2d", |a| a.overlay_open = true),
+        c!("2D Section Preview (map window)", "Annotation", "🗺", "preview 2d sectiune fereastra mica inainte de export", |a| a.section_preview_open = !a.section_preview_open),
+        c!("Section cut to PDF…", "Annotation", "📄", "sectiune export pdf plansa", |a| a.request_path(Purpose::ExportSectionPdf)),
         // ---- panouri
         c!("Selection Tree", "Panels", "🌲", "arbore", |a| a.open_panel(Panel::Tree)),
         c!("Properties", "Panels", "ℹ", "proprietati", |a| a.open_panel(Panel::Properties)),

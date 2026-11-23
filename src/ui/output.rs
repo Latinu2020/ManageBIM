@@ -439,6 +439,98 @@ impl App {
     }
 
     /// Fereastra suprapunerilor DWG / DXF: vizibilitate, cota (nivel), deplasare, rotatie, culoare.
+    /// Fereastra mica, proportionala (A4 landscape), cu previewul 2D al sectiunii.
+    /// Fundal alb, hașura, cote în lanț, niveluri și cartuș — ca exportul DWG / PDF.
+    /// Se închide cu X; NU se întinde pe toată aplicația (dimensiune fixă).
+    pub(super) fn section_preview_window(&mut self, ctx: &egui::Context) {
+        if !self.section_preview_open {
+            return;
+        }
+        let mut open = true;
+        let (segs, texts) = self.section_preview_drawing();
+        let size = egui::vec2(470.0, 340.0); // ~1.38 = A4 landscape, rezonabil pentru un preview
+        egui::Window::new(crate::theme::icon_job("🗺", "2D Section Preview", 13.0, Color32::from_rgb(30, 40, 60)))
+            .id(egui::Id::new("sec_preview_win"))
+            .open(&mut open)
+            .fixed_size(size)
+            .resizable(false)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                // hârtie albă care umple exact fereastra
+                let area = ui.available_rect_before_wrap();
+                ui.painter().rect_filled(area, 0.0, Color32::WHITE);
+                if !self.section.enabled {
+                    ui.painter().text(area.center(), Align2::CENTER_CENTER, "Activează Sections › Enable", FontId::proportional(12.0), Color32::from_rgb(90, 90, 90));
+                    return;
+                }
+                if segs.is_empty() {
+                    ui.painter().text(area.center(), Align2::CENTER_CENTER, "Nicio muchie în plan — mută planul/cubul peste geometrie", FontId::proportional(11.0), Color32::from_rgb(90, 90, 90));
+                    return;
+                }
+                // bounding box pe toate segmentele + pozițiile textelor
+                let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+                for (_, s) in &segs { x0 = x0.min(s[0]).min(s[2]); y0 = y0.min(s[1]).min(s[3]); x1 = x1.max(s[0]).max(s[2]); y1 = y1.max(s[1]).max(s[3]); }
+                for t in &texts { x0 = x0.min(t.x); y0 = y0.min(t.y); x1 = x1.max(t.x + 8.0); y1 = y1.max(t.y + 3.0); }
+                let (w, h) = ((x1 - x0).max(1e-3), (y1 - y0).max(1e-3));
+                let pad = 10.0_f32;
+                let inner = area.shrink(pad);
+                let sc = ((inner.width() / w as f32).min(inner.height() / h as f32)).max(1e-9);
+                let (ox, oy) = (inner.center().x - ((x0 + x1) * 0.5) as f32 * sc, inner.center().y + ((y0 + y1) * 0.5) as f32 * sc);
+                let pt = |x: f64, y: f64| egui::pos2(ox + x as f32 * sc, oy - y as f32 * sc);
+                let painter = ui.painter();
+                for (layer, s) in &segs {
+                    let col = match layer.as_str() {
+                        "HATCH" => Color32::from_rgb(150, 155, 165),
+                        "LEVELS" => Color32::from_rgb(70, 90, 130),
+                        "GRIDS" => Color32::from_rgb(170, 120, 70),
+                        "DIMS" => Color32::from_rgb(80, 90, 105),
+                        _ => Color32::from_rgb(25, 30, 40), // CUT = cerneală neagră
+                    };
+                    painter.line_segment([pt(s[0], s[1]), pt(s[2], s[3])], egui::Stroke::new(0.8_f32, col));
+                }
+                for t in &texts {
+                    painter.text(pt(t.x, t.y), Align2::LEFT_BOTTOM, &t.s, FontId::proportional(7.0), Color32::from_rgb(30, 35, 45));
+                }
+                // cartuș mic, jos-dreapta
+                let tb = egui::Rect::from_min_size(egui::pos2(area.right() - 116.0, area.bottom() - 34.0), egui::vec2(112.0, 30.0));
+                painter.rect_filled(tb, 0.0, Color32::WHITE);
+                painter.rect_stroke(tb, 0.0_f32, egui::Stroke::new(0.8_f32, Color32::from_rgb(40, 45, 55)));
+                painter.text(tb.left_top() + egui::vec2(4.0, 3.0), Align2::LEFT_TOP, "SECTION", FontId::proportional(8.0), Color32::from_rgb(30, 35, 45));
+                let title = match self.settings.cad_view { crate::app::CadView::Current => "Section".to_string(), v => format!("{} section", v.label()) };
+                painter.text(tb.left_top() + egui::vec2(4.0, 15.0), Align2::LEFT_TOP, &title, FontId::proportional(9.0), Color32::from_rgb(30, 35, 45));
+                let _ = size;
+            });
+        self.section_preview_open = open;
+    }
+
+    /// Segmentele + textele desenului 2D al sectiunii: tăietura, hașura, cote în lanț, niveluri, grile.
+    /// Aceleași funcții folosite de exportul DWG / PDF (`hatch_lines`, `section_annotations`).
+    fn section_preview_drawing(&self) -> (Vec<(String, [f64; 4])>, Vec<crate::app::CadText>) {
+        let Some((axis, value)) = self.cad_cut_plane() else { return (Vec::new(), Vec::new()) };
+        let mut segs: Vec<(String, [f64; 4])> = Vec::new();
+        let mut texts: Vec<crate::app::CadText> = Vec::new();
+        let to2d = |p: Vec3| -> [f64; 2] {
+            match axis { 2 => [p.x as f64, p.y as f64], 0 => [p.y as f64, p.z as f64], _ => [p.x as f64, p.z as f64] }
+        };
+        let mut cut: Vec<[f64; 4]> = Vec::new();
+        for (p, q) in self.section_cut_lines(axis, value) {
+            let a = to2d(p); let b = to2d(q);
+            cut.push([a[0], a[1], b[0], b[1]]);
+        }
+        // hașura ANSI31 pe conturul tăiat (regula par/impar, ca în DWG)
+        for h in crate::app::hatch_lines(&cut, 0.22) { segs.push(("HATCH".into(), h)); }
+        for s in cut { segs.push(("CUT".into(), s)); }
+        // niveluri + cote în lanț + grile (doar pentru secțiuni verticale)
+        if axis != 2 && segs.len() > 3 {
+            let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+            for (_, s) in &segs { x0 = x0.min(s[0]).min(s[2]); y0 = y0.min(s[1]).min(s[3]); x1 = x1.max(s[0]).max(s[2]); y1 = y1.max(s[1]).max(s[3]); }
+            let levels: Vec<(String, f64)> = self.scene_grids().levels.iter().map(|(n, z)| (n.clone(), *z as f64)).collect();
+            let grids = self.grids_world();
+            crate::app::section_annotations(&levels, &grids, axis, value as f64, [x0, y0, x1, y1], 0.1, self.cad_dims, self.cad_levels, &mut segs, &mut texts);
+        }
+        (segs, texts)
+    }
+
     pub(super) fn overlay_window(&mut self, ctx: &egui::Context) {
         if !self.overlay_open {
             return;

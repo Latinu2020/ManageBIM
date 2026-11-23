@@ -824,15 +824,17 @@ void main() {
         // ortografic: raportat la marimea pixelului in lume; perspectiva: relativ la 1/z
         float pix = 2.0 / max(u_k.w * u_h, 1e-3);
         float crease = ortho ? smoothstep(0.3, 1.0, lapAbs / pix) : smoothstep(0.0009, 0.004, lapAbs / max(abs(q0), 1e-6));
-        edge = max(smoothstep(0.02, 0.06, jump), crease * 0.8);
+        // Hidden line: DOAR conturul general (silueta / salt de adancime) - fara crease.
+        edge = u_style == 4 ? smoothstep(0.02, 0.06, jump) : max(smoothstep(0.02, 0.06, jump), crease * 0.8);
     }
     if (u_style == 4) {
-        // HIDDEN LINE curat (ca in AutoCAD): fundal inchis + DOAR muchiile luminoase.
-        // Nu se vede nicio suprafata umbrita - doar contururi si crease (linii de desen).
-        float ink = clamp(edge * 1.6, 0.0, 1.0);
-        vec3 paper = vec3(0.062, 0.078, 0.125);   // acelasi ton cu fundalul temei
-        vec3 line = vec3(0.86, 0.92, 1.0);        // muchie luminoasa, rece
-        o_col = vec4(mix(paper, line, ink), c.a);
+        // HIDDEN LINE stil Rhino 3D: hartie alba, suprafete albe cu umbrire fina,
+        // DOAR conturul exterior negru (fara muchii interne / crease).
+        float ink = clamp(edge * 1.7, 0.0, 1.0);
+        vec3 paper = vec3(0.985, 0.988, 0.992);                  // fundal alb
+        vec3 shade = mix(paper, vec3(0.82, 0.84, 0.87), 0.22 * ao); // umbra moale pe suprafete
+        vec3 col = mix(shade, vec3(0.10, 0.12, 0.15), ink);       // cerneala neagra pe muchii
+        o_col = vec4(col, c.a);
         return;
     }
     o_col = vec4(c.rgb * ao * (1.0 - 0.45 * u_edge * edge), c.a);

@@ -499,7 +499,7 @@ impl App {
                 let levels: Vec<(String, f64)> = self.scene_grids().levels.iter().map(|(n, z)| (n.clone(), *z as f64 + oz)).collect();
                 let o = self.origin_f64();
                 let world = value as f64 + if axis == 0 { o.x } else { o.y };
-                section_annotations(&levels, &grids, axis, world, [x0, y0, x1, y1], u, &mut extra, &mut texts);
+                section_annotations(&levels, &grids, axis, world, [x0, y0, x1, y1], u, self.cad_dims, self.cad_levels, &mut extra, &mut texts);
             }
             segs.extend(extra);
         }

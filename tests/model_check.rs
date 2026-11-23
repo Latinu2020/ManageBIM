@@ -661,7 +661,7 @@ fn plan_grids_get_bubbles_and_dimensions() {
     // sectiune la Y = 10: axele 1, 2, 3 apar ca verticale la X = 0 / 6 / 13.5; nivelurile ca linii orizontale
     let (mut segs, mut texts) = (Vec::new(), Vec::new());
     let levels = vec![("Level 0".to_string(), 0.0), ("Level 1".to_string(), 3.5)];
-    bimrust::app::section_annotations(&levels, &grids, 1, 10.0, [0.0, -0.5, 13.5, 7.0], 0.1, &mut segs, &mut texts);
+    bimrust::app::section_annotations(&levels, &grids, 1, 10.0, [0.0, -0.5, 13.5, 7.0], 0.1, true, true, &mut segs, &mut texts);
     let mut xs: Vec<f64> = segs.iter().filter(|s| s.0 == "GRIDS" && (s.1[0] - s.1[2]).abs() < 1e-9 && (s.1[3] - s.1[1]) > 5.0).map(|s| s.1[0]).collect();
     xs.sort_by(|a, b| a.total_cmp(b));
     assert_eq!(xs, vec![0.0, 6.0, 13.5]);

@@ -9,12 +9,12 @@
 Open **IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP and point clouds** together, run clash detection and model checks,<br>
 manage issues and markups, publish drawings — and stay in sync with Revit and Navisworks.
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.27.9-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.9/ManageBIM-Setup-0.27.9.exe)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.27.11-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.11/ManageBIM-Setup-0.27.11.exe)
 &nbsp;
 [![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Releases-334155?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/Latinu2020/ManageBIM/releases)
 
 [![Build](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml/badge.svg)](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-0.27.9-blue)
+![Version](https://img.shields.io/badge/version-0.27.11-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20FreeBSD-0078d4)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-b7410e)
 ![No admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a)
@@ -73,16 +73,20 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 
 | Platform | Package | Notes |
 |---|---|---|
-| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.27.9.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.9/ManageBIM-Setup-0.27.9.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins and the OpenCascade runtime. Per-user, **no administrator rights**. |
+| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.27.11.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.11/ManageBIM-Setup-0.27.11.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins and the OpenCascade runtime. Per-user, **no administrator rights**. |
 | **Linux** (x86-64) | `ManageBIM-<version>-x86_64.AppImage` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | One file: `chmod +x`, then run. No installation, no root. |
 | **FreeBSD** (x86-64) | `ManageBIM-<version>-freebsd-x86_64.tar.gz` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | Unpack and run `ManageBIM/ManageBIM`. Needs `pkg install mesa-libs libxkbcommon`. |
 
+> **0.27.11** — new **Annotation** ribbon tab (right after Sections) for **Cut to DWG / Cut on Sheet / Cut to PDF**, with a small proportional **2D Section Preview** window (white sheet with hatching, dimension chains, levels and title block) and separate toggles for **Dimensions** and **Levels** in the export. Section boxes now cut real 3D geometry (solid cap hatched on the cut plane) instead of flattened 2D lines; **Behind edges** is gone (everything in the box from the plane on is always visible). The **Hidden line** visual style is now Rhino 3D style: white paper, light shading and only the outer contour. The cut-plane highlight stays **off by default** — turn it on only when you need the drag handle.
+>
+> **0.27.10 (hotfix)** — reliable viewpoint click / rename (separate drag handle), section cut edges computed and drawn as a technical drawing, dimension chains in DWG, and a clean Hidden-line style.
+>
 > **0.27.9 (hotfix)** — dedicated **⚙ Settings window** (fonts / DPI 75–200%, themes, export, scripts folder), a clean **top status bar** (search / focus / theme / settings), a **Script** ribbon tab with a working Rhai engine and 3 example scripts (`select_where`, `set_prop`, `create_clash_test`...), **resizable columns + right-click › Rename** in Clash/TimeLiner, **DWG / DXF / PDF sections from Front / Back / Left / Right / Top / Bottom** with a highlighted 3D cut plane **taken directly from the section box**, **COBie 2.4 export** and **BCF 2.1 / 3.0 export**, **multi-core path tracing**, DWG re-import placed exactly on the original cut plane, viewpoint folder fixes, and a friendlier installer with feature recommendations. The installer includes OpenCascade and all three add-ins — **no administrator rights**.
 >
 > **0.27.0** — progressive CPU path tracing, Navisworks-style clash workflow, Hidden line, uniform ribbon buttons and a full-height Properties panel with all element properties.
 >
 > **Windows:** the installer is not digitally signed yet — if SmartScreen asks, choose *More info › Run anyway*.
-> Silent install: `ManageBIM-Setup-0.27.9.exe /S` (add `/NoAddins` for the application only).
+> Silent install: `ManageBIM-Setup-0.27.11.exe /S` (add `/NoAddins` for the application only).
 >
 > **Linux / FreeBSD:** the add-ins (Revit, Navisworks, AutoCAD) and the native STEP / IGES reader exist only on Windows; everything else is the same.
 
@@ -113,7 +117,7 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 - **Model Checker** — rules or **buildingSMART IDS 1.0** files (import **and export**): properties, attributes, classifications, materials; exact values, lists, patterns, ranges, optional / prohibited, **unique values** (duplicate marks, GUIDs). Excel and BCF reports. **Quick checks without IDS**: no level, name, classification, material or geometry, duplicates, duplicate GUIDs.
 - **Live Link** — the selection follows **Revit** and **Navisworks** both ways (matched by UniqueId / IFC GUID).
 - **As-built check** — the model against the point cloud: built, partial, missing, not scanned; colours on the model and an Excel report.
-- **Sections** — boxes with stretch arrows (like Revit), planes, **sections by level** from the status bar, filled cuts.
+- **Sections & Annotation** — boxes with stretch arrows (like Revit), planes, **sections by level** from the status bar, filled cuts (solid cap hatched on the cut plane). The **Annotation** tab exports the cut to **DWG / DXF / PDF** with hatching, element tags, grid bubbles and **dimension chains**; separate **Dimensions** / **Levels** toggles let you drop what you don't need. A small **2D Section Preview** window (proportional, white sheet) shows the drawing before export. **Hidden line** style renders white paper with only the outer contour.
 - **Grids and levels** — from IFC, from DWG / DXF, or created in the app; clash locations like **“C-4 / Level 2”**.
 - **Measure** with snapping, **relocate** models (point to point, rotate, align to a face), **compare** model versions (geometry and **parameter by parameter**, old → new), **TimeLiner** 4D (CSV, **MS Project** and **Primavera P6** XML; videos with date and legend) and **quantities**.
 - **Colour by parameter** with a legend in the view and on images / videos.

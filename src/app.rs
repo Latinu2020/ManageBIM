@@ -1293,6 +1293,10 @@ pub struct App {
     pub cad_sheet: bool,
     /// Cut to DWG: plan complet (hasura, etichete, axe cu cote, niveluri pe sectiuni)
     pub cad_annotate: bool,
+    /// Cut to DWG: include cotele în lanț (dimensiuni) în desenul exportat
+    pub cad_dims: bool,
+    /// Cut to DWG: include liniile de nivel + etichetele lor în desenul exportat
+    pub cad_levels: bool,
     /// istoricul vizualizarii (Undo / Redo): starile, pozitia curenta, semnatura ultimei stari
     pub hist: Vec<ViewSnap>,
     pub hist_pos: usize,
@@ -1305,6 +1309,8 @@ pub struct App {
     /// desene 2D suprapuse peste model si fereastra lor
     pub overlays: Vec<CadOverlay>,
     pub overlay_open: bool,
+    /// fereastra mica de preview 2D a sectiunii (inainte de export), inchizabila
+    pub section_preview_open: bool,
     /// cartusul planselor (PDF / DWG) si fereastra lui de editare
     pub title_block: crate::pdf::TitleBlock,
     pub title_block_open: bool,
@@ -1607,6 +1613,8 @@ impl App {
             manual_q: String::new(),
             cad_sheet: false,
             cad_annotate: true,
+            cad_dims: true,
+            cad_levels: true,
             hist: Vec::new(),
             hist_pos: 0,
             hist_sig: 0,
@@ -1616,6 +1624,7 @@ impl App {
             vp_rename_pending: None,
             overlays: Vec::new(),
             overlay_open: false,
+            section_preview_open: false,
             title_block: Default::default(),
             title_block_open: false,
             box_drag: None,
@@ -2706,9 +2715,9 @@ pub fn plan_grid_annotations(grids: &[UserGrid], u: f64, segs: &mut Vec<(String,
 /// Pe o sectiune verticala: liniile de nivel cu nume si cota (m) si axele taiate de plan (cu bula sus).
 /// `axis` = 0 (plan la X = value, orizontala = Y) sau 1 (plan la Y = value, orizontala = X);
 /// `bbox` = [x0, y0, x1, y1] al taieturii in coordonatele desenului.
-pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: usize, value: f64, bbox: [f64; 4], u: f64, segs: &mut Vec<(String, [f64; 4])>, texts: &mut Vec<CadText>) {
+pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: usize, value: f64, bbox: [f64; 4], u: f64, dims: bool, levels_on: bool, segs: &mut Vec<(String, [f64; 4])>, texts: &mut Vec<CadText>) {
     let [x0, y0, x1, y1] = bbox;
-    for (name, z) in levels {
+    if levels_on { for (name, z) in levels {
         if *z < y0 - 5.0 || *z > y1 + 5.0 {
             continue;
         }
@@ -2719,9 +2728,9 @@ pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: u
         segs.push(("LEVELS".into(), [tx + 2.0 * u, *z + 2.5 * u, tx - 2.0 * u, *z + 2.5 * u]));
         segs.push(("LEVELS".into(), [tx - 2.0 * u, *z + 2.5 * u, tx, *z]));
         texts.push(CadText::new("LEVELS_TEXT", tx + 3.5 * u, *z + 0.5 * u, 2.5, 0.0, format!("{name}  {}{:.3}", if *z >= 0.0 { "+" } else { "" }, z)));
-    }
+    } }
     let mut grid_x: Vec<f64> = Vec::new();
-    for g in grids {
+    if levels_on { for g in grids {
         // intersectia axei (2D) cu planul sectiunii
         let (a, b) = (g.a[axis] - value, g.b[axis] - value);
         if (a > 1e-9 && b > 1e-9) || (a < -1e-9 && b < -1e-9) || (b - a).abs() < 1e-9 {
@@ -2737,9 +2746,10 @@ pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: u
         segs.push(("GRIDS".into(), [h, y0 - 5.0 * u, h, y1 + 10.0 * u]));
         circle_segs("GRIDS", [h, y1 + 14.5 * u], 4.5 * u, segs);
         texts.push(CadText::new("GRID_TEXT", h - text_w(&g.name, 2.5, u) / 2.0, y1 + 13.25 * u, 2.5, 0.0, g.name.clone()));
-    }
+    } }
     // ---- COTE IN LANT (desen tehnic): linie de cota + linii ajutatoare + bifa 45° + text.
     // Verticale: intre niveluri consecutiv; Orizontale: intre axele de grila taiete de plan.
+    if !dims { return; }
     let tick = |x: f64, y: f64, segs: &mut Vec<(String, [f64; 4])>| {
         segs.push(("DIMS".into(), [x - 1.2 * u, y - 1.2 * u, x + 1.2 * u, y + 1.2 * u]));
     };
