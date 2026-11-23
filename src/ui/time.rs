@@ -541,7 +541,10 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
             self.output_settings_grid(ui, false);
             let ui = &mut cols[1];
             ui.label(RichText::new("RENDER THE CURRENT VIEW").small().strong().color(ui.visuals().weak_text_color()));
-            ui.label(format!("{}×{} PNG of what you see in the 3D view, with the current visual style ({}).", self.render.width, self.render.height, self.settings.visual_style.label()));
+            let style = if self.render.with_materials { "Realistic with materials".to_string() } else { self.settings.visual_style.label().to_string() };
+            ui.label(format!("{}×{} PNG of what you see in the 3D view ({style}).", self.render.width, self.render.height));
+            ui.checkbox(&mut self.render.with_materials, "🎨 Render with materials")
+                .on_hover_text("The image (and the video) uses the Realistic style with materials, textures, gloss and shadows - the 3D view goes back to how it was afterwards. With no materials assigned yet, they are added automatically by IFC type.");
             ui.add_space(4.0);
             if ui.add(egui::Button::new(RichText::new("🖼 Render Image…").strong().color(Color32::WHITE)).fill(accent()).min_size(EV::new(180.0, 30.0))).clicked() {
                 self.request_path(Purpose::RenderImage);

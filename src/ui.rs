@@ -274,6 +274,10 @@ impl eframe::App for App {
         self.toasts_ui(ctx);
         self.update_mode();
         self.rebuild_colors();
+        if self.still_wait > 0 {
+            self.still_wait -= 1;
+            ctx.request_repaint();
+        }
         self.autosave_tick();
         self.shared_sync(false);
 
@@ -1362,6 +1366,13 @@ impl App {
                 self.request_path(Purpose::ExportIfc);
             }
         });
+        rgroup(ui, "3D (glTF)", |ui| {
+            let has = self.loaded_models().next().is_some();
+            if rbtn(ui, "📦", "Export GLB", "Export what you see to glTF binary (.glb) for Blender, Rhino 8, Twinmotion, Unreal, Enscape, 3ds Max:\ngeometry, colours and materials (as in the 3D view), Model › Level › Element hierarchy,\nGUIDs and all BIM properties (Blender: Object › Custom Properties).\nWith a selection: only the selected items.", false, has).clicked() {
+                self.ifc_selection = !self.selected.is_empty();
+                self.request_path(Purpose::ExportGlb);
+            }
+        });
     }
 
     fn ribbon_share(&mut self, ui: &mut egui::Ui) {
@@ -1746,7 +1757,22 @@ impl App {
                         _ => None,
                     })
                 });
-                if let Some(img) = shot {
+                // captura de ecran poate sa nu mai vina (fereastra minimizata / driver): nu asteptam la infinit
+                if shot.is_none() {
+                    let j = self.report_job.as_mut().unwrap();
+                    j.shot_wait = j.shot_wait.saturating_add(1);
+                    if j.shot_wait == 90 {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+                    }
+                    if j.shot_wait > 240 {
+                        self.error("Viewpoint report stopped: the window did not return a screenshot (is it minimized?). The pages made so far are saved.");
+                        self.finish_report();
+                    }
+                }
+                if let Some(img) = shot.filter(|im| im.size[0] > 0 && im.size[1] > 0) {
+                    if let Some(j) = self.report_job.as_mut() {
+                        j.shot_wait = 0;
+                    }
                     let ppp = ctx.pixels_per_point();
                     let [x, y, w, h] = self.vp_rect;
                     let (iw, ih) = (img.size[0] as i64, img.size[1] as i64);
@@ -1767,8 +1793,11 @@ impl App {
                     let i = self.report_job.as_ref().map(|j| j.list.get(j.idx).copied().unwrap_or(0)).unwrap_or(0);
                     let item = self.report_item(i, png, w2, h2);
                     let n = self.report_job.as_ref().map(|j| j.list.len()).unwrap_or(0);
-                    let j = self.report_job.as_mut().unwrap();
-                    j.items.push(item);
+                    let Some(j) = self.report_job.as_mut() else { return };
+                    // viewpoint sters intre timp: pagina lui se sare
+                    if let Some(item) = item {
+                        j.items.push(item);
+                    }
                     j.idx += 1;
                     j.phase = 0;
                     if j.idx >= n {
@@ -2928,6 +2957,8 @@ impl App {
                         ui.label("Time limit (s, 0 = off)");
                         ui.add(egui::DragValue::new(&mut self.pathtrace_params.3).range(0.0..=600.0).speed(1.0));
                     });
+                    ui.checkbox(&mut self.render.with_materials, "🎨 Render with materials")
+                        .on_hover_text("Uses the assigned materials (colours, image textures, brick / tile / wood patterns, gloss, metal, glass). With no materials assigned yet, they are added automatically by IFC type. Hidden elements and the section are respected.");
                     ui.horizontal(|ui| {
                         let avail = crate::oidn::available();
                         let r = ui.add_enabled(avail.is_ok(), egui::Checkbox::new(&mut self.settings.render_denoise, "Denoise (Intel Open Image Denoise)"));
@@ -3234,7 +3265,9 @@ impl App {
 
         let aspect = rect.width() / rect.height().max(1.0);
         let params = self.frame_params(aspect);
-        if let Some((w, h)) = self.pending_capture.take() {
+        // imaginea asteapta cateva cadre dupa ce s-au schimbat stilul / materialele (vezi still_wait)
+        let capture = if self.still_wait == 0 { self.pending_capture.take() } else { None };
+        if let Some((w, h)) = capture {
             let (bg_top, bg_bottom) = self.render_bg();
             let cp = self.frame_params(w as f32 / h.max(1) as f32);
             self.renderer.lock().unwrap_or_else(|e| e.into_inner()).capture = Some(crate::render::CaptureReq { params: cp, w, h, bg_top, bg_bottom });
@@ -4391,6 +4424,7 @@ impl App {
                 Purpose::ExportClashPdf => "Export PDF Report",
                 Purpose::ExportClashBcf => "Export clashes as BCF",
                 Purpose::ExportIfc => "Export to IFC4",
+                Purpose::ExportGlb => "Export to glTF (GLB)",
                 Purpose::SharedFolder => "Shared issues folder",
                 Purpose::SelectScriptsDir => "Scripts folder",
                 Purpose::PublishBimd => "Publish project (.bimd)",
@@ -5518,6 +5552,10 @@ fn commands() -> Vec<Cmd> {
         c!("Export IFC4…", "Export", "🏗", "ifc export", |a| {
             a.ifc_selection = false;
             a.request_path(Purpose::ExportIfc);
+        }),
+        c!("Export glTF / GLB (Blender, Rhino, Twinmotion)…", "Export", "📦", "gltf glb blender rhino twinmotion unreal enscape export", |a| {
+            a.ifc_selection = !a.selected.is_empty();
+            a.request_path(Purpose::ExportGlb);
         }),
         c!("Web viewer (HTML)…", "Share", "🌐", "web html browser", |a| {
             a.web_selection = !a.selected.is_empty();

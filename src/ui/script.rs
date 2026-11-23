@@ -118,9 +118,11 @@ impl App {
     fn script_ids(&self, idx: &[i32]) -> Vec<ElemId> {
         let mut out = Vec::new();
         let mut i = 0i32;
+        // set, nu cautare in lista: 100k din 300k elemente ar insemna minute de interfata blocata
+        let want: std::collections::HashSet<i32> = idx.iter().copied().collect();
         for (mi, m) in self.loaded_models() {
             for ei in 0..m.elements.len() {
-                if idx.contains(&i) {
+                if want.contains(&i) {
                     out.push(ElemId { m: mi as u32, e: ei as u32 });
                 }
                 i += 1;

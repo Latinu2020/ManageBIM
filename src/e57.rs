@@ -413,9 +413,13 @@ pub fn parse(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, R
             hi = hi.max(p);
             let l = p - cloud.base;
             cloud.pos.push([l.x as f32, l.y as f32, l.z as f32]);
+            // fluxurile de culoare pot fi mai scurte decat XYZ (scanere / exporturi incomplete): gri, nu eroare
             let c = match (&r, &g, &b, &inten) {
-                (Some(r), Some(g), Some(b), _) => [r[i], g[i], b[i], 255],
-                (_, _, _, Some(t)) => [t[i], t[i], t[i], 255],
+                (Some(r), Some(g), Some(b), _) => match (r.get(i), g.get(i), b.get(i)) {
+                    (Some(r), Some(g), Some(b)) => [*r, *g, *b, 255],
+                    _ => [190, 190, 190, 255],
+                },
+                (_, _, _, Some(t)) => t.get(i).map_or([190, 190, 190, 255], |t| [*t, *t, *t, 255]),
                 _ => [190, 190, 190, 255],
             };
             cloud.col.push(c);

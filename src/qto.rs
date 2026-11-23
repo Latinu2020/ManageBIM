@@ -140,7 +140,69 @@ pub fn geo_qty(m: &Model, e: &Element) -> GeoQty {
         }
     }
     let s = e.aabb.size();
-    GeoQty { volume: vol.abs(), surface: surf, plan, length: s.x.max(s.y) as f64, height: s.z as f64 }
+    // lungimea pe directia elementului (pereti / grinzi / tevi pe diagonala), nu pe axele X / Y
+    let length = plan_length(t).unwrap_or(s.x.max(s.y) as f64);
+    GeoQty { volume: vol.abs(), surface: surf, plan, length, height: s.z as f64 }
+}
+
+/// Cea mai mare dimensiune in plan masurata pe axele principale ale punctelor (PCA 2D).
+/// Un perete de 10 m rotit la 45° are 10 m (cutia aliniata la X / Y ar da 7.07 m pe fiecare axa).
+pub fn plan_length(pts: &[glam::Vec3]) -> Option<f64> {
+    if pts.len() < 3 {
+        return None;
+    }
+    // vârfurile apar de mai multe ori (coplanare pe fețe); ponderarea inegală înclină axele PCA-ului
+    // (o cutie 3x2 ar da 3.23 m); eliminăm dublele la 1 mm înainte de calcul
+    let seen: std::collections::HashSet<(i64, i64)> = pts.iter().map(|p| ((p.x as f64 * 1000.0).round() as i64, (p.y as f64 * 1000.0).round() as i64)).collect();
+    if seen.len() < 3 {
+        return None;
+    }
+    let n = seen.len() as f64;
+    let (mx, my) = seen.iter().fold((0.0f64, 0.0f64), |(x, y), (px, py)| (x + *px as f64, y + *py as f64));
+    let (mx, my) = (mx / n / 1000.0, my / n / 1000.0);
+    let (mut sxx, mut syy, mut sxy) = (0.0f64, 0.0f64, 0.0f64);
+    for (px, py) in &seen {
+        let (dx, dy) = (*px as f64 / 1000.0 - mx, *py as f64 / 1000.0 - my);
+        sxx += dx * dx;
+        syy += dy * dy;
+        sxy += dx * dy;
+    }
+    // directia proprie principala a matricei de covarianta 2x2
+    let ang = 0.5 * (2.0 * sxy).atan2(sxx - syy);
+    let (u, v) = ((ang.cos(), ang.sin()), (-ang.sin(), ang.cos()));
+    let ext = |d: (f64, f64)| {
+        let (lo, hi) = pts.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+            let k = (p.x as f64 - mx) * d.0 + (p.y as f64 - my) * d.1;
+            (lo.min(k), hi.max(k))
+        });
+        hi - lo
+    };
+    let l = ext(u).max(ext(v));
+    l.is_finite().then_some(l)
+}
+
+#[cfg(test)]
+mod length_tests {
+    use glam::Vec3;
+
+    fn wall(len: f32, thick: f32, ang_deg: f32) -> Vec<Vec3> {
+        let (c, s) = (ang_deg.to_radians().cos(), ang_deg.to_radians().sin());
+        let mut v = Vec::new();
+        for (x, y) in [(0.0, 0.0), (len, 0.0), (len, thick), (0.0, thick)] {
+            for z in [0.0, 3.0] {
+                v.push(Vec3::new(x * c - y * s, x * s + y * c, z));
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn diagonal_wall_keeps_its_length() {
+        for ang in [0.0, 30.0, 45.0, 90.0, 137.0] {
+            let l = super::plan_length(&wall(10.0, 0.25, ang)).unwrap();
+            assert!((l - 10.0).abs() < 1e-3, "angle {ang}: {l}");
+        }
+    }
 }
 
 // ====================================================================== rezultat

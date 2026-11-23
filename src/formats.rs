@@ -1850,11 +1850,15 @@ pub fn cad_lines(path: &str) -> Result<(Vec<(String, [f64; 4])>, f64), String> {
     let (insunits, entities, blocks) = dxf_doc(path)?;
     let mut out: Vec<(String, [f64; 4])> = Vec::new();
     fn arc(c: glam::DVec2, r: f64, a0: f64, a1: f64) -> Vec<glam::DVec2> {
-        let mut sweep = a1 - a0;
-        while sweep <= 0.0 {
-            sweep += std::f64::consts::TAU;
+        // unghiuri / raze invalide dintr-un desen deteriorat: fara arc (o bucla „while” ar fi infinita la -inf)
+        if !(a0.is_finite() && a1.is_finite() && r.is_finite() && c.is_finite()) {
+            return Vec::new();
         }
-        let n = ((sweep / std::f64::consts::TAU) * 48.0).ceil().max(4.0) as usize;
+        let mut sweep = (a1 - a0).rem_euclid(std::f64::consts::TAU);
+        if sweep <= 1e-12 {
+            sweep = std::f64::consts::TAU;
+        }
+        let n = ((sweep / std::f64::consts::TAU) * 48.0).ceil().clamp(4.0, 48.0) as usize;
         (0..=n).map(|k| {
             let a = a0 + sweep * k as f64 / n as f64;
             c + glam::DVec2::new(a.cos(), a.sin()) * r

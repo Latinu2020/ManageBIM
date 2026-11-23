@@ -604,7 +604,18 @@ pub fn decode(data: &[u8]) -> Result<RawModel, String> {
         return decode_v2(&data[8..]);
     }
     let payload = match flags & 0xff {
-        0 => lz4_flex::decompress_size_prepended(&data[8..]).map_err(|e| format!("Corrupt .bimc: {e}"))?,
+        0 => {
+            // marimea declarata vine din fisier: LZ4 nu comprima mai mult de ~255:1, altfel e antet corupt
+            // (altfel s-ar aloca pana la 4 GB inainte de a afla ca fisierul e stricat)
+            if data.len() < 12 {
+                return Err("Corrupt .bimc header".into());
+            }
+            let size = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
+            if size > (data.len() - 12).saturating_mul(255).saturating_add(4096) {
+                return Err("Corrupt .bimc (declared size does not match the file)".into());
+            }
+            lz4_flex::decompress_size_prepended(&data[8..]).map_err(|e| format!("Corrupt .bimc: {e}"))?
+        }
         1 => {
             if data.len() < 12 {
                 return Err("Corrupt .bimc header".into());

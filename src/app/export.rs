@@ -220,6 +220,51 @@ impl App {
         }
     }
 
+    /// Export glTF binar (.glb) pentru Blender, Rhino, Twinmotion, Unreal, Enscape: ce se vede (culori /
+    /// materiale ca in vederea 3D), cu ierarhia Model › Nivel › Element si proprietatile BIM.
+    pub fn export_glb(&mut self, path: &str) {
+        let path = with_ext(path, "glb");
+        let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
+        let use_sel = self.ifc_selection && !self.selected.is_empty();
+        let mut items: Vec<crate::gltf_export::Item> = Vec::new();
+        for (mi, m) in &models {
+            let looks = self.looks.get(mi).filter(|l| l.len() == m.elements.len());
+            for (ei, e) in m.elements.iter().enumerate() {
+                let id = ElemId { m: *mi as u32, e: ei as u32 };
+                let look = looks.map(|l| l[ei]);
+                let visible = !e.default_hidden && look.map_or(self.is_visible(id), |l| !l.hidden);
+                let take = if use_sel { self.selected.contains(&id) } else { visible };
+                if !take || e.tri_count == 0 {
+                    continue;
+                }
+                let (t0, t1) = (e.tri_start as usize, (e.tri_start + e.tri_count) as usize);
+                let Some(tris) = m.pos.get(t0 * 3..t1 * 3) else { continue };
+                let colors: Vec<[u8; 4]> = (t0..t1).map(|t| look.and_then(|l| l.col).unwrap_or_else(|| m.tri_color.get(t).copied().unwrap_or([200, 200, 200, 255]))).collect();
+                let gm = look.map_or([0, 0], |l| [l.gpu[1], l.gpu[2]]);
+                items.push(crate::gltf_export::Item {
+                    model: &m.name,
+                    level: &e.storey,
+                    name: &e.name,
+                    guid: &e.guid,
+                    ifc_type: &e.ifc_type,
+                    props: e.props.iter().map(|p| (p.group.as_str(), p.name.as_str(), p.value.as_str())).collect(),
+                    tris,
+                    gloss_metal: vec![gm; t1 - t0],
+                    colors,
+                });
+            }
+        }
+        if items.is_empty() {
+            return self.error("Nothing to export: no visible items with geometry.");
+        }
+        let (glb, st) = crate::gltf_export::write_glb(&items, &format!("ManageBIM {}", env!("CARGO_PKG_VERSION")));
+        drop(items);
+        match crate::formats::write_atomic(std::path::Path::new(&path), &glb, false) {
+            Ok(()) => self.toast(format!("GLB exported: {} items, {} triangles, {} materials ({:.1} MB) → {}", st.elements, st.triangles, st.materials, glb.len() as f64 / 1e6, crate::file_name(&path))),
+            Err(e) => self.error(format!("Cannot write {path}: {e}")),
+        }
+    }
+
     /// Issue-uri BCF (2.1 / 3.0) din Revit, ACC, Solibri, BIMcollab... -> viewpoints ManageBIM: camera, titlu,
     /// stare, prioritate, responsabil, descriere, comentarii si elementele selectate (dupa GUID).
     pub fn import_bcf(&mut self, path: &str) {

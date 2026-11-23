@@ -3,6 +3,22 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.19 - 2026-11-23
+- **Path trace with materials**: the CPU render now uses what you see in the 3D view - assigned materials and colour overrides, image textures and the brick / tile / wood / stone / grass / panel patterns, gloss (sun highlight + real reflections of the scene), metal and **glass** (light and the view pass through, soft tinted shadows). Hidden elements are no longer rendered and the **section is respected**. New "🎨 Render with materials" option in the Path trace window (materials are added automatically by IFC type when none are assigned).
+- **Render Image with materials**: the "🎨 Render with materials" option is now also in Render › Image (before it existed only for video) - the PNG is made in the Realistic style with materials, without the blue selection tint, and the 3D view goes back to how it was. The path-trace PNG export adds the `.png` extension when it is missing.
+- **Export glTF / GLB** (Export › 3D): geometry, colours and PBR materials as in the 3D view, Model › Level › Element hierarchy, GUIDs and all BIM properties (Blender: Object › Custom Properties) - for Blender, Rhino 8, Twinmotion, Unreal, Enscape, 3ds Max. With a selection only the selected items are exported.
+- **glTF import**: reads the Custom Properties / `extras` (Blender, ManageBIM GLB) as element properties, including GUID, type and level; fixed external buffers with encoded names (only `%20` was decoded).
+- **Open dialog**: FBX added to the 3D meshes filter, new point cloud filter (E57, LAS), `.ifczip` in the IFC filter. Clear instructions for Blender (.blend), Rhino (.3dm) and SketchUp (.skp) files; the old SketchUp message recommended DAE, which is not supported.
+- **Quantities**: the Length of diagonal walls, beams and pipes is measured along the element (it was the X / Y bounding box: a 10 m wall at 45° gave 7.07 m).
+- **Stability** (from a full audit):
+  - No more crash when a clash test is deleted, or a project is closed / opened, while a test or Update All is running; Duplicate / Delete are blocked while tests run.
+  - Viewpoint reports: no crash if a viewpoint is deleted during the export, no endless wait when the window is minimized (stops with a message, the pages made so far are saved).
+  - Model loading, video export and path trace can no longer stay "in progress" forever after an internal error (autosave kept off, no new render possible); errors are reported instead.
+  - Damaged DWG / DXF overlays no longer close the app when the project opens; corrupt DXF arcs no longer hang it; corrupt `.bimc` caches can no longer allocate gigabytes; E57 files with short colour streams load in grey instead of failing.
+  - Scripts: a runaway `loop {}` stops with an error instead of freezing the app; selecting many elements from a script is fast (was quadratic).
+  - Projects: camera / clash values that are not numbers are cleaned before saving (the project could not be reopened), task dates and render sizes are validated on open; the video frame queue is bounded (memory with 4K supersampling); the clash sort by distance is safe with invalid values.
+  - `crash.log` keeps at most ~1 MB.
+
 ## 0.27.18 - 2026-11-23
 - **Clash Detective (Navisworks style)**:
   - Results can be **sorted by any column** (click the header: ascending, descending, test order); the choice is remembered.

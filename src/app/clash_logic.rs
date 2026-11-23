@@ -150,7 +150,8 @@ impl App {
     pub fn merge_clash(&mut self, t: usize, found: Vec<clash::Found>, secs: f32) {
         let now = now_string();
         // reguli: perechi ignorate + elemente excluse
-        let test_cfg = self.clash_tests[t].clone();
+        // testul poate fi sters / proiectul inchis cat timp rula: rezultatul se ignora, nu crapa aplicatia
+        let Some(test_cfg) = self.clash_tests.get(t).cloned() else { return };
         let excluded = self.excluded_items(&test_cfg.rules);
         let set_members = self.same_set_members(&test_cfg.rules);
         let before = found.len();

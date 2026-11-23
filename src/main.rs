@@ -68,7 +68,16 @@ fn install_crash_log() {
         );
         let path = bimrust::formats::config_root().map(|a| a.join("ManageBIM").join("crash.log"));
         if let Some(p) = &path {
-            let _ = std::fs::create_dir_all(p.parent().unwrap());
+            if let Some(d) = p.parent() {
+                let _ = std::fs::create_dir_all(d);
+            }
+            // jurnalul nu creste la infinit: peste 1 MB pastram doar ultima jumatate
+            if std::fs::metadata(p).map(|m| m.len() > 1_000_000).unwrap_or(false) {
+                if let Ok(old) = std::fs::read(p) {
+                    let tail = &old[old.len() / 2..];
+                    let _ = std::fs::write(p, tail);
+                }
+            }
             use std::io::Write;
             if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
                 let _ = writeln!(f, "{msg}");

@@ -23,7 +23,14 @@ const AO_DIST: f32 = 2.5;
 
 pub struct Scene {
     pub tris: Vec<Vec3>,   // 3 vertexuri per triunghi
+    /// culoarea finala (material / override / profil, ca in vederea 3D), alfa = opacitatea
     pub colors: Vec<[u8; 4]>,
+    /// parametrii materialului per triunghi, ca in shader: [model sau 16 + textura, luciu, metal, scara]
+    pub mats: Vec<[u8; 4]>,
+    /// texturile imagine (512 x 512 RGBA), in ordinea straturilor de pe GPU
+    pub textures: Vec<Vec<u8>>,
+    /// planurile sectiunii active (n, w): se pastreaza punctele cu n·p <= w
+    pub planes: Vec<glam::Vec4>,
     pub bvh: Bvh,
 }
 
@@ -35,20 +42,142 @@ impl Scene {
         // origin aici, razele nu mai lovesc modelul si imaginea ramane doar "cer".
         let mut tris = Vec::new();
         let mut colors = Vec::new();
-        for (_, m) in app.loaded_models() {
-            let n = m.tri_total();
-            for t in 0..n {
-                let i = t * 3;
-                let (Some(a), Some(b), Some(c)) = (m.pos.get(i).copied(), m.pos.get(i + 1).copied(), m.pos.get(i + 2).copied()) else { continue };
-                tris.push(a);
-                tris.push(b);
-                tris.push(c);
-                let col = m.tri_color.get(t).copied().unwrap_or([200, 200, 200, 255]);
-                colors.push(col);
+        let mut mats = Vec::new();
+        for (mi, m) in app.loaded_models() {
+            // aspectul calculat pentru vederea 3D: materiale, override-uri, profil, 4D, ascunse
+            let looks = app.looks.get(&mi).filter(|l| l.len() == m.elements.len());
+            for (ei, e) in m.elements.iter().enumerate() {
+                let look = looks.map(|l| l[ei]);
+                let id = crate::model::ElemId { m: mi as u32, e: ei as u32 };
+                // elementele ascunse nu se randeaza (inainte apareau in path trace)
+                if e.default_hidden || look.map_or(!app.is_visible(id), |l| l.hidden) {
+                    continue;
+                }
+                let (t0, t1) = (e.tri_start as usize, (e.tri_start + e.tri_count) as usize);
+                for t in t0..t1 {
+                    let i = t * 3;
+                    let (Some(a), Some(b), Some(c)) = (m.pos.get(i).copied(), m.pos.get(i + 1).copied(), m.pos.get(i + 2).copied()) else { continue };
+                    let file = m.tri_color.get(t).copied().unwrap_or([200, 200, 200, 255]);
+                    let col = look.and_then(|l| l.col).unwrap_or(file);
+                    if col[3] < 3 {
+                        continue;
+                    }
+                    tris.extend_from_slice(&[a, b, c]);
+                    colors.push(col);
+                    mats.push(look.map_or([0; 4], |l| l.gpu));
+                }
             }
         }
+        let textures = app.tex_layers.iter().map(|t| t.1.clone()).collect();
+        let planes = app.section.gpu_planes();
         let bvh = Bvh::build(&tris);
-        Scene { tris, colors, bvh }
+        Scene { tris, colors, mats, textures, planes, bvh }
+    }
+
+    /// punctul ramane dupa sectiune (ca in shader)
+    fn kept(&self, p: Vec3) -> bool {
+        self.planes.iter().all(|pl| pl.truncate().dot(p) <= pl.w + 1e-4)
+    }
+
+    /// prima intersectie vizibila (sectiunea respectata)
+    fn hit(&self, o: Vec3, d: Vec3, tmax: f32) -> Option<(f32, u32)> {
+        if self.planes.is_empty() {
+            self.bvh.raycast(&self.tris, o, d, tmax, &|_| true)
+        } else {
+            self.bvh.raycast(&self.tris, o, d, tmax, &|p| self.kept(p))
+        }
+    }
+
+    /// lumina care trece spre soare / cer: sticla lasa sa treaca o parte, opacul opreste tot
+    fn transmit(&self, o: Vec3, d: Vec3, tmax: f32) -> f32 {
+        let (mut o, mut left, mut k) = (o, tmax, 1.0f32);
+        for _ in 0..4 {
+            let Some((t, tri)) = self.hit(o, d, left) else { return k };
+            let a = self.colors[tri as usize][3] as f32 / 255.0;
+            if a > 0.95 {
+                return 0.0;
+            }
+            k *= 1.0 - a;
+            o += d * (t + 1e-3);
+            left -= t + 1e-3;
+            if left <= 0.0 || k < 0.02 {
+                return k;
+            }
+        }
+        k
+    }
+
+    /// culoarea de baza in punctul p: textura imagine sau model procedural (aceleasi formule ca shader-ul)
+    fn base_color(&self, tri: usize, p: Vec3, n: Vec3) -> [f32; 3] {
+        let c = self.colors[tri];
+        let base = [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0];
+        let m = self.mats[tri];
+        let code = m[0];
+        if code == 0 {
+            return base;
+        }
+        let sc = 0.05 + m[3] as f32 / 255.0 * 4.0;
+        let an = n.abs();
+        let uv = if an.z >= an.x && an.z >= an.y { glam::Vec2::new(p.x, p.y) } else if an.x >= an.y { glam::Vec2::new(p.y, p.z) } else { glam::Vec2::new(p.x, p.z) } / sc;
+        if code >= 16 {
+            let Some(tex) = self.textures.get((code - 16) as usize) else { return base };
+            let s = crate::materials::TEX_SIZE as usize;
+            let (x, y) = ((uv.x.rem_euclid(1.0) * s as f32) as usize % s, (uv.y.rem_euclid(1.0) * s as f32) as usize % s);
+            let i = (y * s + x) * 4;
+            return match tex.get(i..i + 3) {
+                Some(px) => [px[0] as f32 / 255.0, px[1] as f32 / 255.0, px[2] as f32 / 255.0],
+                None => base,
+            };
+        }
+        pattern(code, base, uv)
+    }
+}
+
+fn hash2(x: f32, y: f32) -> f32 {
+    ((x * 127.1 + y * 311.7).sin() * 43758.545).fract().abs()
+}
+
+fn noise2(x: f32, y: f32) -> f32 {
+    let (ix, iy) = (x.floor(), y.floor());
+    let (fx, fy) = (x - ix, y - iy);
+    let (fx, fy) = (fx * fx * (3.0 - 2.0 * fx), fy * fy * (3.0 - 2.0 * fy));
+    let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
+    lerp(lerp(hash2(ix, iy), hash2(ix + 1.0, iy), fx), lerp(hash2(ix, iy + 1.0), hash2(ix + 1.0, iy + 1.0), fx), fy)
+}
+
+/// modelele procedurale ale materialelor (caramida, gresie, lemn, piatra, iarba, panouri) - ca in shader
+fn pattern(code: u8, base: [f32; 3], uv: glam::Vec2) -> [f32; 3] {
+    let mul = |k: f32| [base[0] * k, base[1] * k, base[2] * k];
+    let mix = |a: [f32; 3], b: [f32; 3], t: f32| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    let step = |edge: f32, x: f32| -> f32 { if x < edge { 1.0 } else { 0.0 } };
+    match code {
+        1 => {
+            let (mut bx, by) = (uv.x, uv.y * 3.0);
+            if by.floor().rem_euclid(2.0) > 0.5 {
+                bx += 0.5;
+            }
+            let (fx, fy) = (bx - bx.floor(), by - by.floor());
+            let mortar = (step(0.035, fx) + step(0.09, fy)).min(1.0);
+            let v = 0.82 + 0.3 * hash2(bx.floor(), by.floor()) + 0.08 * noise2(uv.x * 30.0, uv.y * 30.0);
+            mix(mul(v), [0.80, 0.78, 0.74], mortar)
+        }
+        2 => {
+            let (fx, fy) = (uv.x - uv.x.floor(), uv.y - uv.y.floor());
+            let g = (step(0.03, fx) + step(0.03, fy)).min(1.0);
+            mix(mul(0.92 + 0.12 * hash2(uv.x.floor(), uv.y.floor())), mul(0.62), g)
+        }
+        3 => {
+            let r = uv.x * 7.0 + noise2(uv.x * 1.5, uv.y * 10.0) * 2.5;
+            mul(0.74 + 0.36 * (0.5 + 0.5 * (r * std::f32::consts::PI).sin()))
+        }
+        4 => mul(0.80 + 0.32 * (noise2(uv.x * 6.0, uv.y * 6.0) * 0.55 + noise2(uv.x * 25.0, uv.y * 25.0) * 0.30 + noise2(uv.x * 90.0, uv.y * 90.0) * 0.15)),
+        5 => mul(0.65 + 0.55 * (noise2(uv.x * 14.0, uv.y * 14.0) * 0.6 + noise2(uv.x * 60.0, uv.y * 60.0) * 0.4)),
+        6 => {
+            let (fx, fy) = (uv.x - uv.x.floor(), uv.y * 0.5 - (uv.y * 0.5).floor());
+            let j = (step(0.012, fx) + step(0.006, fy)).min(1.0);
+            mix(base, mul(0.55), j)
+        }
+        _ => base,
     }
 }
 
@@ -100,7 +229,16 @@ pub fn start_arc(params: (u32, u32, u32, f32), scene: Arc<Scene>, cam_eye: Vec3,
         denoise_msg: Mutex::new(String::new()),
     });
     let j = job.clone();
-    std::thread::spawn(move || run(j));
+    std::thread::spawn(move || {
+        // o panica in randare nu lasa job-ul „in curs” pentru totdeauna (altfel nu mai poti porni alta randare)
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(j.clone()))).is_err() {
+            *j.denoise_msg.lock().unwrap_or_else(|e| e.into_inner()) = "internal error while rendering".into();
+            if j.denoise {
+                j.denoise_state.store(DN_FAILED, Ordering::Relaxed);
+            }
+            j.done.store(true, Ordering::Relaxed);
+        }
+    });
     job
 }
 
@@ -205,36 +343,56 @@ fn sky(d: Vec3) -> [f32; 3] {
     [0.55 + 0.35 * t, 0.65 + 0.25 * t, 0.85 + 0.15 * t]
 }
 
+/// cate reflexii / treceri prin sticla urmarim (adancimea razei)
+const MAX_DEPTH: u32 = 3;
+
 /// (culoare, albedo, normala) pentru raza o + t*d
 fn trace(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng) -> ([f32; 3], [f32; 3], [f32; 3]) {
-    let bvh = &job.scene.bvh;
-    let tris = &job.scene.tris;
-    let Some((t, tri)) = bvh.raycast(tris, o, d, 1e6, &|_| true) else {
+    trace_d(job, o, d, rng, 0)
+}
+
+fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> ([f32; 3], [f32; 3], [f32; 3]) {
+    let sc = &job.scene;
+    let tris = &sc.tris;
+    let Some((t, tri)) = sc.hit(o, d, 1e6) else {
         let s = sky(d);
         return (s, s, [0.0; 3]);
     };
-    let i = tri as usize * 3;
+    let ti = tri as usize;
+    let i = ti * 3;
     let (a, b, c) = (tris[i], tris[i + 1], tris[i + 2]);
     let mut n = (b - a).cross(c - a).normalize_or_zero();
     // fata vazuta din spate: normala spre camera (altfel ar iesi neagra)
     if n.dot(d) > 0.0 {
         n = -n;
     }
-    let base = job.scene.colors[tri as usize];
-    let base = [base[0] as f32 / 255.0, base[1] as f32 / 255.0, base[2] as f32 / 255.0];
-    let p = o + d * t + n * 1e-3;
+    let hit = o + d * t;
+    let base = sc.base_color(ti, hit, n);
+    let alpha = sc.colors[ti][3] as f32 / 255.0;
+    let m = sc.mats[ti];
+    let (gloss, metal) = (m[1] as f32 / 255.0, m[2] as f32 / 255.0);
+    // sticla / materiale transparente: raza trece mai departe cu probabilitatea (1 - opacitate)
+    if alpha < 0.99 && depth < MAX_DEPTH && rng.next() > alpha {
+        let (behind, _, _) = trace_d(job, hit + d * 1e-3, d, rng, depth + 1);
+        // sticla nuanteaza putin lumina care trece
+        let tint = |k: usize| behind[k] * (0.85 + 0.15 * base[k]);
+        return ([tint(0), tint(1), tint(2)], base, n.to_array());
+    }
+    let p = hit + n * 1e-3;
     // soarele: o directie aleatoare pe disc -> umbre cu margini moi
     let sun_dir = job.sun.normalize_or_zero();
     let mut direct = 0.0;
+    let mut lit_sun = 0.0;
     if sun_dir != Vec3::ZERO {
         let (st, sb) = basis(sun_dir);
         let (r, phi) = (SUN_RADIUS * rng.next().sqrt(), std::f32::consts::TAU * rng.next());
         let l = (sun_dir + st * (r * phi.cos()) + sb * (r * phi.sin())).normalize();
         let ndotl = n.dot(l).max(0.0);
         if ndotl > 0.0 {
-            // 0.35 = penumbra (nu negru total), ca la umbre difuze reale
-            let lit = if bvh.raycast(tris, p, l, 1e6, &|_| true).is_none() { 1.0 } else { 0.35 };
-            direct = ndotl * job.light * lit;
+            // sticla lasa soarele sa treaca; 0.35 = penumbra (nu negru total)
+            let tr = sc.transmit(p, l, 1e6);
+            lit_sun = tr;
+            direct = ndotl * job.light * (0.35 + 0.65 * tr);
         }
     }
     // lumina cerului: o raza pe emisfera (cosinus); un obstacol apropiat = ambient occlusion
@@ -242,12 +400,39 @@ fn trace(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng) -> ([f32; 3], [f32
     let (r1, r2) = (rng.next(), rng.next());
     let (r, phi) = (r1.sqrt(), std::f32::consts::TAU * r2);
     let hd = (nt * (r * phi.cos()) + nb * (r * phi.sin()) + n * (1.0 - r1).max(0.0).sqrt()).normalize();
-    let open = if bvh.raycast(tris, p, hd, AO_DIST, &|_| true).is_none() { 1.0 } else { 0.25 };
+    let open = 0.25 + 0.75 * sc.transmit(p, hd, AO_DIST);
     // fetele spre cer primesc mai mult (cer), cele spre sol doar reflexia solului
     let up = n.z.max(0.0);
     let ambient = (0.10 + 0.20 * (0.6 + 0.4 * up)) * open;
     let k = ambient + direct;
-    ([base[0] * k, base[1] * k, base[2] * k], base, n.to_array())
+    let mut col = [base[0] * k * (1.0 - 0.35 * metal), base[1] * k * (1.0 - 0.35 * metal), base[2] * k * (1.0 - 0.35 * metal)];
+    // luciu: stralucirea soarelui (Blinn-Phong, ca in vederea 3D) + reflexia reala a scenei (Fresnel)
+    let vd = -d;
+    let head = n.dot(vd).abs();
+    if gloss > 0.02 || metal > 0.02 {
+        let g = gloss.max(0.07);
+        let h = (sun_dir + vd).normalize_or_zero();
+        let spec = n.dot(h).max(0.0).powf(12.0 + (160.0 - 12.0) * g) * g * lit_sun * job.light;
+        let tint = |k: usize| 1.0 + (base[k] - 1.0) * metal;
+        for (k, v) in col.iter_mut().enumerate() {
+            *v += tint(k) * spec * 0.85;
+        }
+        if depth < MAX_DEPTH {
+            let f0 = |k: usize| 0.04 + (base[k] - 0.04) * metal;
+            let fres = |k: usize| f0(k) + (1.0 - f0(k)) * (1.0 - head).powi(5);
+            let w = (gloss * 0.6).max(metal * 0.8);
+            // reflexie lucioasa, putin imprastiata pentru materialele mai mate
+            let rdir = d - n * 2.0 * d.dot(n);
+            let fuzz = (1.0 - gloss) * 0.25;
+            let rdir = (rdir + (nt * (rng.next() - 0.5) + nb * (rng.next() - 0.5)) * fuzz).normalize();
+            let (rc, _, _) = trace_d(job, p, rdir, rng, depth + 1);
+            for (k, v) in col.iter_mut().enumerate() {
+                let f = (fres(k) * w).clamp(0.0, 1.0);
+                *v = *v * (1.0 - f) + rc[k] * f;
+            }
+        }
+    }
+    (col, base, n.to_array())
 }
 
 pub fn save_png(path: &str, buf: &[f32], count: u32, w: u32, h: u32) -> Result<(), String> {
@@ -289,8 +474,77 @@ mod tests {
         q(&mut tris, v(h, h, l), v(l, h, l), v(l, h, h), v(h, h, h));
         q(&mut tris, v(l, h, l), v(l, l, l), v(l, l, h), v(l, h, h));
         let colors = vec![[200, 200, 200, 255]; tris.len() / 3];
+        let mats = vec![[0u8; 4]; tris.len() / 3];
         let bvh = Bvh::build(&tris);
-        Arc::new(Scene { tris, colors, bvh })
+        Arc::new(Scene { tris, colors, mats, textures: Vec::new(), planes: Vec::new(), bvh })
+    }
+
+    /// aceeasi scena cu materiale: podeaua din caramida + cubul de sticla + o sectiune care taie cubul
+    fn scene_with(cube_alpha: u8, floor_mat: [u8; 4], planes: Vec<glam::Vec4>) -> Arc<Scene> {
+        let s = scene();
+        let mut colors = s.colors.clone();
+        let mut mats = s.mats.clone();
+        mats[0] = floor_mat;
+        mats[1] = floor_mat;
+        for c in colors.iter_mut().skip(2) {
+            c[3] = cube_alpha;
+        }
+        Arc::new(Scene { tris: s.tris.clone(), colors, mats, textures: Vec::new(), planes, bvh: Bvh::build(&s.tris) })
+    }
+
+    fn run_scene(sc: Arc<Scene>) -> Arc<PathTraceJob> {
+        let eye = Vec3::new(0.0, -12.0, 9.0);
+        let fwd = (Vec3::new(0.0, 0.0, 0.5) - eye).normalize();
+        let right = fwd.cross(Vec3::Z).normalize();
+        let up = right.cross(fwd);
+        let job = start_arc((48, 48, 16, 0.0), sc, eye, fwd, up, right, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, false);
+        while !job.done.load(Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        job
+    }
+
+    fn lum(job: &PathTraceJob, x: usize, y: usize) -> f32 {
+        let n = job.count.load(Ordering::Relaxed) as f32;
+        let b = job.buf.lock().unwrap();
+        let i = (y * job.width as usize + x) * 3;
+        (b[i] + b[i + 1] + b[i + 2]) / (3.0 * n)
+    }
+
+    /// cubul de sticla lasa soarele sa treaca: umbra lui e mult mai slaba decat a cubului opac
+    #[test]
+    fn glass_lets_light_through() {
+        let opaque = run_scene(scene_with(255, [0; 4], Vec::new()));
+        let glass = run_scene(scene_with(40, [0; 4], Vec::new()));
+        let shadow = |j: &PathTraceJob| (12..21).flat_map(|x| (22..32).map(move |y| (x, y))).map(|(x, y)| lum(j, x, y)).fold(f32::INFINITY, f32::min);
+        assert!(shadow(&glass) > shadow(&opaque) * 1.3, "glass shadow {} vs opaque {}", shadow(&glass), shadow(&opaque));
+        // si prin sticla se vede podeaua din spatele cubului (centrul imaginii e mai luminos)
+        assert!(lum(&glass, 24, 22) > lum(&opaque, 24, 22));
+    }
+
+    /// modelul procedural al materialului (caramida) apare pe podea: pixelii variaza, nu sunt uniformi
+    #[test]
+    fn material_pattern_is_rendered() {
+        let plain = run_scene(scene_with(255, [0; 4], Vec::new()));
+        let brick = run_scene(scene_with(255, [1, 0, 0, 10], Vec::new()));
+        let spread = |j: &PathTraceJob| {
+            let v: Vec<f32> = (30..46).flat_map(|x| (36..46).map(move |y| (x, y))).map(|(x, y)| lum(j, x, y)).collect();
+            let m = v.iter().sum::<f32>() / v.len() as f32;
+            v.iter().map(|x| (x - m).abs()).sum::<f32>() / v.len() as f32
+        };
+        assert!(spread(&brick) > spread(&plain) * 2.0, "brick {} vs plain {}", spread(&brick), spread(&plain));
+    }
+
+    /// sectiunea (z <= 1) taie cubul: partea de sus dispare, ca in vederea 3D
+    #[test]
+    fn section_cuts_the_cube() {
+        let full = run_scene(scene_with(255, [0; 4], Vec::new()));
+        let cut = run_scene(scene_with(255, [0; 4], vec![glam::Vec4::new(0.0, 0.0, 1.0, 1.0)]));
+        // partea de sus a cubului (z 1..2) e taiata: o parte vizibila din imagine se schimba
+        let changed = (0..48).flat_map(|x| (0..48).map(move |y| (x, y))).filter(|&(x, y)| (lum(&cut, x, y) - lum(&full, x, y)).abs() > 0.05).count();
+        assert!(changed > 20, "only {changed} pixels changed");
+        // iar sub plan (podeaua departe de cub) imaginea ramane aceeasi
+        assert!((lum(&cut, 44, 44) - lum(&full, 44, 44)).abs() < 0.03);
     }
 
     fn render(denoise: bool) -> Arc<PathTraceJob> {

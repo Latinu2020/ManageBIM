@@ -159,6 +159,7 @@ impl App {
             }
             Purpose::ExportClashBcf => self.export_clash_bcf(&path),
             Purpose::ExportIfc => self.export_ifc(&path),
+            Purpose::ExportGlb => self.export_glb(&path),
             Purpose::ExportGrids => self.export_grids(&path),
             Purpose::ImportGridsCad => self.import_grids_cad(&path, None),
             Purpose::ExportReference => self.export_reference(&path),
@@ -314,10 +315,29 @@ impl App {
                     p.push_str(".png");
                 }
                 self.still_path = Some(p);
+                // ca la video: fara nuanta de selectie; „Render with materials” = stilul Realistic cu materiale
+                if self.still_restore.is_none() {
+                    let prev = (self.settings.visual_style, self.materials_on, std::mem::take(&mut self.selected));
+                    if self.render.with_materials {
+                        self.settings.visual_style = crate::render::VisualStyle::Realistic;
+                        if self.mat_assign.is_empty() && self.loaded_models().next().is_some() {
+                            self.auto_materials();
+                        }
+                        self.materials_on = true;
+                        self.materials_changed();
+                    }
+                    self.still_restore = Some(prev);
+                    self.colors_dirty = true;
+                }
+                // doua cadre: culorile noi se trimit la GPU inainte de captura
+                self.still_wait = 2;
                 let ss = if self.render.supersample { 2 } else { 1 };
                 self.pending_capture = Some((self.render.width * ss, self.render.height * ss));
             }
-            Purpose::ExportPathTrace => self.export_pathtrace(&path),
+            Purpose::ExportPathTrace => {
+                let p = if path.to_lowercase().ends_with(".png") { path.clone() } else { format!("{path}.png") };
+                self.export_pathtrace(&p)
+            }
             Purpose::ExportSets => {
                 let mut path = path.clone();
                 if !path.to_lowercase().ends_with(".bimsets") {
@@ -490,9 +510,11 @@ impl App {
             let r = match purpose {
                 Purpose::OpenModel { .. } => d.set_title("Open Model").add_filter("All supported models", &crate::SUPPORTED[..crate::SUPPORTED_MODELS])
                     .add_filter("Navisworks / Revit (through Navisworks)", &crate::formats::NAVIS_EXT)
-                    .add_filter("IFC / ManageBIM", &["ifc", "bimc"])
+                    .add_filter("IFC / ManageBIM", &["ifc", "ifczip", "bimc"])
                     .add_filter("CAD (DWG, DXF, STEP, IGES, BREP, FCStd)", &["dwg", "dxf", "step", "stp", "iges", "igs", "brep", "brp", "fcstd"])
-                    .add_filter("3D meshes (glTF, OBJ, STL, PLY)", &["glb", "gltf", "obj", "stl", "ply"]).add_filter("All files", &["*"]).pick_files().map(|v| v.into_iter().map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>()),
+                    .add_filter("3D meshes - Blender / Rhino / SketchUp exports (glTF, FBX, OBJ, STL, PLY)", &["glb", "gltf", "fbx", "obj", "stl", "ply"])
+                    .add_filter("Point clouds (E57, LAS)", &["e57", "las"])
+                    .add_filter("All files", &["*"]).pick_files().map(|v| v.into_iter().map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>()),
                 Purpose::PublishBimd => d.set_title("Publish project + models (.bimd)").add_filter("ManageBIM published project", &["bimd"]).set_file_name(self.project_path.as_ref().map(|p| format!("{}.bimd", std::path::Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default())).unwrap_or_else(|| "project.bimd".into())).save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::OpenProject => d.set_title("Open Project").add_filter("ManageBIM project (.bimr / .bimd)", &["bimr", "bimd"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::SaveProject => d.set_title("Save Project").add_filter("ManageBIM project", &["bimr"]).set_file_name("project.bimr").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -525,6 +547,7 @@ impl App {
                 Purpose::SharedFolder => d.set_title("Shared issues folder (network / SharePoint / OneDrive)").pick_folder().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::SelectScriptsDir => d.set_title("Folder with your .rhai scripts").pick_folder().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportIfc => d.set_title("Export to IFC4").add_filter("IFC", &["ifc"]).set_file_name("export.ifc").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportGlb => d.set_title("Export to glTF (Blender, Rhino, Twinmotion, Unreal)").add_filter("glTF binary", &["glb"]).set_file_name("model.glb").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashBcf => d.set_title("Export clashes as BCF").add_filter("BIM Collaboration Format", &["bcf", "bcfzip"]).set_file_name("clashes.bcf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashNavis => d.set_title("Export clashes as Navisworks viewpoints").add_filter("Navisworks viewpoints XML", &["xml"]).set_file_name("clashes_viewpoints.xml").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportBcf => d.set_title("Import BCF issues").add_filter("BIM Collaboration Format", &["bcf", "bcfzip"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -615,6 +638,7 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::ExportClashPdf => "clash_report.pdf".into(),
                 Purpose::ExportClashBcf => "clashes.bcf".into(),
                 Purpose::ExportIfc => "export.ifc".into(),
+                Purpose::ExportGlb => "model.glb".into(),
                 Purpose::SharedFolder => String::new(),
                 Purpose::PublishBimd => "project.bimd".into(),
                 Purpose::ExportGrids => "grids.dxf".into(),

@@ -750,7 +750,9 @@ impl App {
 
     /// (re)citeste liniile desenului, in coordonatele scenei (relative la origine)
     pub fn load_overlay_segs(&self, ov: &mut CadOverlay) -> Result<usize, String> {
-        let (lines, _) = crate::formats::cad_lines(&ov.path)?;
+        // cititorul DWG / DXF poate crapa pe un desen deteriorat: devine eroare, nu inchide aplicatia
+        let path = ov.path.clone();
+        let (lines, _) = std::panic::catch_unwind(|| crate::formats::cad_lines(&path)).unwrap_or_else(|_| Err(format!("{} could not be read (damaged drawing).", crate::file_name(&path))))?;
         if lines.is_empty() {
             return Err("no lines in the drawing".into());
         }

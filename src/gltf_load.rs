@@ -18,7 +18,7 @@ pub fn load_gltf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, S
                     let b64 = rest.split_once(";base64,").map(|x| x.1).ok_or("Unsupported data: URI")?;
                     base64::engine::general_purpose::STANDARD.decode(b64).map_err(|e| format!("Invalid base64: {e}"))?
                 } else {
-                    let decoded = u.replace("%20", " ");
+                    let decoded = percent_decode(u);
                     std::fs::read(base.join(&decoded)).map_err(|e| format!("Cannot read the external buffer '{decoded}': {e}"))?
                 }
             }
@@ -95,7 +95,26 @@ pub fn load_gltf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, S
         if !mats.is_empty() {
             props.push(Prop { group: "Material".into(), name: "Material".into(), value: mats.join(", ") });
         }
-        elements.push(RawElement { name, ifc_type: "glTF Mesh".into(), guid: format!("node-{}", node.index()), storey: group, props, tris, colors, default_hidden: false });
+        // proprietatile utilizatorului: Blender (Custom Properties), Rhino, sau un GLB exportat din ManageBIM
+        let mut ifc_type = "glTF Mesh".to_string();
+        let mut guid = format!("node-{}", node.index());
+        let mut storey = group;
+        for (k, v) in extras_props(node.extras()).into_iter().chain(extras_props(mesh.extras())) {
+            match k.as_str() {
+                "GlobalId" if !v.is_empty() => guid = v.clone(),
+                "IfcType" if !v.is_empty() => ifc_type = v.clone(),
+                "Level" if !v.is_empty() => storey = v.clone(),
+                _ => {}
+            }
+            let (g, n) = k.split_once('|').map(|(g, n)| (g.to_string(), n.to_string())).unwrap_or(("Properties".to_string(), k.clone()));
+            props.push(Prop { group: g, name: n, value: v });
+        }
+        if ifc_type != "glTF Mesh" {
+            if let Some(p) = props.iter_mut().find(|p| p.group == "Element" && p.name == "Type") {
+                p.value = ifc_type.clone();
+            }
+        }
+        elements.push(RawElement { name, ifc_type, guid, storey, props, tris, colors, default_hidden: false });
     }
     if elements.is_empty() {
         return Err("The glTF file contains no triangle geometry.".into());
@@ -107,4 +126,47 @@ pub fn load_gltf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, S
         info.push(("Generator".into(), gen.to_string()));
     }
     Ok(RawModel { elements, info, warnings })
+}
+
+/// `extras` (obiect JSON) -> perechi (cheie, valoare text). Obiectele imbricate devin "grup|cheie".
+fn extras_props(x: &Option<Box<serde_json::value::RawValue>>) -> Vec<(String, String)> {
+    let Some(raw) = x else { return Vec::new() };
+    let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(raw.get()) else { return Vec::new() };
+    let text = |v: &serde_json::Value| match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    };
+    let mut out = Vec::new();
+    for (k, v) in &map {
+        match v {
+            serde_json::Value::Object(inner) => {
+                for (k2, v2) in inner {
+                    out.push((format!("{k}|{k2}"), text(v2)));
+                }
+            }
+            _ => out.push((k.clone(), text(v))),
+        }
+    }
+    out
+}
+
+/// "My%20Folder/%C8%99.bin" -> "My Folder/ș.bin" (URI-urile din glTF sunt codate procentual, UTF-8)
+pub fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    let hex = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2])) {
+                out.push(h * 16 + l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }

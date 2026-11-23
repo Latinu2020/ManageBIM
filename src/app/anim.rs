@@ -269,32 +269,39 @@ impl App {
         if path.extension().map(|e| e.to_string_lossy().to_lowercase()) != Some(fmt.ext().to_string()) {
             path.set_extension(fmt.ext());
         }
-        let (w, h, fps, q) = (self.render.width & !1, self.render.height & !1, self.render.fps.max(1), self.render.quality);
+        // marimea vine si din proiect (nevalidata): limitele din UI
+        let (w, h, fps, q) = (self.render.width.clamp(64, 7680) & !1, self.render.height.clamp(64, 4320) & !1, self.render.fps.clamp(1, 120), self.render.quality);
         let ss = if self.render.supersample && fmt != VideoFormat::Gif { 2 } else { 1 };
         let frames = (anim.duration() * fps as f32).ceil() as u32 + 1;
         let sink = match crate::video::open_sink(fmt, &path, w, h, fps, q) {
             Ok(s) => s,
             Err(e) => return self.error(e),
         };
-        let (tx, rx) = channel::<Frame>();
+        // coada limitata: un cadru 4K supersampled are ~500 MB; captura asteapta encoderul in loc sa umple memoria
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Frame>(2);
         let (dtx, drx) = channel();
         let p2 = path.clone();
         std::thread::spawn(move || {
-            let mut sink = sink;
-            let mut res = Ok(());
-            while let Ok(f) = rx.recv() {
-                let f = if ss > 1 { f.downscale(ss) } else { f };
-                if let Err(e) = sink.add(&f) {
-                    res = Err(e);
-                    break;
+            // o panica in encoder devine eroare (altfel exportul ar ramane „in curs” pentru totdeauna)
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                let mut sink = sink;
+                let mut res = Ok(());
+                while let Ok(f) = rx.recv() {
+                    let f = if ss > 1 { f.downscale(ss) } else { f };
+                    if let Err(e) = sink.add(&f) {
+                        res = Err(e);
+                        break;
+                    }
                 }
-            }
-            if res.is_ok() {
-                res = sink.finish();
-            }
-            if res.is_ok() && fmt == VideoFormat::Mp4 {
-                res = crate::video::convert_mp4(&p2);
-            }
+                if res.is_ok() {
+                    res = sink.finish();
+                }
+                if res.is_ok() && fmt == VideoFormat::Mp4 {
+                    res = crate::video::convert_mp4(&p2);
+                }
+                res
+            }))
+            .unwrap_or_else(|_| Err("Internal error in the video encoder - the export was stopped.".to_string()));
             let _ = dtx.send(res);
         });
         self.stop_anim();
@@ -371,7 +378,28 @@ impl App {
             self.error("Open a model first - path tracing needs geometry.");
             return;
         }
+        // „Render with materials”: materialele (auto dupa tipul IFC daca nu exista) intra in scena,
+        // apoi vederea 3D revine cum era
+        let restore = if self.render.with_materials && !self.materials_on {
+            if self.mat_assign.is_empty() {
+                self.auto_materials();
+            }
+            self.materials_on = true;
+            Some(false)
+        } else {
+            if self.render.with_materials && self.mat_assign.is_empty() {
+                self.auto_materials();
+            }
+            None
+        };
+        // fara nuanta de selectie si cu aspectul final calculat chiar acum
+        self.materials_changed();
+        self.rebuild_colors();
         let scene = std::sync::Arc::new(crate::pathtrace::Scene::build(self));
+        if let Some(on) = restore {
+            self.materials_on = on;
+            self.materials_changed();
+        }
         let cam = self.cam;
         let sun = self.render.sun_dir();
         let (w, h, samples, tlimit) = self.pathtrace_params;
@@ -475,6 +503,17 @@ impl App {
                 f
             });
             if let Some(p) = self.still_path.take() {
+                // vederea revine cum era (stil, materiale, selectie)
+                if let Some((style, mat, sel)) = self.still_restore.take() {
+                    let changed = self.settings.visual_style != style || self.materials_on != mat;
+                    self.settings.visual_style = style;
+                    self.materials_on = mat;
+                    self.selected = sel;
+                    if changed {
+                        self.materials_changed();
+                    }
+                    self.colors_dirty = true;
+                }
                 match r {
                     Ok(f) => {
                         let f = if self.render.supersample { f.downscale(2) } else { f };
@@ -508,8 +547,13 @@ impl App {
             if let Some(j) = self.render_job.as_mut() {
                 j.tx = None;
             }
-            let res = self.render_job.as_ref().unwrap().done.try_recv();
-            if let Ok(r) = res {
+            let res = match self.render_job.as_ref().map(|j| j.done.try_recv()) {
+                Some(Ok(r)) => Some(r),
+                // firul encoderului a disparut fara rezultat: exportul se inchide cu eroare, vederea revine
+                Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => Some(Err("The video encoder stopped unexpectedly.".to_string())),
+                _ => None,
+            };
+            if let Some(r) = res {
                 let j = self.render_job.take().unwrap();
                 self.selected = j.saved_sel;
                 if let Some((style, mat)) = j.saved_style {

@@ -1028,6 +1028,8 @@ pub struct ReportJob {
     pub saved_vp: Option<usize>,
     /// viewpoint-urile exportate (toate sau doar cele dintr-un folder)
     pub list: Vec<usize>,
+    /// cadre asteptate dupa captura de ecran ceruta (oprire daca nu vine)
+    pub shot_wait: u32,
 }
 
 pub fn png_rgb(png_data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
@@ -1063,6 +1065,7 @@ pub enum Purpose {
     ExportClashCsv,
     ExportClashBcf,
     ExportIfc,
+    ExportGlb,
     SharedFolder,
     SelectScriptsDir,
     PublishBimd,
@@ -1162,7 +1165,7 @@ pub struct RenderJob {
     pub ss: u32,
     pub w: u32,
     pub h: u32,
-    pub tx: Option<Sender<Frame>>,
+    pub tx: Option<std::sync::mpsc::SyncSender<Frame>>,
     pub done: Receiver<Result<(), String>>,
     pub path: std::path::PathBuf,
     pub waiting: bool,
@@ -1445,6 +1448,10 @@ pub struct App {
     pub settings_open: bool,
     pub still_path: Option<String>,
     pub pending_capture: Option<(u32, u32)>,
+    /// imaginea (Render Image): vederea de dinainte (stil, materiale, selectie), refacuta dupa captura
+    pub still_restore: Option<(crate::render::VisualStyle, bool, BTreeSet<ElemId>)>,
+    /// cadre de asteptat inainte de captura (culorile / materialele noi ajung pe GPU)
+    pub still_wait: u8,
     pub ffmpeg: Option<bool>,
     pub orbit_secs: f32,
     pub key_step: f32,
@@ -1751,6 +1758,8 @@ impl App {
             settings_open: false,
             still_path: None,
             pending_capture: None,
+            still_restore: None,
+            still_wait: 0,
             ffmpeg: None,
             orbit_secs: 20.0,
             key_step: 3.0,

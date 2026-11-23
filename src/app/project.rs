@@ -44,6 +44,10 @@ impl App {
         let p2 = path.clone();
         let (use_cache, auto_cache) = (self.settings.use_cache, self.settings.auto_cache);
         std::thread::spawn(move || {
+            // orice panica (cache, origine, scriere) devine eroare de incarcare - altfel incarcarea ar ramane
+            // „in curs” pentru totdeauna, iar autosave-ul s-ar opri
+            let tx_fail = tx.clone();
+            let body = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
             let txp = tx.clone();
             let prog = move |f: f32, s: &str| {
                 let _ = txp.send(LoadMsg::Progress(f, s.to_string()));
@@ -115,6 +119,10 @@ impl App {
                     .map_err(|e| format!("Internal error while building the model: {}", panic_text(&e)))
             }).and_then(|r| r);
             let _ = tx.send(LoadMsg::Done(res));
+            }));
+            if let Err(e) = body {
+                let _ = tx_fail.send(LoadMsg::Done(Err(format!("Internal error while loading: {}", panic_text(&e)))));
+            }
         });
         self.loads.push(LoadJob { slot, path, progress: 0.0, stage: "Starting".into(), rx });
     }
@@ -325,6 +333,25 @@ impl App {
         self.check_results = None;
         self.check_sel = None;
         self.qto_result = None;
+        // lucrarile in curs se refera la proiectul vechi (indici de teste / viewpoints / elemente)
+        if let Some(j) = self.clash_job.take() {
+            j.prog.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        self.clash_queue.clear();
+        self.update_all_before = None;
+        self.report_job = None;
+        self.batch_queue.clear();
+        if let Some(j) = &self.pathtrace {
+            j.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        self.sel_results.clear();
+        self.active_vp = None;
+        self.vp_sel = 0;
+        self.editing_set = None;
+        self.still_path = None;
+        self.pending_capture = None;
+        self.still_wait = 0;
+        self.still_restore = None;
     }
 
     pub fn remove_model(&mut self, slot: usize) {
@@ -348,13 +375,22 @@ impl App {
     pub fn poll_jobs(&mut self) {
         let mut done = Vec::new();
         for (i, j) in self.loads.iter_mut().enumerate() {
-            while let Ok(m) = j.rx.try_recv() {
-                match m {
-                    LoadMsg::Progress(f, s) => {
+            loop {
+                match j.rx.try_recv() {
+                    Ok(LoadMsg::Progress(f, s)) => {
                         j.progress = f;
                         j.stage = s;
                     }
-                    LoadMsg::Done(r) => done.push((i, r)),
+                    Ok(LoadMsg::Done(r)) => {
+                        done.push((i, r));
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    // firul s-a oprit fara rezultat (crash intern): incarcarea nu mai ramane blocata
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        done.push((i, Err("Internal error: the loading thread stopped unexpectedly.".into())));
+                        break;
+                    }
                 }
             }
         }
@@ -475,6 +511,12 @@ impl App {
         hidden.sort();
         let mut overrides: Vec<(ElemId, [u8; 4])> = self.overrides.iter().map(|(k, v)| (*k, *v)).collect();
         overrides.sort_by_key(|x| x.0);
+        let mut pf = self.project_file_raw(hidden, overrides);
+        sanitize_floats(&mut pf);
+        pf
+    }
+
+    fn project_file_raw(&self, hidden: Vec<ElemId>, overrides: Vec<(ElemId, [u8; 4])>) -> ProjectFile {
         ProjectFile {
             app: "ManageBIM".into(),
             version: 1,
@@ -542,7 +584,44 @@ impl App {
             overlays: self.overlays.clone(),
         }
     }
+}
 
+/// JSON nu are NaN / infinit: serde le scrie ca `null`, iar la deschidere proiectul ar fi respins.
+/// Curatam valorile care pot ajunge asa (camera, viewpoints, clash-uri).
+fn sanitize_floats(pf: &mut ProjectFile) {
+    fn cam(c: &mut crate::camera::Camera) {
+        if !(c.eye.iter().all(|v| v.is_finite()) && c.yaw.is_finite() && c.pitch.is_finite() && c.focus.is_finite() && c.fov_deg.is_finite()) {
+            *c = Default::default();
+        }
+    }
+    cam(&mut pf.camera);
+    if let Some(h) = pf.home.as_mut() {
+        cam(h);
+    }
+    for v in &mut pf.viewpoints {
+        cam(&mut v.cam);
+    }
+    for t in &mut pf.clash_tests {
+        if !t.tol_mm.is_finite() {
+            t.tol_mm = 0.0;
+        }
+        for r in &mut t.results {
+            if !r.dist.is_finite() {
+                r.dist = 0.0;
+            }
+            for p in &mut r.point {
+                if !p.is_finite() {
+                    *p = 0.0;
+                }
+            }
+            if let Some(v) = r.view.as_mut() {
+                cam(v);
+            }
+        }
+    }
+}
+
+impl App {
     pub fn save_project(&mut self, path: &str) {
         let mut path = path.to_string();
         if !path.to_lowercase().ends_with(".bimr") {
@@ -619,12 +698,18 @@ impl App {
     }
 
     pub(super) fn apply_project_state(&mut self, pf: ProjectFile) {
-        self.cam = pf.camera;
-        self.home = pf.home;
+        // o camera cu NaN / infinit (proiect deteriorat) ar lasa vederea goala
+        let cam_ok = |c: &crate::camera::Camera| c.eye.iter().all(|v| v.is_finite()) && c.yaw.is_finite() && c.pitch.is_finite() && c.focus.is_finite() && c.fov_deg.is_finite();
+        self.cam = if cam_ok(&pf.camera) { pf.camera } else { Default::default() };
+        self.home = pf.home.filter(cam_ok);
         self.walk_path = pf.walk_path.iter().map(|p| Vec3::from(*p)).collect();
         self.path_run = None;
         self.animations = pf.animations;
         self.render = pf.render;
+        // limitele din interfata (proiectul poate veni deteriorat sau din alta versiune)
+        self.render.width = self.render.width.clamp(64, 7680);
+        self.render.height = self.render.height.clamp(64, 4320);
+        self.render.fps = self.render.fps.clamp(1, 120);
         self.user_levels = pf.user_levels;
         self.level_zero = pf.level_zero;
         self.use_user_levels = pf.use_user_levels;
@@ -654,6 +739,12 @@ impl App {
         self.clash_tests = if pf.clash_tests.is_empty() { vec![ClashTest::new("Test 1".into())] } else { pf.clash_tests };
         self.cur_test = 0;
         self.tasks = pf.tasks;
+        // datele activitatilor: aceleasi limite ca in interfata (1900-2200); o data stricata ar bloca TimeLiner-ul
+        let (d0, d1) = (crate::timeline::days_from_civil(1900, 1, 1), crate::timeline::days_from_civil(2200, 12, 31));
+        for t in &mut self.tasks {
+            t.start = t.start.clamp(d0, d1);
+            t.end = t.end.clamp(t.start, d1);
+        }
         self.hidden = pf.hidden.into_iter().collect();
         self.overrides = pf.overrides.into_iter().collect();
         self.section = pf.section;

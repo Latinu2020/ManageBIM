@@ -143,7 +143,15 @@ impl App {
                 d.remove::<usize>(rename_key);
             }
         });
-        if let Some((i, a)) = ctx_action {
+        // Duplicate / Delete cat ruleaza un test ar muta indicii: rezultatul ar ajunge la alt test
+        let ctx_action = match ctx_action {
+            Some((_, a)) if a >= 3 && (self.clash_job.is_some() || !self.clash_queue.is_empty()) => {
+                self.toast("A clash test is running - wait for it to finish (or Cancel) before duplicating or deleting tests.");
+                None
+            }
+            other => other,
+        };
+        if let Some((i, a)) = ctx_action.filter(|(i, _)| *i < self.clash_tests.len()) {
             match a {
                 0 => {
                     self.cur_test = i;
@@ -947,7 +955,7 @@ impl App {
                 let o = match c {
                     0 => nat(&a.name).cmp(&nat(&b.name)),
                     1 => st_ix(a.status).cmp(&st_ix(b.status)),
-                    2 => a.dist.partial_cmp(&b.dist).unwrap_or(std::cmp::Ordering::Equal),
+                    2 => a.dist.total_cmp(&b.dist),
                     3 => labels[x].0.to_lowercase().cmp(&labels[y].0.to_lowercase()),
                     4 => labels[x].1.to_lowercase().cmp(&labels[y].1.to_lowercase()),
                     5 => labels[x].2.cmp(&labels[y].2),

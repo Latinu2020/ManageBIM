@@ -70,13 +70,14 @@ impl App {
         self.elem(id).map(|(_, e)| e.guid.clone()).filter(|g| g.len() == 22)
     }
 
-    pub fn report_item(&self, i: usize, image: Vec<u8>, w: u32, h: u32) -> crate::markup::ReportItem {
-        let v = &self.viewpoints[i];
+    /// None = viewpoint-ul a fost sters intre timp (raportul ruleaza pe mai multe cadre)
+    pub fn report_item(&self, i: usize, image: Vec<u8>, w: u32, h: u32) -> Option<crate::markup::ReportItem> {
+        let v = self.viewpoints.get(i)?;
         let c = v.cam;
         let eye = self.world(c.eye());
         let d = c.fwd();
         let u = c.up();
-        crate::markup::ReportItem {
+        Some(crate::markup::ReportItem {
             index: i + 1,
             name: v.name.clone(),
             description: v.comment.clone(),
@@ -93,7 +94,7 @@ impl App {
             image,
             image_w: w,
             image_h: h,
-        }
+        })
     }
 
     /// viewpoint-ul intra in exportul curent? (toate, sau doar folderul ales si subfolderele lui)
@@ -138,7 +139,7 @@ impl App {
             return;
         }
         let hidden = self.hidden.clone();
-        self.report_job = Some(ReportJob { kind, path: path.to_string(), idx: 0, phase: 0, wait: 0, items: Vec::new(), saved_cam: self.cam, saved_section: self.section.clone(), saved_hidden: hidden, saved_vp: self.active_vp, list });
+        self.report_job = Some(ReportJob { kind, path: path.to_string(), idx: 0, phase: 0, wait: 0, items: Vec::new(), saved_cam: self.cam, saved_section: self.section.clone(), saved_hidden: hidden, saved_vp: self.active_vp, list, shot_wait: 0 });
         self.vp_filter = None;
         self.toast("Capturing viewpoints for the report…");
     }
@@ -148,7 +149,7 @@ impl App {
         self.cam = job.saved_cam;
         self.section = job.saved_section.clone();
         self.hidden = job.saved_hidden.clone();
-        self.active_vp = job.saved_vp;
+        self.active_vp = job.saved_vp.filter(|&i| i < self.viewpoints.len());
         self.colors_dirty = true;
         let project = self.project_path.as_ref().map(|p| crate::file_name(p)).unwrap_or_else(|| "ManageBIM project".into());
         let mut path = job.path.clone();

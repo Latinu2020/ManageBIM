@@ -40,6 +40,11 @@ pub struct Output {
 pub fn run(source: &str, input: &Input) -> Result<Output, String> {
     let out = Rc::new(RefCell::new(Output::default()));
     let mut engine = rhai::Engine::new();
+    // un `loop {}` scris gresit nu mai blocheaza aplicatia: scriptul se opreste cu eroare
+    engine.set_max_operations(50_000_000);
+    engine.set_max_call_levels(64);
+    engine.set_max_string_size(10_000_000);
+    engine.set_max_array_size(5_000_000);
 
     {
         let o = out.clone();
