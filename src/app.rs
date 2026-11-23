@@ -870,6 +870,9 @@ pub struct ProjectFile {
     pub model_xf: Vec<ModelXf>,
     #[serde(default)]
     pub elem_offsets: Vec<(ElemId, [f32; 3])>,
+    /// scale per-element (stil SketchUp), non-distructiv
+    #[serde(default)]
+    pub elem_scale: Vec<(ElemId, [f32; 3])>,
     #[serde(default)]
     pub animations: Vec<Animation>,
     /// View Templates salvate în proiect (vizibilitate + secțiune + stil)
@@ -1323,6 +1326,8 @@ pub struct App {
     pub view_templates_open: bool,
     /// indexul template-ului curent (pentru navigare ◀ ▶ lângă cub)
     pub vt_current: usize,
+    /// culoarea „Future" pentru elementele_insărcinate în scenariul de design
+    pub future_color: [u8; 4],
     pub hist_pos: usize,
     pub hist_sig: u64,
     /// folderele de viewpoints: cel curent (unde intra viewpoint-urile noi), cele create goale, filtrul de export
@@ -1385,6 +1390,8 @@ pub struct App {
     pub base_models: Vec<Option<Arc<Model>>>,
     pub model_xf: Vec<ModelXf>,
     pub elem_offsets: HashMap<ElemId, [f32; 3]>,
+    /// scale per-element (stil SketchUp) - non-distructiv
+    pub elem_scale: HashMap<ElemId, [f32; 3]>,
     pub xf_draft: HashMap<usize, ModelXf>,
     pub move_delta: [f64; 3],
     pub move_target: Option<[f64; 3]>,
@@ -1657,6 +1664,7 @@ impl App {
             view_templates: Vec::new(),
             view_templates_open: false,
             vt_current: 0,
+            future_color: [34, 211, 238, 100], // cyan translucid = „viitor"
             hist_pos: 0,
             hist_sig: 0,
             vp_folder_cur: String::new(),
@@ -1699,6 +1707,7 @@ impl App {
             base_models: Vec::new(),
             model_xf: Vec::new(),
             elem_offsets: HashMap::new(),
+            elem_scale: HashMap::new(),
             xf_draft: HashMap::new(),
             move_delta: [0.0; 3],
             move_target: None,

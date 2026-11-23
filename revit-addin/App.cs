@@ -40,6 +40,17 @@ namespace ManageBIM.Revit
                 sb.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
                 sb.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
             }
+            var sendSel = new PushButtonData("ManageBIMSendSelection", "Send\nselection", asm, typeof(SendSelectionCommand).FullName)
+            {
+                ToolTip = "Send only the selected Revit elements to ManageBIM (no model change)",
+                LongDescription = "Exports the elements currently selected in Revit to ManageBIM without modifying the source model. " +
+                                  "Ideal for a quick clash check on a single area or for design alternatives.",
+            };
+            if (panel.AddItem(sendSel) is PushButton ssb)
+            {
+                ssb.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
+                ssb.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
+            }
             var issues = new PushButtonData("ManageBIMIssues", "ManageBIM\nIssues", asm, typeof(IssuesCommand).FullName)
             {
                 ToolTip = "Open a ManageBIM issue / viewpoint: 3D view with the same camera and section box, its elements selected",

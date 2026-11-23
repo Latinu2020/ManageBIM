@@ -609,8 +609,8 @@ impl App {
 
     fn ribbon(&mut self, ctx: &egui::Context) {
         use crate::theme::RibbonMode;
-        // „Annotation" e imediat după Sections ca să fie ușor de găsit (secțiuni + export PDF/DWG).
-        const TABS: [&str; 13] = ["Home", "Select", "Viewpoint", "Review", "Sections", "Annotation", "Coordination", "Analyze", "Render", "Export", "Share", "Script", "View"];
+        // „Annotation" e imediat după Sections; „Future" e ultimul (design proposals / culori).
+        const TABS: [&str; 14] = ["Home", "Select", "Viewpoint", "Review", "Sections", "Annotation", "Coordination", "Analyze", "Render", "Export", "Share", "Script", "View", "Future"];
         // setarile vechi: "ribbon restrans" = treapta Mini
         if self.settings.ribbon_min {
             self.settings.ribbon_min = false;
@@ -750,11 +750,12 @@ impl App {
                             self.ribbon_share(ui);
                         }
                         11 => self.ribbon_script(ui),
-                        _ => {
+                        12 => {
                             self.ribbon_view(ui);
                             self.ribbon_view2(ui);
                             self.ribbon_help(ui);
                         }
+                        _ => self.ribbon_future(ui),
                     }
                 });
             });
@@ -1499,6 +1500,73 @@ impl App {
         self.vt_current = i;
         self.colors_dirty = true;
         self.toast(format!("Applied '{}'", t.name));
+    }
+
+    /// Aplică culoarea „Future" pe toate elementele de un tip IFC (non-distructiv: doar override de culoare).
+    fn apply_future_type(&mut self, ty: &str) {
+        let sel = crate::app::Selector { kind: crate::app::SelKind::Type, value: ty.to_string() };
+        let ids = self.resolve_selector(&sel);
+        for id in ids { self.overrides.insert(id, self.future_color); }
+        self.colors_dirty = true;
+        self.toast(format!("Future color applied to {} ({ty})", self.overrides.len()));
+    }
+
+    /// Șterge toate culorile „Future" (revenire la aspectul normal).
+    fn clear_future(&mut self) {
+        let c = self.future_color;
+        self.overrides.retain(|_, v| *v != c);
+        self.colors_dirty = true;
+        self.toast("Future colors cleared");
+    }
+
+    fn ribbon_future(&mut self, ui: &mut egui::Ui) {
+        rgroup(ui, "Future design", |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Colour");
+                let mut rgba = [self.future_color[0] as f32 / 255.0, self.future_color[1] as f32 / 255.0, self.future_color[2] as f32 / 255.0, self.future_color[3] as f32 / 255.0];
+                if ui.color_edit_button_rgba_unmultiplied(&mut rgba).changed() {
+                    self.future_color = [(rgba[0] * 255.0) as u8, (rgba[1] * 255.0) as u8, (rgba[2] * 255.0) as u8, (rgba[3] * 255.0) as u8];
+                }
+            });
+            ui.label(RichText::new("Non-destructive: colours only, the source model is never changed.").small().weak());
+        });
+        rgroup(ui, "IFC elements", |ui| {
+            for (label, ic, ty) in [
+                ("Walls", "▤", "IfcWall"),
+                ("Columns", "▣", "IfcColumn"),
+                ("Slabs", "▭", "IfcSlab"),
+                ("Beams", "━", "IfcBeam"),
+                ("Doors", "🚪", "IfcDoor"),
+                ("Windows", "🪟", "IfcWindow"),
+                ("Roofs", "⌂", "IfcRoof"),
+                ("MEP", "⚙", "IfcPipeSegment"),
+            ] {
+                if rbtn(ui, ic, label, "Colour all elements of this IFC type as 'future' (design proposal)", false, true).clicked() {
+                    self.apply_future_type(ty);
+                }
+            }
+        });
+        rgroup(ui, "Model (SketchUp style)", |ui| {
+            let has_sel = !self.selected.is_empty();
+            ui.label(RichText::new("Scale selected elements around their centre (non-destructive)").small().weak());
+            if rbtn(ui, "↔", "Thickness X", "Double the size on X (or use the slider below)", false, has_sel).clicked() { self.scale_selected([2.0, 1.0, 1.0]); }
+            if rbtn(ui, "↕", "Height Z", "Double the height on Z", false, has_sel).clicked() { self.scale_selected([1.0, 1.0, 2.0]); }
+            if rbtn(ui, "▭", "Thickness Y", "Double the size on Y", false, has_sel).clicked() { self.scale_selected([1.0, 2.0, 1.0]); }
+            let mut f = 1.1_f32;
+            ui.horizontal(|ui| {
+                ui.add(egui::Slider::new(&mut f, 0.2..=3.0).text("factor").step_by(0.1));
+                if ui.small_button("Apply").on_hover_text("Scale uniformly by this factor").clicked() { self.scale_selected([f, f, f]); }
+            });
+            if rbtn(ui, "✖", "Reset scale", "Restore original size of the selected elements", false, has_sel).clicked() {
+                let ids: Vec<_> = self.selected.iter().copied().collect();
+                self.reset_scale(&ids);
+            }
+        });
+        rgroup(ui, "Reset", |ui| {
+            if rbtn(ui, "✖", "Clear future", "Remove all 'future' colours and restore the original look", false, true).clicked() {
+                self.clear_future();
+            }
+        });
     }
 
     fn ribbon_view(&mut self, ui: &mut egui::Ui) {
@@ -2275,8 +2343,29 @@ impl App {
                 egui::popup_below_widget(ui, id, &r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
                     ui.set_min_width(170.0);
                     if n == 0 { ui.label(RichText::new("No templates saved yet.").small().weak()); }
-                    for (i, t) in self.view_templates.iter().enumerate() {
-                        if ui.button(format!("▶ {}", t.name)).clicked() { apply = Some(i); ui.close_menu(); }
+                    let rename_id = egui::Id::new("vc_vt_rename");
+                    let renaming: Option<usize> = ui.data(|d| d.get_temp(rename_id));
+                    for (i, t) in self.view_templates.iter_mut().enumerate() {
+                        ui.horizontal(|ui| {
+                            if renaming == Some(i) {
+                                let buf_id = egui::Id::new(("vc_vt_buf", i));
+                                let mut buf: String = ui.data(|d| d.get_temp(buf_id)).unwrap_or_else(|| t.name.clone());
+                                let te = ui.add(egui::TextEdit::singleline(&mut buf).desired_width(130.0));
+                                te.request_focus();
+                                ui.data_mut(|d| d.insert_temp(buf_id, buf.clone()));
+                                if ui.input(|k| k.key_pressed(Key::Enter)) || te.lost_focus() {
+                                    if !buf.trim().is_empty() { t.name = buf.trim().to_string(); }
+                                    ui.data_mut(|d| { d.remove::<String>(buf_id); d.remove::<usize>(rename_id); });
+                                } else if ui.input(|k| k.key_pressed(Key::Escape)) {
+                                    ui.data_mut(|d| { d.remove::<String>(buf_id); d.remove::<usize>(rename_id); });
+                                }
+                            } else if ui.button(format!("▶ {}", t.name)).clicked() {
+                                apply = Some(i); ui.close_menu();
+                            }
+                            if renaming != Some(i) && ui.small_button("✏").on_hover_text("Rename").clicked() {
+                                ui.data_mut(|d| d.insert_temp(rename_id, i));
+                            }
+                        });
                     }
                     ui.separator();
                     if ui.small_button("➕ Save current view").clicked() { self.save_view_template(); ui.close_menu(); }

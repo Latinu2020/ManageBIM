@@ -3,6 +3,12 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.14 - 2026-11-23
+- **Tab „Future"**: colorare non-distructivă a elementelor pe tip IFC (Walls, Columns, Slabs, Beams, Doors, Windows, Roofs, MEP) cu color picker; buton „Clear future". Modelul sursă nu se modifică niciodată.
+- **Modelare stil SketchUp**: scale per-element pe axe (Thickness X/Y, Height Z, factor slider, Reset) — non-distructiv, salvat în proiect.
+- **View Templates — rename cu mouse-ul**: buton ✏ inline în dropdown-ul de lângă ViewCube.
+- **Add-ins profesioniste**: Revit „Send selection" (comandă nouă, exportă doar elementele selectate); log local `addin.log` în toate cele 3 add-in-uri (Revit / Navisworks / AutoCAD); toate add-in-urile recompilate (Revit 2025, Navisworks 2022–2026, AutoCAD R24/R25).
+
 ## 0.27.13 - 2026-11-23
 - **UI tuning (stil Mitcad)**: colțuri rotunjite centralizate în `theme.rs` (`RADIUS_SM/MD/LG`) — butoane ribbon cu contur fin pe hover/activ, grupuri de ribbon cu border, tab-uri tip „pill", panouri dock rotunjite, ferestre/menu consecvente. Fără rescriere, fără schimbare funcțională.
 - **Split-view reparat**: lista de geometrie e acum per-viewport (capturată în callback), nu partajată în renderer — nu mai dispar elemente din prima jumătate când miști camera în cealaltă. Modelul rămâne complet în ambele panouri.

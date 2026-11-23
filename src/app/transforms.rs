@@ -22,7 +22,8 @@ impl App {
         let Some(base) = self.base_models.get(slot).cloned().flatten() else { return };
         let xf = self.model_xf.get(slot).copied().unwrap_or_default();
         let offs: HashMap<u32, Vec3> = self.elem_offsets.iter().filter(|(k, _)| k.m as usize == slot).map(|(k, v)| (k.e, Vec3::from(*v))).collect();
-        let m = if xf.is_identity() && offs.is_empty() { base } else { Arc::new(base.transformed(self.xf_matrix(&base, &xf), &offs)) };
+        let scales: HashMap<u32, Vec3> = self.elem_scale.iter().filter(|(k, _)| k.m as usize == slot).map(|(k, v)| (k.e, Vec3::from(*v))).collect();
+        let m = if xf.is_identity() && offs.is_empty() && scales.is_empty() { base } else { Arc::new(base.transformed(self.xf_matrix(&base, &xf), &offs, &scales)) };
         let (pos, nrm) = render::mesh_data(&m);
         let col = vec![200u8; pos.len() / 3 * 4];
         {
@@ -64,6 +65,28 @@ impl App {
         }
     }
 
+    /// Scale per-element pe axe (stil SketchUp) - non-distructiv, în jurul centrului AABB.
+    pub fn scale_selected(&mut self, s: [f32; 3]) {
+        let mut slots = BTreeSet::new();
+        for id in self.selected.clone() {
+            let e = self.elem_scale.entry(id).or_insert([1.0; 3]);
+            e[0] = (e[0] * s[0]).max(0.02);
+            e[1] = (e[1] * s[1]).max(0.02);
+            e[2] = (e[2] * s[2]).max(0.02);
+            slots.insert(id.m as usize);
+        }
+        for sl in slots { self.apply_transform(sl); }
+    }
+
+    /// Resetare scale pentru elementele date.
+    pub fn reset_scale(&mut self, ids: &[ElemId]) {
+        let mut slots = BTreeSet::new();
+        for id in ids {
+            if self.elem_scale.remove(id).is_some() { slots.insert(id.m as usize); }
+        }
+        for sl in slots { self.apply_transform(sl); }
+    }
+
     pub fn reset_items(&mut self, ids: &[ElemId]) {
         let mut slots = BTreeSet::new();
         for id in ids {
@@ -78,6 +101,7 @@ impl App {
 
     pub fn reset_all_transforms(&mut self) {
         self.elem_offsets.clear();
+        self.elem_scale.clear();
         for x in self.model_xf.iter_mut() {
             *x = ModelXf::default();
         }

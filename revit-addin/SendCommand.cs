@@ -54,6 +54,7 @@ namespace ManageBIM.Revit
             }
             catch (Exception ex)
             {
+                ManageBimLink.Log("Revit Send", ex.ToString());
                 try { System.IO.File.Delete(tmp); } catch { }
                 message = "Send to ManageBIM failed: " + ex.Message;
                 return Result.Failed;

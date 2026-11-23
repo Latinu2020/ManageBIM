@@ -511,6 +511,11 @@ impl App {
                 v.sort_by_key(|x| x.0);
                 v
             },
+            elem_scale: {
+                let mut v: Vec<(ElemId, [f32; 3])> = self.elem_scale.iter().map(|(k, v)| (*k, *v)).collect();
+                v.sort_by_key(|x| x.0);
+                v
+            },
             animations: self.animations.clone(),
             render: self.render.clone(),
             user_levels: self.user_levels.clone(),
@@ -578,6 +583,7 @@ impl App {
         let base = std::path::Path::new(path).parent().map(|p| p.to_path_buf()).unwrap_or_default();
         // transformarile se aplica imediat ce fiecare model termina incarcarea
         self.elem_offsets = pf.elem_offsets.iter().copied().collect();
+        self.elem_scale = pf.elem_scale.iter().copied().collect();
         for (i, mp) in pf.models.iter().enumerate() {
             self.push_slot();
             if let Some(x) = pf.model_xf.get(i) {

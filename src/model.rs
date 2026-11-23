@@ -447,20 +447,27 @@ impl Model {
     }
 
     /// Copy of the model with a transform (local coordinates) and per-element offsets applied.
-    pub fn transformed(&self, m: glam::Mat4, offsets: &std::collections::HashMap<u32, Vec3>) -> Model {
+    /// Transformare non-distructivă: matrice globală + translări și scale per-element
+    /// (stil SketchUp). Scale-ul se aplică în jurul centrului AABB al elementului.
+    pub fn transformed(&self, m: glam::Mat4, offsets: &std::collections::HashMap<u32, Vec3>, scales: &std::collections::HashMap<u32, Vec3>) -> Model {
         use rayon::prelude::*;
         let parts: Vec<(Vec<Vec3>, Aabb, Bvh)> = self
             .elements
             .par_iter()
             .enumerate()
             .map(|(i, e)| {
-                let off = offsets.get(&(i as u32)).copied().unwrap_or(Vec3::ZERO);
+                let ei = i as u32;
+                let off = offsets.get(&ei).copied().unwrap_or(Vec3::ZERO);
+                let sc = scales.get(&ei).copied().unwrap_or(Vec3::ONE);
+                let pivot = if sc == Vec3::ONE { Vec3::ZERO } else { e.aabb.center() };
                 let mut bb = Aabb::EMPTY;
                 let p: Vec<Vec3> = self
                     .tris(e)
                     .iter()
                     .map(|v| {
-                        let q = m.transform_point3(*v) + off;
+                        // scale în jurul pivotului, apoi matricea globală și translarea
+                        let sv = if sc == Vec3::ONE { *v } else { pivot + (*v - pivot) * sc };
+                        let q = m.transform_point3(sv) + off;
                         bb.grow(q);
                         q
                     })

@@ -32,6 +32,19 @@ namespace ManageBIM
         /// <summary>Fisierul temporar in care se scrie (extensia .tmp e ignorata de ManageBIM).</summary>
         public static string TempPath(string final) => final + ".tmp";
 
+        /// <summary>Log local (fara server) pentru diagnosticarea exporturilor add-in-urilor.</summary>
+        public static void Log(string app, string msg)
+        {
+            try
+            {
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManageBIM");
+                Directory.CreateDirectory(dir);
+                File.AppendAllText(Path.Combine(dir, "addin.log"),
+                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " [" + app + "] " + msg + Environment.NewLine);
+            }
+            catch { }
+        }
+
         /// <summary>Inlocuieste atomic fisierul final cu cel temporar, ca ManageBIM sa nu citeasca un fisier pe jumatate.</summary>
         public static void Commit(string tmp, string final)
         {
