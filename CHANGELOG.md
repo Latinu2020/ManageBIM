@@ -3,11 +3,19 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.15 - 2026-11-23
+- **Tab Future înlăturat** (era colorare/scale, nu modelare); markupuri profesionale (paletă BIM, greutăți, Undo/Clear), View Template legat de viewpoint, split-view cu toolbar unic, duplicaturi din ribbon eliminate, web viewer restilizat.
+
 ## 0.27.14 - 2026-11-23
 - **Tab „Future"**: colorare non-distructivă a elementelor pe tip IFC (Walls, Columns, Slabs, Beams, Doors, Windows, Roofs, MEP) cu color picker; buton „Clear future". Modelul sursă nu se modifică niciodată.
 - **Modelare stil SketchUp**: scale per-element pe axe (Thickness X/Y, Height Z, factor slider, Reset) — non-distructiv, salvat în proiect.
 - **View Templates — rename cu mouse-ul**: buton ✏ inline în dropdown-ul de lângă ViewCube.
 - **Add-ins profesioniste**: Revit „Send selection" (comandă nouă, exportă doar elementele selectate); log local `addin.log` în toate cele 3 add-in-uri (Revit / Navisworks / AutoCAD); toate add-in-urile recompilate (Revit 2025, Navisworks 2022–2026, AutoCAD R24/R25).
+- **Tab Future scos** (nu era modelare, doar colorare/scale — înșelător); markupurile devin profesionale: paletă standard BIM (7 culori), greutăți Fine/Medium/Heavy, Undo/Clear per viewpoint.
+- **View Template legat de viewpoint**: la salvare se memorizează stilul activ, iar la restaurarea viewpoint-ului se reaplică.
+- **Split-view toolbar**: bara de navigare e un singur Area global, nu se mai dublează; operează pe jumătatea activă.
+- **Ribbon fără duplicaturi**: exporturile (DWG/PDF/Title Block/Overlay/Preview) sunt doar în Annotation; Grids/Levels doar în Grids & Levels.
+- **Web viewer**: paletă și colțuri rotunjite consecvente cu aplicația.
 
 ## 0.27.13 - 2026-11-23
 - **UI tuning (stil Mitcad)**: colțuri rotunjite centralizate în `theme.rs` (`RADIUS_SM/MD/LG`) — butoane ribbon cu contur fin pe hover/activ, grupuri de ribbon cu border, tab-uri tip „pill", panouri dock rotunjite, ferestre/menu consecvente. Fără rescriere, fără schimbare funcțională.

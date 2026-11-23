@@ -50,6 +50,7 @@ impl App {
             issue: Default::default(),
             comments: Vec::new(),
             selected: vec![a, b],
+            template: String::new(),
             measures: self.measures.clone(),
             folder: self.vp_folder_cur.clone(),
         });

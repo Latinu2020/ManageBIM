@@ -6,15 +6,15 @@
 <meta name="generator" content="ManageBIM">
 <title>__TITLE__</title>
 <style>
-:root{--bg:#0e0f13;--panel:#15171d;--panel2:#1b1e26;--line:#272b35;--text:#d9dce4;--weak:#8a90a0;--accent:#3478ff;--bad:#eb5555}
+:root{--bg:#0f1420;--panel:#161d2c;--panel2:#1d2638;--line:#2a3549;--text:#e6ecf5;--weak:#8d9bb3;--accent:#3b82f6;--cyan:#22d3ee;--bad:#f87171;--r:8px}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:13px/1.4 "Segoe UI",system-ui,-apple-system,sans-serif;overflow:hidden}
 #app{display:grid;grid-template-columns:280px 1fr 320px;grid-template-rows:44px 1fr;height:100%}
 header{grid-column:1/4;display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--panel);border-bottom:1px solid var(--line)}
 header h1{font-size:14px;margin:0 12px 0 0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-header .brand{color:var(--accent);font-weight:700;margin-right:4px}
-button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:5px 10px;font:inherit;cursor:pointer}
-button:hover{border-color:var(--accent)}
+header .brand{color:var(--cyan);font-weight:800;margin-right:6px;font-size:15px}
+button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:var(--r);padding:5px 11px;font:inherit;cursor:pointer;transition:border-color .12s,background .12s}
+button:hover{border-color:var(--cyan);background:rgba(34,211,238,.08)}
 button:disabled{opacity:.4;cursor:default}
 .side{background:var(--panel);overflow:auto;border-right:1px solid var(--line);min-height:0}
 #props{border-right:0;border-left:1px solid var(--line);padding:10px}

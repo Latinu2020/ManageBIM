@@ -840,6 +840,9 @@ pub struct Viewpoint {
     pub comments: Vec<crate::markup::VpComment>,
     #[serde(default)]
     pub selected: Vec<ElemId>,
+    /// numele View Template-ului activ la salvare ( stilul de afisare se aplica la restaurare )
+    #[serde(default)]
+    pub template: String,
     /// masuratorile (cote) vizibile cand s-a salvat viewpoint-ul
     #[serde(default)]
     pub measures: Vec<Measure>,
@@ -1326,8 +1329,7 @@ pub struct App {
     pub view_templates_open: bool,
     /// indexul template-ului curent (pentru navigare ◀ ▶ lângă cub)
     pub vt_current: usize,
-    /// culoarea „Future" pentru elementele_insărcinate în scenariul de design
-    pub future_color: [u8; 4],
+
     pub hist_pos: usize,
     pub hist_sig: u64,
     /// folderele de viewpoints: cel curent (unde intra viewpoint-urile noi), cele create goale, filtrul de export
@@ -1664,7 +1666,6 @@ impl App {
             view_templates: Vec::new(),
             view_templates_open: false,
             vt_current: 0,
-            future_color: [34, 211, 238, 100], // cyan translucid = „viitor"
             hist_pos: 0,
             hist_sig: 0,
             vp_folder_cur: String::new(),

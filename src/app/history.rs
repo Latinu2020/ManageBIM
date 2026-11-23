@@ -45,6 +45,7 @@ impl App {
             issue: Default::default(),
             comments: Vec::new(),
             selected,
+            template: self.view_templates.get(self.vt_current).map(|t| t.name.clone()).unwrap_or_default(),
             measures: self.measures.clone(),
             // viewpoint-urile noi intra in folderul ales in panou
             folder: self.vp_folder_cur.clone(),
@@ -204,6 +205,17 @@ impl App {
             // cotele salvate cu viewpoint-ul (viewpoint-urile vechi, fara cote, pastreaza masuratorile curente)
             if !v.measures.is_empty() {
                 self.measures = v.measures;
+            }
+            // aplică stilul View Template salvat cu viewpoint-ul, dacă există
+            if !v.template.is_empty() {
+                if let Some(t) = self.view_templates.iter().find(|t| t.name == v.template).cloned() {
+                    self.settings.visual_style = t.visual_style;
+                    self.show_grids = t.show_grids;
+                    self.show_levels = t.show_levels;
+                    self.section_caps = t.section_caps;
+                    self.overrides = t.overrides.into_iter().collect();
+                    self.vt_current = self.view_templates.iter().position(|x| x.name == v.template).unwrap_or(0);
+                }
             }
             self.clash_focus = None;
             self.colors_dirty = true;

@@ -129,7 +129,7 @@ impl eframe::App for App {
         }
         // pagina de start: doar ribbon-ul (inactiv) si ecranul de pornire pe toata fereastra
         if self.start_screen() {
-            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| self.viewport(ui));
+            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| self.viewport(ui, true));
             self.tools_window(ctx);
             self.windows(ctx);
             self.toasts_ui(ctx);
@@ -184,8 +184,11 @@ impl eframe::App for App {
                 let half = rect.width() * self.split_ratio.clamp(0.05, 0.95);
                 let left = Rect::from_min_max(rect.min, egui::pos2(rect.min.x + half, rect.max.y));
                 let right = Rect::from_min_max(egui::pos2(rect.min.x + half, rect.min.y), rect.max);
+                // jumătatea activă = cea sub cursor (acolo se desenează ViewCube / nav_bar o singură dată)
+                let pointer = ctx.input(|i| i.pointer.hover_pos());
+                let active_right = pointer.map_or(false, |p| p.x >= rect.min.x + half);
                 // --- jumatatea stanga (camera A) ---
-                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(left), |ui| self.viewport(ui));
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(left), |ui| self.viewport(ui, !active_right));
                 // --- separatorul trasabil (stretch) ---
                 let sep = ui.painter();
                 sep.rect_filled(Rect::from_center_size(egui::pos2(rect.min.x + half, rect.center().y), egui::vec2(3.0, rect.height())), 0.0, accent());
@@ -196,9 +199,12 @@ impl eframe::App for App {
                 // --- jumatatea dreapta (camera B), prin swap temporar ---
                 std::mem::swap(&mut self.cam, &mut self.cam_b);
                 std::mem::swap(&mut self.section, &mut self.section_b);
-                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(right), |ui| self.viewport(ui));
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(right), |ui| self.viewport(ui, active_right));
                 std::mem::swap(&mut self.cam, &mut self.cam_b);
                 std::mem::swap(&mut self.section, &mut self.section_b);
+                // evidențiază jumătatea activă cu un contur discret
+                let ar = if active_right { right } else { left };
+                ui.painter().rect_stroke(ar.shrink(1.0), crate::theme::RADIUS_MD, egui::Stroke::new(1.0_f32, accent().gamma_multiply(0.5)));
                 // Link-ul sincronizează camerele DOAR la activare (în ribbon), nu în fiecare frame —
                 // altfel camera B n-ar putea fi mișcată independent pentru comparație.
                 // etichete + buton de inchidere pe jumatatea dreapta
@@ -206,7 +212,26 @@ impl eframe::App for App {
                 ui.painter().text(right.center_top() + egui::vec2(0.0, 12.0), Align2::CENTER_TOP, "B", FontId::proportional(11.0), accent());
             });
         } else {
-            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| self.viewport(ui));
+            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| self.viewport(ui, true));
+        }
+        // Bara de navigare e un Area global: o desenăm O SINGURĂ DATĂ, centrată pe toată zona
+        // de model, și o facem să opereze pe jumătatea activă (A sau B) în split-view.
+        if self.settings.nav_bar && self.loaded_models().next().is_some() && self.render_job.is_none() {
+            let full = ctx.available_rect();
+            if self.split_view {
+                let active_b = ctx.input(|i| i.pointer.hover_pos()).map_or(false, |p| p.x >= full.min.x + full.width() * self.split_ratio.clamp(0.05, 0.95));
+                if active_b {
+                    std::mem::swap(&mut self.cam, &mut self.cam_b);
+                    std::mem::swap(&mut self.section, &mut self.section_b);
+                    self.nav_bar(ctx, full);
+                    std::mem::swap(&mut self.cam, &mut self.cam_b);
+                    std::mem::swap(&mut self.section, &mut self.section_b);
+                } else {
+                    self.nav_bar(ctx, full);
+                }
+            } else {
+                self.nav_bar(ctx, full);
+            }
         }
         self.flyout_ui(ctx, strips);
         // mers: tastele (shortcuts) si mouse-ul (viewport) au setat viteza tinta - aplicam lin
@@ -609,8 +634,7 @@ impl App {
 
     fn ribbon(&mut self, ctx: &egui::Context) {
         use crate::theme::RibbonMode;
-        // „Annotation" e imediat după Sections; „Future" e ultimul (design proposals / culori).
-        const TABS: [&str; 14] = ["Home", "Select", "Viewpoint", "Review", "Sections", "Annotation", "Coordination", "Analyze", "Render", "Export", "Share", "Script", "View", "Future"];
+        const TABS: [&str; 13] = ["Home", "Select", "Viewpoint", "Review", "Sections", "Annotation", "Coordination", "Analyze", "Render", "Export", "Share", "Script", "View"];
         // setarile vechi: "ribbon restrans" = treapta Mini
         if self.settings.ribbon_min {
             self.settings.ribbon_min = false;
@@ -750,12 +774,11 @@ impl App {
                             self.ribbon_share(ui);
                         }
                         11 => self.ribbon_script(ui),
-                        12 => {
+                        _ => {
                             self.ribbon_view(ui);
                             self.ribbon_view2(ui);
                             self.ribbon_help(ui);
                         }
-                        _ => self.ribbon_future(ui),
                     }
                 });
             });
@@ -1112,26 +1135,7 @@ impl App {
                 self.section_sel_sig = 0;
             }
             self.panel_btn(ui, Panel::Section, "⚙", "Planes", "Section planes & box");
-            if rbtn(ui, "📐", "Cut to DWG", "Export the cut of the current section as 2D lines (DWG / DXF), one layer per element type:\nlevel section = plan cut at +1.20 m (like Revit plans), section plane = that plane (elevation / section).\nDWG needs the free ODA File Converter; otherwise a DXF is saved.", false, self.section.enabled).clicked() {
-                self.cad_sheet = false;
-                self.request_path(Purpose::ExportSectionCad);
-            }
-            if rbtn(ui, "📄", "Cut on Sheet", "The same cut placed on a drawing sheet (A3 / A2 / A1 / A0) at a standard scale, with frame and the title block (edit it with Title Block)", false, self.section.enabled).clicked() {
-                self.cad_sheet = true;
-                self.request_path(Purpose::ExportSectionCad);
-            }
-            if rbtn(ui, "📄", "Cut to PDF", "Export the cut as a vector PDF sheet (A3–A0) with title block, at the exact cut position", false, self.section.enabled || self.settings.cad_view != crate::app::CadView::Current).clicked() {
-                self.request_path(Purpose::ExportSectionPdf);
-            }
-            if rbtn(ui, "✏", "Title Block", "Edit the title block, the sheet format (A3 - A0) and the scale", self.title_block_open, true).clicked() {
-                self.title_block_open = !self.title_block_open;
-            }
-            if rbtn(ui, "🗺", "DWG Overlay", "Lay a 2D drawing (DWG / DXF) over the model at a level: compare the plan with the model", self.overlay_open, true).clicked() {
-                self.overlay_open = !self.overlay_open;
-            }
-            if rbtn(ui, "🗺", "2D Preview", "Small closable map-style preview of the section cut, before exporting to DWG / PDF", self.section_preview_open, self.section.enabled).clicked() {
-                self.section_preview_open = !self.section_preview_open;
-            }
+            // exporturile (DWG / PDF / Title Block / Overlay / Preview) sunt DOAR în tab-ul Annotation
         });
         // acces rapid: nivelul, sus / jos, box de nivel sau taietura de plan
         let levels = self.scene_grids().levels;
@@ -1216,12 +1220,7 @@ impl App {
             if rbtn(ui, "✏", "Title Block", "Edit the title block, sheet format (A3 - A0) and scale", self.title_block_open, true).clicked() {
                 self.title_block_open = !self.title_block_open;
             }
-            if rbtn(ui, "#", "Grids", "Show / hide grid axes on the section sheet", self.show_grids, true).clicked() {
-                self.show_grids = !self.show_grids;
-            }
-            if rbtn(ui, "≡", "Levels", "Show / hide level lines and elevation marks", self.show_levels, true).clicked() {
-                self.show_levels = !self.show_levels;
-            }
+            // Grids / Levels se comută în grupul „Grids & Levels" (Home / Sections), nu aici.
             if rbtn(ui, "▤", "Filled cuts", "Cut faces drawn solid and hatched (closed solids), instead of seeing inside the elements", self.section_caps, true).clicked() {
                 self.section_caps = !self.section_caps;
             }
@@ -1502,73 +1501,6 @@ impl App {
         self.toast(format!("Applied '{}'", t.name));
     }
 
-    /// Aplică culoarea „Future" pe toate elementele de un tip IFC (non-distructiv: doar override de culoare).
-    fn apply_future_type(&mut self, ty: &str) {
-        let sel = crate::app::Selector { kind: crate::app::SelKind::Type, value: ty.to_string() };
-        let ids = self.resolve_selector(&sel);
-        for id in ids { self.overrides.insert(id, self.future_color); }
-        self.colors_dirty = true;
-        self.toast(format!("Future color applied to {} ({ty})", self.overrides.len()));
-    }
-
-    /// Șterge toate culorile „Future" (revenire la aspectul normal).
-    fn clear_future(&mut self) {
-        let c = self.future_color;
-        self.overrides.retain(|_, v| *v != c);
-        self.colors_dirty = true;
-        self.toast("Future colors cleared");
-    }
-
-    fn ribbon_future(&mut self, ui: &mut egui::Ui) {
-        rgroup(ui, "Future design", |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Colour");
-                let mut rgba = [self.future_color[0] as f32 / 255.0, self.future_color[1] as f32 / 255.0, self.future_color[2] as f32 / 255.0, self.future_color[3] as f32 / 255.0];
-                if ui.color_edit_button_rgba_unmultiplied(&mut rgba).changed() {
-                    self.future_color = [(rgba[0] * 255.0) as u8, (rgba[1] * 255.0) as u8, (rgba[2] * 255.0) as u8, (rgba[3] * 255.0) as u8];
-                }
-            });
-            ui.label(RichText::new("Non-destructive: colours only, the source model is never changed.").small().weak());
-        });
-        rgroup(ui, "IFC elements", |ui| {
-            for (label, ic, ty) in [
-                ("Walls", "▤", "IfcWall"),
-                ("Columns", "▣", "IfcColumn"),
-                ("Slabs", "▭", "IfcSlab"),
-                ("Beams", "━", "IfcBeam"),
-                ("Doors", "🚪", "IfcDoor"),
-                ("Windows", "🪟", "IfcWindow"),
-                ("Roofs", "⌂", "IfcRoof"),
-                ("MEP", "⚙", "IfcPipeSegment"),
-            ] {
-                if rbtn(ui, ic, label, "Colour all elements of this IFC type as 'future' (design proposal)", false, true).clicked() {
-                    self.apply_future_type(ty);
-                }
-            }
-        });
-        rgroup(ui, "Model (SketchUp style)", |ui| {
-            let has_sel = !self.selected.is_empty();
-            ui.label(RichText::new("Scale selected elements around their centre (non-destructive)").small().weak());
-            if rbtn(ui, "↔", "Thickness X", "Double the size on X (or use the slider below)", false, has_sel).clicked() { self.scale_selected([2.0, 1.0, 1.0]); }
-            if rbtn(ui, "↕", "Height Z", "Double the height on Z", false, has_sel).clicked() { self.scale_selected([1.0, 1.0, 2.0]); }
-            if rbtn(ui, "▭", "Thickness Y", "Double the size on Y", false, has_sel).clicked() { self.scale_selected([1.0, 2.0, 1.0]); }
-            let mut f = 1.1_f32;
-            ui.horizontal(|ui| {
-                ui.add(egui::Slider::new(&mut f, 0.2..=3.0).text("factor").step_by(0.1));
-                if ui.small_button("Apply").on_hover_text("Scale uniformly by this factor").clicked() { self.scale_selected([f, f, f]); }
-            });
-            if rbtn(ui, "✖", "Reset scale", "Restore original size of the selected elements", false, has_sel).clicked() {
-                let ids: Vec<_> = self.selected.iter().copied().collect();
-                self.reset_scale(&ids);
-            }
-        });
-        rgroup(ui, "Reset", |ui| {
-            if rbtn(ui, "✖", "Clear future", "Remove all 'future' colours and restore the original look", false, true).clicked() {
-                self.clear_future();
-            }
-        });
-    }
-
     fn ribbon_view(&mut self, ui: &mut egui::Ui) {
         self.style_group(ui);
         rgroup(ui, "Compare", |ui| {
@@ -1846,38 +1778,55 @@ impl App {
     }
 
     fn ribbon_redline(&mut self, ui: &mut egui::Ui) {
-        rgroup(ui, "Redline", |ui| {
+        rgroup(ui, "Markup", |ui| {
             for k in crate::markup::RedKind::ALL {
                 let on = self.tool == Tool::Redline(k);
-                if rbtn(ui, k.icon(), k.label(), &format!("Redline {} on the current view (saved in a viewpoint)", k.label()), on, true).clicked() {
+                if rbtn(ui, k.icon(), k.label(), &format!("{} — saved with the current viewpoint", k.label()), on, true).clicked() {
                     self.cur_measure.clear();
                     self.tool = if on { Tool::Select } else { Tool::Redline(k) };
                 }
             }
+        });
+        rgroup(ui, "Edit", |ui| {
             if rbtn(ui, "✖", "Erase", "Click a markup to delete it", self.tool == Tool::RedErase, true).clicked() {
                 self.tool = if self.tool == Tool::RedErase { Tool::Select } else { Tool::RedErase };
             }
-            let col = rbtn(ui, "🎨", "Colour", "Markup colour and thickness", false, true);
-            let cid = ui.make_persistent_id("red_col_pop");
-            if col.clicked() {
-                ui.memory_mut(|m| m.toggle_popup(cid));
+            let vp = self.viewpoints.get(self.vp_sel).map(|v| v.redlines.len()).unwrap_or(0);
+            if rbtn(ui, "↶", "Undo", "Remove the last markup of this viewpoint (Ctrl+Z)", false, vp > 0).clicked() {
+                if let Some(v) = self.viewpoints.get_mut(self.vp_sel) { v.redlines.pop(); }
             }
+            if rbtn(ui, "🗑", "Clear", "Remove all markups of this viewpoint", false, vp > 0).clicked() {
+                if let Some(v) = self.viewpoints.get_mut(self.vp_sel) { v.redlines.clear(); }
+            }
+        });
+        rgroup(ui, "Style", |ui| {
+            let col = rbtn(ui, "🎨", "Colour", "Markup colour and line weight", false, true);
+            let cid = ui.make_persistent_id("red_col_pop");
+            if col.clicked() { ui.memory_mut(|m| m.toggle_popup(cid)); }
             egui::popup_below_widget(ui, cid, &col, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                ui.set_min_width(220.0);
-                ui.horizontal(|ui| {
-                    for c in [[230u8, 40, 40], [245, 190, 20], [40, 170, 70], [40, 110, 230], [20, 20, 20], [250, 250, 250]] {
-                        let (r, resp) = ui.allocate_exact_size(EV::splat(16.0), Sense::click());
-                        ui.painter().rect_filled(r, 3.0, Color32::from_rgb(c[0], c[1], c[2]));
+                ui.set_min_width(230.0);
+                ui.label(RichText::new("Colour").small().strong());
+                ui.horizontal_wrapped(|ui| {
+                    // paletă standard de desen tehnic (roșu / portocaliu / galben / verde / albastru / negru / alb)
+                    for c in [[230u8, 40, 40], [251, 146, 60], [250, 204, 21], [74, 222, 128], [59, 130, 246], [30, 35, 45], [250, 250, 250]] {
+                        let (r, resp) = ui.allocate_exact_size(EV::splat(18.0), Sense::click());
+                        ui.painter().rect_filled(r, crate::theme::RADIUS_SM, Color32::from_rgb(c[0], c[1], c[2]));
                         if self.red_color == c {
-                            ui.painter().rect_stroke(r.expand(1.5), 3.0, Stroke::new(2.0_f32, accent()));
+                            ui.painter().rect_stroke(r.expand(2.0), crate::theme::RADIUS_SM, Stroke::new(2.0_f32, accent()));
                         }
-                        if resp.clicked() {
-                            self.red_color = c;
-                        }
+                        if resp.clicked() { self.red_color = c; }
                     }
                     ui.color_edit_button_srgb(&mut self.red_color);
                 });
-                ui.add(egui::Slider::new(&mut self.red_width, 1.0..=10.0).text("Thickness"));
+                ui.separator();
+                ui.label(RichText::new("Line weight").small().strong());
+                ui.horizontal(|ui| {
+                    for (w, label) in [(1.5_f32, "Fine"), (3.0, "Medium"), (6.0, "Heavy")] {
+                        let on = (self.red_width - w).abs() < 0.1;
+                        if ui.selectable_label(on, label).clicked() { self.red_width = w; }
+                    }
+                });
+                ui.add(egui::Slider::new(&mut self.red_width, 1.0..=10.0).text("Width"));
             });
         });
     }
@@ -3163,7 +3112,7 @@ impl App {
     }
 
     // ================================================================== viewport
-    fn viewport(&mut self, ui: &mut egui::Ui) {
+    fn viewport(&mut self, ui: &mut egui::Ui, overlays: bool) {
         let rect = ui.available_rect_before_wrap();
         let resp = ui.allocate_rect(rect, Sense::click_and_drag());
         let painter = ui.painter_at(rect);
@@ -4080,13 +4029,10 @@ impl App {
             painter.line_segment([o, e], Stroke::new(2.5_f32, col));
             painter.text(e, Align2::CENTER_CENTER, n, FontId::proportional(12.0), col);
         }
-        if self.report_job.is_none() {
-            if self.loaded_models().next().is_some() {
-                self.view_cube(ui, rect);
-            }
-            if self.settings.nav_bar && self.loaded_models().next().is_some() && self.render_job.is_none() {
-                self.nav_bar(ui, rect);
-            }
+        // ViewCube-ul e overlay global: în split-view îl desenăm o singură dată (pe jumătatea activă).
+        // Bara de navigare eArea globală - se desenează o singură dată în update(), nu aici.
+        if overlays && self.report_job.is_none() && self.loaded_models().next().is_some() {
+            self.view_cube(ui, rect);
         }
         // redlines of the active viewpoint
         let mut reds: Vec<crate::markup::Redline> = self.active_vp.and_then(|i| self.viewpoints.get(i)).map(|v| v.redlines.clone()).unwrap_or_default();
@@ -4171,10 +4117,10 @@ impl App {
     /// Bara de navigare plutitoare (jos, pe centru): ce se foloseste des, fara drum prin ribbon.
     /// Bara de unelte de jos (aspect "studio"): butoane mari cu iconita si eticheta, pe grupe
     /// (selectie, vizibilitate, navigare, unelte). Culorile vin din tema curenta.
-    fn nav_bar(&mut self, ui: &mut egui::Ui, rect: Rect) {
+    fn nav_bar(&mut self, ctx: &egui::Context, rect: Rect) {
         let pal = self.pal();
         let pos = rect.center_bottom() - EV::new(0.0, 14.0);
-        egui::Area::new(egui::Id::new("nav_bar")).fixed_pos(pos).pivot(Align2::CENTER_BOTTOM).order(egui::Order::Middle).show(ui.ctx(), |ui| {
+        egui::Area::new(egui::Id::new("nav_bar")).fixed_pos(pos).pivot(Align2::CENTER_BOTTOM).order(egui::Order::Middle).show(ctx, |ui| {
             egui::Frame::none()
                 .fill(pal.overlay_btn)
                 .stroke(Stroke::new(1.0_f32, Color32::from_white_alpha(18)))
