@@ -9,12 +9,12 @@
 Open **IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP and point clouds** together, run clash detection and model checks,<br>
 manage issues and markups, publish drawings — and stay in sync with Revit and Navisworks.
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.27.11-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.11/ManageBIM-Setup-0.27.11.exe)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.27.12-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.12/ManageBIM-Setup-0.27.12.exe)
 &nbsp;
 [![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Releases-334155?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/Latinu2020/ManageBIM/releases)
 
 [![Build](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml/badge.svg)](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-0.27.11-blue)
+![Version](https://img.shields.io/badge/version-0.27.12-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20FreeBSD-0078d4)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-b7410e)
 ![No admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a)
@@ -73,10 +73,12 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 
 | Platform | Package | Notes |
 |---|---|---|
-| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.27.11.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.11/ManageBIM-Setup-0.27.11.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins and the OpenCascade runtime. Per-user, **no administrator rights**. |
+| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.27.12.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.12/ManageBIM-Setup-0.27.12.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins and the OpenCascade runtime. Per-user, **no administrator rights**. |
 | **Linux** (x86-64) | `ManageBIM-<version>-x86_64.AppImage` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | One file: `chmod +x`, then run. No installation, no root. |
 | **FreeBSD** (x86-64) | `ManageBIM-<version>-freebsd-x86_64.tar.gz` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | Unpack and run `ManageBIM/ManageBIM`. Needs `pkg install mesa-libs libxkbcommon`. |
 
+> **0.27.12** — **OSNAP** (selectable Vertex / Midpoint / Edge / Surface, adjustable radius, F3 on/off), **units m / mm / in / ft** with configurable precision, **split-view** with a draggable divider and link / unlink cameras, a professional **Viewpoints** panel, customizable **keybindings** with conflict detection, **batch export** (PDF + HTML + Excel + BCF to one folder) and shareable **.mbprofile** settings profiles.
+>
 > **0.27.11** — new **Annotation** ribbon tab (right after Sections) for **Cut to DWG / Cut on Sheet / Cut to PDF**, with a small proportional **2D Section Preview** window (white sheet with hatching, dimension chains, levels and title block) and separate toggles for **Dimensions** and **Levels** in the export. Section boxes now cut real 3D geometry (solid cap hatched on the cut plane) instead of flattened 2D lines; **Behind edges** is gone (everything in the box from the plane on is always visible). The **Hidden line** visual style is now Rhino 3D style: white paper, light shading and only the outer contour. The cut-plane highlight stays **off by default** — turn it on only when you need the drag handle.
 >
 > **0.27.10 (hotfix)** — reliable viewpoint click / rename (separate drag handle), section cut edges computed and drawn as a technical drawing, dimension chains in DWG, and a clean Hidden-line style.
@@ -86,7 +88,7 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 > **0.27.0** — progressive CPU path tracing, Navisworks-style clash workflow, Hidden line, uniform ribbon buttons and a full-height Properties panel with all element properties.
 >
 > **Windows:** the installer is not digitally signed yet — if SmartScreen asks, choose *More info › Run anyway*.
-> Silent install: `ManageBIM-Setup-0.27.11.exe /S` (add `/NoAddins` for the application only).
+> Silent install: `ManageBIM-Setup-0.27.12.exe /S` (add `/NoAddins` for the application only).
 >
 > **Linux / FreeBSD:** the add-ins (Revit, Navisworks, AutoCAD) and the native STEP / IGES reader exist only on Windows; everything else is the same.
 
