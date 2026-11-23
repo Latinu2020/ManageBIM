@@ -178,7 +178,40 @@ impl App {
             Purpose::ExportVpHtml => self.start_report(0, &path),
             Purpose::ExportVpXlsx => self.start_report(1, &path),
             Purpose::ExportVpPdf => self.start_report(3, &path),
+            Purpose::ExportBatch => {
+                let dir = std::path::PathBuf::from(&path);
+                let stem = "ManageBIM-export";
+                self.batch_queue = vec![
+                    (3, dir.join(format!("{stem}-sheets.pdf")).to_string_lossy().to_string()),
+                    (0, dir.join(format!("{stem}-report.html")).to_string_lossy().to_string()),
+                    (1, dir.join(format!("{stem}-report.xlsx")).to_string_lossy().to_string()),
+                    (2, dir.join(format!("{stem}-issues.bcf")).to_string_lossy().to_string()),
+                ];
+                if !self.batch_queue.is_empty() {
+                    let (kind, p) = self.batch_queue.remove(0);
+                    self.start_report(kind, &p);
+                }
+                self.toast("Batch export started (PDF, HTML, Excel, BCF)…");
+            }
             Purpose::ExportBcf => self.start_report(2, &path),
+            Purpose::ExportSettingsProfile => {
+                let p = std::path::Path::new(&path);
+                match self.settings.export_profile(p) {
+                    Ok(()) => self.toast(format!("Settings profile saved: {}", crate::file_name(&path))),
+                    Err(e) => self.error(format!("Cannot save profile: {e}")),
+                }
+            }
+            Purpose::ImportSettingsProfile => {
+                match crate::theme::Settings::import_profile(std::path::Path::new(&path)) {
+                    Ok(s) => {
+                        crate::app::set_unit(match s.unit_system.as_str() { "mm" => crate::app::Unit::Mm, "in" => crate::app::Unit::In, "ft" => crate::app::Unit::Ft, _ => crate::app::Unit::M });
+                        crate::app::set_precision(s.unit_precision);
+                        self.settings = s;
+                        self.toast(format!("Settings loaded from {}", crate::file_name(&path)));
+                    }
+                    Err(e) => self.error(format!("Cannot load profile: {e}")),
+                }
+            }
             Purpose::ExportNavisXml => self.export_navis_xml(&path),
             Purpose::ImportNavisXml => self.import_navis_xml(&path),
             Purpose::ExportNavisSets => self.export_navis_sets(&path),
@@ -491,6 +524,9 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::ExportVpHtml => d.set_title("Viewpoints report (HTML)").add_filter("HTML report", &["html"]).set_file_name("viewpoints_report.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpXlsx => d.set_title("Viewpoints report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("viewpoints_report.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpPdf => d.set_title("Sheets (PDF)").add_filter("PDF", &["pdf"]).set_file_name("sheets.pdf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportBatch => d.set_title("Batch export folder (PDF, HTML, Excel, BCF)").pick_folder().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportSettingsProfile => d.set_title("Export settings profile (.mbprofile)").add_filter("ManageBIM profile", &["mbprofile"]).set_file_name("settings.mbprofile").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ImportSettingsProfile => d.set_title("Import settings profile (.mbprofile)").add_filter("ManageBIM profile", &["mbprofile"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportBcf => d.set_title("Export BCF 2.1").add_filter("BIM Collaboration Format", &["bcf", "bcfzip"]).set_file_name("issues.bcf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportNavisXml => d.set_title("Export viewpoints for Navisworks").add_filter("Navisworks viewpoints XML", &["xml"]).set_file_name("viewpoints.xml").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportNavisXml => d.set_title("Import Navisworks viewpoints").add_filter("Navisworks viewpoints XML", &["xml"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -572,6 +608,7 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::ExportVpHtml => "viewpoints_report.html".into(),
                 Purpose::ExportVpXlsx => "viewpoints_report.xlsx".into(),
                 Purpose::ExportVpPdf => "sheets.pdf".into(),
+                Purpose::ExportBatch | Purpose::ExportSettingsProfile | Purpose::ImportSettingsProfile => "settings.mbprofile".into(),
                 Purpose::ExportBcf => "issues.bcf".into(),
                 Purpose::ExportNavisXml => "viewpoints.xml".into(),
                 Purpose::ExportNavisSets => "sets.xml".into(),

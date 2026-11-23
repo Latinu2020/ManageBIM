@@ -506,29 +506,11 @@ impl App {
     /// Segmentele + textele desenului 2D al sectiunii: tăietura, hașura, cote în lanț, niveluri, grile.
     /// Aceleași funcții folosite de exportul DWG / PDF (`hatch_lines`, `section_annotations`).
     fn section_preview_drawing(&self) -> (Vec<(String, [f64; 4])>, Vec<crate::app::CadText>) {
-        let Some((axis, value)) = self.cad_cut_plane() else { return (Vec::new(), Vec::new()) };
-        let mut segs: Vec<(String, [f64; 4])> = Vec::new();
-        let mut texts: Vec<crate::app::CadText> = Vec::new();
-        let to2d = |p: Vec3| -> [f64; 2] {
-            match axis { 2 => [p.x as f64, p.y as f64], 0 => [p.y as f64, p.z as f64], _ => [p.x as f64, p.z as f64] }
-        };
-        let mut cut: Vec<[f64; 4]> = Vec::new();
-        for (p, q) in self.section_cut_lines(axis, value) {
-            let a = to2d(p); let b = to2d(q);
-            cut.push([a[0], a[1], b[0], b[1]]);
+        // EXACT aceeași sursă ca exportul DWG / PDF - nu mai există discrepanță.
+        match self.section_drawing() {
+            Some((segs, texts, _, _)) => (segs, texts),
+            None => (Vec::new(), Vec::new()),
         }
-        // hașura ANSI31 pe conturul tăiat (regula par/impar, ca în DWG)
-        for h in crate::app::hatch_lines(&cut, 0.22) { segs.push(("HATCH".into(), h)); }
-        for s in cut { segs.push(("CUT".into(), s)); }
-        // niveluri + cote în lanț + grile (doar pentru secțiuni verticale)
-        if axis != 2 && segs.len() > 3 {
-            let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
-            for (_, s) in &segs { x0 = x0.min(s[0]).min(s[2]); y0 = y0.min(s[1]).min(s[3]); x1 = x1.max(s[0]).max(s[2]); y1 = y1.max(s[1]).max(s[3]); }
-            let levels: Vec<(String, f64)> = self.scene_grids().levels.iter().map(|(n, z)| (n.clone(), *z as f64)).collect();
-            let grids = self.grids_world();
-            crate::app::section_annotations(&levels, &grids, axis, value as f64, [x0, y0, x1, y1], 0.1, self.cad_dims, self.cad_levels, &mut segs, &mut texts);
-        }
-        (segs, texts)
     }
 
     pub(super) fn overlay_window(&mut self, ctx: &egui::Context) {

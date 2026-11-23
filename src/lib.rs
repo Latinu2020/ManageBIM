@@ -12,6 +12,7 @@ pub mod fbx;
 pub mod fcstd;
 pub mod formats;
 pub mod i18n;
+pub mod keybind;
 pub mod materials;
 pub mod pdf;
 pub mod markup;

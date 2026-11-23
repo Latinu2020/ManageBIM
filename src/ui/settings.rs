@@ -152,6 +152,8 @@ impl App {
                     ui.checkbox(&mut self.cad_annotate, "Annotations: hatch, element tags, grids, levels")
                         .on_hover_text("Turn off for a clean outline (only the cut edges, one DWG layer per element type).");
                     ui.horizontal(|ui| {
+                        ui.checkbox(&mut self.cad_hatch, "Hatch cut materials")
+                            .on_hover_text("Hatch the cut materials (filled contours) - off = clean outline.");
                         ui.checkbox(&mut self.cad_dims, "Dimensions (chains)")
                             .on_hover_text("Include dimension chains in the exported DWG / PDF cut.");
                         ui.checkbox(&mut self.cad_levels, "Levels")
@@ -193,11 +195,94 @@ impl App {
                     });
                     if ui.checkbox(&mut self.settings.gravity, "Gravity when walking").changed() { self.settings.save(); }
                     if ui.checkbox(&mut self.settings.collision, "Collision with geometry").changed() { self.settings.save(); }
-                    if ui.checkbox(&mut self.settings.units_mm, "Lengths in millimetres").changed() {
-                        self.settings.save();
-                        crate::app::set_units_mm(self.settings.units_mm);
-                    }
+                    ui.horizontal(|ui| {
+                        ui.label("Units");
+                        for (code, label) in [("m", "m"), ("mm", "mm"), ("in", "in"), ("ft", "ft")] {
+                            if ui.selectable_label(self.settings.unit_system == code, label).clicked() {
+                                self.settings.unit_system = code.into();
+                                self.settings.units_mm = code == "mm";
+                                crate::app::set_unit(match code { "mm" => crate::app::Unit::Mm, "in" => crate::app::Unit::In, "ft" => crate::app::Unit::Ft, _ => crate::app::Unit::M });
+                                self.settings.save();
+                            }
+                        }
+                        ui.label("decimals");
+                        if ui.add(egui::DragValue::new(&mut self.settings.unit_precision).range(0..=6)).changed() {
+                            crate::app::set_precision(self.settings.unit_precision);
+                            self.settings.save();
+                        }
+                    });
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.label("OSNAP (F3)");
+                        ui.checkbox(&mut self.osnap_on, "On")
+                            .on_hover_text("Object Snap: snap to geometry while measuring, relocating or picking grid points. F3 toggles it.");
+                        ui.label("radius");
+                        if ui.add(egui::DragValue::new(&mut self.settings.snap_radius).range(6.0..=24.0)).changed() {
+                            self.settings.save();
+                        }
+                        ui.label("px");
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Snap to");
+                        for (bit, name) in [(1u8, "Vertex"), (2, "Midpoint"), (4, "Edge"), (8, "Surface")] {
+                            let on = self.settings.snap_types & bit != 0;
+                            let mut t = on;
+                            if ui.checkbox(&mut t, name).changed() {
+                                if t { self.settings.snap_types |= bit; } else { self.settings.snap_types &= !bit; }
+                                self.settings.save();
+                            }
+                        }
+                    });
+                    ui.separator();
+                    ui.heading("Keyboard shortcuts");
+                    ui.label(RichText::new("Click a binding, press the new keys, then Enter. Esc cancels.").small().weak());
+                    let mut reset = false;
+                    egui::Grid::new("kb_grid").num_columns(3).spacing([10.0, 4.0]).show(ui, |ui| {
+                        for (cmd, _default) in crate::keybind::COMMANDS {
+                            ui.label(cmd.replace('_', " "));
+                            let cur = crate::keybind::binding(&self.settings.keybinds, cmd);
+                            let id = egui::Id::new(("kb_edit", cmd));
+                            let editing: Option<String> = ui.data(|d| d.get_temp(id));
+                            let mut buf = editing.clone().unwrap_or_else(|| cur.clone());
+                            let te = ui.add(egui::TextEdit::singleline(&mut buf).desired_width(120.0));
+                            if editing.is_none() && te.clicked() {
+                                ui.data_mut(|d| d.insert_temp(id, cur.clone()));
+                            }
+                            if editing.is_some() {
+                                if ui.input(|k| k.key_pressed(Key::Enter)) {
+                                    if let Some(conflict) = crate::keybind::conflicts(&self.settings.keybinds, cmd, &buf) {
+                                        self.toast(format!("Conflict with '{conflict}'"));
+                                    } else {
+                                        if buf == crate::keybind::binding(&self.settings.keybinds, cmd) { self.settings.keybinds.remove(cmd); }
+                                        else { self.settings.keybinds.insert(cmd.to_string(), buf.clone()); }
+                                        self.settings.save();
+                                    }
+                                    ui.data_mut(|d| d.remove::<String>(id));
+                                } else if ui.input(|k| k.key_pressed(Key::Escape)) {
+                                    ui.data_mut(|d| d.remove::<String>(id));
+                                }
+                            }
+                            if ui.small_button("↺").on_hover_text("Reset to default").clicked() {
+                                self.settings.keybinds.remove(cmd);
+                                self.settings.save();
+                            }
+                            ui.end_row();
+                        }
+                    });
+                    if ui.small_button("Reset all shortcuts").clicked() { reset = true; }
+                    if reset { self.settings.keybinds.clear(); self.settings.save(); }
 
+                    // ------------------------------------------------ profil partajabil
+                    ui.separator();
+                    ui.heading("Settings profile");
+                    ui.horizontal(|ui| {
+                        if ui.button("📤 Export profile (.mbprofile)").on_hover_text("Save theme, panels, shortcuts, units and filters to a file you can share with colleagues").clicked() {
+                            self.request_path(Purpose::ExportSettingsProfile);
+                        }
+                        if ui.button("📥 Import profile").on_hover_text("Load a .mbprofile. Local paths (recent files, tools) are not imported.").clicked() {
+                            self.request_path(Purpose::ImportSettingsProfile);
+                        }
+                    });
                     // ------------------------------------------------ fisiere / sync
                     ui.separator();
                     ui.heading("Scripts");

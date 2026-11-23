@@ -262,38 +262,34 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
     // ------------------------------------------------------------------ viewpoints
     pub(super) fn viewpoints_ui(&mut self, ui: &mut egui::Ui) {
         use crate::markup::{PRIORITIES, STATUSES};
+        // Toolbar profesionist: carduri compacte, grupate, cu glife Phosphor vizibile.
+        let card = |ui: &mut egui::Ui, ic: &str, label: &str, tip: &str, enabled: bool| -> bool {
+            let txt = crate::theme::icon_job(ic, label, 12.0, ui.visuals().text_color());
+            let btn = egui::Button::new(txt).frame(false).rounding(6.0_f32).min_size(egui::vec2(0.0, 24.0));
+            ui.add_enabled(enabled, btn).on_hover_text(tip).clicked()
+        };
         ui.horizontal_wrapped(|ui| {
-            if ui.button("📷 Save Current View").clicked() {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            // --- Save / Folders
+            if card(ui, "📷", "Save view", "Save the current camera, section, hidden items and redlines as a viewpoint", true) {
                 self.save_viewpoint();
             }
-            if ui.button("📁 New folder").on_hover_text("A folder for viewpoints / markups (inside the current folder). Drag viewpoints onto it; its ⋯ menu exports only its content.").clicked() {
+            if card(ui, "📁", "Folder", "A folder for viewpoints / markups. Drag viewpoints onto it; its ⋯ menu exports only its content.", true) {
                 self.vp_new_folder();
             }
             ui.separator();
-            ui.label("Export:");
+            // --- Export
             let can = !self.viewpoints.is_empty();
-            if ui.add_enabled(can, egui::Button::new("📄 HTML report")).clicked() {
-                self.request_path(Purpose::ExportVpHtml);
-            }
-            if ui.add_enabled(can, egui::Button::new("📊 Excel")).clicked() {
-                self.request_path(Purpose::ExportVpXlsx);
-            }
-            if ui.add_enabled(can, egui::Button::new("📄 PDF sheets")).clicked() {
-                self.request_path(Purpose::ExportVpPdf);
-            }
-            if ui.add_enabled(can, egui::Button::new("📤 BCF 2.1")).clicked() {
-                self.request_path(Purpose::ExportBcf);
-            }
-            if ui.add_enabled(can, egui::Button::new("🧭 Navisworks XML")).on_hover_text("Saved Viewpoints > right-click > Import Viewpoints in Navisworks").clicked() {
-                self.request_path(Purpose::ExportNavisXml);
-            }
-            if ui.button("📥 Import BCF…").on_hover_text("BCF 2.1 / 3.0 issues from Revit, ACC, Solibri, BIMcollab...: camera, status, comments, selected elements").clicked() {
-                self.request_path(Purpose::ImportBcf);
-            }
-            if ui.button("📥 Import Navisworks XML…").on_hover_text("Viewpoints exported from Navisworks: camera, section box, comments, redlines").clicked() {
-                self.request_path(Purpose::ImportNavisXml);
-            }
-            ui.label(RichText::new("Redline tools: ribbon Review. Markups belong to the viewpoint and show while you stay at it.").weak().small());
+            if card(ui, "📄", "HTML", "Export the viewpoint report as HTML", can) { self.request_path(Purpose::ExportVpHtml); }
+            if card(ui, "📊", "Excel", "Export the viewpoints and issues as an Excel workbook", can) { self.request_path(Purpose::ExportVpXlsx); }
+            if card(ui, "📄", "PDF", "One A3-A0 PDF sheet per viewpoint, with the title block", can) { self.request_path(Purpose::ExportVpPdf); }
+            if card(ui, "📤", "BCF", "Export issues as BCF 2.1 (Revit, ACC, Solibri, BIMcollab...)", can) { self.request_path(Purpose::ExportBcf); }
+            if card(ui, "🧭", "Navis", "Export viewpoints as Navisworks XML (Saved Viewpoints > right-click > Import Viewpoints)", can) { self.request_path(Purpose::ExportNavisXml); }
+            if card(ui, "📦", "Batch", "Export all to a folder: PDF sheets, HTML + Excel report, BCF issues", can) { self.request_path(Purpose::ExportBatch); }
+            ui.separator();
+            // --- Import
+            if card(ui, "📥", "BCF", "Import BCF 2.1 / 3.0: camera, status, comments, selected elements", true) { self.request_path(Purpose::ImportBcf); }
+            if card(ui, "📥", "Navis", "Import Navisworks viewpoints: camera, section box, comments, redlines", true) { self.request_path(Purpose::ImportNavisXml); }
         });
         ui.separator();
         if self.viewpoints.is_empty() {
@@ -318,25 +314,39 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                 let v = &mut self.viewpoints[i];
                 ui.horizontal(|ui| {
                     ui.add(egui::TextEdit::singleline(&mut v.name).desired_width(240.0).font(egui::TextStyle::Heading));
-                    if ui.button("▶ Go to").clicked() {
+                    let go = egui::Button::new(crate::theme::icon_job("▶", "Go to", 12.0, accent())).frame(false).rounding(6.0_f32);
+                    if ui.add(go).on_hover_text("Restore the camera, section and hidden items of this viewpoint").clicked() {
                         restore = Some(i);
                     }
-                    if ui.button("⟳ Update view").on_hover_text("Store the current camera, section, hidden items and selection").clicked() {
+                    let upd = egui::Button::new(crate::theme::icon_job("⟳", "Update", 12.0, ui.visuals().text_color())).frame(false).rounding(6.0_f32);
+                    if ui.add(upd).on_hover_text("Store the current camera, section, hidden items and selection").clicked() {
                         update = true;
                     }
-                    if ui.add_enabled(!v.redlines.is_empty(), egui::Button::new("Clear redlines")).clicked() {
+                    let clear = egui::Button::new(crate::theme::icon_job("✖", "Clear", 12.0, ui.visuals().weak_text_color())).frame(false).rounding(6.0_f32);
+                    if ui.add_enabled(!v.redlines.is_empty(), clear).on_hover_text("Remove the redlines of this viewpoint").clicked() {
                         v.redlines.clear();
                     }
-                    if ui.button("🗑").on_hover_text("Delete viewpoint").clicked() {
+                    let trash = egui::Button::new(crate::theme::icon_job("🗑", "", 13.0, Color32::from_rgb(248, 113, 113))).frame(false).rounding(6.0_f32);
+                    if ui.add(trash).on_hover_text("Delete viewpoint").clicked() {
                         del = Some(i);
                     }
                 });
                 egui::Grid::new("vp_issue").num_columns(4).spacing([10.0, 6.0]).show(ui, |ui| {
                     ui.label("Status");
-                    egui::ComboBox::from_id_salt("vp_status").selected_text(v.issue.status.clone()).show_ui(ui, |ui| {
-                        for st in STATUSES {
-                            ui.selectable_value(&mut v.issue.status, st.to_string(), st);
-                        }
+                    let scol = match v.issue.status.as_str() {
+                        "Open" => Color32::from_rgb(248, 113, 113),
+                        "In Progress" => Color32::from_rgb(251, 146, 60),
+                        "Resolved" => Color32::from_rgb(74, 222, 128),
+                        _ => ui.visuals().weak_text_color(),
+                    };
+                    ui.horizontal(|ui| {
+                        ui.painter().circle_filled(ui.cursor().min + egui::vec2(4.0, 7.0), 3.5, scol);
+                        ui.add_space(9.0);
+                        egui::ComboBox::from_id_salt("vp_status").width(110.0).selected_text(v.issue.status.clone()).show_ui(ui, |ui| {
+                            for st in STATUSES {
+                                ui.selectable_value(&mut v.issue.status, st.to_string(), st);
+                            }
+                        });
                     });
                     ui.label("Priority");
                     egui::ComboBox::from_id_salt("vp_prio").selected_text(v.issue.priority.clone()).show_ui(ui, |ui| {

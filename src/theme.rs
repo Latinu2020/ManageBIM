@@ -158,6 +158,21 @@ pub struct Settings {
     /// lungimile (masuratori, distante, coordonate) afisate in milimetri in loc de metri
     #[serde(default)]
     pub units_mm: bool,
+    /// OSNAP: raza de prindere in pixeli (6..24)
+    #[serde(default = "default_snap_radius")]
+    pub snap_radius: f32,
+    /// OSNAP: tipuri active (bit 1=Vertex, 2=Midpoint, 4=Edge, 8=Surface)
+    #[serde(default = "default_snap_types")]
+    pub snap_types: u8,
+    /// sistem de unitati: "m" | "mm" | "in" | "ft" (completeaza units_mm; vechiul proiect ramane valid)
+    #[serde(default)]
+    pub unit_system: String,
+    /// numar de zecimale la afisarea distantilor (0..6)
+    #[serde(default = "default_precision")]
+    pub unit_precision: u8,
+    /// keybindings customizabile: "open" -> "Ctrl+O" etc. (doar override-urile fata de default)
+    #[serde(default)]
+    pub keybinds: std::collections::BTreeMap<String, String>,
     /// interfata in romana (altfel engleza)
     #[serde(default)]
     pub romanian: bool,
@@ -219,6 +234,18 @@ fn yes() -> bool {
     true
 }
 
+fn default_precision() -> u8 {
+    3
+}
+
+fn default_snap_radius() -> f32 {
+    12.0
+}
+
+fn default_snap_types() -> u8 {
+    0b1111 // Vertex | Midpoint | Edge | Surface
+}
+
 fn default_ui_scale() -> f32 {
     1.0
 }
@@ -259,7 +286,7 @@ fn default_walk() -> f32 {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), font_family: default_font_family(), font_size: default_font_size(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), snap_cut_to_grid: true, scripts_dir: String::new(), script_params: std::collections::BTreeMap::new(), show_cad_plane: false, show_section_box: true, show_section_behind: true, vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default() }
+        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), font_family: default_font_family(), font_size: default_font_size(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), snap_cut_to_grid: true, scripts_dir: String::new(), script_params: std::collections::BTreeMap::new(), show_cad_plane: false, show_section_box: true, show_section_behind: true, snap_radius: default_snap_radius(), snap_types: default_snap_types(), unit_system: "m".into(), unit_precision: default_precision(), keybinds: std::collections::BTreeMap::new(), vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default() }
     }
 }
 
@@ -278,12 +305,41 @@ fn settings_path() -> Option<std::path::PathBuf> {
 }
 
 impl Settings {
+    /// Exportă setările curente într-un fișier .mbprofile (partajabil cu colegii).
+    pub fn export_profile(&self, path: &std::path::Path) -> std::io::Result<()> {
+        let json = serde_json::to_string_pretty(self).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        std::fs::write(path, json)
+    }
+
+    /// Importă setările dintr-un .mbprofile. `recent` și `tools` (căi locale) nu se preiau.
+    pub fn import_profile(path: &std::path::Path) -> Result<Settings, String> {
+        let s = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let mut p: Settings = serde_json::from_str(&s).map_err(|e| e.to_string())?;
+        p.recent.clear();
+        p.tools = Default::default();
+        Ok(p)
+    }
+
     pub fn load() -> Settings {
         // setarile; daca fisierul e stricat (cadere in timpul scrierii), copia .bak de la salvarea anterioara
         let read = |p: std::path::PathBuf| std::fs::read_to_string(p).ok().and_then(|s| serde_json::from_str::<Settings>(&s).ok());
         let mut s: Settings = settings_path()
             .and_then(|p| read(p.clone()).or_else(|| read(crate::formats::backup_path(&p))))
             .unwrap_or_default();
+        // 27.11: highlightul planului e intodeauna INCHIS la pornire;
+        // utilizatorul il deschide doar cand are nevoie de manerul de tragere.
+        s.show_cad_plane = false;
+        // migrare units_mm -> unit_system (proiectele vechi raman valide)
+        if s.unit_system.is_empty() {
+            s.unit_system = if s.units_mm { "mm".into() } else { "m".into() };
+        }
+        crate::app::set_unit(match s.unit_system.as_str() {
+            "mm" => crate::app::Unit::Mm,
+            "in" => crate::app::Unit::In,
+            "ft" => crate::app::Unit::Ft,
+            _ => crate::app::Unit::M,
+        });
+        crate::app::set_precision(s.unit_precision);
         // vechiul implicit (3 m/s) -> viteza de mers normala; o valoare aleasa de utilizator ramane
         if s.walk_speed == 3.0 {
             s.walk_speed = default_walk();

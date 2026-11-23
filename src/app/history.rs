@@ -183,6 +183,11 @@ impl App {
             Ok(()) => self.toast(format!("{} viewpoints exported to {}", job.items.len(), crate::file_name(&path))),
             Err(e) => self.error(format!("Cannot write {path}: {e}")),
         }
+        // continuă exportul în lot: pornește următorul raport din coadă
+        if !self.batch_queue.is_empty() {
+            let (kind, p) = self.batch_queue.remove(0);
+            self.start_report(kind, &p);
+        }
     }
 
     pub fn restore_viewpoint(&mut self, i: usize) {

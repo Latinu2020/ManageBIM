@@ -3,6 +3,15 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.12 - 2026-11-23
+- **OSNAP îmbunătățit**: tipuri selectabile (Vertex / Midpoint / Edge / Surface), rază reglabilă 6–24 px și **F3** pentru on/off — în Settings și direct în viewport.
+- **Unități reale mm / m / in / ft** cu precizie configurabilă (0–6 zecimale); înlocuiește vechiul comutator mm, cu migrare automată a setărilor vechi.
+- **Split-view**: două jumătăți în aceeași fereastră (View › Compare), separator trasabil (stretch), cameră + secțiune proprii, link/unlink camere.
+- **Keybindings customizabile**: editor în Settings (click → taste → Enter), detectare conflicte, reset per comandă / total.
+- **Export în lot**: buton „Batch" în Viewpoints → dosar destinație → PDF + HTML + Excel + BCF, exportate secvențial.
+- **Profil de setări partajabil**: `.mbprofile` cu temă, panouri, scări, unități, keybindings; Import/Export în Settings (căile locale nu se preiau).
+- **Panel Viewpoints profesionist**: toolbar cu carduri compacte și glife Phosphor, badge colorat pentru status, butoare de acțiune stilizate.
+
 ## 0.27.11 - 2026-11-23
 - **Tab nou „Annotation"** (imediat după Sections, ușor de găsit): grupuri *Cut & Export* (Cut to DWG, Cut on Sheet, Cut to PDF, 2D Preview), *Cut View* și *Annotations* (Title Block, Grids, Levels, Filled cuts, DWG Overlay). Comenzile sunt și în Ctrl+K sub categoria „Annotation".
 - **Secțiunea din cub**: eliminat butonul „Behind edges" — tot ce e în cub de la planul de tăiere încolo se vede direct ca geometrie 3D (shaderul taie la cub și desenează capacul hașurat pe plan); nu se mai desenează liniile aplatizate „preview 2D în 3D".
@@ -10,7 +19,9 @@ La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Ca
 - **Vederea Hidden line stil Rhino 3D**: hârtie albă, suprafețe albe cu umbrire fină și **doar conturul general negru** (fără muchii interne / crease); fundalul viewport-ului devine alb în acest stil.
 - **Preview 2D refăcut**: fereastră **fixă, proporțională** (470×340, ~A4 landscape), fundal alb, cu hașură ANSI31, cote în lanț, niveluri, grile și cartuș — ca exportul. Nu se mai întinde pe toată aplicația.
 - **Butoane separate în Annotation / Settings** pentru **Dimensions** (cote) și **Levels** (niveluri) în exportul DWG/PDF — le poți debifa pe ce nu vrei.
-- **Highlight plan**: rămâne **închis by default** și nu se mai aprinde automat când alegi o față; îl deschizi doar când ai nevoie (buton în Annotation / Settings).
+- **Highlight plan**: rămâne **închis by default** (resetat la fiecare pornire, chiar dacă a fost aprins în sesiunea anterioară) și nu se mai aprinde automat când alegi o față; îl deschizi doar când ai nevoie (buton în Annotation / Settings).
+- **Desen tehnic profesional (stil Inventor)**: previewul și exportul DWG/PDF folosesc acum **aceeași sursă** (`section_drawing`) — nu mai există discrepanță. Fără linii „din spate" (BEHIND) nicăieri. Hașura pe materialele tăiate e activă implicit, cu buton de debifare. Straturile DXF au culori coerente (negru pentru tăietură, gri pentru hașură/niveluri/grile, albastru pentru cote) în loc de culori aleatoare.
+- **Scara 1:1**: desenul exportat rămâne la coordonate reale (metri) pe plansa cu cartuș; doar cartușul/chenarul sunt în mm de hartie.
 
 ## 0.27.10 - 2026-11-23
 - **Panoul Viewpoints restructurat**: mâner de drag separat de etichetă — clickul și dublu-clickul (rename) pe nume funcționează sigur, dragul mută în folders.

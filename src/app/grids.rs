@@ -285,18 +285,16 @@ impl App {
 
     /// Taietura sectiunii curente (plan / nivel) ca linii 2D in DWG (scriitor integrat) sau DXF:
     /// un layer pe tip de element (Walls, Doors, IfcColumn...), coordonate reale in metri.
-    pub fn export_section_cad(&mut self, path: &str) {
+    /// Construiește EXACT desenul 2D al tăieturii: segmente (layer, x1,y1,x2,y2) + texte.
+    /// Folosit atât de exportul DWG / PDF, cât și de fereastra de preview, ca să fie identice.
+    pub fn section_drawing(&self) -> Option<(Vec<(String, [f64; 4])>, Vec<CadText>, usize, f32)> {
         let view = self.settings.cad_view;
         if view == crate::app::CadView::Current && !self.section.enabled {
-            return self.error("Turn on a section first, or choose Front / Back / Left / Right in Settings › Export.");
+            return None;
         }
         // planul de taiere: axa (0 = X, 1 = Y, 2 = Z), valoarea (coordonate locale) si zona (doar la box)
         let (axis, value, clip): (usize, f32, Option<([f32; 3], [f32; 3])>) = if view.axis().is_some() {
-            // vedere din directie: taie la pozitia exacta, dar DOAR in interiorul
-            // cubului de sectiune (daca e activ) - ca si cum ai extrage fata lui
-            let Some((a, v)) = self.cad_cut_plane() else {
-                return self.error("No model geometry to cut.");
-            };
+            let (a, v) = self.cad_cut_plane()?;
             let box_clip = if self.section.enabled && self.section.mode == crate::app::SectionMode::Box {
                 Some((self.section.bmin, self.section.bmax))
             } else {
@@ -307,17 +305,12 @@ impl App {
             match self.section.mode {
             SectionMode::Box => {
                 let (a, b) = (self.section.bmin, self.section.bmax);
-                // acelasi plan ca cel evidentiat in 3D (din cub, nu din nivel)
                 let z = self.cad_cut_plane().map(|(_, v)| v).unwrap_or(a[2] + 1.2);
                 (2, z, Some((a, b)))
             }
             SectionMode::Planes => {
-                let Some(p) = self.section.planes.iter().find(|p| p.enabled) else { return self.error("No active section plane.") };
-                let axis = match p.dir {
-                    0 | 1 => 2,
-                    2 | 3 => 0,
-                    _ => 1,
-                };
+                let p = self.section.planes.iter().find(|p| p.enabled)?;
+                let axis = match p.dir { 0 | 1 => 2, 2 | 3 => 0, _ => 1 };
                 (axis, p.offset, None)
             }
             }
@@ -416,23 +409,10 @@ impl App {
                 }
             }
         }
-        // Muchiile din spatele planului, aplatizate pe planul de taiere, pe stratul
-        // BEHIND (linetip HIDDEN in DXF) - ce e acoperit ramane vizibil punctat.
-        if self.settings.show_section_behind {
-            let sign = match view {
-                crate::app::CadView::Front | crate::app::CadView::Left | crate::app::CadView::Bottom => 1.0,
-                crate::app::CadView::Back | crate::app::CadView::Right | crate::app::CadView::Top => -1.0,
-                crate::app::CadView::Current => 1.0,
-            };
-            let behind = self.section_behind_edges(axis, value, sign);
-            for (p, q) in behind {
-                let a = to2d(p);
-                let b = to2d(q);
-                segs.push(("BEHIND".to_string(), [a[0], a[1], b[0], b[1]]));
-            }
-        }
+        // 27.11: NU se mai adaugă linii „din spate" (BEHIND / aplatizate) - nici în
+        // preview, nici în export. Doar ce taie efectiv planul, cu hașură și cote.
         if segs.is_empty() {
-            return self.error("The section cuts no visible element.");
+            return None;
         }
         // planul complet: hasura pe elementele taiate, etichete (usi, ferestre, pereti), axe cu cote, niveluri pe sectiuni.
         // Marimile textelor / bulelor sunt in mm de hartie: u = metri pe mm (scara plansei sau 1:100 in Model space).
@@ -453,7 +433,7 @@ impl App {
             cut_elems.sort_by_key(|c| c.3.as_ref().map(|_| 0).unwrap_or(1) + if c.2 { 1 } else { 0 });
             for (a, b, hatch, tag) in &cut_elems {
                 let own: Vec<[f64; 4]> = segs[*a..*b].iter().map(|s| s.1).collect();
-                if *hatch {
+                if *hatch && self.cad_hatch {
                     extra.extend(hatch_lines(&own, 1.5 * u).into_iter().map(|h| ("HATCH".to_string(), h)));
                 }
                 if let Some(tag) = tag {
@@ -503,6 +483,16 @@ impl App {
             }
             segs.extend(extra);
         }
+        Some((segs, texts, axis, value))
+    }
+
+    /// Exportul DWG / DXF / PDF al tăieturii. Folosește EXACT același desen ca previewul.
+    pub fn export_section_cad(&mut self, path: &str) {
+        let view = self.settings.cad_view;
+        let Some((segs, texts, axis, value)) = self.section_drawing() else {
+            return self.error("Turn on a section first, or choose Front / Back / Left / Right in Settings › Export.");
+        };
+        let _ = value;
         // PDF: aceeasi taietura, desen vectorial pe plansa cu cartus si aceleasi anotatii
         if path.to_lowercase().ends_with(".pdf") {
             let n = segs.len();
@@ -547,6 +537,7 @@ impl App {
         // ca la import sa punem desenul EXACT in locul din care a fost extras
         if !self.cad_sheet {
             let o = self.origin_f64();
+            let mirror = view.mirrored();
             let meta = format!("999\nMB_CUT_PLANE axis={axis} value={value:.4} mirror={} origin={:.4},{:.4},{:.4}\n", if mirror { 1 } else { 0 }, o.x, o.y, o.z);
             content = content.replacen("2\nHEADER\n", &format!("2\nHEADER\n{meta}"), 1);
             // sidecar pentru DWG (conversia poate elimina comentariile DXF)

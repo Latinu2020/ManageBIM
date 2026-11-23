@@ -217,42 +217,46 @@ pub fn f3(v: f32) -> String {
     format!("{v:.3}")
 }
 
-/// Unitatea de afisare a lungimilor (masuratori, distante, coordonate): metri sau milimetri.
-static UNITS_MM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Unitatea de afisare a lungimilor (masuratori, distante, coordonate).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Unit { #[default] M, Mm, In, Ft }
 
-pub fn set_units_mm(mm: bool) {
-    UNITS_MM.store(mm, std::sync::atomic::Ordering::Relaxed);
-}
-
-pub fn units_mm() -> bool {
-    UNITS_MM.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Lungime (metri) in unitatea aleasa: "1.250 m" sau "1250 mm".
-pub fn fmt_len(m: f64) -> String {
-    if units_mm() {
-        format!("{:.0} mm", m * 1000.0)
-    } else {
-        format!("{m:.3} m")
+impl Unit {
+    pub fn label(self) -> &'static str {
+        match self { Unit::M => "m", Unit::Mm => "mm", Unit::In => "in", Unit::Ft => "ft" }
     }
+    /// factor metri -> unitate
+    fn factor(self) -> f64 {
+        match self { Unit::M => 1.0, Unit::Mm => 1000.0, Unit::In => 39.37007874, Unit::Ft => 3.280839895 }
+    }
+}
+
+static UNIT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0); // Unit::M
+static PREC: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(3); // zecimale
+
+pub fn set_unit(u: Unit) { UNIT.store(u as u8, std::sync::atomic::Ordering::Relaxed); }
+pub fn unit() -> Unit {
+    match UNIT.load(std::sync::atomic::Ordering::Relaxed) { 1 => Unit::Mm, 2 => Unit::In, 3 => Unit::Ft, _ => Unit::M }
+}
+pub fn set_precision(p: u8) { PREC.store(p.clamp(0, 6), std::sync::atomic::Ordering::Relaxed); }
+pub fn precision() -> u8 { PREC.load(std::sync::atomic::Ordering::Relaxed) }
+
+/// compatibilitate cu setarile vechi (units_mm)
+pub fn set_units_mm(mm: bool) { set_unit(if mm { Unit::Mm } else { Unit::M }); }
+pub fn units_mm() -> bool { unit() == Unit::Mm }
+
+/// Lungime (metri) in unitatea aleasa, cu sufix.
+pub fn fmt_len(m: f64) -> String {
+    let u = unit();
+    format!("{:.*} {}", precision() as usize, m * u.factor(), u.label())
 }
 
 /// Numar fara unitate, in unitatea aleasa (ex. componentele ΔX / ΔY / ΔZ).
 pub fn fmt_num(m: f64) -> String {
-    if units_mm() {
-        format!("{:.0}", m * 1000.0)
-    } else {
-        format!("{m:.3}")
-    }
+    format!("{:.*}", precision() as usize, m * unit().factor())
 }
 
-pub fn unit_label() -> &'static str {
-    if units_mm() {
-        "mm"
-    } else {
-        "m"
-    }
-}
+pub fn unit_label() -> &'static str { unit().label() }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum SearchOp {
@@ -1078,6 +1082,11 @@ pub enum Purpose {
     ExportVpHtml,
     ExportVpXlsx,
     ExportVpPdf,
+    /// Export în lot: dosar destinație, 3 rapoarte (PDF / HTML / Excel) + STATUS
+    ExportBatch,
+    /// Profil de setări partajabil (.mbprofile)
+    ExportSettingsProfile,
+    ImportSettingsProfile,
     ExportBcf,
     ExportNavisXml,
     ImportNavisXml,
@@ -1297,6 +1306,8 @@ pub struct App {
     pub cad_dims: bool,
     /// Cut to DWG: include liniile de nivel + etichetele lor în desenul exportat
     pub cad_levels: bool,
+    /// Cut to DWG: hașura pe elementele tăiate (oprită = desen curat, doar contur)
+    pub cad_hatch: bool,
     /// istoricul vizualizarii (Undo / Redo): starile, pozitia curenta, semnatura ultimei stari
     pub hist: Vec<ViewSnap>,
     pub hist_pos: usize,
@@ -1323,6 +1334,19 @@ pub struct App {
     pub grid_gen: GridGen,
     /// alegere in 3D: 0 nimic, 1 originea, 2 directia primei axe
     pub grid_pick: u8,
+    /// OSNAP activ (F3 comuta); cand e off, snapul la geometrie e dezactivat
+    pub osnap_on: bool,
+    /// Split-view: al doilea viewport (comparatie). camera/secțiune proprii.
+    pub split_view: bool,
+    /// pozitia separatorului (0.05..0.95) - se trage cu mouse-ul
+    pub split_ratio: f32,
+    /// camerele sincronizate intre cele doua jumatati
+    pub split_link: bool,
+    /// coada de export în lot (kind, path) - rulează secvențial
+    pub batch_queue: Vec<(u8, String)>,
+    /// camera si sectiunea jumatatii din dreapta
+    pub cam_b: crate::camera::Camera,
+    pub section_b: crate::app::Section,
     /// proiectul deschis dintr-un .bimd: Save il publica din nou acolo
     pub bimd_path: Option<String>,
     /// intrebarea "salvezi?" inainte de intoarcerea la pagina de start
@@ -1615,6 +1639,7 @@ impl App {
             cad_annotate: true,
             cad_dims: true,
             cad_levels: true,
+            cad_hatch: true,
             hist: Vec::new(),
             hist_pos: 0,
             hist_sig: 0,
@@ -1632,6 +1657,13 @@ impl App {
             grid_import: None,
             grid_gen: GridGen::default(),
             grid_pick: 0,
+            osnap_on: true,
+            split_view: false,
+            split_ratio: 0.5,
+            split_link: true,
+            batch_queue: Vec::new(),
+            cam_b: crate::camera::Camera::default(),
+            section_b: crate::app::Section::default(),
             bimd_path: None,
             confirm_start: false,
             show_start: false,
@@ -2392,10 +2424,20 @@ pub fn cut_dxf_layers(segs: &[(String, [f64; 4])], extra: &[&str]) -> String {
     s.push_str("0\nTABLE\n2\nLTYPE\n70\n2\n0\nLTYPE\n2\nCONTINUOUS\n70\n0\n3\nSolid line\n72\n65\n73\n0\n40\n0.0\n0\nLTYPE\n2\nHIDDEN\n70\n0\n3\nHidden line __ __\n72\n65\n73\n2\n40\n1.0\n49\n0.5\n74\n0\n49\n-0.5\n74\n0\n0\nENDTAB\n");
     s.push_str("0\nTABLE\n2\nLAYER\n");
     s.push_str(&format!("70\n{}\n", layers.len()));
-    for (i, l) in layers.iter().enumerate() {
+    for (_i, l) in layers.iter().enumerate() {
         let behind = l.eq_ignore_ascii_case("BEHIND");
         let ltype = if behind { "HIDDEN" } else { "CONTINUOUS" };
-        let color = if behind { 8 } else { [1, 2, 3, 4, 5, 6, 30, 140, 200, 40][i % 10] };
+        // 27.11: paletă de desen tehnic (stil Inventor), nu culori aleatoare:
+        //   7 = alb/negru (context), 8 = gri, 5 = albastru, 1 = roșu (accente).
+        let lower = l.to_ascii_lowercase();
+        let color = if behind { 8 }
+            else if lower == "hatch" { 8 }              // hașura: gri deschis
+            else if lower == "dims" || lower == "dims_text" { 5 } // cote: albastru
+            else if lower == "levels" || lower == "levels_text" { 8 } // niveluri: gri
+            else if lower == "grids" || lower == "grid_text" { 8 }    // grile: gri
+            else if lower == "sheet" || lower == "sheet_text" { 7 }   // chenar/cartuș: negru
+            else if lower == "tags" { 1 }                // etichete: roșu discret
+            else { 7 };                                  // tăietura și elementele: negru
         s.push_str(&format!("0\nLAYER\n2\n{l}\n70\n0\n62\n{color}\n6\n{ltype}\n"));
     }
     s.push_str("0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
@@ -2451,10 +2493,12 @@ pub fn cut_sheet_dxf_annot(segs: &[(String, [f64; 4])], texts: &[CadText], tb: &
     // zona de desen: foaia fara margini si fara banda cartusului
     let (aw, ah) = (sw - 2.0 * MARGIN - 10.0, sh - 2.0 * MARGIN - TB_H - 10.0);
     let scale = fit_scale(tb, w, h, aw, ah);
-    let k = 1000.0 / scale as f64;
+    // 27.11 (stil Inventor): desenul RAMÂNE 1:1 (coordonate reale, metri) - fără scalare.
+    // Are loc doar o translare ca să fie centrat în zona de desen; chenarul și
+    // cartușul rămân în mm de hartie, iar textele desenului rămân 1:1.
     let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
     let (ox, oy) = (MARGIN + 5.0 + aw / 2.0, MARGIN + TB_H + 5.0 + ah / 2.0);
-    let mut out: Vec<(String, [f64; 4])> = segs.iter().map(|(l, p)| (l.clone(), [ox + (p[0] - cx) * k, oy + (p[1] - cy) * k, ox + (p[2] - cx) * k, oy + (p[3] - cy) * k])).collect();
+    let mut out: Vec<(String, [f64; 4])> = segs.iter().map(|(l, p)| (l.clone(), [ox + p[0] - cx, oy + p[1] - cy, ox + p[2] - cx, oy + p[3] - cy])).collect();
     let mut line = |a: f64, b: f64, c: f64, d: f64| out.push(("SHEET".to_string(), [a, b, c, d]));
     let rect = |l: &mut dyn FnMut(f64, f64, f64, f64), a: f64, b: f64, c: f64, d: f64| {
         l(a, b, c, b);
@@ -2476,7 +2520,7 @@ pub fn cut_sheet_dxf_annot(segs: &[(String, [f64; 4])], texts: &[CadText], tb: &
     let mut extra: Vec<&str> = vec!["SHEET_TEXT"];
     extra.extend(texts.iter().map(|t| t.layer.as_str()));
     let mut dxf = cut_dxf_layers(&out, &extra);
-    let plan_txt: String = texts.iter().map(|t| CadText { x: ox + (t.x - cx) * k, y: oy + (t.y - cy) * k, ..t.clone() }.dxf(1.0)).collect();
+    let plan_txt: String = texts.iter().map(|t| CadText { x: t.x - cx + ox, y: t.y - cy + oy, ..t.clone() }.dxf(1.0)).collect();
     if let Some(p) = dxf.rfind("0\nENDSEC\n0\nEOF") {
         dxf.insert_str(p, &plan_txt);
     }

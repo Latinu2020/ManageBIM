@@ -23,7 +23,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
-$version = '0.27.11'
+$version = '0.27.12'
 
 # --- locatii (redirectionate in modul test)
 if ($TestRoot) {

@@ -177,7 +177,37 @@ impl eframe::App for App {
                 }
             }
         }
-        egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| self.viewport(ui));
+        if self.split_view {
+            // Split-view: două jumătăți în aceeași fereastră, cu separator trasabil.
+            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                let rect = ui.available_rect_before_wrap();
+                let half = rect.width() * self.split_ratio.clamp(0.05, 0.95);
+                let left = Rect::from_min_max(rect.min, egui::pos2(rect.min.x + half, rect.max.y));
+                let right = Rect::from_min_max(egui::pos2(rect.min.x + half, rect.min.y), rect.max);
+                // --- jumatatea stanga (camera A) ---
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(left), |ui| self.viewport(ui));
+                // --- separatorul trasabil (stretch) ---
+                let sep = ui.painter();
+                sep.rect_filled(Rect::from_center_size(egui::pos2(rect.min.x + half, rect.center().y), egui::vec2(3.0, rect.height())), 0.0, accent());
+                let drag = ui.interact(Rect::from_center_size(egui::pos2(rect.min.x + half, rect.center().y), egui::vec2(10.0, rect.height())), egui::Id::new("split_sep"), egui::Sense::drag());
+                if drag.dragged() {
+                    self.split_ratio = ((drag.interact_pointer_pos().map(|p| p.x).unwrap_or(rect.min.x + half) - rect.min.x) / rect.width()).clamp(0.05, 0.95);
+                }
+                // --- jumatatea dreapta (camera B), prin swap temporar ---
+                std::mem::swap(&mut self.cam, &mut self.cam_b);
+                std::mem::swap(&mut self.section, &mut self.section_b);
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(right), |ui| self.viewport(ui));
+                std::mem::swap(&mut self.cam, &mut self.cam_b);
+                std::mem::swap(&mut self.section, &mut self.section_b);
+                // Link-ul sincronizează camerele DOAR la activare (în ribbon), nu în fiecare frame —
+                // altfel camera B n-ar putea fi mișcată independent pentru comparație.
+                // etichete + buton de inchidere pe jumatatea dreapta
+                ui.painter().text(left.center_top() + egui::vec2(0.0, 12.0), Align2::CENTER_TOP, "A", FontId::proportional(11.0), accent());
+                ui.painter().text(right.center_top() + egui::vec2(0.0, 12.0), Align2::CENTER_TOP, "B", FontId::proportional(11.0), accent());
+            });
+        } else {
+            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| self.viewport(ui));
+        }
         self.flyout_ui(ctx, strips);
         // mers: tastele (shortcuts) si mouse-ul (viewport) au setat viteza tinta - aplicam lin
         self.walk_tick(dt);
@@ -258,17 +288,24 @@ impl App {
                 self.section_level_step(-1);
             }
         }
-        let (ctrl, o, s, f, h, i, esc, a, del) = ctx.input(|i| {
-            (i.modifiers.command, i.key_pressed(Key::O), i.key_pressed(Key::S), i.key_pressed(Key::F), i.key_pressed(Key::H), i.key_pressed(Key::I), i.key_pressed(Key::Escape), i.key_pressed(Key::A), i.key_pressed(Key::Delete))
+        let kb = &self.settings.keybinds;
+        let (ctrl, a, f, h, i, esc, del) = ctx.input(|k| {
+            (k.modifiers.command, k.key_pressed(Key::A), k.key_pressed(Key::F), k.key_pressed(Key::H), k.key_pressed(Key::I), k.key_pressed(Key::Escape), k.key_pressed(Key::Delete))
         });
-        if ctrl && o {
+        let s = ctx.input(|k| k.key_pressed(Key::S));
+        let (bind_open, bind_find, bind_palette) = (
+            crate::keybind::binding(kb, "open"),
+            crate::keybind::binding(kb, "find"),
+            crate::keybind::binding(kb, "palette"),
+        );
+        if crate::keybind::pressed(ctx, &bind_open) {
             self.request_path(Purpose::OpenModel { append: false });
         }
-        if ctrl && f {
+        if crate::keybind::pressed(ctx, &bind_find) {
             self.open_panel(Panel::Find);
         }
         // paleta de comenzi (merge si cand scrii intr-un camp)
-        if ctrl && ctx.input(|i| i.key_pressed(Key::K)) {
+        if crate::keybind::pressed(ctx, &bind_palette) {
             self.palette_open = !self.palette_open;
             self.palette_q.clear();
             self.palette_sel = 0;
@@ -1177,6 +1214,9 @@ impl App {
             if rbtn(ui, "▤", "Filled cuts", "Cut faces drawn solid and hatched (closed solids), instead of seeing inside the elements", self.section_caps, true).clicked() {
                 self.section_caps = !self.section_caps;
             }
+            if rbtn(ui, "▨", "Hatch", "Hatch the cut materials (filled contours) in the exported DWG / PDF cut - off = clean outline", self.cad_hatch, true).clicked() {
+                self.cad_hatch = !self.cad_hatch;
+            }
             if rbtn(ui, "📐", "Dimensions", "Include dimension chains (mm / m) in the exported DWG / PDF cut", self.cad_dims, true).clicked() {
                 self.cad_dims = !self.cad_dims;
             }
@@ -1409,6 +1449,16 @@ impl App {
 
     fn ribbon_view(&mut self, ui: &mut egui::Ui) {
         self.style_group(ui);
+        rgroup(ui, "Compare", |ui| {
+            if rbtn(ui, "◫", "Split view", "Two viewports side by side in this window (drag the divider to stretch)", self.split_view, true).clicked() {
+                self.split_view = !self.split_view;
+                if self.split_view { self.cam_b = self.cam; self.section_b = self.section.clone(); }
+            }
+            if rbtn(ui, "🔗", "Link cameras", "Copy camera A to B when turning link on; unlink to move B independently", self.split_link, self.split_view).clicked() {
+                self.split_link = !self.split_link;
+                if self.split_link { self.cam_b = self.cam; self.section_b = self.section.clone(); }
+            }
+        });
         // ferestrele si optiunile in meniuri derulante: ribbon-ul pastreaza aceeasi inaltime pe toate tab-urile
         rgroup(ui, "Windows", |ui| {
             let open_n = crate::layout::ALL_PANELS.iter().filter(|p| self.settings.layout.is_open(**p)).count();
@@ -3004,6 +3054,10 @@ impl App {
         if self.grid_pick > 0 && ui.input(|i| i.key_pressed(Key::Escape)) {
             self.grid_pick = 0;
         }
+        // F3 = OSNAP on/off (ca in AutoCAD / Navisworks)
+        if ui.input(|i| i.key_pressed(Key::F3)) {
+            self.osnap_on = !self.osnap_on;
+        }
         let picking = matches!(self.tool, Tool::Measure(_)) || self.grid_pick > 0 || self.xform.is_some();
         if let (true, Some(hp)) = (picking, hover) {
             let (o, d) = self.cam.ray(uv(hp), aspect);
@@ -3011,36 +3065,35 @@ impl App {
                 snap_hit = Some((hit_id, (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalize_or_zero()));
                 let vpm = params.view_proj;
                 let scr = |v: Vec3| to_screen(&vpm, rect, v).map(|s| s.distance(hp));
+                let rad = self.settings.snap_radius;
+                let types = if self.osnap_on { self.settings.snap_types } else { 0 };
                 let mut best = (p, 0u8, f32::INFINITY);
-                // prioritate: colt (12 px), mijloc de muchie (10 px), punct pe muchie (7 px)
-                for v in tri {
-                    if let Some(dd) = scr(v) {
-                        if dd < 12.0 && dd < best.2 {
-                            best = (v, 1, dd);
+                // Vertex (Endpoint) - raza completa
+                if types & 1 != 0 {
+                    for v in tri {
+                        if let Some(dd) = scr(v) {
+                            if dd < rad && dd < best.2 { best = (v, 1, dd); }
                         }
                     }
                 }
-                if best.1 == 0 {
+                // Midpoint
+                if types & 2 != 0 && best.1 == 0 {
                     for k in 0..3 {
-                        let (a, b) = (tri[k], tri[(k + 1) % 3]);
-                        let m = (a + b) * 0.5;
+                        let m = (tri[k] + tri[(k + 1) % 3]) * 0.5;
                         if let Some(dd) = scr(m) {
-                            if dd < 10.0 && dd < best.2 {
-                                best = (m, 2, dd);
-                            }
+                            if dd < rad * 0.85 && dd < best.2 { best = (m, 2, dd); }
                         }
                     }
                 }
-                if best.1 == 0 {
+                // Edge (Nearest pe muchie)
+                if types & 4 != 0 && best.1 == 0 {
                     for k in 0..3 {
                         let (a, b) = (tri[k], tri[(k + 1) % 3]);
                         let ab = b - a;
                         let t = ((p - a).dot(ab) / ab.length_squared().max(1e-12)).clamp(0.0, 1.0);
                         let q = a + ab * t;
                         if let Some(dd) = scr(q) {
-                            if dd < 7.0 && dd < best.2 {
-                                best = (q, 3, dd);
-                            }
+                            if dd < rad * 0.6 && dd < best.2 { best = (q, 3, dd); }
                         }
                     }
                 }
@@ -4150,6 +4203,9 @@ impl App {
                 Purpose::ExportVpHtml => "Viewpoints report (HTML)",
                 Purpose::ExportVpXlsx => "Viewpoints report (Excel .xlsx)",
                 Purpose::ExportVpPdf => "Sheets (PDF)",
+                Purpose::ExportBatch => "Batch export folder (PDF, HTML, Excel, BCF)",
+                Purpose::ExportSettingsProfile => "Export settings profile (.mbprofile)",
+                Purpose::ImportSettingsProfile => "Import settings profile (.mbprofile)",
                 Purpose::ExportBcf => "Export BCF 2.1 issues",
                 Purpose::ExportNavisXml => "Export viewpoints for Navisworks (XML)",
                 Purpose::ImportNavisXml => "Import Navisworks viewpoints (XML)",
