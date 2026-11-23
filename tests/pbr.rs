@@ -51,6 +51,29 @@ fn import_keeps_every_pbr_map_and_cleans_name() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Pachetele freepbr.com au nume precum Metal063_2K-PNG_Color.png: rolul e in ultimul cuvant,
+/// nu primul care contine "metal" (altfel nu se gaseste harta de culoare).
+#[test]
+fn freepbr_names_are_detected() {
+    let name = |s: &str| bimrust::materials::pbr_role(s);
+    assert_eq!(name("Metal063_2K-PNG_Color.png"), Some("albedo"));
+    assert_eq!(name("Metal063_2K-PNG_Metalness.png"), Some("metallic"));
+    assert_eq!(name("Metal063_2K-PNG_NormalGL.png"), Some("normal"));
+    assert_eq!(name("Metal063_2K-PNG_NormalDX.png"), Some("normal"));
+    assert_eq!(name("Metal063_2K-PNG_Roughness.png"), Some("roughness"));
+    assert_eq!(name("Metal063_2K-PNG_Displacement.png"), Some("height"));
+    let zip = r"C:\Users\Home\Downloads\Metal063_2K-PNG.zip";
+    if std::path::Path::new(zip).exists() {
+        let dir = std::env::temp_dir().join("mb_pbr_metal063");
+        let _ = std::fs::remove_dir_all(&dir);
+        let m = bimrust::materials::import_pbr(zip, &dir).expect("Metal063 zip");
+        assert!(m.is_pbr(), "harta de culoare / PBR nu a fost gasita");
+        assert!(std::path::Path::new(&m.texture).exists(), "albedo lipsa");
+        assert!(m.normal_map.to_ascii_lowercase().contains("gl"), "se prefera normala OpenGL: {}", m.normal_map);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
 #[test]
 fn pbr_names_are_clean() {
     let name = bimrust::materials::pbr_name;
@@ -96,6 +119,6 @@ fn resolution_tiers_change_texture_size() {
     }
     // la rezolutie mare se limiteaza numarul de straturi ca sa nu depasim memoria GPU
     set_tex_tier(2);
-    assert!(bimrust::materials::max_textures() <= 12);
+    assert!(bimrust::materials::max_textures() <= 16);
     set_tex_tier(0);
 }

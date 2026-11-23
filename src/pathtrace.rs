@@ -127,8 +127,8 @@ impl Scene {
             let i = (y * s + x) * 4;
             Some([tex.get(i)?.to_owned(), tex.get(i + 1)?.to_owned(), tex.get(i + 2)?.to_owned(), tex.get(i + 3)?.to_owned()])
         };
-        if code >= 128 {
-            let l = (code - 128) as usize;
+        if code == crate::materials::PBR_CODE {
+            let l = m[1] as usize;
             if let (Some(ca), Some(cs)) = (sample(l), sample(l + 1)) {
                 let f = |b: u8| b as f32 / 255.0;
                 let albedo = [f(ca[0]), f(ca[1]), f(ca[2])];
@@ -390,7 +390,7 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
         n = nm;
     }
     // rugozitatea din harta (0 = oglinda) e inversul luciului global
-    let gloss = if m[0] >= 128 { (1.0 - rough).clamp(0.03, 1.0) } else { m[1] as f32 / 255.0 };
+    let gloss = if m[0] == crate::materials::PBR_CODE { (1.0 - rough).clamp(0.03, 1.0) } else { m[1] as f32 / 255.0 };
     // sticla / materiale transparente: raza trece mai departe cu probabilitatea (1 - opacitate)
     if alpha < 0.99 && depth < MAX_DEPTH && rng.next() > alpha {
         let (behind, _, _) = trace_d(job, hit + d * 1e-3, d, rng, depth + 1);

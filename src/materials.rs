@@ -25,12 +25,16 @@ pub fn tex_tier() -> u32 {
 
 /// Numarul maxim de straturi din array, ca sa nu depasim ~256 MB de memorie GPU.
 pub fn max_textures() -> usize {
+    // 512 px = 1 MB/strat, 1024 = 4 MB, 2048 = 16 MB
     match tex_size() {
-        2048 => 12,
-        1024 => 28,
-        _ => 64,
+        2048 => 16,
+        1024 => 64,
+        _ => 192,
     }
 }
+
+/// codul special pentru materialele PBR impachetate; stratul e in octetul urmator (0..255)
+pub const PBR_CODE: u8 = 200;
 
 fn one() -> f32 { 1.0 }
 
@@ -135,12 +139,12 @@ impl Material {
     /// `layer` = index in the GPU texture array when an image texture is loaded
     pub fn gpu(&self, layer: Option<u8>) -> [u8; 4] {
         let s = ((self.scale.clamp(0.05, 4.05) - 0.05) / 4.0 * 255.0).round() as u8;
-        let code = match layer {
-            Some(l) if self.is_pbr() => 128 + l.min(127), // doua straturi: albedo/rough + normal/metal
-            Some(l) => 16 + l.min(111),                 // textura simpla
-            None => self.pattern.code(),
-        };
-        [code, (self.gloss.min(100) as f32 * 2.55) as u8, (self.metal.min(100) as f32 * 2.55) as u8, s]
+        match layer {
+            // stratul PBR e in octetul 1 (0..255); proprietatile vin din harti, deci il putem folosi
+            Some(l) if self.is_pbr() => [PBR_CODE, l, 0, s],
+            Some(l) => [16 + l.min(181), (self.gloss.min(100) as f32 * 2.55) as u8, (self.metal.min(100) as f32 * 2.55) as u8, s],
+            None => [self.pattern.code(), (self.gloss.min(100) as f32 * 2.55) as u8, (self.metal.min(100) as f32 * 2.55) as u8, s],
+        }
     }
 }
 
@@ -375,23 +379,38 @@ fn is_image(n: &str) -> bool {
 }
 
 /// rolul unei imagini dintr-un pachet PBR, dupa nume (freepbr, ambientCG, Poly Haven, textures.com...)
-fn pbr_role(file: &str) -> Option<&'static str> {
+/// Rolul e in Ultimul cuvant din nume, nu oriunde in el: "Metal063_2K_Color.png" e albedo,
+/// nu metallic (desi numele materialului contine "metal").
+pub fn pbr_role(file: &str) -> Option<&'static str> {
     let l = file.to_ascii_lowercase();
-    let l = l.rsplit(['/', '\\']).next().unwrap_or(&l);
-    if l.contains("preview") || l.contains("thumb") || l.contains("sphere") {
+    let base = l.rsplit(['/', '\\']).next().unwrap_or(&l);
+    if ["preview", "thumb", "sphere", "usdc", "blend", "mtlx", "tres"].iter().any(|k| base.contains(k)) {
         return None;
     }
-    for (keys, role) in [
-        (&["normal", "nrm", "_nor"][..], "normal"),
-        (&["rough"][..], "roughness"),
-        (&["metal"][..], "metallic"),
-        (&["_ao", "-ao", "ambientocclusion", "ambient_occlusion", "occlusion"][..], "ao"),
-        (&["height", "displace", "_disp", "bump"][..], "height"),
-        (&["gloss"][..], "gloss"),
-        (&["albedo", "basecolor", "base_color", "base-color", "diffuse", "diff", "color", "colour", "_col", "-col"][..], "albedo"),
-    ] {
-        if keys.iter().any(|k| l.contains(k)) {
-            return Some(role);
+    let stem = base.rsplit_once('.').map(|(a, _)| a).unwrap_or(base);
+    let words: Vec<&str> = stem.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    // rolurile se cauta in ultimele doua cuvinte (ex. "normal dx", "base color")
+    for w in words.iter().rev().take(2) {
+        if w.contains("normal") || *w == "nrm" || *w == "nor" || w.contains("nor_gl") || w.contains("norgl") || w.contains("normdx") || w.contains("normgl") {
+            return Some("normal");
+        }
+        if w.contains("rough") {
+            return Some("roughness");
+        }
+        if w.contains("metal") || w.contains("metallic") || *w == "mtl" {
+            return Some("metallic");
+        }
+        if w.contains("occlusion") || *w == "ao" {
+            return Some("ao");
+        }
+        if w.contains("height") || w.contains("displace") || w.contains("disp") || w.contains("bump") {
+            return Some("height");
+        }
+        if w.contains("gloss") {
+            return Some("gloss");
+        }
+        if w.contains("albedo") || w.contains("basecolor") || *w == "base" || w.contains("diffuse") || *w == "diff" || w.contains("color") || w.contains("colour") || *w == "col" {
+            return Some("albedo");
         }
     }
     None
@@ -468,7 +487,26 @@ pub fn import_pbr(path: &str, dest_root: &std::path::Path) -> Result<Material, S
         std::fs::write(&f, b).map_err(|e| format!("Cannot write {}: {e}", f.display()))?;
         paths.push((pbr_role(n), f));
     }
-    let get = |role: &str| paths.iter().find(|(r, _)| *r == Some(role)).map(|(_, f)| f.to_string_lossy().to_string()).unwrap_or_default();
+    // alegerea fisierului pentru fiecare rol: se prefera normala OpenGL fata de DirectX
+    let get = |role: &str| -> String {
+        let mut best: Option<(u8, String)> = None;
+        for (r, f) in &paths {
+            if *r != Some(role) {
+                continue;
+            }
+            let l = f.to_string_lossy().to_ascii_lowercase();
+            let score: u8 = match role {
+                "normal" if l.contains("gl") => 2,
+                "normal" if l.contains("dx") => 1,
+                "albedo" if l.contains("albedo") || l.contains("basecolor") => 2,
+                _ => 0,
+            };
+            if best.as_ref().map_or(true, |(s, _)| score > *s) {
+                best = Some((score, f.to_string_lossy().to_string()));
+            }
+        }
+        best.map(|(_, p)| p).unwrap_or_default()
+    };
     let tex = paths[albedo].1.to_string_lossy().to_string();
     // validare: imaginea de culoare trebuie sa fie citibila la rezolutia curenta
     load_texture(&tex)?;

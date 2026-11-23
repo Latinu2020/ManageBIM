@@ -329,9 +329,10 @@ void main() {
     vec3 an = abs(n);
     vec2 uv = an.z >= an.x && an.z >= an.y ? v_pos.xy : (an.x >= an.y ? v_pos.yz : v_pos.xz);
     uv /= (0.05 + v_mat.w * 4.0);
-    if (pt >= 128) {
+    if (pt == 200) {
         // PBR: doua straturi impachetate (albedo*AO + roughness / normal + metallic)
-        int l = pt - 128;
+        // stratul e in octetul 1 al v_mat (gloss-ul vine din harta, deci octetul e liber)
+        int l = int(v_mat.y * 255.0 + 0.5);
         vec4 ca = texture(u_tex, vec3(uv, float(l)));
         vec4 cs = texture(u_tex, vec3(uv, float(l + 1)));
         base = ca.rgb;

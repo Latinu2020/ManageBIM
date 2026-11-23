@@ -3,6 +3,11 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.21 - 2026-11-23
+- **Fixed PBR zip import**: packs from freepbr.com / Poliigon with names like `Metal063_2K-PNG_Color.png` were rejected with "no colour map found" because "Metal" in the material name was detected as a metallic map. Roles are now read from the **last words** of the filename; the OpenGL normal map is preferred over DirectX; `_Color`, `_Albedo`, `_BaseColor`, `_Metalness`, `_NormalGL`, `_Roughness`, `_Displacement` are all recognised.
+- **Fixed "Not enough GPU texture layers"**: only materials actually used in Assignments load their textures (before, the whole library did). Layer limits raised to 192 at 512 px, 64 at 1024 px, 16 at 2048 px; the error message now explains what to do. The PBR layer index moved into the second material byte, so 127 material pairs can be addressed.
+- **Complete PBR material library**: `cargo run --release --bin gen_pbr_library` generates 28 local, licence-free PBR materials (albedo, normal, roughness, metallic, AO) for all common BIM types and installs them in the user library at `%APPDATA%\ManageBIM\Materials\PBR Library\` (about 26 MB). A portable copy is written to Downloads as `ManageBIM-PBR-Library.bimmat`. Materials with the same name replace the built-in ones, so they are applied by "Auto by IFC type" by default.
+
 ## 0.27.20 - 2026-11-23
 - **Proper PBR materials**: importing a PBR pack (freepbr.com, ambientCG, Poly Haven - .zip or unzipped folder) now keeps **all six maps** (albedo, normal, roughness, metallic, AO, height). Previously only the colour map was kept; roughness and metallic were reduced to one average value and the normal map was discarded.
 - **PBR rendering**: the two packed GPU layers feed a shader with **per-pixel normal mapping, roughness and metallic** (in the Realistic style), and the CPU path tracer uses the same maps. The albedo, normal, roughness, metallic, AO and height images can each be replaced or removed individually from the material editor.

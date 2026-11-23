@@ -98,7 +98,10 @@ impl App {
             return Some(*l);
         }
         if self.tex_layers.len() + 2 > crate::materials::max_textures() {
-            self.error(format!("Not enough GPU texture layers at {} px (max {}). Lower the texture resolution in Settings.", crate::materials::tex_size(), crate::materials::max_textures()));
+            self.error(format!(
+                "Too many textured materials for {} px (max {} layers / {} textured materials). Only materials used in Assignments load textures - remove unused rules or increase Texture size in Settings › Appearance (higher resolution means fewer layers, lower means more).",
+                crate::materials::tex_size(), crate::materials::max_textures(), crate::materials::max_textures() / 2
+            ));
             return None;
         }
         let load = |p: &str| {
@@ -225,10 +228,17 @@ impl App {
         if profile_on {
             self.profile_map();
         }
+        // DOAR materialele folosite in reguli ocupa straturi GPU: o biblioteca mare altfel epuizeaza
+        // array-ul de texturi, desi majoritatea materialelor nu sunt atribuite nimanui.
+        let used: std::collections::HashSet<String> = self.mat_assign.iter().filter(|a| a.enabled).map(|a| a.material.clone()).collect();
         let mat_gpu: Vec<[u8; 4]> = (0..self.materials.len())
             .map(|i| {
                 let m = self.materials[i].clone();
-                let layer = if m.texture.is_empty() { None } else { self.pbr_layer(&m) };
+                let layer = if !m.texture.is_empty() && used.contains(&m.name) {
+                    self.pbr_layer(&m)
+                } else {
+                    None
+                };
                 m.gpu(layer)
             })
             .collect();
