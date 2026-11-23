@@ -482,6 +482,7 @@ impl App {
             origin: self.origin.lock().unwrap_or_else(|e| e.into_inner()).map(|o| o.to_array()),
             camera: self.cam,
             viewpoints: self.viewpoints.clone(),
+            view_templates: self.view_templates.clone(),
             sets: self.sets.clone(),
             clash_tests: self.clash_tests.clone(),
             tasks: self.tasks.clone(),
@@ -642,6 +643,7 @@ impl App {
         self.materials_on = pf.materials_on.unwrap_or(true);
         self.mat_cache = None;
         self.viewpoints = pf.viewpoints;
+        self.view_templates = pf.view_templates;
         self.sets = pf.sets;
         self.clash_tests = if pf.clash_tests.is_empty() { vec![ClashTest::new("Test 1".into())] } else { pf.clash_tests };
         self.cur_test = 0;
@@ -678,6 +680,23 @@ impl App {
         self.qto_result = None;
         if let Some((s, _)) = self.sim_range() {
             self.sim_day = s as f32;
+        }
+        // aplică View Template-ul marcat „default", dacă există
+        if let Some(i) = self.view_templates.iter().position(|t| t.is_default) {
+            if let Some(t) = self.view_templates.get(i).cloned() {
+                self.hidden = t.hidden.into_iter().collect();
+                self.section = t.section;
+                self.cam = t.cam;
+                self.settings.visual_style = t.visual_style;
+                self.show_grids = t.show_grids;
+                self.show_levels = t.show_levels;
+                self.section_caps = t.section_caps;
+                self.overrides = t.overrides.into_iter().collect();
+                self.selected = t.selected.into_iter().collect();
+                self.measures = t.measures;
+                self.vp_filter = t.vp_filter;
+                self.vt_current = i;
+            }
         }
         self.colors_dirty = true;
         self.toast("Project opened.");

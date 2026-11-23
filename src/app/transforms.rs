@@ -120,6 +120,15 @@ impl App {
                 let c = self.clash_report_html(self.cur_test);
                 write(self, c, "HTML report");
             }
+            Purpose::ExportClashPdf => {
+                let rows = self.clash_report_pdf_rows(self.cur_test);
+                let test = self.clash_tests.get(self.cur_test).map(|t| t.name.clone()).unwrap_or_default();
+                let pdf = crate::pdf::clash_report_pdf(&self.project_path.clone().unwrap_or_default(), &test, &rows, &super::now_string(), &self.title_block);
+                match std::fs::write(&path, pdf) {
+                    Ok(()) => self.toast(format!("Clash report PDF exported: {}", crate::file_name(&path))),
+                    Err(e) => self.error(format!("Cannot write PDF: {e}")),
+                }
+            }
             Purpose::ExportClashCsv => {
                 let c = self.clash_report_csv(self.cur_test);
                 write(self, c, "CSV report");
@@ -465,6 +474,7 @@ impl App {
                 Purpose::SaveProject => d.set_title("Save Project").add_filter("ManageBIM project", &["bimr"]).set_file_name("project.bimr").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashHtml => d.set_title("Clash report (HTML)").add_filter("HTML", &["html"]).set_file_name("clash_report.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashCsv => d.set_title("Clash report (CSV)").add_filter("CSV", &["csv"]).set_file_name("clash_report.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportClashPdf => d.set_title("Clash report (PDF)").add_filter("PDF", &["pdf"]).set_file_name("clash_report.pdf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportReference => {
                     let dir = outbox_dir().map(|d| { let _ = std::fs::create_dir_all(&d); d }).unwrap_or_default();
                     let name = self.bimd_path.as_ref().or(self.project_path.as_ref()).and_then(|p| std::path::Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string())).unwrap_or_else(|| "reference".into());
@@ -578,6 +588,7 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::SaveProject => self.project_path.clone().unwrap_or_else(|| "project.bimr".into()),
                 Purpose::ExportClashHtml => "clash_report.html".into(),
                 Purpose::ExportClashCsv => "clash_report.csv".into(),
+                Purpose::ExportClashPdf => "clash_report.pdf".into(),
                 Purpose::ExportClashBcf => "clashes.bcf".into(),
                 Purpose::ExportIfc => "export.ifc".into(),
                 Purpose::SharedFolder => String::new(),

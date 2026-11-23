@@ -402,6 +402,16 @@ impl App {
         h
     }
 
+    /// Randurile tabelului pentru raportul PDF: (status, severitate, elemente, distanta).
+    pub fn clash_report_pdf_rows(&self, t: usize) -> Vec<(String, String, String, String, String)> {
+        let test = &self.clash_tests[t];
+        test.results.iter().map(|r| {
+            let la = self.elem(r.a).map(|(_, e)| e.name.clone()).unwrap_or_default();
+            let rb = self.elem(r.b).map(|(_, e)| e.name.clone()).unwrap_or_default();
+            (r.status.label().to_string(), test.severity(r.dist).label().to_string(), format!("{} / {}", la, rb), format!("{:.3} m", r.dist), r.group.clone())
+        }).collect()
+    }
+
     pub fn clash_report_csv(&self, t: usize) -> String {
         let test = &self.clash_tests[t];
         let q = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));

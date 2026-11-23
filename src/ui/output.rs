@@ -439,6 +439,57 @@ impl App {
     }
 
     /// Fereastra suprapunerilor DWG / DXF: vizibilitate, cota (nivel), deplasare, rotatie, culoare.
+    /// Fereastra de gestionare a şabloanelor de vizualizare: aplicare, redenumire, ştergere.
+    pub(super) fn view_templates_window(&mut self, ctx: &egui::Context) {
+        if !self.view_templates_open { return; }
+        let mut open = true;
+        let mut apply: Option<usize> = None;
+        let mut del: Option<usize> = None;
+        let mut dup: Option<usize> = None;
+        let mut set_default: Option<usize> = None;
+        egui::Window::new(crate::theme::icon_job("◫", "View Templates", 14.0, ctx.style().visuals.text_color()))
+            .id(egui::Id::new("view_templates_win"))
+            .open(&mut open)
+            .default_width(420.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.label(RichText::new("Complete view presets saved in the project: camera, visibility, section, style, colours, selection and measures.").small().weak());
+                ui.label(RichText::new("Ctrl+1…9 jump directly to a template · ◀ ▶ next to the ViewCube cycles.").small().weak());
+                ui.separator();
+                if self.view_templates.is_empty() {
+                    ui.label(RichText::new("No templates yet. Use View › View Templates › Save.").weak());
+                }
+                egui::ScrollArea::vertical().max_height(340.0).show(ui, |ui| {
+                    for (i, t) in self.view_templates.iter_mut().enumerate() {
+                        egui::Frame::none().fill(ui.visuals().faint_bg_color).rounding(crate::theme::RADIUS_MD).stroke(egui::Stroke::new(1.0_f32, crate::theme::border())).inner_margin(egui::Margin::symmetric(8.0, 5.0)).show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                if t.is_default { ui.label(RichText::new("★").color(crate::theme::accent()).size(13.0)); }
+                                ui.add(egui::TextEdit::singleline(&mut t.name).desired_width(150.0));
+                                if ui.small_button("▶").on_hover_text("Apply this view").clicked() { apply = Some(i); }
+                                if ui.small_button("⧉").on_hover_text("Duplicate").clicked() { dup = Some(i); }
+                                if ui.small_button("★").on_hover_text("Set as default (applied when the project opens)").clicked() { set_default = Some(i); }
+                                if ui.small_button("🗑").on_hover_text("Delete template").clicked() { del = Some(i); }
+                            });
+                            ui.add(egui::TextEdit::singleline(&mut t.note).hint_text("note (what this view shows)").desired_width(380.0).font(egui::TextStyle::Small));
+                        });
+                        ui.add_space(3.0);
+                    }
+                });
+                ui.separator();
+                if ui.small_button("➕ Save current view as template").clicked() { self.save_view_template(); }
+            });
+        if let Some(i) = apply { self.apply_view_template(i); }
+        if let Some(i) = set_default { for (k, t) in self.view_templates.iter_mut().enumerate() { t.is_default = k == i; } }
+        if let Some(i) = dup {
+            if let Some(t) = self.view_templates.get(i).cloned() {
+                let mut c = t; c.name = format!("{} copy", c.name); c.is_default = false;
+                self.view_templates.insert(i + 1, c);
+            }
+        }
+        if let Some(i) = del { if i < self.view_templates.len() { self.view_templates.remove(i); } }
+        self.view_templates_open = open;
+    }
+
     /// Fereastra mica, proportionala (A4 landscape), cu previewul 2D al sectiunii.
     /// Fundal alb, hașura, cote în lanț, niveluri și cartuș — ca exportul DWG / PDF.
     /// Se închide cu X; NU se întinde pe toată aplicația (dimensiune fixă).

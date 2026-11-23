@@ -3,6 +3,15 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.13 - 2026-11-23
+- **UI tuning (stil Mitcad)**: colțuri rotunjite centralizate în `theme.rs` (`RADIUS_SM/MD/LG`) — butoane ribbon cu contur fin pe hover/activ, grupuri de ribbon cu border, tab-uri tip „pill", panouri dock rotunjite, ferestre/menu consecvente. Fără rescriere, fără schimbare funcțională.
+- **Split-view reparat**: lista de geometrie e acum per-viewport (capturată în callback), nu partajată în renderer — nu mai dispar elemente din prima jumătate când miști camera în cealaltă. Modelul rămâne complet în ambele panouri.
+- **PDF Clash Report**: buton „PDF" în Clash Reports → raport A4 landscape cu antet, tabel de rezultate (status, severitate, elemente, distanță) și cartuș, folosind același scriitor PDF ca plansele.
+- **View Templates — preset complet de lucru**: salvează camera 3D, vizibilitatea, secțiunea, stilul vizual, culorile/overrides, selecția, măsurătorile, filtrul de viewpoint, grilele/nivelurile și o notă. Navigare rapidă: selector lângă ViewCube, butoane ◀ ▶ (wrap-around), **Ctrl+1…9** pentru salt direct, template **★ default** aplicat automat la deschiderea proiectului, buton **⧉ Duplicate**. Se salvează în `.bimr`/`.bimd` (compatibil cu proiectele vechi).
+- **Clash — bug fix**: adăugat `SelKind::Selection` — poți alege „Current selection" ca Selection A sau B, deci mergi direct cu elementele selectate în model (înainte nu exista opțiunea și elementele păreau ascunse).
+- **Materiale de randare profesioniste**: valori PBR realiste (luciu/metalicitate) pentru beton, oțel, aluminiu, sticlă, lemn, cupru, gresie și apă.
+- **Installer & startpage**: paleta prototipului (fundal închis, accent albastru/cyan, carduri cu border), etape în română, buton Finish evidențiat; startpage cu carduri rotunjite consecvente.
+
 ## 0.27.12 - 2026-11-23
 - **OSNAP îmbunătățit**: tipuri selectabile (Vertex / Midpoint / Edge / Surface), rază reglabilă 6–24 px și **F3** pentru on/off — în Settings și direct în viewport.
 - **Unități reale mm / m / in / ft** cu precizie configurabilă (0–6 zecimale); înlocuiește vechiul comutator mm, cu migrare automată a setărilor vechi.

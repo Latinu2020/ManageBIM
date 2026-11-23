@@ -78,6 +78,39 @@ fn text(c: &mut Vec<u8>, x: f32, y: f32, size: f32, bold: bool, s: &str) {
     c.extend_from_slice(b") Tj ET\n");
 }
 
+/// Raport PDF pentru Clash Detective: antet, tabel cu rezultatele testului curent si cartus.
+/// Foloseste acelasi scriitor PDF ca plansele de viewpoint (fonturi standard, fara dependinte).
+pub fn clash_report_pdf(project: &str, test: &str, rows: &[(String, String, String, String, String)], date: &str, tb: &TitleBlock) -> Vec<u8> {
+    let mut c = Vec::new();
+    const PW: f32 = 841.89; // A4 landscape
+    const PH: f32 = 595.28;
+    const MG: f32 = 28.0;
+    // antet
+    text(&mut c, MG, PH - 34.0, 15.0, true, "CLASH DETECTIVE - REPORT");
+    text(&mut c, MG, PH - 50.0, 9.0, false, &format!("Project: {}", tb.project_or(project)));
+    text(&mut c, MG, PH - 62.0, 9.0, false, &format!("Test: {test}    Date: {date}"));
+    c.extend_from_slice(format!("0.5 w {MG} {:.1} m {:.1} {:.1} l S\n", PH - 70.0, PW - MG, PH - 70.0).as_bytes());
+    // tabel
+    let cols = [MG, MG + 35.0, MG + 115.0, MG + 195.0, MG + 455.0, MG + 545.0];
+    let heads = ["No", "Status", "Severity", "Elements", "Distance", "Group"];
+    for (x, h) in cols.iter().zip(heads) { text(&mut c, *x, PH - 86.0, 8.5, true, h); }
+    let mut y = PH - 100.0;
+    for (i, r) in rows.iter().enumerate() {
+        if y < 70.0 { break; } // pagina noua (simplu: taiem aici)
+        let vals = [format!("{}", i + 1), r.0.clone(), r.1.clone(), r.2.clone(), r.3.clone(), r.4.clone()];
+        for (x, v) in cols.iter().zip(vals) { text(&mut c, *x, y, 7.5, false, &v); }
+        y -= 13.0;
+    }
+    // cartus
+    let ty = 24.0;
+    c.extend_from_slice(format!("0.5 w {MG} {ty} m {:.1} {ty} l {:.1} {:.1} l {MG} {:.1} l h S\n", PW - MG, PW - MG, ty + 30.0, ty + 30.0).as_bytes());
+    text(&mut c, MG + 6.0, ty + 18.0, 10.0, true, &tb.project_or(project));
+    text(&mut c, MG + 6.0, ty + 7.0, 7.5, false, &format!("Clash report - {test}"));
+    text(&mut c, PW - MG - 150.0, ty + 18.0, 8.0, false, &format!("Scale 1:1  |  {}", tb.paper));
+    text(&mut c, PW - MG - 150.0, ty + 7.0, 8.0, false, &format!("Rev {}  |  {}", tb.revision, date));
+    write_pdf(&[Page { content: c, image: None }], tb.project_or(project), PW, PH)
+}
+
 /// PDF-ul cu cate o plansa pentru fiecare viewpoint.
 pub fn sheets(project: &str, items: &[ReportItem], date: &str, tb: &TitleBlock) -> Vec<u8> {
     let mut pages: Vec<Page> = Vec::new();

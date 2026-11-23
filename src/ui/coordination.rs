@@ -578,7 +578,10 @@ impl App {
                         ui.strong(lbl);
                         self.selector_combo(ui, id, sel);
                         // numarul de elemente: calculat o data pe selectie (Discipline / All parcurg tot modelul)
-                        let key = egui::Id::new(("sel_count", sel.label(), self.loaded_models().map(|(_, m)| m.elements.len()).sum::<usize>(), self.sets.len()));
+                        // pentru „Current selection" includem dimensiunea selecției și o amprentă
+                        // a ID-urilor, ca numărul afișat să se actualizeze când selectezi altceva.
+                        let sel_sig: Vec<ElemId> = self.selected.iter().copied().take(8).collect();
+                        let key = egui::Id::new(("sel_count", sel.label(), self.loaded_models().map(|(_, m)| m.elements.len()).sum::<usize>(), self.sets.len(), self.selected.len(), sel_sig));
                         let n = match ui.data(|d| d.get_temp::<usize>(key)) {
                             Some(n) => n,
                             None => {

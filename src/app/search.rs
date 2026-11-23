@@ -182,6 +182,7 @@ impl App {
     pub fn resolve_selector(&self, s: &Selector) -> Vec<ElemId> {
         match s.kind {
             SelKind::All => self.all_ids(),
+            SelKind::Selection => self.selected.iter().copied().collect(),
             SelKind::Model => self
                 .loaded_models()
                 .filter(|(_, m)| m.name == s.value)

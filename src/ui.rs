@@ -145,7 +145,7 @@ impl eframe::App for App {
         let mut strips: [Option<Rect>; 3] = [None; 3];
         if !self.settings.layout.hide_all {
             let ah = self.settings.layout.autohide;
-            let pf = egui::Frame::side_top_panel(&ctx.style()).inner_margin(egui::Margin::symmetric(6.0, 4.0)).stroke(egui::Stroke::new(1.0_f32, theme::border()));
+            let pf = egui::Frame::side_top_panel(&ctx.style()).inner_margin(egui::Margin::symmetric(6.0, 4.0)).rounding(crate::theme::RADIUS_MD).stroke(egui::Stroke::new(1.0_f32, theme::border()));
             if !self.settings.layout.in_area(Dock::Bottom).is_empty() {
                 if ah[2] {
                     strips[2] = Some(egui::TopBottomPanel::bottom("bottom_strip").exact_height(26.0).resizable(false).show(ctx, |ui| self.dock_strip(ui, Dock::Bottom)).response.rect);
@@ -318,6 +318,16 @@ impl App {
             match self.project_path.clone() {
                 Some(p) => self.save_project(&p),
                 None => self.request_path(Purpose::SaveProject),
+            }
+        }
+        // Ctrl+1..9: salt direct la View Template-ul cu acel număr (ca Navisworks Saved Views)
+        if ctrl && !typing {
+            for i in 0..self.view_templates.len().min(9) {
+                let key = match i { 0 => Key::Num1, 1 => Key::Num2, 2 => Key::Num3, 3 => Key::Num4, 4 => Key::Num5, 5 => Key::Num6, 6 => Key::Num7, 7 => Key::Num8, _ => Key::Num9 };
+                if ctx.input(|k| k.key_pressed(key)) {
+                    self.apply_view_template(i);
+                    break;
+                }
             }
         }
         if typing {
@@ -619,7 +629,7 @@ impl App {
                 ui.style_mut().spacing.item_spacing.x = 3.0;
                 // accentul Nord e deschis (cyan): text inchis pentru contrast
                 let ftxt = match self.settings.theme { Theme::Nord => Color32::from_rgb(46, 52, 64), Theme::TokyoNight => Color32::from_rgb(26, 27, 38), _ => Color32::WHITE };
-                let fb = egui::Button::new(crate::theme::icon_job("≡", crate::i18n::tr("File "), 14.0, ftxt)).fill(accent()).rounding(7.0).min_size(EV::new(78.0, 26.0));
+                let fb = egui::Button::new(crate::theme::icon_job("≡", crate::i18n::tr("File "), 14.0, ftxt)).fill(accent()).rounding(crate::theme::RADIUS_MD).min_size(EV::new(78.0, 26.0));
                 let r = ui.add(fb);
                 let popup = ui.make_persistent_id("file_menu");
                 if r.clicked() {
@@ -636,7 +646,7 @@ impl App {
                     let on = self.ribbon_tab == i && mode != RibbonMode::Mini;
                     let t = crate::i18n::tr(t);
                     let txt = if on { RichText::new(t).color(accent()).strong() } else { RichText::new(t) };
-                    let b = egui::Button::new(txt).fill(if on { accent().gamma_multiply(0.16) } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(7.0).min_size(EV::new(78.0, 24.0));
+                    let b = egui::Button::new(txt).fill(if on { accent().gamma_multiply(0.16) } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(crate::theme::RADIUS_LG).min_size(EV::new(78.0, 24.0));
                     let r = ui.add(b);
                     if on {
                         // subliniere subtila a tab-ului activ (ca in Office / Navisworks 2024)
@@ -1318,6 +1328,9 @@ impl App {
             if rbtn(ui, "📊", "CSV", "Export the clash report of the current test (CSV)", false, can).clicked() {
                 self.request_path(Purpose::ExportClashCsv);
             }
+            if rbtn(ui, "📄", "PDF", "Export the clash report of the current test as a professional PDF sheet with title block", false, can).clicked() {
+                self.request_path(Purpose::ExportClashPdf);
+            }
         });
         rgroup(ui, "Navisworks (XML)", |ui| {
             if rbtn(ui, "📷", "Viewpoints", "Export viewpoints with markups, comments and section box\n(Navisworks: Saved Viewpoints > right-click > Import Viewpoints)", false, !self.viewpoints.is_empty()).clicked() {
@@ -1447,6 +1460,47 @@ impl App {
         });
     }
 
+    /// Salvează starea curentă de vizualizare ca şablon în proiect.
+    fn save_view_template(&mut self) {
+        let name = format!("View {}", self.view_templates.len() + 1);
+        self.view_templates.push(crate::app::ViewTemplate {
+            name,
+            hidden: self.hidden.iter().copied().collect(),
+            section: self.section.clone(),
+            cam: self.cam,
+            visual_style: self.settings.visual_style,
+            show_grids: self.show_grids,
+            show_levels: self.show_levels,
+            section_caps: self.section_caps,
+            overrides: self.overrides.iter().map(|(k, v)| (*k, *v)).collect(),
+            selected: self.selected.iter().copied().collect(),
+            measures: self.measures.clone(),
+            vp_filter: self.vp_filter.clone(),
+            is_default: false,
+            note: String::new(),
+        });
+        self.toast("View template saved (in project)");
+    }
+
+    /// Aplică un şablon de vizualizare (vizibilitate + secțiune + stil).
+    fn apply_view_template(&mut self, i: usize) {
+        let Some(t) = self.view_templates.get(i).cloned() else { return };
+        self.hidden = t.hidden.into_iter().collect();
+        self.section = t.section;
+        self.cam = t.cam;
+        self.settings.visual_style = t.visual_style;
+        self.show_grids = t.show_grids;
+        self.show_levels = t.show_levels;
+        self.section_caps = t.section_caps;
+        self.overrides = t.overrides.into_iter().collect();
+        self.selected = t.selected.into_iter().collect();
+        self.measures = t.measures;
+        self.vp_filter = t.vp_filter;
+        self.vt_current = i;
+        self.colors_dirty = true;
+        self.toast(format!("Applied '{}'", t.name));
+    }
+
     fn ribbon_view(&mut self, ui: &mut egui::Ui) {
         self.style_group(ui);
         rgroup(ui, "Compare", |ui| {
@@ -1457,6 +1511,15 @@ impl App {
             if rbtn(ui, "🔗", "Link cameras", "Copy camera A to B when turning link on; unlink to move B independently", self.split_link, self.split_view).clicked() {
                 self.split_link = !self.split_link;
                 if self.split_link { self.cam_b = self.cam; self.section_b = self.section.clone(); }
+            }
+        });
+        rgroup(ui, "View Templates", |ui| {
+            if rbtn(ui, "➕", "Save", "Save the current visibility, section and visual style as a template in this project", false, true).clicked() {
+                self.save_view_template();
+            }
+            let n = self.view_templates.len();
+            if rbtn(ui, "◫", &format!("Apply ({n})"), "Apply a saved view template", false, n > 0).clicked() {
+                self.view_templates_open = !self.view_templates_open;
             }
         });
         // ferestrele si optiunile in meniuri derulante: ribbon-ul pastreaza aceeasi inaltime pe toate tab-urile
@@ -1851,9 +1914,10 @@ impl App {
         {
             let p = ui.painter();
             let hero = Rect::from_min_size(side.min + EV::new(18.0, 16.0), EV::new(side_w - 36.0, 82.0));
-            p.rect_filled(hero, 12.0, if dark { Color32::from_white_alpha(14) } else { Color32::from_white_alpha(225) });
+            p.rect_filled(hero, crate::theme::RADIUS_LG, if dark { Color32::from_white_alpha(14) } else { Color32::from_white_alpha(225) });
+            p.rect_stroke(hero, crate::theme::RADIUS_LG, egui::Stroke::new(1.0_f32, crate::theme::border()));
             let tile = Rect::from_center_size(Pos2::new(hero.min.x + 37.0, hero.center().y), EV::new(42.0, 42.0));
-            p.rect_filled(tile, 10.0, accent());
+            p.rect_filled(tile, crate::theme::RADIUS_MD, accent());
             let c = tile.center();
             let s = 11.0;
             let top = [Pos2::new(c.x, c.y - s), Pos2::new(c.x + s, c.y - s * 0.5), Pos2::new(c.x, c.y), Pos2::new(c.x - s, c.y - s * 0.5)];
@@ -2186,6 +2250,42 @@ impl App {
         if pres.clicked() {
             self.cam.ortho = !self.cam.ortho;
         }
+        // selector View Templates sub cub - alegi un template si te duci DIRECT la acea vedere
+        let n = self.view_templates.len();
+        let tr = Rect::from_center_size(c + EV::new(0.0, size * 2.5), EV::new(52.0, 15.0));
+        let mut apply: Option<usize> = None;
+        let mut manage = false;
+        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(tr), |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(2.0, 0.0);
+                let nav = |ui: &mut egui::Ui, ic: &str, tip: &str, on: bool| ui.add_enabled(on, egui::Button::new(ic).frame(false).rounding(crate::theme::RADIUS_SM)).on_hover_text(tip).clicked();
+                // ◀ / ▶ comută între template-uri (wrap-around), ca Navisworks Saved Views
+                let mut prev = false;
+                let mut next = false;
+                if nav(ui, "◀", "Previous view template", n > 0) { prev = true; }
+                let btn = egui::Button::new(RichText::new(format!("◫ {n} ⏷")).size(9.0))
+                    .rounding(crate::theme::RADIUS_SM)
+                    .min_size(egui::vec2(34.0, 15.0));
+                let r = ui.add(btn).on_hover_text("Pick a saved view template - jumps to that view");
+                if nav(ui, "▶", "Next view template", n > 0) { next = true; }
+                let id = ui.make_persistent_id("vc_template_menu");
+                if r.clicked() { ui.memory_mut(|m| m.toggle_popup(id)); }
+                if prev && n > 0 { let i = (self.vt_current + n - 1) % n; apply = Some(i); }
+                if next && n > 0 { let i = (self.vt_current + 1) % n; apply = Some(i); }
+                egui::popup_below_widget(ui, id, &r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                    ui.set_min_width(170.0);
+                    if n == 0 { ui.label(RichText::new("No templates saved yet.").small().weak()); }
+                    for (i, t) in self.view_templates.iter().enumerate() {
+                        if ui.button(format!("▶ {}", t.name)).clicked() { apply = Some(i); ui.close_menu(); }
+                    }
+                    ui.separator();
+                    if ui.small_button("➕ Save current view").clicked() { self.save_view_template(); ui.close_menu(); }
+                    if ui.small_button("⚙ Manage templates").clicked() { manage = true; ui.close_menu(); }
+                });
+            });
+        });
+        if let Some(i) = apply { self.vt_current = i; self.apply_view_template(i); }
+        if manage { self.view_templates_open = true; }
         if resp.clicked() {
             if let Some(d) = hit {
                 let mut t = self.cam;
@@ -3018,20 +3118,22 @@ impl App {
             let cp = self.frame_params(w as f32 / h.max(1) as f32);
             self.renderer.lock().unwrap_or_else(|e| e.into_inner()).capture = Some(crate::render::CaptureReq { params: cp, w, h, bg_top, bg_bottom });
         }
-        // ce se deseneaza: campul vizual, fara ascunse; simplificat cat timp camera se misca
+        // ce se deseneaza: campul vizual, fara ascunse; simplificat cat timp camera se misca.
+        // Lista e capturata de callback (NU in renderer) - altfel, in split-view, al doilea
+        // viewport o suprascrie pe prima si dispar elemente cand misc camera.
         let lists = self.draw_lists(&params, rect.height());
-        self.renderer.lock().unwrap_or_else(|e| e.into_inner()).lists = Some(lists);
         if self.lod_moving() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(350));
         }
         let r = self.renderer.clone();
         // pagina de start peste proiect: modelul nu se mai deseneaza dedesubt
         if !self.start_screen() {
+            let lists = std::sync::Arc::new(lists);
             painter.add(egui::PaintCallback {
                 rect,
                 callback: Arc::new(eframe::egui_glow::CallbackFn::new(move |_info, p| {
                     let mut r = r.lock().unwrap_or_else(|e| e.into_inner());
-                    unsafe { r.paint(p.gl(), &params) };
+                    unsafe { r.paint(p.gl(), &params, Some(&lists)) };
                 })),
             });
         }
@@ -4152,6 +4254,7 @@ impl App {
 
     fn windows(&mut self, ctx: &egui::Context) {
         self.manual_window(ctx);
+        self.view_templates_window(ctx);
         self.section_preview_window(ctx);
         self.overlay_window(ctx);
         self.title_block_window(ctx);
@@ -4167,6 +4270,7 @@ impl App {
                 Purpose::SaveProject => "Save Project",
                 Purpose::ExportClashHtml => "Export HTML Report",
                 Purpose::ExportClashCsv => "Export CSV Report",
+                Purpose::ExportClashPdf => "Export PDF Report",
                 Purpose::ExportClashBcf => "Export clashes as BCF",
                 Purpose::ExportIfc => "Export to IFC4",
                 Purpose::SharedFolder => "Shared issues folder",
@@ -4727,12 +4831,18 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     };
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let p = ui.painter();
-    // hover cu fade (tranzitie scurta), activ = nuanta de accent
+    // hover cu fade (tranzitie scurta), activ = nuanta de accent; colturi rotunjite + contur fin (stil Mitcad)
     let hov = ui.ctx().animate_bool_with_time(resp.id.with("rh"), enabled && resp.hovered(), 0.12);
+    let rounding = egui::Rounding::same(crate::theme::RADIUS_MD);
     if on {
-        p.rect_filled(rect, 6.0, accent().gamma_multiply(0.20));
+        p.rect_filled(rect, rounding, accent().gamma_multiply(0.20));
     } else if hov > 0.0 {
-        p.rect_filled(rect, 6.0, ui.visuals().widgets.hovered.weak_bg_fill.gamma_multiply(hov));
+        p.rect_filled(rect, rounding, ui.visuals().widgets.hovered.weak_bg_fill.gamma_multiply(hov));
+    }
+    // contur discret: doar cand e hover/activ, ca sa nu incarce ribbon-ul
+    if on || hov > 0.0 {
+        let stroke_col = if on { accent() } else { crate::theme::border().gamma_multiply(0.55 + 0.45 * hov) };
+        p.rect_stroke(rect, rounding, egui::Stroke::new(1.0_f32, stroke_col));
     }
     let col = if !enabled { ui.visuals().weak_text_color().gamma_multiply(0.6) } else if on { accent() } else { ui.visuals().text_color() };
     if compact {
@@ -4757,7 +4867,7 @@ fn rgroup(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui)) {
     let compact = crate::theme::RIBBON_COMPACT.load(std::sync::atomic::Ordering::Relaxed);
     let fill = card_fill(ui.visuals());
     let avail_h = ui.available_height();
-    egui::Frame::none().fill(fill).rounding(7.0).inner_margin(egui::Margin { left: 6.0, right: 6.0, top: 3.0, bottom: 2.0 }).show(ui, |ui| {
+    egui::Frame::none().fill(fill).rounding(crate::theme::RADIUS_LG).stroke(egui::Stroke::new(1.0_f32, crate::theme::border())).inner_margin(egui::Margin { left: 7.0, right: 7.0, top: 4.0, bottom: 3.0 }).show(ui, |ui| {
         ui.set_min_height(avail_h - 5.0);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
@@ -5260,6 +5370,8 @@ fn commands() -> Vec<Cmd> {
         c!("Language: Română / English", "View", "🌐", "limba romana engleza interfata language", |a| a.toggle_language()),
         c!("Title block & sheet format", "Annotation", "✏", "cartus format a3 a2 a1 a0 scara editare", |a| a.title_block_open = true),
         c!("DWG overlay (2D drawing over the model)", "Annotation", "🗺", "suprapunere plan dwg dxf 2d", |a| a.overlay_open = true),
+        c!("Save view template", "View", "➕", "save view template vizibilitate sectiune stil", |a| a.save_view_template()),
+        c!("Apply view template", "View", "◫", "apply view template manage vizibilitate sectiune stil", |a| a.view_templates_open = !a.view_templates_open),
         c!("2D Section Preview (map window)", "Annotation", "🗺", "preview 2d sectiune fereastra mica inainte de export", |a| a.section_preview_open = !a.section_preview_open),
         c!("Section cut to PDF…", "Annotation", "📄", "sectiune export pdf plansa", |a| a.request_path(Purpose::ExportSectionPdf)),
         // ---- panouri

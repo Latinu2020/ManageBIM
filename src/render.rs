@@ -553,29 +553,27 @@ impl Renderer {
 
     /// # Safety
     /// Must be called inside the egui_glow paint callback, with the GL context current.
-    pub unsafe fn paint(&mut self, gl: &glow::Context, p: &FrameParams) {
+    pub unsafe fn paint(&mut self, gl: &glow::Context, p: &FrameParams, lists: Option<&HashMap<u32, DrawList>>) {
         self.init(gl);
         self.apply_uploads(gl);
         if self.prog.is_none() {
             return;
         }
-        let lists = self.lists.take();
-        self.shadow_state = if p.shadows { self.shadow_pass(gl, p, lists.as_ref()) } else { None };
+        self.shadow_state = if p.shadows { self.shadow_pass(gl, p, lists) } else { None };
         let wire = p.style == VisualStyle::Wireframe;
         if wire {
             gl.polygon_mode(glow::FRONT_AND_BACK, glow::LINE);
         }
-        if wire || !((p.ao > 0.0 || p.edges > 0.0) && self.draw_ao(gl, p, lists.as_ref())) {
+        if wire || !((p.ao > 0.0 || p.edges > 0.0) && self.draw_ao(gl, p, lists)) {
             gl.clear_depth_f32(1.0);
             gl.depth_mask(true);
             gl.clear(glow::DEPTH_BUFFER_BIT);
-            self.draw(gl, p, lists.as_ref());
+            self.draw(gl, p, lists);
         }
         if wire {
             // egui deseneaza cu triunghiuri pline dupa noi
             gl.polygon_mode(glow::FRONT_AND_BACK, glow::FILL);
         }
-        self.lists = lists;
         if let Some(req) = self.capture.take() {
             let r = self.capture_frame(gl, &req);
             self.captured = Some(r);

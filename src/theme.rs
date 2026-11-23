@@ -41,6 +41,11 @@ impl Theme {
     }
 }
 
+// Design tokens pentru raza colturilor (stil Mitcad): tab-uri pill, carduri rotunjite.
+pub const RADIUS_SM: f32 = 6.0;  // badge, chip
+pub const RADIUS_MD: f32 = 9.0;  // butoane, carduri de ribbon
+pub const RADIUS_LG: f32 = 12.0; // panouri, ferestre
+
 /// Culoarea de accent a temei curente (butoane active, selectie, progres) - setata de `apply`.
 static ACCENT_RGB: AtomicU32 = AtomicU32::new(0x3b82f6);
 
@@ -641,11 +646,11 @@ pub fn apply(ctx: &egui::Context, t: Theme) {
         style.spacing.item_spacing = egui::vec2(6.0, 4.0);
         style.spacing.button_padding = egui::vec2(8.0, 3.0);
         style.spacing.interact_size.y = 20.0;
-        v.window_rounding = Rounding::same(10.0);
-        v.menu_rounding = Rounding::same(8.0);
+        v.window_rounding = Rounding::same(RADIUS_LG - 2.0);
+        v.menu_rounding = Rounding::same(RADIUS_MD);
     }
-    v.window_rounding = Rounding::same(10.0);
-    v.menu_rounding = Rounding::same(8.0);
+    v.window_rounding = Rounding::same(RADIUS_LG - 2.0);
+    v.menu_rounding = Rounding::same(RADIUS_MD);
     v.striped = true;
     style.visuals = v;
     // compact: mai mult loc pentru model, randuri si butoane tot usor de tintit

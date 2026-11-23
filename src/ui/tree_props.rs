@@ -795,6 +795,8 @@ impl App {
         egui::ComboBox::from_id_salt(id).width(190.0).selected_text(s.label()).show_ui(ui, |ui| {
             egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                 ui.selectable_value(s, Selector { kind: SelKind::All, value: String::new() }, "All elements");
+                ui.selectable_value(s, Selector { kind: SelKind::Selection, value: String::new() }, "Current selection")
+                    .on_hover_text("Use the elements currently selected in the model / tree as this side of the test");
                 ui.separator();
                 for dsc in ["Structure", "Architecture", "MEP - HVAC", "MEP - Plumbing", "MEP - Electrical"] {
                     let v = Selector { kind: SelKind::Discipline, value: dsc.to_string() };

@@ -377,6 +377,8 @@ pub enum SelKind {
     Model,
     Set,
     Type,
+    /// elementele selectate curent in model / arbore (ca in Navisworks Clash)
+    Selection,
     /// o disciplina (Structure, Architecture, MEP - HVAC...), recunoscuta din tipul IFC si numele modelului
     Discipline,
 }
@@ -391,6 +393,7 @@ impl Selector {
     pub fn label(&self) -> String {
         match self.kind {
             SelKind::All => "All elements".into(),
+            SelKind::Selection => "Current selection".into(),
             SelKind::Model => format!("Model: {}", self.value),
             SelKind::Set => format!("Set: {}", self.value),
             SelKind::Type => format!("Type: {}", self.value),
@@ -869,6 +872,9 @@ pub struct ProjectFile {
     pub elem_offsets: Vec<(ElemId, [f32; 3])>,
     #[serde(default)]
     pub animations: Vec<Animation>,
+    /// View Templates salvate în proiect (vizibilitate + secțiune + stil)
+    #[serde(default)]
+    pub view_templates: Vec<ViewTemplate>,
     #[serde(default)]
     pub render: RenderSettings,
     /// niveluri definite de utilizator (cota fata de ±0.00) si cota reala a lui ±0.00
@@ -1041,6 +1047,7 @@ pub enum Purpose {
     OpenProject,
     SaveProject,
     ExportClashHtml,
+    ExportClashPdf,
     ExportClashCsv,
     ExportClashBcf,
     ExportIfc,
@@ -1310,6 +1317,12 @@ pub struct App {
     pub cad_hatch: bool,
     /// istoricul vizualizarii (Undo / Redo): starile, pozitia curenta, semnatura ultimei stari
     pub hist: Vec<ViewSnap>,
+    /// şabloane de vizualizare salvate în proiect, aplicate cu un click
+    pub view_templates: Vec<ViewTemplate>,
+    /// fereastra de manage a şabloanelor de vizualizare
+    pub view_templates_open: bool,
+    /// indexul template-ului curent (pentru navigare ◀ ▶ lângă cub)
+    pub vt_current: usize,
     pub hist_pos: usize,
     pub hist_sig: u64,
     /// folderele de viewpoints: cel curent (unde intra viewpoint-urile noi), cele create goale, filtrul de export
@@ -1641,6 +1654,9 @@ impl App {
             cad_levels: true,
             cad_hatch: true,
             hist: Vec::new(),
+            view_templates: Vec::new(),
+            view_templates_open: false,
+            vt_current: 0,
             hist_pos: 0,
             hist_sig: 0,
             vp_folder_cur: String::new(),
@@ -2833,6 +2849,38 @@ pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: u
             texts.push(CadText::new("DIMS_TEXT", (w[0] + w[1]) * 0.5 - half, dy - 4.0 * u, 2.5, 0.0, label));
         }
     }
+}
+
+/// Un şablon de vizualizare salvat în proiect (stil Mitcad / Revit View Graphics).
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ViewTemplate {
+    pub name: String,
+    pub hidden: Vec<ElemId>,
+    pub section: Section,
+    /// poziția 3D (camera) înainte de salvare - ca să revii exact la aceeași vedere
+    pub cam: Camera,
+    pub visual_style: crate::render::VisualStyle,
+    pub show_grids: bool,
+    pub show_levels: bool,
+    pub section_caps: bool,
+    /// culorile/transparențele atribuite elementelor
+    #[serde(default)]
+    pub overrides: Vec<(ElemId, [u8; 4])>,
+    /// elementele selectate în acel moment
+    #[serde(default)]
+    pub selected: Vec<ElemId>,
+    /// măsurătorile din viewport
+    #[serde(default)]
+    pub measures: Vec<Measure>,
+    /// filtrul de viewpoint activ
+    #[serde(default)]
+    pub vp_filter: Option<String>,
+    /// template-ul aplicat automat la deschiderea proiectului
+    #[serde(default)]
+    pub is_default: bool,
+    /// notă scurtă (ce vezi în acest template)
+    #[serde(default)]
+    pub note: String,
 }
 
 /// O stare a vizualizarii in istoricul Undo / Redo.

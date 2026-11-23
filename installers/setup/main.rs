@@ -212,13 +212,19 @@ struct Wizard {
     pub launch_now: Arc<Mutex<bool>>,
 }
 
-const NORD_BG: Color32 = Color32::from_rgb(46, 52, 64);
-const NORD_PANEL: Color32 = Color32::from_rgb(59, 66, 82);
-const NORD_ACCENT: Color32 = Color32::from_rgb(136, 192, 208);
-const NORD_GREEN: Color32 = Color32::from_rgb(163, 190, 140);
-const NORD_YELLOW: Color32 = Color32::from_rgb(235, 203, 139);
-const NORD_RED: Color32 = Color32::from_rgb(191, 97, 106);
-const NORD_TEXT: Color32 = Color32::from_rgb(229, 233, 240);
+// Paleta prototipului aprobat (design-preview-actual.html) - consecventă cu aplicația.
+const NORD_BG: Color32 = Color32::from_rgb(15, 20, 32);
+const NORD_PANEL: Color32 = Color32::from_rgb(22, 29, 44);
+const NORD_PANEL2: Color32 = Color32::from_rgb(29, 38, 56);
+const NORD_LINE: Color32 = Color32::from_rgb(42, 53, 73);
+const NORD_ACCENT: Color32 = Color32::from_rgb(59, 130, 246);
+const NORD_CYAN: Color32 = Color32::from_rgb(34, 211, 238);
+const NORD_GREEN: Color32 = Color32::from_rgb(74, 222, 128);
+const NORD_ORANGE: Color32 = Color32::from_rgb(251, 146, 60);
+const NORD_YELLOW: Color32 = Color32::from_rgb(250, 204, 21);
+const NORD_RED: Color32 = Color32::from_rgb(248, 113, 113);
+const NORD_TEXT: Color32 = Color32::from_rgb(230, 236, 245);
+const NORD_MUTED: Color32 = Color32::from_rgb(141, 155, 179);
 
 fn running(names: &[&str]) -> Vec<String> {
     // tasklist (fara consola): programele care trebuie inchise inainte de actualizare
@@ -287,16 +293,21 @@ impl Wizard {
 
     fn steps(&self, ui: &mut egui::Ui) {
         ui.add_space(18.0);
-        ui.label(RichText::new("ManageBIM").size(22.0).strong().color(NORD_ACCENT));
-        ui.label(RichText::new(format!("version {VERSION}")).color(NORD_TEXT.gamma_multiply(0.7)));
-        ui.add_space(26.0);
-        for (p, name) in [(Page::Welcome, "Welcome"), (Page::Components, "Components"), (Page::Installing, "Install"), (Page::Finish, "Finish")] {
+        ui.label(RichText::new("◆ ManageBIM").size(20.0).strong().color(NORD_CYAN));
+        ui.label(RichText::new(format!("version {VERSION}")).color(NORD_MUTED).size(11.0));
+        ui.add_space(28.0);
+        for (p, name) in [(Page::Welcome, "Bun venit"), (Page::Components, "Componente"), (Page::Installing, "Instalare"), (Page::Finish, "Gata")] {
             let cur = p == self.page;
             let done = (p as u8) < (self.page as u8);
             let mark = if done { "✔" } else if cur { "▶" } else { "•" };
-            let col = if cur { NORD_ACCENT } else if done { NORD_GREEN } else { NORD_TEXT.gamma_multiply(0.55) };
-            ui.label(RichText::new(format!("{mark}  {name}")).size(15.0).color(col).strong());
-            ui.add_space(6.0);
+            let col = if cur { NORD_CYAN } else if done { NORD_GREEN } else { NORD_MUTED };
+            let txt = if cur { RichText::new(format!("{mark}  {name}")).size(14.0).color(col).strong() } else { RichText::new(format!("{mark}  {name}")).size(13.0).color(col) };
+            ui.label(txt);
+            if cur {
+                let r = ui.available_rect_before_wrap();
+                ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(r.width(), 2.0)), 1.0, NORD_CYAN);
+            }
+            ui.add_space(10.0);
         }
     }
 
@@ -329,8 +340,9 @@ impl Wizard {
                 ui.add_space(10.0);
                 let card = |ui: &mut egui::Ui, icon: &str, title: &str, desc: &str, col: Color32| {
                     egui::Frame::none()
-                        .fill(NORD_PANEL)
-                        .rounding(8.0)
+                        .fill(NORD_PANEL2)
+                        .rounding(9.0)
+                        .stroke(egui::Stroke::new(1.0_f32, NORD_LINE))
                         .stroke(egui::Stroke::new(1.0_f32, col.gamma_multiply(0.55)))
                         .inner_margin(egui::Margin::symmetric(10.0, 6.0))
                         .show(ui, |ui| {
@@ -478,7 +490,7 @@ impl eframe::App for Wizard {
                         ui.add_enabled(false, btn("Please wait…"));
                     }
                     Page::Finish => {
-                        if ui.add(btn("Finish").fill(NORD_ACCENT.gamma_multiply(0.45))).clicked() {
+                        if ui.add(btn("Finish").fill(NORD_ORANGE.gamma_multiply(0.75))).clicked() {
                             let ok = matches!(self.job.lock().unwrap().done, Some(Ok(_)));
                             *self.launch_now.lock().unwrap() = ok && self.launch;
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
