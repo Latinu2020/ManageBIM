@@ -81,34 +81,57 @@ fn text(c: &mut Vec<u8>, x: f32, y: f32, size: f32, bold: bool, s: &str) {
 /// Raport PDF pentru Clash Detective: antet, tabel cu rezultatele testului curent si cartus.
 /// Foloseste acelasi scriitor PDF ca plansele de viewpoint (fonturi standard, fara dependinte).
 pub fn clash_report_pdf(project: &str, test: &str, rows: &[(String, String, String, String, String)], date: &str, tb: &TitleBlock) -> Vec<u8> {
-    let mut c = Vec::new();
     const PW: f32 = 841.89; // A4 landscape
     const PH: f32 = 595.28;
     const MG: f32 = 28.0;
-    // antet
-    text(&mut c, MG, PH - 34.0, 15.0, true, "CLASH DETECTIVE - REPORT");
-    text(&mut c, MG, PH - 50.0, 9.0, false, &format!("Project: {}", tb.project_or(project)));
-    text(&mut c, MG, PH - 62.0, 9.0, false, &format!("Test: {test}    Date: {date}"));
-    c.extend_from_slice(format!("0.5 w {MG} {:.1} m {:.1} {:.1} l S\n", PH - 70.0, PW - MG, PH - 70.0).as_bytes());
-    // tabel
+    const ROW: f32 = 13.0;
+    const TOP: f32 = PH - 100.0; // primul rand de date
+    const BOTTOM: f32 = 70.0; // deasupra cartusului
+    let per_page = (((TOP - BOTTOM) / ROW) as usize).max(1);
+    let n_pages = rows.len().div_ceil(per_page).max(1);
     let cols = [MG, MG + 35.0, MG + 115.0, MG + 195.0, MG + 455.0, MG + 545.0];
     let heads = ["No", "Status", "Severity", "Elements", "Distance", "Group"];
-    for (x, h) in cols.iter().zip(heads) { text(&mut c, *x, PH - 86.0, 8.5, true, h); }
-    let mut y = PH - 100.0;
-    for (i, r) in rows.iter().enumerate() {
-        if y < 70.0 { break; } // pagina noua (simplu: taiem aici)
-        let vals = [format!("{}", i + 1), r.0.clone(), r.1.clone(), r.2.clone(), r.3.clone(), r.4.clone()];
-        for (x, v) in cols.iter().zip(vals) { text(&mut c, *x, y, 7.5, false, &v); }
-        y -= 13.0;
+    // textul care ar intra peste coloana urmatoare se scurteaza cu "..."
+    let fit = |s: &str, w: f32| -> String {
+        if text_w(s, 7.5) <= w {
+            return s.to_string();
+        }
+        let mut t: String = s.to_string();
+        while !t.is_empty() && text_w(&format!("{t}..."), 7.5) > w {
+            t.pop();
+        }
+        format!("{t}...")
+    };
+    let mut pages = Vec::new();
+    for p in 0..n_pages {
+        let mut c = Vec::new();
+        // antet (pe fiecare pagina)
+        text(&mut c, MG, PH - 34.0, 15.0, true, "CLASH DETECTIVE - REPORT");
+        text(&mut c, MG, PH - 50.0, 9.0, false, &format!("Project: {}", tb.project_or(project)));
+        text(&mut c, MG, PH - 62.0, 9.0, false, &format!("Test: {test}    Date: {date}    Clashes: {}", rows.len()));
+        c.extend_from_slice(format!("0.5 w {MG} {:.1} m {:.1} {:.1} l S\n", PH - 70.0, PW - MG, PH - 70.0).as_bytes());
+        for (x, h) in cols.iter().zip(heads) {
+            text(&mut c, *x, PH - 86.0, 8.5, true, h);
+        }
+        let mut y = TOP;
+        for (i, r) in rows.iter().enumerate().skip(p * per_page).take(per_page) {
+            let vals = [format!("{}", i + 1), r.0.clone(), r.1.clone(), r.2.clone(), r.3.clone(), r.4.clone()];
+            for (k, (x, v)) in cols.iter().zip(vals).enumerate() {
+                let w = cols.get(k + 1).map_or(PW - MG - x, |nx| nx - x - 6.0);
+                text(&mut c, *x, y, 7.5, false, &fit(&v, w));
+            }
+            y -= ROW;
+        }
+        // cartus
+        let ty = 24.0;
+        c.extend_from_slice(format!("0.5 w {MG} {ty} m {:.1} {ty} l {:.1} {:.1} l {MG} {:.1} l h S\n", PW - MG, PW - MG, ty + 30.0, ty + 30.0).as_bytes());
+        text(&mut c, MG + 6.0, ty + 18.0, 10.0, true, tb.project_or(project));
+        text(&mut c, MG + 6.0, ty + 7.0, 7.5, false, &format!("Clash report - {test}"));
+        text(&mut c, PW - MG - 150.0, ty + 18.0, 8.0, false, &format!("Page {} / {n_pages}  |  {}", p + 1, tb.paper));
+        text(&mut c, PW - MG - 150.0, ty + 7.0, 8.0, false, &format!("Rev {}  |  {}", tb.revision, date));
+        pages.push(Page { content: c, image: None });
     }
-    // cartus
-    let ty = 24.0;
-    c.extend_from_slice(format!("0.5 w {MG} {ty} m {:.1} {ty} l {:.1} {:.1} l {MG} {:.1} l h S\n", PW - MG, PW - MG, ty + 30.0, ty + 30.0).as_bytes());
-    text(&mut c, MG + 6.0, ty + 18.0, 10.0, true, &tb.project_or(project));
-    text(&mut c, MG + 6.0, ty + 7.0, 7.5, false, &format!("Clash report - {test}"));
-    text(&mut c, PW - MG - 150.0, ty + 18.0, 8.0, false, &format!("Scale 1:1  |  {}", tb.paper));
-    text(&mut c, PW - MG - 150.0, ty + 7.0, 8.0, false, &format!("Rev {}  |  {}", tb.revision, date));
-    write_pdf(&[Page { content: c, image: None }], tb.project_or(project), PW, PH)
+    write_pdf(&pages, tb.project_or(project), PW, PH)
 }
 
 /// PDF-ul cu cate o plansa pentru fiecare viewpoint.
@@ -331,6 +354,18 @@ mod tests {
         assert_eq!(super::ansi("a(b)"), b"a\\(b\\)".to_vec());
         assert_eq!(super::ansi("ș"), b"s".to_vec());
         assert!(super::wrap("one two three four five six", 9.0, 40.0).len() > 1);
+    }
+
+    /// raportul de clash continua pe pagini noi (inainte se oprea dupa prima pagina)
+    #[test]
+    fn clash_report_has_all_pages() {
+        let rows: Vec<(String, String, String, String, String)> = (0..120).map(|i| ("New".into(), "Major".into(), format!("Very long element name number {i} that would not fit in the column <-> another long name"), "-12 mm".into(), String::new())).collect();
+        let pdf = super::clash_report_pdf("P", "T", &rows, "2026-11-23", &super::TitleBlock::default());
+        let s = String::from_utf8_lossy(&pdf);
+        let pages = s.matches("/Type /Page ").count() + s.matches("/Type /Page/").count() + s.matches("/Type /Page>").count();
+        assert!(s.contains("/Count 4") || pages >= 4, "expected 4 pages");
+        assert!(s.contains("Page 4 / 4"));
+        assert!(s.contains("(120)"), "last row number present");
     }
 }
 

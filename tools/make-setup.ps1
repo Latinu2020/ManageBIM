@@ -25,6 +25,9 @@ New-Item -ItemType Directory -Force $app, (Join-Path $app 'AddIns'), (Join-Path 
 Copy-Item (Join-Path $root 'installers\user\install.ps1') $pkg
 Copy-Item (Join-Path $rel 'ManageBIM.exe'), (Join-Path $rel 'bimc-convert.exe') $app
 if (Test-Path (Join-Path $rel 'occt')) { Copy-Item (Join-Path $rel 'occt') (Join-Path $app 'occt') -Recurse }
+# Intel Open Image Denoise (Render › Denoise) - tools\get-oidn.ps1 il descarca in third_party\oidn
+$oidn = Join-Path $root 'third_party\oidn'
+if (Test-Path (Join-Path $oidn 'OpenImageDenoise.dll')) { Copy-Item $oidn (Join-Path $app 'oidn') -Recurse } else { Write-Warning 'Open Image Denoise missing (tools\get-oidn.ps1) - Render denoise will be unavailable.' }
 foreach ($n in 'ManageBIM-Revit-AddIn', 'ManageBIM-AutoCAD-AddIn', 'ManageBIM-Navisworks-AddIn') {
     $f = Join-Path $rel "$n.exe"
     if (Test-Path $f) { Copy-Item $f (Join-Path $app 'AddIns') } else { Write-Warning "$n.exe missing" }

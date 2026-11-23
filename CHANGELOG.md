@@ -3,6 +3,25 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.18 - 2026-11-23
+- **Clash Detective (Navisworks style)**:
+  - Results can be **sorted by any column** (click the header: ascending, descending, test order); the choice is remembered.
+  - **Item 1 / Item 2 panel** under the results: name, model, type, level, GUID and all properties of both elements, with Select / Zoom / Hide.
+  - **Saved viewpoint per clash**: 📷 Save viewpoint stores the camera on the result; selecting it again (and the BCF / Navisworks viewpoint export) uses that view. Kept when the test is re-run.
+  - **Animate transitions**: the camera flies smoothly to each clash (can be turned off).
+  - **Highlight colours** of Item 1 / Item 2 and the **transparency of the dimmed elements** are configurable (🎨 Colours).
+  - The **PDF clash report** now continues on as many pages as needed (it stopped after the first page), with page numbers; long element names no longer overlap the next column.
+- **Render: Intel Open Image Denoise** (Apache 2.0, bundled in `oidn\`): the path trace is denoised at the end using albedo and normal buffers - clean images with far fewer samples.
+- **Render quality**: soft sun shadows, sky light with ambient occlusion, anti-aliasing per pixel, 16:9 and 4:3 formats (1920 px). Fixed: the sky and the sky light used Y instead of Z as "up", and back-facing surfaces were rendered black.
+- **Visual script builder** easier to use:
+  - Property and value **drop-down lists from the loaded model**, with the number of elements.
+  - **Preview** on each step ("Will select 124 elements", "Will find 37 of 412 without FireRating").
+  - **Ready-made scenarios** (📋 Templates), **📂 Open** a saved scenario to edit its steps again, **📁 Browse** for the export files, fields with problems marked in **red** and Run disabled until they are fixed, a plain-language explanation on every step.
+  - Fixed: "Select by IDs" selected nothing (Rhai integers are 64-bit) and "Create clash test" failed with a whole-number tolerance such as 10.
+- **Status bar**: the length unit menu now offers m / mm / in / ft (same as Settings) and shows an **OSNAP** on/off indicator (click or F3).
+- **3D background** choice in Settings › Appearance: Theme, White, Grey, Black, Sky.
+- **Interface polish**: thin floating scroll bars, roomier window margins, quicker and wider tooltips, section titles in Settings.
+
 ## 0.27.17 - 2026-11-23
 - **Coloured ribbon icons**: icons are coloured by what they do (files yellow, export blue, delete / clash red, measure green, view purple, section orange, search teal). Can be turned off in Settings › Appearance.
 - **Selection highlight**: colour (picker + 5 presets) and strength (20–100%) configurable in Settings › Selection, saved between sessions.

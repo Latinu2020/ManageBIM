@@ -178,6 +178,10 @@ impl App {
         let roles = self.clash_roles();
         let ghost = !roles.is_empty();
         let others = self.clash_others;
+        // culorile clash-ului (Settings in fila Results): A, B si cele „palide” ale celorlalte clash-uri deschise
+        let (ca, cb, dim_a) = (self.settings.clash_ui.col_a, self.settings.clash_ui.col_b, self.settings.clash_ui.dim_alpha);
+        let pale = |c: [u8; 3]| [((c[0] as u16 + 255) / 2) as u8, ((c[1] as u16 + 255) / 2) as u8, ((c[2] as u16 + 255) / 2) as u8, 235];
+        let (role_a, role_b, role_pa, role_pb) = ([ca[0], ca[1], ca[2], 255], [cb[0], cb[1], cb[2], 255], pale(ca), pale(cb));
         let sim = self.sim_view();
         let empty = HashMap::new();
         let empty_p: HashMap<ElemId, u16> = HashMap::new();
@@ -228,14 +232,14 @@ impl App {
             }
             if ghost {
                 match roles.get(&id) {
-                    Some(1) => ovr = Some([230, 45, 40, 255]),
-                    Some(2) => ovr = Some([40, 200, 70, 255]),
-                    Some(3) => ovr = Some([235, 140, 120, 235]),
-                    Some(4) => ovr = Some([140, 215, 150, 235]),
+                    Some(1) => ovr = Some(role_a),
+                    Some(2) => ovr = Some(role_b),
+                    Some(3) => ovr = Some(role_pa),
+                    Some(4) => ovr = Some(role_pb),
                     _ => match others {
                         Others::Dim => {
                             if !hidden {
-                                ovr = Some([150, 150, 155, 28]);
+                                ovr = Some([150, 150, 155, dim_a]);
                             }
                         }
                         Others::Hide => hidden = true,

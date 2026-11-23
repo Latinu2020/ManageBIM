@@ -398,6 +398,7 @@ impl App {
                 resolved_by: String::new(),
                 resolved_at: String::new(),
                 b_is_scan: true,
+                view: None,
             });
             added += 1;
         }

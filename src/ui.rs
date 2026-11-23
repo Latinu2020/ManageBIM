@@ -26,6 +26,7 @@ mod table;
 mod script;
 mod settings;
 mod script_catalog;
+mod script_builder_ui;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
 fn accent() -> Color32 {
@@ -2795,78 +2796,7 @@ impl App {
                     }
                 });
                 ui.separator();
-                // ---- VISUAL SCRIPT BUILDER (pași în GUI, fără cod) ----
-                ui.collapsing(RichText::new("🧩 Visual script builder — create a script without code").strong(), |ui| {
-                    ui.label(RichText::new("Adaugă pași, completează câmpurile, apoi Run. Codul Rhai se generează automat.").small().weak());
-                    ui.horizontal(|ui| {
-                        ui.label("Name");
-                        ui.add(egui::TextEdit::singleline(&mut self.scenario.name).desired_width(200.0));
-                    });
-                    // meniu de adăugare pas
-                    let add_id = ui.make_persistent_id("vb_add_menu");
-                    let add_r = ui.button("➕ Add step");
-                    if add_r.clicked() { ui.memory_mut(|m| m.toggle_popup(add_id)); }
-                    egui::popup_below_widget(ui, add_id, &add_r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                        ui.set_min_width(230.0);
-                        for k in crate::script_builder::StepKind::ALL {
-                            if ui.button(format!("{}  — {}", k.label(), k.ro())).clicked() {
-                                self.scenario.steps.push(crate::script_builder::Step::new(k));
-                                ui.close_menu();
-                            }
-                        }
-                    });
-                    ui.separator();
-                    // lista de pași
-                    let mut del: Option<usize> = None;
-                    let mut up: Option<usize> = None;
-                    let mut down: Option<usize> = None;
-                    for (i, st) in self.scenario.steps.iter_mut().enumerate() {
-                        egui::Frame::none().fill(ui.visuals().faint_bg_color).rounding(crate::theme::RADIUS_SM).inner_margin(egui::Margin::symmetric(7.0, 4.0)).show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new(format!("{}.", i + 1)).small().weak());
-                                ui.label(RichText::new(st.kind.label()).strong());
-                                if ui.small_button("↑").on_hover_text("Move up").clicked() { up = Some(i); }
-                                if ui.small_button("↓").on_hover_text("Move down").clicked() { down = Some(i); }
-                                if ui.small_button("🗑").on_hover_text("Remove step").clicked() { del = Some(i); }
-                            });
-                            if !st.kind.fields().is_empty() {
-                                egui::Grid::new(("vb_fields", i)).num_columns(2).spacing([8.0, 3.0]).show(ui, |ui| {
-                                    for (fi, (label, _)) in st.kind.fields().iter().enumerate() {
-                                        ui.label(RichText::new(*label).small());
-                                        if let Some(val) = st.values.get_mut(fi) {
-                                            ui.add(egui::TextEdit::singleline(val).desired_width(200.0));
-                                        }
-                                        ui.end_row();
-                                    }
-                                });
-                            }
-                        });
-                        ui.add_space(2.0);
-                    }
-                    if let Some(i) = del { if i < self.scenario.steps.len() { self.scenario.steps.remove(i); } }
-                    if let Some(i) = up { if i > 0 { self.scenario.steps.swap(i, i - 1); } }
-                    if let Some(i) = down { if i + 1 < self.scenario.steps.len() { self.scenario.steps.swap(i, i + 1); } }
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        if ui.button(RichText::new("▶ Run scenario").color(crate::theme::accent())).clicked() {
-                            let (name, src) = (self.scenario.name.clone(), self.scenario.to_rhai());
-                            self.run_source(&name, &src);
-                        }
-                        if ui.button("💾 Save as .rhai").on_hover_text("Save the generated script to the scripts folder").clicked() {
-                            let src = self.scenario.to_rhai();
-                            match crate::ui::script::save_named(&self.settings.scripts_dir, &self.scenario.name, &src) {
-                                Ok(p) => self.toast(format!("Script saved: {}", crate::file_name(&p.to_string_lossy().to_string()))),
-                                Err(e) => self.error(e),
-                            }
-                        }
-                        if ui.button("🗑 Clear").clicked() { self.scenario.steps.clear(); }
-                    });
-                    // codul generat (vizibil, ca să învețe utilizatorul)
-                    ui.collapsing("Generated Rhai code", |ui| {
-                        let code = self.scenario.to_rhai();
-                        egui::TextEdit::multiline(&mut code.as_str()).desired_width(1.0e6).show(ui);
-                    });
-                });
+                self.script_builder_ui(ui);
                 ui.separator();
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.label(RichText::new("BUILT-IN SCRIPTS").size(12.0).strong().color(ui.visuals().weak_text_color()));
@@ -2971,22 +2901,49 @@ impl App {
             .min_height(400.0)
             .resizable(true)
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Resolution");
-                    let mut w = self.pathtrace_params.0;
-                    egui::ComboBox::from_id_salt("pt_res").selected_text(format!("{}×{}", w, w)).show_ui(ui, |ui| {
-                        for r in [128u32, 256, 512, 1024, 2048, 4096] {
-                            ui.selectable_value(&mut w, r, format!("{}×{}", r, r));
+                ui.add_enabled_ui(!running, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Resolution");
+                        let (mut w, h0) = (self.pathtrace_params.0, self.pathtrace_params.1);
+                        // proportia: patrat / 16:9 / 4:3 (inaltimea se calculeaza din latime)
+                        let mut ratio = if h0 == w { 0 } else if h0 == w * 9 / 16 { 1 } else if h0 == w * 3 / 4 { 2 } else { 0 };
+                        egui::ComboBox::from_id_salt("pt_res").width(80.0).selected_text(format!("{w} px")).show_ui(ui, |ui| {
+                            for r in [128u32, 256, 512, 1024, 1920, 2048, 4096] {
+                                ui.selectable_value(&mut w, r, format!("{r} px"));
+                            }
+                        });
+                        egui::ComboBox::from_id_salt("pt_ratio").width(70.0).selected_text(["1:1", "16:9", "4:3"][ratio]).show_ui(ui, |ui| {
+                            for (k, l) in ["1:1", "16:9", "4:3"].into_iter().enumerate() {
+                                ui.selectable_value(&mut ratio, k, l);
+                            }
+                        });
+                        let h = match ratio { 1 => w * 9 / 16, 2 => w * 3 / 4, _ => w };
+                        self.pathtrace_params.0 = w;
+                        self.pathtrace_params.1 = h;
+                        ui.label(RichText::new(format!("{w}×{h}")).weak());
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Samples");
+                        ui.add(egui::DragValue::new(&mut self.pathtrace_params.2).range(1..=1024).speed(4.0));
+                        ui.label("Time limit (s, 0 = off)");
+                        ui.add(egui::DragValue::new(&mut self.pathtrace_params.3).range(0.0..=600.0).speed(1.0));
+                    });
+                    ui.horizontal(|ui| {
+                        let avail = crate::oidn::available();
+                        let r = ui.add_enabled(avail.is_ok(), egui::Checkbox::new(&mut self.settings.render_denoise, "Denoise (Intel Open Image Denoise)"));
+                        if r.changed() {
+                            self.settings.save();
+                        }
+                        match &avail {
+                            Ok(_) => {
+                                r.on_hover_text("Removes the render noise at the end with AI (Intel OIDN, on the CPU). A clean image needs far fewer samples - 16-32 are often enough.");
+                            }
+                            Err(e) => {
+                                r.on_disabled_hover_text(e.clone());
+                                ui.label(RichText::new("not installed").small().weak());
+                            }
                         }
                     });
-                    self.pathtrace_params.0 = w;
-                    self.pathtrace_params.1 = w;
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Samples");
-                    ui.add(egui::DragValue::new(&mut self.pathtrace_params.2).range(1..=1024).speed(4.0));
-                    ui.label("Time limit (s, 0 = off)");
-                    ui.add(egui::DragValue::new(&mut self.pathtrace_params.3).range(0.0..=600.0).speed(1.0));
                 });
                 ui.horizontal(|ui| {
                     if !running {
@@ -3028,16 +2985,30 @@ impl App {
                     } else {
                         format!("{n} / {total} {} · {:.1} s{eta}", crate::i18n::tr("samples"), secs)
                     };
-                    ui.add(egui::ProgressBar::new(frac).text(txt));
+                    let dn = job.denoise_state.load(std::sync::atomic::Ordering::Relaxed);
+                    let txt = if dn == crate::pathtrace::DN_RUNNING { format!("{n} {} · {}", crate::i18n::tr("samples"), crate::i18n::tr("Denoising…")) } else { txt };
+                    ui.add(egui::ProgressBar::new(frac).text(txt).animate(dn == crate::pathtrace::DN_RUNNING));
+                    match dn {
+                        crate::pathtrace::DN_DONE => {
+                            ui.label(RichText::new("✔ Denoised with Intel Open Image Denoise").small().color(Color32::from_rgb(80, 200, 120)));
+                        }
+                        crate::pathtrace::DN_FAILED => {
+                            let m = job.denoise_msg.lock().map(|m| m.clone()).unwrap_or_default();
+                            ui.label(RichText::new(format!("⚠ Denoise failed - the noisy image is kept. {m}")).small().color(Color32::from_rgb(230, 170, 60)));
+                        }
+                        _ => {}
+                    }
                     if done && n > 0 {
                         ui.label(RichText::new(crate::i18n::tr("Ready - press Export PNG to save the image.")).strong().color(Color32::from_rgb(80, 200, 120)));
                     }
                 }
                 if let Some(tex) = &self.pathtrace_tex {
                     ui.separator();
+                    // imaginea pastreaza proportia randarii (1:1 / 16:9 / 4:3)
                     let avail = ui.available_size();
-                    let sz = avail.x.min(avail.y).max(64.0);
-                    ui.image((tex.id(), egui::Vec2::splat(sz)));
+                    let ts = tex.size_vec2();
+                    let k = (avail.x / ts.x.max(1.0)).min(avail.y / ts.y.max(1.0)).max(0.05);
+                    ui.image((tex.id(), ts * k));
                 } else {
                     ui.label(RichText::new("Start a trace to see the preview.").weak());
                 }
@@ -3191,10 +3162,25 @@ impl App {
                         self.settings.save();
                     }
                     ui.label(RichText::new(format!("{:.0} FPS", self.fps)).weak()).on_hover_text("Frames per second");
-                    let u = if self.settings.units_mm { "mm" } else { "m" };
-                    if ui.small_button(u).on_hover_text("Length unit for measurements, distances and coordinates - click to switch m / mm (quantities stay in m, m², m³)").clicked() {
-                        self.settings.units_mm = !self.settings.units_mm;
-                        self.settings.save();
+                    // unitatea de lungime: acelasi sistem ca in Settings (m / mm / in / ft)
+                    let cur_u = if self.settings.unit_system.is_empty() { "m".to_string() } else { self.settings.unit_system.clone() };
+                    ui.menu_button(RichText::new(&cur_u).strong(), |ui| {
+                        ui.label(RichText::new("Length unit").small().weak());
+                        for code in ["m", "mm", "in", "ft"] {
+                            if ui.selectable_label(cur_u == code, code).clicked() {
+                                self.settings.unit_system = code.into();
+                                self.settings.units_mm = code == "mm";
+                                crate::app::set_unit(match code { "mm" => crate::app::Unit::Mm, "in" => crate::app::Unit::In, "ft" => crate::app::Unit::Ft, _ => crate::app::Unit::M });
+                                self.settings.save();
+                                ui.close_menu();
+                            }
+                        }
+                    })
+                    .response
+                    .on_hover_text("Length unit for measurements, distances and coordinates (quantities stay in m, m², m³)");
+                    let os_col = if self.osnap_on { Color32::from_rgb(80, 200, 120) } else { ui.visuals().weak_text_color() };
+                    if ui.add(egui::Button::new(RichText::new("OSNAP").small().strong().color(os_col)).frame(false)).on_hover_text(if self.osnap_on { "Object snap ON - click or F3 to turn off" } else { "Object snap OFF - click or F3 to turn on" }).clicked() {
+                        self.osnap_on = !self.osnap_on;
                     }
                 });
             });
@@ -3211,8 +3197,15 @@ impl App {
         let pal = self.pal();
         // Hidden line (Rhino): fundal alb ca hartia, ca sa se vada liniile negre.
         let rhino = self.settings.visual_style == crate::render::VisualStyle::Hidden;
-        let top = if rhino { Color32::from_rgb(252, 252, 253) } else { pal.vp_top };
-        let bot = if rhino { Color32::from_rgb(240, 242, 245) } else { pal.vp_bottom };
+        // fundalul ales in Settings › Appearance (implicit = al temei)
+        let (top, bot) = match self.settings.vp_bg.as_str() {
+            _ if rhino => (Color32::from_rgb(252, 252, 253), Color32::from_rgb(240, 242, 245)),
+            "white" => (Color32::from_rgb(255, 255, 255), Color32::from_rgb(246, 247, 249)),
+            "grey" => (Color32::from_rgb(150, 155, 162), Color32::from_rgb(112, 116, 122)),
+            "black" => (Color32::from_rgb(14, 15, 18), Color32::from_rgb(6, 6, 8)),
+            "sky" => (Color32::from_rgb(120, 170, 225), Color32::from_rgb(222, 232, 242)),
+            _ => (pal.vp_top, pal.vp_bottom),
+        };
         let lift = |c: Color32, d: i16| {
             let f = |x: u8| (x as i16 + d).clamp(0, 255) as u8;
             Color32::from_rgb(f(c.r()), f(c.g()), f(c.b()))

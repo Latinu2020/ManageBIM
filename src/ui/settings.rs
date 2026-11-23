@@ -4,6 +4,16 @@
 
 use super::*;
 
+/// Titlul unei sectiuni din Settings: majuscule mici in culoarea de accent + linie fina (stil Revit / VS Code).
+fn section_title(ui: &mut egui::Ui, title: &str) {
+    ui.add_space(10.0);
+    ui.label(RichText::new(crate::i18n::tr(title).to_uppercase()).size(11.5).strong().color(accent()));
+    let r = ui.available_rect_before_wrap();
+    let y = ui.cursor().top() + 1.0;
+    ui.painter().hline(r.left()..=r.right(), y, egui::Stroke::new(1.0_f32, crate::theme::border()));
+    ui.add_space(6.0);
+}
+
 impl App {
     pub(super) fn settings_window(&mut self, ctx: &egui::Context) {
         if !self.settings_open { return; }
@@ -17,7 +27,7 @@ impl App {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     // ------------------------------------------------ aspect
-                    ui.heading("Appearance");
+                    section_title(ui, "Appearance");
                     ui.horizontal(|ui| {
                         ui.label("Theme");
                         for t in [Theme::Studio, Theme::Dark, Theme::Nord, Theme::TokyoNight, Theme::Light] {
@@ -50,8 +60,17 @@ impl App {
                     if ui.checkbox(&mut self.settings.color_icons, "Coloured ribbon icons").on_hover_text("Colour the ribbon icons by what they do: files yellow, export blue, delete / clash red, measure green, view purple, section orange, search teal.").changed() {
                         self.settings.save();
                     }
+                    ui.horizontal(|ui| {
+                        ui.label("3D background");
+                        for (code, label, tip) in [("theme", "Theme", "The gradient of the current theme"), ("white", "White", "Clean white - for reports and prints"), ("grey", "Grey", "Neutral grey - good contrast for all colours"), ("black", "Black", "Black - for presentations"), ("sky", "Sky", "Blue sky gradient")] {
+                            if ui.selectable_label(self.settings.vp_bg == code, label).on_hover_text(tip).clicked() {
+                                self.settings.vp_bg = code.into();
+                                self.settings.save();
+                            }
+                        }
+                    });
                     ui.add_space(6.0);
-                    ui.heading("Selection");
+                    section_title(ui, "Selection");
                     let mut sel_changed = false;
                     ui.horizontal(|ui| {
                         ui.label("Highlight colour");
@@ -171,7 +190,7 @@ impl App {
 
                     // ------------------------------------------------ export
                     ui.separator();
-                    ui.heading("DWG / DXF section export");
+                    section_title(ui, "DWG / DXF section export");
                     ui.horizontal(|ui| {
                         ui.label("View");
                         let cur = self.settings.cad_view;
@@ -237,7 +256,7 @@ impl App {
 
                     // ------------------------------------------------ navigare
                     ui.separator();
-                    ui.heading("Navigation & units");
+                    section_title(ui, "Navigation & units");
                     ui.horizontal(|ui| {
                         ui.label("Walk speed (m/s)");
                         if ui.add(egui::DragValue::new(&mut self.settings.walk_speed).range(0.2..=10.0).speed(0.1)).changed() {
@@ -291,7 +310,7 @@ impl App {
                         }
                     });
                     ui.separator();
-                    ui.heading("Keyboard shortcuts");
+                    section_title(ui, "Keyboard shortcuts");
                     ui.label(RichText::new("Click a binding, press the new keys, then Enter. Esc cancels.").small().weak());
                     let mut reset = false;
                     egui::Grid::new("kb_grid").num_columns(3).spacing([10.0, 4.0]).show(ui, |ui| {
@@ -331,7 +350,7 @@ impl App {
 
                     // ------------------------------------------------ profil partajabil
                     ui.separator();
-                    ui.heading("Settings profile");
+                    section_title(ui, "Settings profile");
                     ui.horizontal(|ui| {
                         if ui.button("📤 Export profile (.mbprofile)").on_hover_text("Save theme, panels, shortcuts, units and filters to a file you can share with colleagues").clicked() {
                             self.request_path(Purpose::ExportSettingsProfile);
@@ -342,7 +361,7 @@ impl App {
                     });
                     // ------------------------------------------------ fisiere / sync
                     ui.separator();
-                    ui.heading("Scripts");
+                    section_title(ui, "Scripts");
                     ui.horizontal(|ui| {
                         ui.label("Scripts folder");
                         if ui.add(egui::TextEdit::singleline(&mut self.settings.scripts_dir).desired_width(280.0).hint_text("default: %APPDATA%\\ManageBIM\\Scripts")).changed() {
@@ -354,7 +373,7 @@ impl App {
                     ui.label(RichText::new(super::script::dir(&self.settings.scripts_dir).display().to_string()).weak().small());
 
                     ui.separator();
-                    ui.heading("Files & live link");
+                    section_title(ui, "Files & live link");
                     if ui.checkbox(&mut self.settings.auto_cache, "Create a .bimc cache when opening a model").changed() { self.settings.save(); }
                     if ui.checkbox(&mut self.settings.use_cache, "Open the up-to-date .bimc cache instead of the source").changed() { self.settings.save(); }
                     if ui.checkbox(&mut self.settings.sync_selection, "Sync selection with Revit / Navisworks").changed() { self.settings.save(); }

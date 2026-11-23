@@ -1,6 +1,7 @@
 # Componente terțe în ManageBIM
 
 - **Open CASCADE Technology 8.0.1** - LGPL-2.1 + Open CASCADE exception, legat dinamic (folderul `occt\`, vezi `occt\NOTICE.txt`).
+- **Intel Open Image Denoise 2.5.1** (Render › Denoise) - Apache-2.0, legat dinamic (folderul `oidn\`, cu `LICENSE.txt` și `third-party-programs*.txt`). Include **oneTBB** (Apache-2.0). Descărcat de `tools/get-oidn.ps1` de pe github.com/RenderKit/oidn.
 - **Inter 4.1** (fontul interfeței, github.com/rsms/inter) - SIL Open Font License 1.1, inclus în executabil; textul licenței: `assets/fonts/Inter-LICENSE.txt`.
 - **Lato 2.0** (al doilea font inclus, alegibil din Settings › Font; latofonts.com, din google/fonts) - SIL Open Font License 1.1, inclus în executabil; textul licenței: `assets/fonts/LATO-LICENSE.txt`.
 - **Phosphor Icons** (iconițele vectoriale, prin crate-ul `egui-phosphor` 0.7) - MIT.

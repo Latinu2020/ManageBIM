@@ -38,9 +38,11 @@ impl App {
             (format!("SwitchBack — {}", r.name), r.a, r.b, r.dist)
         };
         let comment = format!("SwitchBack from clash {} · {} mm", name, (dist * 1000.0) as i32);
+        // daca camera inca zboara spre clash, luam pozitia finala
+        let cam = self.cam_anim.map(|(_, to, _)| to).unwrap_or(self.cam);
         self.viewpoints.push(Viewpoint {
             name,
-            cam: self.cam,
+            cam,
             section: self.section.clone(),
             cad_view: self.settings.cad_view,
             cad_view_pos: self.settings.cad_view_pos,
@@ -190,7 +192,7 @@ impl App {
                 None => {
                     let n = format!("Clash{next}");
                     next += 1;
-                    ClashResult { name: n, a: f.a, b: f.b, ga, gb, point: f.point.into(), dist: f.dist, status: ClashStatus::New, assigned: String::new(), comment: String::new(), found: now.clone(), group: String::new(), approved_by: String::new(), approved_at: String::new(), resolved_by: String::new(), resolved_at: String::new(), b_is_scan: false }
+                    ClashResult { name: n, a: f.a, b: f.b, ga, gb, point: f.point.into(), dist: f.dist, status: ClashStatus::New, assigned: String::new(), comment: String::new(), found: now.clone(), group: String::new(), approved_by: String::new(), approved_at: String::new(), resolved_by: String::new(), resolved_at: String::new(), b_is_scan: false, view: None }
                 }
             };
             if r.status == ClashStatus::New {
@@ -487,7 +489,12 @@ impl App {
                 c.pitch = -0.5;
                 c.ortho = false;
                 let dist = (size * 0.9).clamp(1.5, 60.0) / (c.fov().max(0.3) * 0.5).tan();
-                let eye = p - c.fwd() * dist;
+                let mut eye = p - c.fwd() * dist;
+                // viewpoint-ul salvat de utilizator pe rezultat are prioritate
+                if let Some(v) = r.view {
+                    c = v;
+                    eye = v.eye();
+                }
                 let pad = Vec3::splat((size * 0.15).max(0.3));
                 let (mn, mx) = if bb.is_valid() { (bb.min - pad, bb.max + pad) } else { (p - Vec3::splat(1.0), p + Vec3::splat(1.0)) };
                 let na = self.elem(r.a).map(|(_, e)| e.name.clone()).unwrap_or_default();

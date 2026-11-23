@@ -432,6 +432,9 @@ pub struct ClashResult {
     /// al doilea "element" e norul de puncte (Scan vs Model)
     #[serde(default)]
     pub b_is_scan: bool,
+    /// viewpoint-ul salvat al rezultatului (ca in Navisworks): la selectare camera merge aici
+    #[serde(default)]
+    pub view: Option<crate::camera::Camera>,
 }
 
 /// Navisworks-style rules: what the test must ignore.
@@ -1436,6 +1439,8 @@ pub struct App {
     pub script_help_open: bool,
     /// scenariul curent din editorul vizual de scripturi (pași care generează cod Rhai)
     pub scenario: crate::script_builder::Scenario,
+    /// proprietățile modelelor pentru editorul vizual (cheie = semnătura modelelor încărcate)
+    pub scenario_index: Option<(u64, std::sync::Arc<crate::script_builder::PropIndex>)>,
     /// fereastra de setari a aplicatiei (View › Settings / butonul ⚙)
     pub settings_open: bool,
     pub still_path: Option<String>,
@@ -1741,6 +1746,7 @@ impl App {
             cut_drag: false,
             script_open: false,
             scenario: crate::script_builder::Scenario { name: "My script".into(), steps: Vec::new() },
+            scenario_index: None,
             script_help_open: false,
             settings_open: false,
             still_path: None,
@@ -1871,6 +1877,8 @@ impl App {
             highlight_all: self.clash_highlight_all,
             group_cell: self.group_cell,
             only_linked: self.sim_only_linked,
+            // restul (sortare, culori, panouri) se editeaza direct in settings.clash_ui
+            ..self.settings.clash_ui.clone()
         };
         if p != self.settings.clash_ui {
             self.settings.clash_ui = p;

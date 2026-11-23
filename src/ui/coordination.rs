@@ -775,6 +775,42 @@ impl App {
             });
             ui.checkbox(&mut self.clash_highlight_all, "Highlight all clashes").on_hover_text("Colour the items of every open clash (A light red, B light green)");
             ui.checkbox(&mut self.clash_auto_zoom, "Auto-zoom");
+            let mut prefs = self.settings.clash_ui.clone();
+            ui.checkbox(&mut prefs.animate, "Animate").on_hover_text("The camera flies smoothly to each clash (Animate transitions)");
+            ui.checkbox(&mut prefs.items_panel, "Items").on_hover_text("Show Item 1 / Item 2 with their properties under the results");
+            ui.menu_button("🎨 Colours ⏷", |ui| {
+                ui.label(RichText::new("Highlight colours of the current clash").small().weak());
+                for (lbl, col) in [("Item 1 (A)", &mut prefs.col_a), ("Item 2 (B)", &mut prefs.col_b)] {
+                    ui.horizontal(|ui| {
+                        let mut c = Color32::from_rgb(col[0], col[1], col[2]);
+                        if ui.color_edit_button_srgba(&mut c).changed() {
+                            *col = [c.r(), c.g(), c.b()];
+                        }
+                        ui.label(lbl);
+                    });
+                }
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label("Dim other: opacity");
+                    let mut pct = (prefs.dim_alpha as f32 / 255.0 * 100.0).round() as i32;
+                    if ui.add(egui::Slider::new(&mut pct, 3..=80).suffix("%")).on_hover_text("How visible the other elements stay when Display = Dim other (lower = more transparent)").changed() {
+                        prefs.dim_alpha = (pct as f32 / 100.0 * 255.0).round() as u8;
+                    }
+                });
+                if ui.button("↺ Default colours").clicked() {
+                    prefs.col_a = crate::theme::clash_col_a();
+                    prefs.col_b = crate::theme::clash_col_b();
+                    prefs.dim_alpha = crate::theme::dim_alpha_default();
+                }
+            });
+            if prefs != self.settings.clash_ui {
+                let recolor = (prefs.col_a, prefs.col_b, prefs.dim_alpha) != (self.settings.clash_ui.col_a, self.settings.clash_ui.col_b, self.settings.clash_ui.dim_alpha);
+                self.settings.clash_ui = prefs;
+                self.settings.save();
+                if recolor {
+                    self.colors_dirty = true;
+                }
+            }
             if before != (self.clash_others, self.clash_highlight_all) {
                 self.colors_dirty = true;
             }
@@ -883,18 +919,59 @@ impl App {
                 _ => true,
             }
         };
+        // locatia: axe + nivel (C-4 / Level 2) cand exista axe, altfel nivelul elementului A
+        let grids = self.scene_grids();
+        let use_grid = !grids.grids.is_empty();
+        let labels: Vec<(String, String, String)> = (0..res_len)
+            .map(|i| {
+                let r = &self.clash_tests[ti].results[i];
+                let la = self.elem(r.a).map(|(m, e)| format!("{} [{}]", e.name, m.name)).unwrap_or_default();
+                let lb = if r.b_is_scan { "Point cloud (scan)".to_string() } else { self.elem(r.b).map(|(m, e)| format!("{} [{}]", e.name, m.name)).unwrap_or_default() };
+                let lv = if use_grid { crate::app::grid_location_in(&grids, glam::Vec3::from(r.point)) } else { self.elem(r.a).map(|(_, e)| e.storey.clone()).unwrap_or_default() };
+                (la, lb, lv)
+            })
+            .collect();
+        // ---- ordinea: dupa coloana aleasa in antet (clic pe antet), altfel ordinea testului
+        let (sort_col, sort_asc) = (self.settings.clash_ui.sort_col, self.settings.clash_ui.sort_asc);
+        let mut order: Vec<usize> = (0..res_len).collect();
+        if let Some(c) = sort_col {
+            let results = &self.clash_tests[ti].results;
+            // "Clash12" -> ("Clash", 12): Clash2 inaintea lui Clash10
+            let nat = |s: &str| {
+                let p = s.trim_end_matches(|ch: char| ch.is_ascii_digit());
+                (p.to_lowercase(), s[p.len()..].parse::<u64>().unwrap_or(0))
+            };
+            let st_ix = |s: ClashStatus| ClashStatus::ALL.iter().position(|x| *x == s).unwrap_or(0);
+            order.sort_by(|&x, &y| {
+                let (a, b) = (&results[x], &results[y]);
+                let o = match c {
+                    0 => nat(&a.name).cmp(&nat(&b.name)),
+                    1 => st_ix(a.status).cmp(&st_ix(b.status)),
+                    2 => a.dist.partial_cmp(&b.dist).unwrap_or(std::cmp::Ordering::Equal),
+                    3 => labels[x].0.to_lowercase().cmp(&labels[y].0.to_lowercase()),
+                    4 => labels[x].1.to_lowercase().cmp(&labels[y].1.to_lowercase()),
+                    5 => labels[x].2.cmp(&labels[y].2),
+                    6 => a.found.cmp(&b.found),
+                    7 => a.assigned.to_lowercase().cmp(&b.assigned.to_lowercase()),
+                    _ => a.comment.to_lowercase().cmp(&b.comment.to_lowercase()),
+                };
+                let o = if sort_asc { o } else { o.reverse() };
+                o.then(x.cmp(&y))
+            });
+        }
         // ---- randuri afisate: grupuri (la pozitia primului membru) + rezultate negrupate
         let mut rows: Vec<Row> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
         {
             let results = &self.clash_tests[ti].results;
-            for (i, r) in results.iter().enumerate() {
+            for &i in &order {
+                let r = &results[i];
                 if r.group.is_empty() {
                     if pass(r) {
                         rows.push(Row::Item(i, false));
                     }
                 } else if seen.insert(r.group.clone()) {
-                    let members: Vec<usize> = results.iter().enumerate().filter(|(_, x)| x.group == r.group && pass(x)).map(|(k, _)| k).collect();
+                    let members: Vec<usize> = order.iter().copied().filter(|&k| results[k].group == r.group && pass(&results[k])).collect();
                     if !members.is_empty() {
                         rows.push(Row::Group(r.group.clone(), members.clone()));
                         if self.open_groups.contains(&r.group) {
@@ -921,18 +998,6 @@ impl App {
             self.sel_results = [items[next]].into_iter().collect();
             self.apply(Action::FocusClash(ti, items[next]));
         }
-        // locatia: axe + nivel (C-4 / Level 2) cand exista axe, altfel nivelul elementului A
-        let grids = self.scene_grids();
-        let use_grid = !grids.grids.is_empty();
-        let labels: Vec<(String, String, String)> = (0..res_len)
-            .map(|i| {
-                let r = &self.clash_tests[ti].results[i];
-                let la = self.elem(r.a).map(|(m, e)| format!("{} [{}]", e.name, m.name)).unwrap_or_default();
-                let lb = if r.b_is_scan { "Point cloud (scan)".to_string() } else { self.elem(r.b).map(|(m, e)| format!("{} [{}]", e.name, m.name)).unwrap_or_default() };
-                let lv = if use_grid { crate::app::grid_location_in(&grids, glam::Vec3::from(r.point)) } else { self.elem(r.a).map(|(_, e)| e.storey.clone()).unwrap_or_default() };
-                (la, lb, lv)
-            })
-            .collect();
         let group_status: HashMap<String, ClashStatus> = rows
             .iter()
             .filter_map(|r| if let Row::Group(n, m) = r { Some((n.clone(), self.group_status(ti, m))) } else { None })
@@ -946,8 +1011,13 @@ impl App {
         let mut rename: Option<(String, String)> = None;
         let (sty, stol, ssev) = (self.clash_tests[ti].ty, self.clash_tests[ti].tol_mm, self.clash_tests[ti].sev_mm);
         let sev_of = |d: f32| crate::app::severity_of(sty, stol, ssev, d);
+        let mut sort_click: Option<u8> = None;
+        // panoul Item 1 / Item 2 ia partea de jos cand e un rezultat curent
+        let show_items = self.settings.clash_ui.items_panel && self.cur_result.map_or(false, |c| c < res_len);
+        let avail = ui.available_height();
+        let items_h = if show_items { (avail * 0.38).clamp(120.0, 260.0) } else { 0.0 };
         let test = &mut self.clash_tests[ti];
-        let mh = (ui.available_height() - 26.0).max(60.0);
+        let mh = (avail - 26.0 - items_h).max(60.0);
         TableBuilder::new(ui)
             .max_scroll_height(mh)
             .auto_shrink([false, true])
@@ -965,9 +1035,16 @@ impl App {
             .column(Column::initial(90.0))
             .column(Column::remainder().at_least(120.0))
             .header(20.0, |mut h| {
-                for n in ["Name", "Status", "Distance", "Item A", "Item B", if use_grid { "Location" } else { "Level" }, "Found", "Assigned to", "Comment"] {
+                for (ci, n) in ["Name", "Status", "Distance", "Item A", "Item B", if use_grid { "Location" } else { "Level" }, "Found", "Assigned to", "Comment"].into_iter().enumerate() {
                     h.col(|ui| {
-                        ui.strong(n);
+                        let arrow = match sort_col {
+                            Some(c) if c as usize == ci => if sort_asc { " ▲" } else { " ▼" },
+                            _ => "",
+                        };
+                        let r = ui.add(egui::Label::new(RichText::new(format!("{n}{arrow}")).strong()).sense(Sense::click()));
+                        if r.on_hover_text("Click to sort (again = reverse, third time = test order)").clicked() {
+                            sort_click = Some(ci as u8);
+                        }
                     });
                 }
             })
@@ -1157,6 +1234,117 @@ impl App {
                 self.apply(Action::FocusClashes(ti, v));
             }
             None => {}
+        }
+        // clic pe antet: crescator -> descrescator -> ordinea testului
+        if let Some(c) = sort_click {
+            let p = &mut self.settings.clash_ui;
+            match p.sort_col {
+                Some(x) if x == c && p.sort_asc => p.sort_asc = false,
+                Some(x) if x == c => p.sort_col = None,
+                _ => {
+                    p.sort_col = Some(c);
+                    p.sort_asc = true;
+                }
+            }
+            self.settings.save();
+        }
+        if show_items {
+            if let Some(i) = self.cur_result {
+                ui.separator();
+                self.clash_items_panel(ui, ti, i);
+            }
+        }
+    }
+
+    /// Item 1 / Item 2 (ca in Navisworks): datele si proprietatile celor doua elemente ale
+    /// rezultatului curent, cu Select / Zoom / Hide si viewpoint-ul salvat al rezultatului.
+    fn clash_items_panel(&mut self, ui: &mut egui::Ui, ti: usize, i: usize) {
+        let Some(r) = self.clash_tests.get(ti).and_then(|t| t.results.get(i)).cloned() else { return };
+        let mut act: Option<Action> = None;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(&r.name).strong());
+            ui.label(RichText::new(r.status.label()).color(c32(r.status.color())));
+            ui.label(RichText::new(if r.dist < 0.0 { format!("penetration {}", fmt_len(-r.dist as f64)) } else { format!("gap {}", fmt_len(r.dist as f64)) }).weak());
+            ui.separator();
+            let cam = self.cam_anim.map(|(_, to, _)| to).unwrap_or(self.cam);
+            if ui.button(if r.view.is_some() { "📷 Update viewpoint" } else { "📷 Save viewpoint" }).on_hover_text("Save the current camera on this clash: selecting it again (and the BCF / Navisworks export) uses this view").clicked() {
+                if let Some(x) = self.clash_tests.get_mut(ti).and_then(|t| t.results.get_mut(i)) {
+                    x.view = Some(cam);
+                }
+                self.toast(format!("Viewpoint saved on {}.", r.name));
+            }
+            if r.view.is_some() {
+                ui.label(RichText::new("● saved view").small().color(Color32::from_rgb(80, 200, 120)));
+                if ui.small_button("✖").on_hover_text("Forget the saved viewpoint (use auto-zoom again)").clicked() {
+                    if let Some(x) = self.clash_tests.get_mut(ti).and_then(|t| t.results.get_mut(i)) {
+                        x.view = None;
+                    }
+                }
+            }
+            if !r.approved_by.is_empty() {
+                ui.label(RichText::new(format!("Approved: {} {}", r.approved_by, r.approved_at)).small().weak());
+            }
+            if !r.resolved_by.is_empty() {
+                ui.label(RichText::new(format!("Resolved: {} {}", r.resolved_by, r.resolved_at)).small().weak());
+            }
+        });
+        let (ca, cb) = (self.settings.clash_ui.col_a, self.settings.clash_ui.col_b);
+        let items = [("Item 1", r.a, ca, false), ("Item 2", r.b, cb, r.b_is_scan)];
+        ui.columns(2, |cols| {
+            for (k, (title, id, col, scan)) in items.into_iter().enumerate() {
+                let ui = &mut cols[k];
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("■").color(Color32::from_rgb(col[0], col[1], col[2])));
+                    ui.label(RichText::new(title).strong());
+                    if scan {
+                        return;
+                    }
+                    if ui.small_button("Select").on_hover_text("Select only this item").clicked() {
+                        act = Some(Action::Select(vec![id], false));
+                    }
+                    if ui.small_button("Zoom").on_hover_text("Zoom to this item").clicked() {
+                        act = Some(Action::Focus(vec![id]));
+                    }
+                    if ui.small_button("Hide").on_hover_text("Hide this item (to see what is behind it)").clicked() {
+                        act = Some(Action::Hide(vec![id]));
+                    }
+                });
+                if scan {
+                    ui.label(RichText::new("Point cloud (scan)").weak());
+                    continue;
+                }
+                let Some((m, e)) = self.elem(id) else {
+                    ui.label(RichText::new("Element not loaded").weak());
+                    continue;
+                };
+                egui::ScrollArea::vertical().id_salt(("clash_item", k)).max_height(ui.available_height().max(80.0)).auto_shrink([false, false]).show(ui, |ui| {
+                    egui::Grid::new(("clash_item_grid", k)).num_columns(2).striped(true).spacing([10.0, 2.0]).show(ui, |ui| {
+                        for (n, v) in [("Name", e.name.as_str()), ("Model", m.name.as_str()), ("Type", e.ifc_type.as_str()), ("Level", e.storey.as_str()), ("GUID", e.guid.as_str())] {
+                            ui.label(RichText::new(n).small().weak());
+                            ui.label(RichText::new(v).small());
+                            ui.end_row();
+                        }
+                        let mut last_group = "";
+                        for p in &e.props {
+                            if p.value.trim().is_empty() {
+                                continue;
+                            }
+                            if p.group != last_group {
+                                last_group = &p.group;
+                                ui.label(RichText::new(&p.group).small().strong().color(accent()));
+                                ui.label("");
+                                ui.end_row();
+                            }
+                            ui.label(RichText::new(&p.name).small().weak());
+                            ui.label(RichText::new(&p.value).small());
+                            ui.end_row();
+                        }
+                    });
+                });
+            }
+        });
+        if let Some(a) = act {
+            self.apply(a);
         }
     }
 

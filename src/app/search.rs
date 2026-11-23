@@ -305,7 +305,16 @@ impl App {
                     self.hidden.remove(&r.b);
                 }
                 self.primary = Some(res[0].a);
-                if self.clash_auto_zoom {
+                let animate = self.settings.clash_ui.animate;
+                if let Some(v) = res[0].view.filter(|_| res.len() == 1) {
+                    // viewpoint salvat pe rezultat (ca in Navisworks): are prioritate fata de auto-zoom
+                    if animate {
+                        self.fly_to(v);
+                    } else {
+                        self.cam_anim = None;
+                        self.cam = v;
+                    }
+                } else if self.clash_auto_zoom {
                     let bb = if res.len() == 1 {
                         // apropie camera de punctul de clash (elementele mari ar indeparta prea mult camera)
                         let bb = self.ids_aabb(&[res[0].a, res[0].b]);
@@ -320,7 +329,14 @@ impl App {
                         }
                         bb
                     };
-                    self.cam.fit(&bb);
+                    if animate {
+                        let mut t = self.cam_anim.map(|(_, to, _)| to).unwrap_or(self.cam);
+                        t.fit(&bb);
+                        self.fly_to(t);
+                    } else {
+                        self.cam_anim = None;
+                        self.cam.fit(&bb);
+                    }
                 }
                 self.clash_focus = Some(f);
                 self.colors_dirty = true;

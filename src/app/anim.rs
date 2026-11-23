@@ -378,8 +378,9 @@ impl App {
         self.pathtrace_tex = None;
         self.pathtrace_notified = false;
         self.pathtrace_done_at = None;
-        self.pathtrace = Some(crate::pathtrace::start_arc((w, h, samples, tlimit), scene, cam.eye(), cam.fwd(), cam.up(), cam.right(), cam.fov_deg, sun, self.render.sun_power.clamp(0.1, 3.0)));
-        self.toast(format!("Path tracing {}×{} · {} samples · {} s max", w, h, samples, tlimit));
+        let denoise = self.settings.render_denoise && crate::oidn::available().is_ok();
+        self.pathtrace = Some(crate::pathtrace::start_arc((w, h, samples, tlimit), scene, cam.eye(), cam.fwd(), cam.up(), cam.right(), cam.fov_deg, sun, self.render.sun_power.clamp(0.1, 3.0), denoise));
+        self.toast(format!("Path tracing {}×{} · {} samples · {} s max{}", w, h, samples, tlimit, if denoise { " · denoise" } else { "" }));
     }
 
     pub fn cancel_pathtrace(&mut self) {
@@ -397,22 +398,31 @@ impl App {
         }
         // Worker-ul tine mutex-ul cat timp randreaza un sample intreg. Cu try_lock
         // nu blocam firul UI (la 512/1024 px altfel aplicatia pare inghetata).
-        let Ok(buf) = job.buf.try_lock() else {
-            ctx.request_repaint();
+        let done = job.done.load(std::sync::atomic::Ordering::Relaxed);
+        // dupa terminare imaginea nu se mai schimba: nu refacem textura la fiecare cadru
+        if done && self.pathtrace_notified && self.pathtrace_tex.is_some() {
             return;
-        };
+        }
         let w = job.width as usize;
         let h = job.height as usize;
         let mut pixels = Vec::with_capacity(w * h * 4);
-        let n = count as f32;
-        for p in buf.chunks_exact(3) {
-            let to8 = |x: f32| (x / n).clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0 + 0.5;
-            pixels.push(to8(p[0]) as u8);
-            pixels.push(to8(p[1]) as u8);
-            pixels.push(to8(p[2]) as u8);
-            pixels.push(255);
+        let to8 = |x: f32| (x.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0 + 0.5) as u8;
+        // imaginea curatata de OIDN, daca exista; altfel media esantioanelor
+        let den = if done { job.denoised.lock().ok().and_then(|d| d.clone()) } else { None };
+        if let Some(img) = den {
+            for p in img.chunks_exact(3) {
+                pixels.extend_from_slice(&[to8(p[0]), to8(p[1]), to8(p[2]), 255]);
+            }
+        } else {
+            let Ok(buf) = job.buf.try_lock() else {
+                ctx.request_repaint();
+                return;
+            };
+            let n = count as f32;
+            for p in buf.chunks_exact(3) {
+                pixels.extend_from_slice(&[to8(p[0] / n), to8(p[1] / n), to8(p[2] / n), 255]);
+            }
         }
-        drop(buf);
         let img = eframe::egui::ColorImage::from_rgba_unmultiplied([w, h], &pixels);
         if let Some(tex) = &mut self.pathtrace_tex {
             tex.set(img, eframe::egui::TextureOptions::default());
@@ -439,9 +449,17 @@ impl App {
             self.error("No path trace running.");
             return;
         };
-        let buf = job.buf.lock().unwrap();
-        let count = job.count.load(std::sync::atomic::Ordering::Relaxed).max(1);
-        match crate::pathtrace::save_png(path, &buf, count, job.width, job.height) {
+        // imaginea curatata (deja medie) sau suma esantioanelor / numar
+        let den = job.denoised.lock().ok().and_then(|d| d.clone());
+        let r = match den {
+            Some(img) => crate::pathtrace::save_png(path, &img, 1, job.width, job.height),
+            None => {
+                let buf = job.buf.lock().unwrap_or_else(|e| e.into_inner());
+                let count = job.count.load(std::sync::atomic::Ordering::Relaxed).max(1);
+                crate::pathtrace::save_png(path, &buf, count, job.width, job.height)
+            }
+        };
+        match r {
             Ok(()) => self.toast(format!("Path trace saved: {}", crate::file_name(path))),
             Err(e) => self.error(e),
         }

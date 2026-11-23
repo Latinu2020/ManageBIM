@@ -74,7 +74,8 @@ pub fn run(source: &str, input: &Input) -> Result<Output, String> {
     {
         let o = out.clone();
         engine.register_fn("select_ids", move |ids: rhai::Array| {
-            let ids: Vec<i32> = ids.iter().filter_map(|d| d.clone().try_cast::<i32>()).collect();
+            // literalele Rhai sunt i64 ([1, 2, 3]); find_where_empty intoarce i32 - le acceptam pe amandoua
+            let ids: Vec<i32> = ids.iter().filter_map(|d| d.as_int().ok().and_then(|x| i32::try_from(x).ok()).or_else(|| d.clone().try_cast::<i32>())).collect();
             o.borrow_mut().actions.push(Action::SelectIds(ids));
         });
         // `len()` pentru array-uri (Rhai cu feature-uri reduse nu il inregistreaza)

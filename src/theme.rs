@@ -89,6 +89,37 @@ pub struct ClashUiPrefs {
     pub group_cell: f32,
     #[serde(default = "yes")]
     pub only_linked: bool,
+    /// coloana dupa care se sorteaza rezultatele (None = ordinea testului, dupa distanta)
+    #[serde(default)]
+    pub sort_col: Option<u8>,
+    #[serde(default = "yes")]
+    pub sort_asc: bool,
+    /// camera zboara lin spre clash (Animate transitions din Navisworks)
+    #[serde(default = "yes")]
+    pub animate: bool,
+    /// panoul Item 1 / Item 2 cu proprietatile elementelor de sub tabel
+    #[serde(default = "yes")]
+    pub items_panel: bool,
+    /// culoarea elementului A / B al clash-ului curent
+    #[serde(default = "clash_col_a")]
+    pub col_a: [u8; 3],
+    #[serde(default = "clash_col_b")]
+    pub col_b: [u8; 3],
+    /// opacitatea celorlalte elemente la "Dim other" (0 = invizibile, 255 = opace)
+    #[serde(default = "dim_alpha_default")]
+    pub dim_alpha: u8,
+}
+
+pub fn clash_col_a() -> [u8; 3] {
+    [230, 45, 40]
+}
+
+pub fn clash_col_b() -> [u8; 3] {
+    [40, 200, 70]
+}
+
+pub fn dim_alpha_default() -> u8 {
+    28
 }
 
 fn group_cell_default() -> f32 {
@@ -110,6 +141,13 @@ impl Default for ClashUiPrefs {
             highlight_all: false,
             group_cell: 5.0,
             only_linked: true,
+            sort_col: None,
+            sort_asc: true,
+            animate: true,
+            items_panel: true,
+            col_a: clash_col_a(),
+            col_b: clash_col_b(),
+            dim_alpha: dim_alpha_default(),
         }
     }
 }
@@ -241,6 +279,16 @@ pub struct Settings {
     /// iconitele din ribbon colorate pe categorii (altfel monocrome)
     #[serde(default = "yes")]
     pub color_icons: bool,
+    /// fundalul vederii 3D: "theme" (al temei), "white", "grey", "black", "sky"
+    #[serde(default = "default_vp_bg")]
+    pub vp_bg: String,
+    /// Render (path trace): curata zgomotul cu Intel Open Image Denoise la final
+    #[serde(default = "yes")]
+    pub render_denoise: bool,
+}
+
+fn default_vp_bg() -> String {
+    "theme".into()
 }
 
 pub fn default_sel_rgb() -> [u8; 3] {
@@ -311,7 +359,7 @@ fn default_walk() -> f32 {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), font_family: default_font_family(), font_size: default_font_size(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), snap_cut_to_grid: true, scripts_dir: String::new(), script_params: std::collections::BTreeMap::new(), show_cad_plane: false, show_section_box: true, show_section_behind: true, snap_radius: default_snap_radius(), snap_types: default_snap_types(), unit_system: "m".into(), unit_precision: default_precision(), keybinds: std::collections::BTreeMap::new(), vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default(), sel_rgb: default_sel_rgb(), sel_mix: default_sel_mix(), recent_cmds: Vec::new(), color_icons: true }
+        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), font_family: default_font_family(), font_size: default_font_size(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), snap_cut_to_grid: true, scripts_dir: String::new(), script_params: std::collections::BTreeMap::new(), show_cad_plane: false, show_section_box: true, show_section_behind: true, snap_radius: default_snap_radius(), snap_types: default_snap_types(), unit_system: "m".into(), unit_precision: default_precision(), keybinds: std::collections::BTreeMap::new(), vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default(), sel_rgb: default_sel_rgb(), sel_mix: default_sel_mix(), recent_cmds: Vec::new(), color_icons: true, vp_bg: default_vp_bg(), render_denoise: true }
     }
 }
 
@@ -682,8 +730,15 @@ pub fn apply(ctx: &egui::Context, t: Theme) {
     style.spacing.button_padding = egui::vec2(8.0, 3.0);
     style.spacing.interact_size.y = 20.0;
     style.spacing.indent = 14.0;
-    style.spacing.menu_margin = egui::Margin::same(5.0);
-    style.spacing.window_margin = egui::Margin::same(6.0);
+    style.spacing.menu_margin = egui::Margin::same(6.0);
+    // ferestrele respira putin mai mult (aspect mai profesional), fara sa piarda densitatea
+    style.spacing.window_margin = egui::Margin::symmetric(10.0, 8.0);
+    // bare de derulare subtiri, care apar doar la nevoie (ca in aplicatiile moderne)
+    style.spacing.scroll = egui::style::ScrollStyle { bar_width: 8.0, floating_width: 3.0, ..egui::style::ScrollStyle::floating() };
+    // tooltip-urile: apar mai repede si au latime de citit
+    style.spacing.tooltip_width = 340.0;
+    style.interaction.tooltip_delay = 0.35;
+    style.animation_time = 0.12;
     style.interaction.selectable_labels = false;
     // inaltimea textului aleasa de utilizator (0 = implicitul egui: Body 14 px)
     let base = f32::from_bits(FONT_BASE_PX.load(Ordering::Relaxed));
