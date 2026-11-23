@@ -229,6 +229,26 @@ pub struct Settings {
     /// preferinte UI persistente (Clash Detective / 4D)
     #[serde(default)]
     pub clash_ui: ClashUiPrefs,
+    /// culoarea de evidentiere a elementelor selectate in 3D
+    #[serde(default = "default_sel_rgb")]
+    pub sel_rgb: [u8; 3],
+    /// cat de puternic acopera culoarea selectiei culoarea elementului (0.2..1.0)
+    #[serde(default = "default_sel_mix")]
+    pub sel_mix: f32,
+    /// ultimele comenzi rulate din paleta (cea mai noua prima)
+    #[serde(default)]
+    pub recent_cmds: Vec<String>,
+    /// iconitele din ribbon colorate pe categorii (altfel monocrome)
+    #[serde(default = "yes")]
+    pub color_icons: bool,
+}
+
+pub fn default_sel_rgb() -> [u8; 3] {
+    [60, 140, 255]
+}
+
+pub fn default_sel_mix() -> f32 {
+    0.7
 }
 
 fn auto() -> String {
@@ -291,7 +311,7 @@ fn default_walk() -> f32 {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), font_family: default_font_family(), font_size: default_font_size(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), snap_cut_to_grid: true, scripts_dir: String::new(), script_params: std::collections::BTreeMap::new(), show_cad_plane: false, show_section_box: true, show_section_behind: true, snap_radius: default_snap_radius(), snap_types: default_snap_types(), unit_system: "m".into(), unit_precision: default_precision(), keybinds: std::collections::BTreeMap::new(), vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default() }
+        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), font_family: default_font_family(), font_size: default_font_size(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), snap_cut_to_grid: true, scripts_dir: String::new(), script_params: std::collections::BTreeMap::new(), show_cad_plane: false, show_section_box: true, show_section_behind: true, snap_radius: default_snap_radius(), snap_types: default_snap_types(), unit_system: "m".into(), unit_precision: default_precision(), keybinds: std::collections::BTreeMap::new(), vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default(), sel_rgb: default_sel_rgb(), sel_mix: default_sel_mix(), recent_cmds: Vec::new(), color_icons: true }
     }
 }
 
@@ -353,6 +373,10 @@ impl Settings {
         if !s.ui_scale.is_finite() || !(0.75..=2.0).contains(&s.ui_scale) {
             s.ui_scale = default_ui_scale();
         }
+        if !s.sel_mix.is_finite() || !(0.2..=1.0).contains(&s.sel_mix) {
+            s.sel_mix = default_sel_mix();
+        }
+        s.recent_cmds.truncate(8);
         // vechile implicituri ale pozitiei planului (0.5 / 0.25 = in interiorul
         // cubului) migram pe 0 = planul chiar pe fata aleasa
         if (s.cad_view_pos - 0.5).abs() < 1e-6 || (s.cad_view_pos - 0.25).abs() < 1e-6 {
@@ -713,6 +737,38 @@ impl RibbonMode {
 
 /// modul curent al ribbon-ului, citit de butoanele ribbon-ului (functii libere)
 pub static RIBBON_COMPACT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// iconitele din ribbon colorate pe categorii (Settings › Appearance › Coloured icons)
+pub static COLOR_ICONS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Culoarea unei iconite dupa ce face comanda (fisiere galben, export albastru, stergere rosu ...).
+/// None = culoarea textului (comenzi neutre).
+pub fn icon_tint(s: &str, dark: bool) -> Option<Color32> {
+    // nuante potrivite pe fundal inchis; pe tema deschisa le inchidem putin
+    let c = |r: u8, g: u8, b: u8| {
+        if dark {
+            Color32::from_rgb(r, g, b)
+        } else {
+            Color32::from_rgb((r as f32 * 0.78) as u8, (g as f32 * 0.78) as u8, (b as f32 * 0.78) as u8)
+        }
+    };
+    let yellow = c(240, 190, 70);
+    let blue = c(90, 160, 255);
+    let red = c(240, 95, 90);
+    let green = c(80, 200, 120);
+    let purple = c(175, 130, 250);
+    let orange = c(250, 150, 60);
+    let teal = c(70, 200, 200);
+    Some(match s.trim() {
+        "📁" | "📂" | "📄" | "💾" | "📦" => yellow,
+        "📤" | "📥" | "🌐" | "🔗" | "☁" => blue,
+        "🗑" | "⛔" | "🚫" | "✖" | "⚠" | "⏹" => red,
+        "📏" | "📐" | "◎" | "🎯" | "✔" | "▶" => green,
+        "👁" | "🎨" | "🖼" | "📷" | "🎞" | "🎬" | "💡" | "☀" | "🌙" | "🌃" => purple,
+        "✂" | "⬚" | "▣" | "🔲" | "▦" | "🏗" | "◆" => orange,
+        "🔍" | "🔎" | "📋" | "📊" | "🧭" | "📅" | "🌲" | "🛤" | "🚶" => teal,
+        _ => return None,
+    })
+}
 
 // ===================================================================== font Inter + iconite Phosphor
 

@@ -251,6 +251,7 @@ impl App {
             Look { col, gpu, sel, hidden }
         };
 
+        let tint = (self.settings.sel_rgb, self.settings.sel_mix.clamp(0.2, 1.0));
         let mut ups = Vec::new();
         let mut new_looks: HashMap<usize, Vec<Look>> = HashMap::new();
         for (mi, m) in self.loaded_models() {
@@ -265,7 +266,7 @@ impl App {
             let changed_tris: usize = changed.iter().map(|&i| m.elements[i].tri_count as usize).sum();
             if prev.is_none() || changed_tris * 3 > total_tris {
                 // multe schimbari (sau prima data): tot bufferul, umplut pe toate nucleele
-                ups.push(full_colors(mi as u32, m, &looks));
+                ups.push(full_colors(mi as u32, m, &looks, tint));
             } else {
                 // putine schimbari (ex. un click de selectie): doar elementele afectate, grupate in intervale continue
                 let mut k = 0;
@@ -281,7 +282,7 @@ impl App {
                     for &ei in &changed[k..=j] {
                         let e = &m.elements[ei];
                         let (s, n) = (e.tri_start as usize - t0, e.tri_count as usize);
-                        fill_look(&looks[ei], &m.tri_color[e.tri_start as usize..e.tri_start as usize + n], &mut col[s * 12..(s + n) * 12], &mut mat[s * 12..(s + n) * 12]);
+                        fill_look(&looks[ei], &m.tri_color[e.tri_start as usize..e.tri_start as usize + n], &mut col[s * 12..(s + n) * 12], &mut mat[s * 12..(s + n) * 12], tint);
                     }
                     ups.push(Upload::ColorRange { slot: mi as u32, first: (t0 * 3) as u32, col, mat });
                     k = j + 1;

@@ -645,6 +645,7 @@ impl App {
         }
         let mode = self.settings.ribbon_mode;
         crate::theme::RIBBON_COMPACT.store(mode == RibbonMode::Compact, std::sync::atomic::Ordering::Relaxed);
+        crate::theme::COLOR_ICONS.store(self.settings.color_icons, std::sync::atomic::Ordering::Relaxed);
         let fill = ctx.style().visuals.panel_fill;
         // bara de sus: cautare / focus / tema / setari / proiect - separata de ribbon
         self.app_bar(ctx);
@@ -4969,10 +4970,16 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
         p.rect_stroke(rect, rounding, egui::Stroke::new(1.0_f32, stroke_col));
     }
     let col = if !enabled { ui.visuals().weak_text_color().gamma_multiply(0.6) } else if on { accent() } else { ui.visuals().text_color() };
-    if compact {
-        p.text(rect.center(), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), col);
+    // iconita colorata pe categorii (doar activ si neselectat; dezactivat ramane gri)
+    let icol = if enabled && !on && crate::theme::COLOR_ICONS.load(std::sync::atomic::Ordering::Relaxed) {
+        crate::theme::icon_tint(icon, ui.visuals().dark_mode).unwrap_or(col)
     } else {
-        p.text(rect.center_top() + egui::vec2(0.0, 13.0), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), col);
+        col
+    };
+    if compact {
+        p.text(rect.center(), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), icol);
+    } else {
+        p.text(rect.center_top() + egui::vec2(0.0, 13.0), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), icol);
         let shown = if label.chars().count() > 8 { format!("{}…", label.chars().take(7).collect::<String>()) } else { label.to_string() };
         p.text(rect.center_bottom() - egui::vec2(0.0, 8.0), Align2::CENTER_CENTER, &shown, font, col);
     }

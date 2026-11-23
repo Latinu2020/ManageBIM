@@ -15,7 +15,17 @@ impl App {
             .filter_map(|(i, c)| fuzzy(&q, &format!("{} {} {}", c.name, c.cat, c.keys)).map(|s| (s + if fuzzy(&q, c.name).is_some() { 50 } else { 0 }, i)))
             .collect();
         hits.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
-        hits.truncate(12);
+        // fara text: ultimele comenzi folosite apar primele (grupul "RECENT")
+        let mut recent_n = 0usize;
+        if q.is_empty() {
+            let rec: Vec<usize> = self.settings.recent_cmds.iter().filter_map(|n| cmds.iter().position(|c| c.name == n.as_str())).collect();
+            hits.retain(|(_, i)| !rec.contains(i));
+            recent_n = rec.len();
+            for (k, i) in rec.into_iter().enumerate() {
+                hits.insert(k, (0, i));
+            }
+        }
+        hits.truncate(12.max(recent_n));
         // elemente din model cu numele cautat (selectie + zoom)
         // cautarea in elemente se face o singura data pe text (nu la fiecare cadru): rezultatul e tinut in memorie
         let cache_id = egui::Id::new("palette_elems");
@@ -71,7 +81,11 @@ impl App {
                 let mut last_cat = "";
                 for (_, i) in &hits {
                     let c = &cmds[*i];
-                    if c.cat != last_cat {
+                    if k < recent_n {
+                        if k == 0 {
+                            ui.label(RichText::new("RECENT").small().weak());
+                        }
+                    } else if c.cat != last_cat || k == recent_n {
                         last_cat = c.cat;
                         ui.label(RichText::new(c.cat.to_uppercase()).small().weak());
                     }
@@ -117,6 +131,11 @@ impl App {
         if let Some(k) = chosen {
             close = true;
             if k < hits.len() {
+                let name = cmds[hits[k].1].name.to_string();
+                self.settings.recent_cmds.retain(|n| *n != name);
+                self.settings.recent_cmds.insert(0, name);
+                self.settings.recent_cmds.truncate(5);
+                self.settings.save();
                 (cmds[hits[k].1].run)(self);
             } else if let Some((id, _, _)) = elems.get(k - hits.len()) {
                 self.apply(Action::Select(vec![*id], false));

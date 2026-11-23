@@ -37,6 +37,63 @@ impl App {
                     })
                     .response
                     .on_hover_text("Scales the whole interface: text, tables, panels and dialogs. 100% = default.");
+                    ui.horizontal(|ui| {
+                        ui.label("Quick size");
+                        for p in [90, 100, 125, 150] {
+                            let on = ((self.settings.ui_scale * 100.0).round() as i32) == p;
+                            if ui.selectable_label(on, format!("{p}%")).clicked() && !on {
+                                self.settings.ui_scale = p as f32 / 100.0;
+                                self.settings.save();
+                            }
+                        }
+                    });
+                    if ui.checkbox(&mut self.settings.color_icons, "Coloured ribbon icons").on_hover_text("Colour the ribbon icons by what they do: files yellow, export blue, delete / clash red, measure green, view purple, section orange, search teal.").changed() {
+                        self.settings.save();
+                    }
+                    ui.add_space(6.0);
+                    ui.heading("Selection");
+                    let mut sel_changed = false;
+                    ui.horizontal(|ui| {
+                        ui.label("Highlight colour");
+                        let mut c = Color32::from_rgb(self.settings.sel_rgb[0], self.settings.sel_rgb[1], self.settings.sel_rgb[2]);
+                        if ui.color_edit_button_srgba(&mut c).changed() {
+                            self.settings.sel_rgb = [c.r(), c.g(), c.b()];
+                            sel_changed = true;
+                        }
+                        for (name, rgb) in [("Blue", [60, 140, 255]), ("Orange", [255, 140, 0]), ("Green", [40, 200, 90]), ("Magenta", [230, 50, 200]), ("Yellow", [255, 220, 0])] {
+                            let col = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
+                            let (r, resp) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), Sense::click());
+                            ui.painter().rect_filled(r, crate::theme::RADIUS_SM, col);
+                            if self.settings.sel_rgb == rgb {
+                                ui.painter().rect_stroke(r, crate::theme::RADIUS_SM, egui::Stroke::new(2.0_f32, ui.visuals().strong_text_color()));
+                            }
+                            if resp.on_hover_text(name).clicked() {
+                                self.settings.sel_rgb = rgb;
+                                sel_changed = true;
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Highlight strength");
+                        let mut pct = (self.settings.sel_mix * 100.0).round() as i32;
+                        let r = ui.add(egui::Slider::new(&mut pct, 20..=100).step_by(5.0).suffix("%"));
+                        if r.changed() {
+                            self.settings.sel_mix = pct as f32 / 100.0;
+                            sel_changed = true;
+                        }
+                        if ui.small_button("↺ Default").clicked() {
+                            self.settings.sel_rgb = crate::theme::default_sel_rgb();
+                            self.settings.sel_mix = crate::theme::default_sel_mix();
+                            sel_changed = true;
+                        }
+                    })
+                    .response
+                    .on_hover_text("How strongly the selected elements are painted with the highlight colour (100% = solid colour).");
+                    if sel_changed {
+                        self.settings.save();
+                        self.looks.clear();
+                        self.colors_dirty = true;
+                    }
                     // fontul interfetei: cele incluse + toate fonturile din sistem
                     let mut pick: Option<String> = None;
                     ui.horizontal(|ui| {

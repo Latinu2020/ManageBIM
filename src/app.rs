@@ -47,11 +47,14 @@ pub struct Look {
 }
 
 /// Culorile + materialele (4 octeti / varf, 3 varfuri / triunghi) pentru triunghiurile unui element.
-fn fill_look(l: &Look, tri_color: &[[u8; 4]], col: &mut [u8], mat: &mut [u8]) {
+/// `tint` = culoarea selectiei si cat acopera culoarea elementului (Settings › Selection).
+fn fill_look(l: &Look, tri_color: &[[u8; 4]], col: &mut [u8], mat: &mut [u8], tint: ([u8; 3], f32)) {
+    let ([sr, sg, sb], k) = tint;
+    let keep = 1.0 - k;
     for (t, tc) in tri_color.iter().enumerate() {
         let mut c = l.col.unwrap_or(*tc);
         if l.sel {
-            c = [(c[0] as f32 * 0.3 + 60.0 * 0.7) as u8, (c[1] as f32 * 0.3 + 140.0 * 0.7) as u8, (c[2] as f32 * 0.3 + 255.0 * 0.7) as u8, c[3].max(200)];
+            c = [(c[0] as f32 * keep + sr as f32 * k) as u8, (c[1] as f32 * keep + sg as f32 * k) as u8, (c[2] as f32 * keep + sb as f32 * k) as u8, c[3].max(200)];
         }
         if l.hidden {
             c[3] = 0;
@@ -65,7 +68,7 @@ fn fill_look(l: &Look, tri_color: &[[u8; 4]], col: &mut [u8], mat: &mut [u8]) {
 }
 
 /// Tot bufferul de culori al unui model, umplut in paralel (fiecare element are intervalul lui).
-fn full_colors(slot: u32, m: &Model, looks: &[Look]) -> Upload {
+fn full_colors(slot: u32, m: &Model, looks: &[Look], tint: ([u8; 3], f32)) -> Upload {
     use rayon::prelude::*;
     let n = m.tri_color.len() * 12;
     let (mut col, mut mat) = (vec![0u8; n], vec![0u8; n]);
@@ -82,7 +85,7 @@ fn full_colors(slot: u32, m: &Model, looks: &[Look]) -> Upload {
         }
         jobs.into_par_iter().with_min_len(64).for_each(|(ei, c, k)| {
             let e = &m.elements[ei];
-            fill_look(&looks[ei], &m.tri_color[e.tri_start as usize..(e.tri_start + e.tri_count) as usize], c, k);
+            fill_look(&looks[ei], &m.tri_color[e.tri_start as usize..(e.tri_start + e.tri_count) as usize], c, k, tint);
         });
     }
     Upload::Colors { slot, col, mat }

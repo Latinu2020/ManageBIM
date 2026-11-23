@@ -3,6 +3,12 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.17 - 2026-11-23
+- **Coloured ribbon icons**: icons are coloured by what they do (files yellow, export blue, delete / clash red, measure green, view purple, section orange, search teal). Can be turned off in Settings › Appearance.
+- **Selection highlight**: colour (picker + 5 presets) and strength (20–100%) configurable in Settings › Selection, saved between sessions.
+- **Recent commands**: the command palette shows the last 5 commands used at the top when the search box is empty.
+- **Quick UI size** buttons 90 / 100 / 125 / 150% next to the Interface size slider.
+
 ## 0.27.16 - 2026-11-23
 - **Visual script builder**: editor de scripturi fără cod — adaugi pași dintr-o listă (Select by property, Find missing data, Set property, Create clash, Zoom, Export), completezi câmpuri în GUI, vezi codul Rhai generat, rulezi și salvezi ca `.rhai`. Pașii pot fi reordonați (↑/↓) și șterși.
 - **Manual de scripturi în română**: reguli de sintaxă explicate simplu + toate cele 9 funcții cu descriere, exemplu și efect în aplicație — direct în fereastra Script Library.
