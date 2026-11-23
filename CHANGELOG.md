@@ -3,6 +3,10 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.16 - 2026-11-23
+- **Visual script builder**: editor de scripturi fără cod — adaugi pași dintr-o listă (Select by property, Find missing data, Set property, Create clash, Zoom, Export), completezi câmpuri în GUI, vezi codul Rhai generat, rulezi și salvezi ca `.rhai`. Pașii pot fi reordonați (↑/↓) și șterși.
+- **Manual de scripturi în română**: reguli de sintaxă explicate simplu + toate cele 9 funcții cu descriere, exemplu și efect în aplicație — direct în fereastra Script Library.
+
 ## 0.27.15 - 2026-11-23
 - **Tab Future înlăturat** (era colorare/scale, nu modelare); markupuri profesionale (paletă BIM, greutăți, Undo/Clear), View Template legat de viewpoint, split-view cu toolbar unic, duplicaturi din ribbon eliminate, web viewer restilizat.
 

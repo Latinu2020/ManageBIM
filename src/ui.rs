@@ -2794,6 +2794,79 @@ impl App {
                     }
                 });
                 ui.separator();
+                // ---- VISUAL SCRIPT BUILDER (pași în GUI, fără cod) ----
+                ui.collapsing(RichText::new("🧩 Visual script builder — create a script without code").strong(), |ui| {
+                    ui.label(RichText::new("Adaugă pași, completează câmpurile, apoi Run. Codul Rhai se generează automat.").small().weak());
+                    ui.horizontal(|ui| {
+                        ui.label("Name");
+                        ui.add(egui::TextEdit::singleline(&mut self.scenario.name).desired_width(200.0));
+                    });
+                    // meniu de adăugare pas
+                    let add_id = ui.make_persistent_id("vb_add_menu");
+                    let add_r = ui.button("➕ Add step");
+                    if add_r.clicked() { ui.memory_mut(|m| m.toggle_popup(add_id)); }
+                    egui::popup_below_widget(ui, add_id, &add_r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                        ui.set_min_width(230.0);
+                        for k in crate::script_builder::StepKind::ALL {
+                            if ui.button(format!("{}  — {}", k.label(), k.ro())).clicked() {
+                                self.scenario.steps.push(crate::script_builder::Step::new(k));
+                                ui.close_menu();
+                            }
+                        }
+                    });
+                    ui.separator();
+                    // lista de pași
+                    let mut del: Option<usize> = None;
+                    let mut up: Option<usize> = None;
+                    let mut down: Option<usize> = None;
+                    for (i, st) in self.scenario.steps.iter_mut().enumerate() {
+                        egui::Frame::none().fill(ui.visuals().faint_bg_color).rounding(crate::theme::RADIUS_SM).inner_margin(egui::Margin::symmetric(7.0, 4.0)).show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new(format!("{}.", i + 1)).small().weak());
+                                ui.label(RichText::new(st.kind.label()).strong());
+                                if ui.small_button("↑").on_hover_text("Move up").clicked() { up = Some(i); }
+                                if ui.small_button("↓").on_hover_text("Move down").clicked() { down = Some(i); }
+                                if ui.small_button("🗑").on_hover_text("Remove step").clicked() { del = Some(i); }
+                            });
+                            if !st.kind.fields().is_empty() {
+                                egui::Grid::new(("vb_fields", i)).num_columns(2).spacing([8.0, 3.0]).show(ui, |ui| {
+                                    for (fi, (label, _)) in st.kind.fields().iter().enumerate() {
+                                        ui.label(RichText::new(*label).small());
+                                        if let Some(val) = st.values.get_mut(fi) {
+                                            ui.add(egui::TextEdit::singleline(val).desired_width(200.0));
+                                        }
+                                        ui.end_row();
+                                    }
+                                });
+                            }
+                        });
+                        ui.add_space(2.0);
+                    }
+                    if let Some(i) = del { if i < self.scenario.steps.len() { self.scenario.steps.remove(i); } }
+                    if let Some(i) = up { if i > 0 { self.scenario.steps.swap(i, i - 1); } }
+                    if let Some(i) = down { if i + 1 < self.scenario.steps.len() { self.scenario.steps.swap(i, i + 1); } }
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui.button(RichText::new("▶ Run scenario").color(crate::theme::accent())).clicked() {
+                            let (name, src) = (self.scenario.name.clone(), self.scenario.to_rhai());
+                            self.run_source(&name, &src);
+                        }
+                        if ui.button("💾 Save as .rhai").on_hover_text("Save the generated script to the scripts folder").clicked() {
+                            let src = self.scenario.to_rhai();
+                            match crate::ui::script::save_named(&self.settings.scripts_dir, &self.scenario.name, &src) {
+                                Ok(p) => self.toast(format!("Script saved: {}", crate::file_name(&p.to_string_lossy().to_string()))),
+                                Err(e) => self.error(e),
+                            }
+                        }
+                        if ui.button("🗑 Clear").clicked() { self.scenario.steps.clear(); }
+                    });
+                    // codul generat (vizibil, ca să învețe utilizatorul)
+                    ui.collapsing("Generated Rhai code", |ui| {
+                        let code = self.scenario.to_rhai();
+                        egui::TextEdit::multiline(&mut code.as_str()).desired_width(1.0e6).show(ui);
+                    });
+                });
+                ui.separator();
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.label(RichText::new("BUILT-IN SCRIPTS").size(12.0).strong().color(ui.visuals().weak_text_color()));
                     let mut last_cat = "";
@@ -2860,11 +2933,27 @@ impl App {
                         }
                     }
                     ui.separator();
-                    ui.collapsing("API reference", |ui| {
-                        ui.label("select_where(key, value) / select_ids([...]) / selected_count()");
-                        ui.label("find_where_empty(key) / set_prop(name, value)");
-                        ui.label("create_clash_test(name, tolerance) / zoom_to_selection()");
-                        ui.label("export_bcf(path) / export_excel(path) / log(text)");
+                    ui.collapsing(RichText::new("📖 Manual scripturi (Rhai) — ghid în română").strong(), |ui| {
+                        ui.label(RichText::new("Nu trebuie să scrii cod: folosește «Visual script builder» de mai sus. Acest ghid e pentru când vrei să scrii singur.").small().weak());
+                        ui.add_space(4.0);
+                        ui.label(RichText::new("REGULI DE BAZĂ").strong().color(crate::theme::accent()));
+                        for (rule, desc) in crate::script_guide::RULES_RO {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new(*rule).strong().monospace());
+                                ui.label(RichText::new(*desc).small());
+                            });
+                        }
+                        ui.add_space(6.0);
+                        ui.label(RichText::new("FUNCȚII DISPONIBILE (9)").strong().color(crate::theme::accent()));
+                        for e in crate::script_guide::ENTRIES {
+                            egui::Frame::none().fill(ui.visuals().faint_bg_color).rounding(crate::theme::RADIUS_SM).inner_margin(egui::Margin::symmetric(7.0, 4.0)).show(ui, |ui| {
+                                ui.label(RichText::new(e.func).strong().monospace().color(crate::theme::accent()));
+                                ui.label(RichText::new(e.ro).small());
+                                ui.label(RichText::new(e.example).small().monospace().color(ui.visuals().weak_text_color()));
+                                ui.label(RichText::new(e.effect_ro).small().weak());
+                            });
+                            ui.add_space(2.0);
+                        }
                     });
                 });
             });

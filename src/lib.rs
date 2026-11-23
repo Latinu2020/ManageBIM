@@ -13,6 +13,8 @@ pub mod fcstd;
 pub mod formats;
 pub mod i18n;
 pub mod keybind;
+pub mod script_builder;
+pub mod script_guide;
 pub mod materials;
 pub mod pdf;
 pub mod markup;

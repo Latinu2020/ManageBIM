@@ -66,6 +66,19 @@ pub fn create(override_dir: &str) -> Result<PathBuf, String> {
     Ok(p)
 }
 
+/// Salvează un script generat de editorul vizual cu un nume ales de utilizator.
+pub fn save_named(override_dir: &str, name: &str, source: &str) -> Result<PathBuf, String> {
+    let d = dir(override_dir);
+    std::fs::create_dir_all(&d).map_err(|e| format!("Cannot create {}: {e}", d.display()))?;
+    let base: String = name.chars().map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' }).collect();
+    let base = if base.trim().is_empty() { "script".to_string() } else { base };
+    let mut p = d.join(format!("{base}.rhai"));
+    let mut n = 1;
+    while p.exists() { n += 1; p = d.join(format!("{base}_{n}.rhai")); }
+    std::fs::write(&p, source).map_err(|e| format!("Cannot write {}: {e}", p.display()))?;
+    Ok(p)
+}
+
 // ---------------------------------------------------------------- motorul de executie
 
 use crate::app::App;

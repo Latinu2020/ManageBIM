@@ -1431,6 +1431,8 @@ pub struct App {
     /// fereastra consolei de scripturi (motorul Rhai se activeaza in 0.28)
     pub script_open: bool,
     pub script_help_open: bool,
+    /// scenariul curent din editorul vizual de scripturi (pași care generează cod Rhai)
+    pub scenario: crate::script_builder::Scenario,
     /// fereastra de setari a aplicatiei (View › Settings / butonul ⚙)
     pub settings_open: bool,
     pub still_path: Option<String>,
@@ -1735,6 +1737,7 @@ impl App {
             font_family_cur: "Inter".into(),
             cut_drag: false,
             script_open: false,
+            scenario: crate::script_builder::Scenario { name: "My script".into(), steps: Vec::new() },
             script_help_open: false,
             settings_open: false,
             still_path: None,
