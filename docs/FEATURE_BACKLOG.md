@@ -30,6 +30,7 @@
 | # | Item | Detaliu | Stare |
 |---|------|---------|-------|
 | D1 | **Space / Room checks** | arii `IfcSpace`, adiacențe, lățimi minime coridor, rază de acces — reguli în Model Checker. Vezi `ROADMAP_0.28.md` Sprint 3. | ⬜ (amânat) |
+| D2 | **OpenPBR / MaterialX (subset)** | Adăugat la listă pe 23.11.2026, de reluat mâine. Varianta aleasă: **A** — parametri OpenPBR (`coat` / clearcoat, `sheen`, IOR / specular) în `.bimmat`, shader și path trace; import de parametri + căi de imagini din XML MaterialX (fără evaluarea grafului) și export simplu înapoi. Nu se leagă biblioteca C++ MaterialX (FFI) — risc mare, build complicat. Ambele standarde sunt Apache-2.0 (notă în `THIRD_PARTY.md`). | ⬜ (programat) |
 
 ## Reguli de calitate
 
