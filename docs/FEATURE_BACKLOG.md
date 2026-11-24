@@ -32,6 +32,7 @@
 | D1 | **Space / Room checks** | arii `IfcSpace`, adiacențe, lățimi minime coridor, rază de acces — reguli în Model Checker. Vezi `ROADMAP_0.28.md` Sprint 3. | ⬜ (amânat) |
 | D2 | **OpenPBR / MaterialX (subset)** | Adăugat la listă pe 23.11.2026, de reluat mâine. Varianta aleasă: **A** — parametri OpenPBR (`coat` / clearcoat, `sheen`, IOR / specular) în `.bimmat`, shader și path trace; import de parametri + căi de imagini din XML MaterialX (fără evaluarea grafului) și export simplu înapoi. Nu se leagă biblioteca C++ MaterialX (FFI) — risc mare, build complicat. Ambele standarde sunt Apache-2.0 (notă în `THIRD_PARTY.md`). | ⬜ (programat) |
 | D3 | **Randare la nivel profesional (fără Eevee)** | Adăugat pe 23.11.2026. ManageBIM are deja motor propriu (glow + path trace CPU + OIDN), nu e nevoie de Eevee. Varianta aleasă: **A** — IBL/HDRI (mediu procedural + suport `.hdr`/`.exr`), BRDF GGX cu IOR/Fresnel, 3–4 bounces în path trace, tonemap ACES, denoise existent. Apoi opțional **B** — IBL și reflexii de mediu în viewport-ul 3D + contact shadows. Separat de D2: D2 aduce materiale, D3 crește calitatea randării. | ⬜ (programat) |
+| D4 | **MCP server în ManageBIM** | Adăugat pe 24.11.2026, pentru versiunea finală. Un mic server MCP local expune operații (deschide model, selectează elemente, setează camera / viewpoint, adaugă / mută / șterge lumini, pornește path trace, exportă PNG) ca agentul să se poată conecta și testa aplicația în timp real, fără capturi de ecran. | ⬜ (versiunea finală) |
 
 ## Reguli de calitate
 

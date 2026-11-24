@@ -3,6 +3,11 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.26 - 2026-11-24
+- **Fixed light deletion**: the per-row 🗑 button removed the selection instead of the light; **Remove** did nothing when no row was selected. Both now delete the light correctly.
+- **New lights are created at the centre of the model** (2 m above it), not at the camera, so they are immediately visible in the scene; the camera zooms to them. Added a **🎯 Focus** button to fly to a light created far away in an older project.
+- **Much larger UCS gizmo**: arrows are 3x longer and thicker, with bigger labels, a 3x larger hit area and markers that scale with the light's power. The light's colour / lux / range changes update the 3D marker immediately, and the label shows the name and lux value.
+
 ## 0.27.25 - 2026-11-24
 - **Fixed the light gizmo in the 3D view**: the previous marker was only a flat painted dot, so the added light was not visible or movable. Lights are now real visible entities with a UCS gizmo - arrows for X (red), Y (green), Z (blue) that you grab and drag with the mouse.
 - The three action circles (XY / XZ / YZ) show the light's range; the centre dot scales with the power (lux), and the label shows the name and lux value. Changes to colour / power / range update the 3D marker immediately.

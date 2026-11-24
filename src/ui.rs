@@ -3648,7 +3648,7 @@ impl App {
         if let Some(li) = self.light_sel {
             if li < self.lights.len() {
                 let lp = Vec3::from(self.lights[li].pos);
-                let len = (lp - self.cam.eye()).length().max(0.5) * 0.10;
+                let len = (lp - self.cam.eye()).length().max(0.5) * 0.30;
                 if let Some(ptr) = resp.interact_pointer_pos() {
                     for a in 0..3 {
                         let mut axis = Vec3::ZERO;
@@ -3660,7 +3660,7 @@ impl App {
                             let v = tp - sp;
                             if v.length() > 1.0 {
                                 let t = ((ptr - sp).dot(v) / v.dot(v)).clamp(0.0, 1.0);
-                                if (ptr - (sp + v * t)).length() < 9.0 {
+                                if (ptr - (sp + v * t)).length() < 16.0 {
                                     light_axis_hover = Some(a);
                                 }
                             }
@@ -3675,7 +3675,7 @@ impl App {
         if let (Some(li), Some(a)) = (self.light_sel, self.light_axis) {
             if li < self.lights.len() && resp.dragged_by(egui::PointerButton::Primary) {
                 let lp = Vec3::from(self.lights[li].pos);
-                let len = (lp - self.cam.eye()).length().max(0.5) * 0.10;
+                let len = (lp - self.cam.eye()).length().max(0.5) * 0.30;
                 let mut axis = Vec3::ZERO;
                 axis[a] = 1.0;
                 if let (Some(sp), Some(tp)) = (
@@ -3729,7 +3729,7 @@ impl App {
                         }
                     }
                 }
-                let len = (lp - self.cam.eye()).length().max(0.5) * 0.10;
+                let len = (lp - self.cam.eye()).length().max(0.5) * 0.30;
                 let axis_col = [Color32::from_rgb(240, 80, 70), Color32::from_rgb(80, 220, 100), Color32::from_rgb(80, 140, 255)];
                 for a in 0..3 {
                     let mut axis = Vec3::ZERO;
@@ -3738,19 +3738,19 @@ impl App {
                         let v = tp - sp;
                         if v.length() > 1.0 {
                             let active = self.light_axis == Some(a) || light_axis_hover == Some(a);
-                            let w: f32 = if active { 4.0 } else { 2.5 };
+                            let w: f32 = if active { 6.0 } else { 4.0 };
                             let c = if active { axis_col[a].gamma_multiply(1.4_f32) } else { axis_col[a] };
                             painter.line_segment([sp, tp], Stroke::new(w, c));
                             let dir = v / v.length();
                             let perp = egui::vec2(-dir.y, dir.x);
-                            let tip = [tp, tp - dir * 10.0 + perp * 4.5, tp - dir * 10.0 - perp * 4.5];
+                            let tip = [tp, tp - dir * 17.0 + perp * 8.0, tp - dir * 17.0 - perp * 8.0];
                             painter.add(egui::Shape::closed_line(tip.to_vec(), Stroke::new(w, c)));
-                            painter.text(tp + dir * 11.0, Align2::CENTER_CENTER, ["X", "Y", "Z"][a], FontId::proportional(11.0), c);
+                            painter.text(tp + dir * 18.0, Align2::CENTER_CENTER, ["X", "Y", "Z"][a], FontId::proportional(15.0), c);
                         }
                     }
                 }
             }
-            let sz = (2.0 + lamp.power.max(0.0).min(20.0) * 0.35).clamp(3.0, 9.0);
+            let sz = (4.0 + lamp.power.max(0.0).min(20.0) * 0.5).clamp(5.0, 14.0);
             painter.circle_filled(sp, sz, col);
             painter.circle_stroke(sp, sz, Stroke::new(1.5_f32, Color32::BLACK));
             if lamp.kind != crate::lights::LightKind::Point {
@@ -3759,7 +3759,7 @@ impl App {
                     painter.line_segment([sp, tp], Stroke::new(2.0_f32, col));
                 }
             }
-            painter.text(sp + EV::new(10.0, -18.0), Align2::LEFT_TOP, format!("{} · {:.1} lux", lamp.name, lamp.power), FontId::proportional(11.0), col);
+            painter.text(sp + EV::new(14.0, -24.0), Align2::LEFT_TOP, format!("{} · {:.1} lux", lamp.name, lamp.power), FontId::proportional(13.0), col);
         }
         let grid_click = resp.clicked() && self.grid_pick > 0 && snap.is_some() && !xform_click;
         if grid_click {

@@ -25,10 +25,18 @@ impl App {
                         let mut l = crate::lights::SceneLight::default();
                         l.kind = k;
                         l.name = format!("{} {}", k.label(), self.lights.len() + 1);
-                        l.pos = self.cam.eye().to_array();
-                        l.target = (self.cam.eye() + self.cam.fwd() * 5.0).to_array();
+                        // in centrul modelului, la 2 m deasupra - nu la camera (altfel e la sute de metri)
+                        let bb = self.scene_aabb();
+                        let c = bb.center();
+                        let center = if bb.is_valid() { c } else { Vec3::ZERO };
+                        l.pos = [center.x, center.y, center.z + 2.0];
+                        l.target = [center.x, center.y, center.z];
                         self.light_sel = Some(self.lights.len());
                         self.lights.push(l);
+                        // muta camera astfel incat lumina sa fie vizibila imediat
+                        let mut t = self.cam;
+                        t.focus = t.focus.min(30.0);
+                        self.fly_to(t);
                         ui.close_menu();
                     }
                 }
@@ -42,12 +50,28 @@ impl App {
             if ui.selectable_label(placing, "🎯 Place in 3D").on_hover_text("Click a surface in the 3D view to place a point light; press Esc to go back to Select").clicked() {
                 self.tool = if placing { Tool::Select } else { Tool::PlaceLight };
             }
-            if ui.add_enabled(!self.lights.is_empty(), egui::Button::new("🗑 Remove").small()).clicked() {
-                if let Some(i) = self.light_sel.take() {
+            if ui.add_enabled(self.light_sel.is_some(), egui::Button::new("🎯 Focus").small())
+                .on_hover_text("Fly the camera to the selected light (useful if it was created far away in an older project)").clicked()
+            {
+                if let Some(i) = self.light_sel {
                     if i < self.lights.len() {
-                        self.lights.remove(i);
+                        let p = Vec3::from(self.lights[i].pos);
+                        let mut t = self.cam;
+                        t.eye = (p + Vec3::new(-3.0, -3.0, 2.0)).to_array();
+                        t.focus = 4.0;
+                        t.yaw = std::f32::consts::FRAC_PI_4;
+                        t.pitch = -0.35;
+                        self.fly_to(t);
                     }
                 }
+            }
+            if ui.add_enabled(!self.lights.is_empty(), egui::Button::new("🗑 Remove").small()).clicked() {
+                // sterge lumina selectata, sau ultima daca nimic nu e selectat
+                let i = self.light_sel.take().unwrap_or_else(|| self.lights.len().saturating_sub(1));
+                if i < self.lights.len() {
+                    self.lights.remove(i);
+                }
+                self.light_sel = if self.lights.is_empty() { None } else { Some((i).min(self.lights.len() - 1)) };
             }
         });
         if self.lights.is_empty() {
@@ -55,6 +79,7 @@ impl App {
             return;
         }
         ui.separator();
+        let mut remove_pending: Option<usize> = None;
         for (i, lamp) in self.lights.iter_mut().enumerate() {
             let sel = self.light_sel == Some(i);
             let frame = egui::Frame::none()
@@ -77,8 +102,8 @@ impl App {
                     if ui.color_edit_button_srgba(&mut c).changed() {
                         lamp.color = [c.r(), c.g(), c.b()];
                     }
-                    if ui.small_button("🗑").clicked() {
-                        self.light_sel = None;
+                    if ui.small_button("🗑").on_hover_text("Remove this light").clicked() {
+                        remove_pending = Some(i);
                     }
                 });
                 ui.horizontal(|ui| {
@@ -110,6 +135,12 @@ impl App {
                 }
             });
             ui.add_space(3.0);
+        }
+        if let Some(i) = remove_pending {
+            if i < self.lights.len() {
+                self.lights.remove(i);
+            }
+            self.light_sel = if self.lights.is_empty() { None } else { Some(i.min(self.lights.len() - 1)) };
         }
     }
 }
