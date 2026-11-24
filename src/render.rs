@@ -378,7 +378,7 @@ void main() {
         vec3 lv = u_lamps[li].xyz - v_pos;
         float d = length(lv);
         float radius = max(u_lamp_data[li].w, 0.1);
-        float att = u_lamps[li].w * 9.0 / (1.0 + (d / radius) * (d / radius));
+        float att = u_lamps[li].w * 26.0 / (1.0 + (d / radius) * (d / radius));
         float nl = max(dot(n, lv / max(d, 0.001)), 0.0);
         k += u_lamp_data[li].rgb * nl * att;
     }

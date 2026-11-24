@@ -3,6 +3,12 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.28 - 2026-11-24
+- **Single BIM ribbon tab**: all BIM operations (IFC export with MVD, category-to-IFC-class mapping, bSDD, IDS check, COBie, properties, quantities, glTF, BCF, Navisworks sets) are now in one **BIM** tab. Removed duplicates from Export / Share.
+- **IFC MVD export**: choose Reference View, Design Transfer View, Coordination View 2.0 or Site View before export; the chosen view filters which property sets are written and is recorded in the IFC header.
+- **IFC class mapping** (like Revit): settings table Source Category → IFC Class Name / IFC Type, used for geometry that does not come from IFC (STEP, OBJ, glTF, DWG). "Not Exported" skips a category. Import/export the table as CSV (compatible with Excel).
+- **Light rotation on the drawn range circles**: the XY / XZ / YZ action circles of a Spot/Distant light are now rotation tracks - drag one to rotate the direction around the circle's normal. Increased the GPU light intensity so the falloff is clearly visible in the 3D model.
+
 ## 0.27.27 - 2026-11-24
 - **Lights illuminate the 3D model in real time**: point lights are now sent to the GPU shader (up to 8 lights with position, colour, power/lux and range), so changing the lux or colour immediately changes how the model is lit - like the Interactive Ray Trace in Navisworks. Previously the lights only affected the offline path trace.
 - **Fixed gizmo dragging**: dragging an X/Y/Z arrow no longer orbits the camera at the same time. The arrows are shorter for easier handling, and Spot/Distant lights have a **rotation ring** - drag it to turn the light direction around its position.

@@ -1130,6 +1130,8 @@ pub enum Purpose {
     ExportMaterialX,
     ImportMaterialX,
     LoadHdri,
+    ExportIfcMap,
+    ImportIfcMap,
     ExportProfile,
     ImportProfile,
     ExportCompare,

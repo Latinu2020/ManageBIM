@@ -206,7 +206,7 @@ impl App {
             return self.error("Nothing to export: no visible items with geometry.");
         }
         let project = std::path::Path::new(&path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "ManageBIM".into());
-        let (text, st) = crate::ifc_export::write_ifc(&items, self.origin_f64(), &project, &now_string());
+        let (text, st) = crate::ifc_export::write_ifc_full(&items, self.origin_f64(), &project, &now_string(), self.settings.ifc_mvd, &self.settings.ifc_map);
         match std::fs::write(&path, text) {
             Ok(()) => self.toast(format!(
                 "IFC4 exported: {} items ({} closed solids, {} reused geometries), {} properties → {}",

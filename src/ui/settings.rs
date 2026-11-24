@@ -18,6 +18,7 @@ impl App {
     pub(super) fn settings_window(&mut self, ctx: &egui::Context) {
         if !self.settings_open { return; }
         let mut open = self.settings_open;
+        let mut io: Option<Purpose> = None;
         egui::Window::new("⚙ Settings")
             .open(&mut open)
             .default_size([640.0, 660.0])
@@ -220,6 +221,62 @@ impl App {
 
                     // ------------------------------------------------ export
                     ui.separator();
+                    section_title(ui, "IFC export — category mapping");
+                    ui.horizontal(|ui| {
+                        ui.label("MVD").on_hover_text("Model View Definition: which properties and fields are written in the IFC file");
+                        egui::ComboBox::from_id_salt("set_ifc_mvd").width(180.0).selected_text(self.settings.ifc_mvd.code()).show_ui(ui, |ui| {
+                            for m in crate::ifc_mvd::Mvd::ALL {
+                                if ui.selectable_value(&mut self.settings.ifc_mvd, m, m.label()).on_hover_text(m.tip()).clicked() {
+                                    self.settings.save();
+                                }
+                            }
+                        });
+                    });
+                    egui::ScrollArea::vertical().id_salt("ifc_map").max_height(150.0).show(ui, |ui| {
+                        egui::Grid::new("ifc_map_grid").num_columns(4).spacing([6.0, 2.0]).show(ui, |ui| {
+                            ui.strong("Source category");
+                            ui.strong("IFC class");
+                            ui.strong("IFC type");
+                            ui.strong("");
+                            ui.end_row();
+                            let mut del: Option<usize> = None;
+                            for (i, r) in self.settings.ifc_map.iter_mut().enumerate() {
+                                ui.add(egui::TextEdit::singleline(&mut r.source).desired_width(130.0));
+                                egui::ComboBox::from_id_salt(("ic", i)).width(170.0).selected_text(r.class.clone()).show_ui(ui, |ui| {
+                                    for (code, label) in crate::ifc_map::CLASSES {
+                                        ui.selectable_value(&mut r.class, code.to_string(), format!("{code} — {label}"));
+                                    }
+                                });
+                                ui.add(egui::TextEdit::singleline(&mut r.ifc_type).desired_width(90.0));
+                                if ui.small_button("✖").clicked() {
+                                    del = Some(i);
+                                }
+                                ui.end_row();
+                            }
+                            if let Some(i) = del {
+                                self.settings.ifc_map.remove(i);
+                                self.settings.save();
+                            }
+                        });
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.small_button("➕ Add rule").clicked() {
+                            self.settings.ifc_map.push(crate::ifc_map::MapRule::default());
+                            self.settings.save();
+                        }
+                        if ui.small_button("📤 CSV…").on_hover_text("Export the mapping table to CSV (Source Category; IFC Class Name; IFC Type)").clicked() {
+                            io = Some(Purpose::ExportIfcMap);
+                        }
+                        if ui.small_button("📥 CSV…").on_hover_text("Import a mapping table from CSV").clicked() {
+                            io = Some(Purpose::ImportIfcMap);
+                        }
+                        if ui.small_button("↺ Default").on_hover_text("Restore the default mapping for non-IFC geometry").clicked() {
+                            self.settings.ifc_map = crate::ifc_map::default_rules();
+                            self.settings.save();
+                        }
+                    });
+
+                    ui.separator();
                     section_title(ui, "DWG / DXF section export");
                     ui.horizontal(|ui| {
                         ui.label("View");
@@ -413,6 +470,9 @@ impl App {
                     ui.label(RichText::new("Settings are saved automatically in settings.json").weak().small());
                 });
             });
+        if let Some(p) = io {
+            self.request_path(p);
+        }
         self.settings_open = open;
     }
 }

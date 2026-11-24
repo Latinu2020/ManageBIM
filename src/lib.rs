@@ -17,6 +17,8 @@ pub mod script_builder;
 pub mod script_guide;
 pub mod materials;
 pub mod lights;
+pub mod ifc_mvd;
+pub mod ifc_map;
 pub mod hdri;
 pub mod materialx;
 pub mod pdf;

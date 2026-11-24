@@ -641,7 +641,7 @@ impl App {
 
     fn ribbon(&mut self, ctx: &egui::Context) {
         use crate::theme::RibbonMode;
-        const TABS: [&str; 13] = ["Home", "Select", "Viewpoint", "Review", "Sections", "Annotation", "Coordination", "Analyze", "Render", "Export", "Share", "Script", "View"];
+        const TABS: [&str; 14] = ["Home", "Select", "Viewpoint", "Review", "Sections", "Annotation", "BIM", "Coordination", "Analyze", "Render", "Export", "Share", "Script", "View"];
         // setarile vechi: "ribbon restrans" = treapta Mini
         if self.settings.ribbon_min {
             self.settings.ribbon_min = false;
@@ -768,20 +768,21 @@ impl App {
                             self.ribbon_grids(ui);
                         }
                         5 => self.ribbon_annotation(ui),
-                        6 => self.ribbon_coord(ui),
-                        7 => {
+                        6 => self.ribbon_bim(ui),
+                        7 => self.ribbon_coord(ui),
+                        8 => {
                             self.ribbon_models(ui);
                             self.ribbon_relocate(ui);
                         }
-                        8 => self.ribbon_render(ui),
-                        9 => {
+                        9 => self.ribbon_render(ui),
+                        10 => {
                             self.ribbon_output(ui);
                             self.ribbon_output2(ui);
                         }
-                        10 => {
+                        11 => {
                             self.ribbon_share(ui);
                         }
-                        11 => self.ribbon_script(ui),
+                        12 => self.ribbon_script(ui),
                         _ => {
                             self.ribbon_view(ui);
                             self.ribbon_view2(ui);
@@ -1247,6 +1248,74 @@ impl App {
         });
     }
 
+    /// Toate comenzile BIM (IFC, IDS, clasificare, date, schimb) intr-un singur tab.
+    fn ribbon_bim(&mut self, ui: &mut egui::Ui) {
+        let has = self.loaded_models().next().is_some();
+        rgroup(ui, "IFC export", |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("MVD").small().weak()).on_hover_text("Model View Definition: which properties are written to the IFC file");
+                egui::ComboBox::from_id_salt("bim_mvd").width(180.0).selected_text(self.settings.ifc_mvd.code()).show_ui(ui, |ui| {
+                    for m in crate::ifc_mvd::Mvd::ALL {
+                        if ui.selectable_value(&mut self.settings.ifc_mvd, m, m.label()).on_hover_text(m.tip()).clicked() {
+                            self.settings.save();
+                        }
+                    }
+                });
+            });
+            if rbtn(ui, "🏗", "Export IFC", "Export all visible items to IFC4 (geometry, colours, levels, GUIDs, properties). The MVD above selects which properties are written.", false, has).clicked() {
+                self.ifc_selection = false;
+                self.request_path(Purpose::ExportIfc);
+            }
+            if rbtn(ui, "🎯", "Selection IFC", "Export only the selected items to IFC4", false, !self.selected.is_empty()).clicked() {
+                self.ifc_selection = true;
+                self.request_path(Purpose::ExportIfc);
+            }
+            if rbtn(ui, "🗺", "Map classes", "Map non-IFC categories (STEP, OBJ, glTF, DWG) to an IFC class before export, like in Revit. Opens Settings › IFC export — category mapping. Import / export the table as CSV.", false, true).clicked() {
+                self.settings_open = true;
+            }
+        });
+        rgroup(ui, "Classification", |ui| {
+            if rbtn(ui, "🏷", "bSDD", "buildingSMART Data Dictionary: search classifiers and assign them to elements (offline cache)", false, has).clicked() {
+                self.open_panel(crate::layout::Panel::Properties);
+            }
+            if rbtn(ui, "📋", "IDS check", "Check the model against buildingSMART IDS requirements (Model Checker)", false, has).clicked() {
+                self.open_panel(crate::layout::Panel::Check);
+            }
+            if rbtn(ui, "📥", "Import IDS", "Load an IDS (.ids) requirements file", false, true).clicked() {
+                self.request_path(Purpose::ImportCheckRules);
+            }
+        });
+        rgroup(ui, "Data / COBie", |ui| {
+            if rbtn(ui, "📥", "Import Props", "Write properties onto elements from Excel / CSV, matched by GlobalId / Name", false, has).clicked() {
+                self.request_path(Purpose::ImportUserProps);
+            }
+            if rbtn(ui, "📤", "Export Props", "Excel template: one row per element with its properties", false, has).clicked() {
+                self.request_path(Purpose::ExportUserProps);
+            }
+            if rbtn(ui, "🏗", "COBie", "COBie 2.4 handover workbook (xlsx)", false, has).clicked() {
+                self.request_path(Purpose::ExportCobie);
+            }
+            if rbtn(ui, "📊", "Quantities", "Count, volume, areas, lengths by any property - export to Excel", false, has).clicked() {
+                self.open_panel(crate::layout::Panel::Quantities);
+            }
+        });
+        rgroup(ui, "Open standards", |ui| {
+            if rbtn(ui, "📦", "Export GLB", "Export to glTF binary for Blender / Rhino / Twinmotion: colours, materials, hierarchy and BIM properties", false, has).clicked() {
+                self.ifc_selection = !self.selected.is_empty();
+                self.request_path(Purpose::ExportGlb);
+            }
+            if rbtn(ui, "📥", "Import BCF", "Import BCF 2.1 / 3.0 issues (Revit, ACC, Solibri, BIMcollab)", false, true).clicked() {
+                self.request_path(Purpose::ImportBcf);
+            }
+            if rbtn(ui, "📷", "Import VP", "Import viewpoints exported from Navisworks", false, true).clicked() {
+                self.request_path(Purpose::ImportNavisXml);
+            }
+            if rbtn(ui, "📋", "Sets", "Import / export selection and search sets (Navisworks XML)", false, true).clicked() {
+                self.request_path(Purpose::ExportNavisSets);
+            }
+        });
+    }
+
     fn ribbon_coord(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Coordination", |ui| {
             self.panel_btn(ui, Panel::Clash, "⚠", "Clash", "Clash Detective — clashes are shown only while this panel is visible");
@@ -1344,56 +1413,28 @@ impl App {
                 self.request_path(Purpose::ExportClashPdf);
             }
         });
-        rgroup(ui, "Navisworks (XML)", |ui| {
-            if rbtn(ui, "📷", "Viewpoints", "Export viewpoints with markups, comments and section box\n(Navisworks: Saved Viewpoints > right-click > Import Viewpoints)", false, !self.viewpoints.is_empty()).clicked() {
+        rgroup(ui, "Navisworks", |ui| {
+            if rbtn(ui, "📷", "Viewpoints", "Export viewpoints with markups, comments and section box to Navisworks", false, !self.viewpoints.is_empty()).clicked() {
                 self.request_path(Purpose::ExportNavisXml);
             }
-            if rbtn(ui, "📥", "Import BCF", "Import BCF 2.1 / 3.0 issues (Revit, ACC, Solibri, BIMcollab...)", false, true).clicked() {
-                self.request_path(Purpose::ImportBcf);
-            }
-            if rbtn(ui, "📥", "Import VP", "Import viewpoints exported from Navisworks (Saved Viewpoints > right-click > Export Viewpoints)", false, true).clicked() {
-                self.request_path(Purpose::ImportNavisXml);
-            }
-            if rbtn(ui, "📋", "Sets", "Export selection and search sets\n(Navisworks: Sets > Import Search Sets)", false, !self.sets.is_empty()).clicked() {
-                self.request_path(Purpose::ExportNavisSets);
-            }
-            if rbtn(ui, "⚠", "Clash Tests", "Export the clash tests (type, tolerance, selections A / B) and the sets they use\n(Navisworks: Clash Detective > Import / Export > Import Clash Tests)", false, !self.clash_tests.is_empty()).clicked() {
+            if rbtn(ui, "⚠", "Clash Tests", "Export clash tests and sets to Navisworks", false, !self.clash_tests.is_empty()).clicked() {
                 self.request_path(Purpose::ExportNavisClash);
             }
         });
-        rgroup(ui, "IFC", |ui| {
-            let has = self.loaded_models().next().is_some();
-            if rbtn(ui, "🏗", "Export IFC", "Export all visible items to IFC4: geometry, colours, levels, GUIDs and all properties", false, has).clicked() {
-                self.ifc_selection = false;
-                self.request_path(Purpose::ExportIfc);
-            }
-            if rbtn(ui, "🎯", "Selection", "Export only the selected items to IFC4 (select them in the tree, with Find Items or with a Window)", false, !self.selected.is_empty()).clicked() {
-                self.ifc_selection = true;
-                self.request_path(Purpose::ExportIfc);
-            }
-        });
-        rgroup(ui, "3D (glTF)", |ui| {
-            let has = self.loaded_models().next().is_some();
-            if rbtn(ui, "📦", "Export GLB", "Export what you see to glTF binary (.glb) for Blender, Rhino 8, Twinmotion, Unreal, Enscape, 3ds Max:\ngeometry, colours and materials (as in the 3D view), Model › Level › Element hierarchy,\nGUIDs and all BIM properties (Blender: Object › Custom Properties).\nWith a selection: only the selected items.", false, has).clicked() {
-                self.ifc_selection = !self.selected.is_empty();
-                self.request_path(Purpose::ExportGlb);
-            }
-        });
+        ui.label(RichText::new("IFC, glTF, BCF, properties and COBie are in the BIM tab.").small().weak());
     }
 
     fn ribbon_share(&mut self, ui: &mut egui::Ui) {
+        let has = self.loaded_models().next().is_some();
+        let what = if self.selected.is_empty() { "all visible items" } else { "the selected items" };
         rgroup(ui, "Web", |ui| {
-            let has = self.loaded_models().next().is_some();
-            let what = if self.selected.is_empty() { "all visible items" } else { "the selected items" };
-            if rbtn(ui, "🌐", "Web viewer", &format!("One .html file with {what}: 3D view, tree, search, properties, hide / isolate, X-ray.\nSend it to anyone - it opens in Chrome / Edge / Firefox / Safari, offline, nothing to install."), false, has).clicked() {
+            if rbtn(ui, "🌐", "Web viewer", &format!("One .html file with {what}: 3D view, tree, search, properties, hide / isolate, X-ray.\nOpens in Chrome / Edge / Firefox / Safari, offline, nothing to install."), false, has).clicked() {
                 self.web_selection = !self.selected.is_empty();
                 self.request_path(Purpose::ExportWeb);
             }
         });
         rgroup(ui, "Reference", |ui| {
-            let has = self.loaded_models().next().is_some();
-            let what = if self.selected.is_empty() { "all visible items" } else { "the selected items" };
-            if rbtn(ui, "🔗", "Revit / CAD", &format!("Reference of {what} for Revit (ManageBIM › Reference: Generic Model shapes, pinned) and AutoCAD / Plant 3D (command MBREFERENCE: meshes on a locked layer). Also: Revit can link the IFC export (Insert › Link IFC)."), false, has).clicked() {
+            if rbtn(ui, "🔗", "Revit / CAD", &format!("Reference of {what} for Revit and AutoCAD / Plant 3D (MBREFERENCE). Revit can also link the IFC export from the BIM tab."), false, has).clicked() {
                 self.request_path(Purpose::ExportReference);
             }
         });
@@ -3672,39 +3713,53 @@ impl App {
                 }
             }
         }
-        // cercul de rotire: numai pentru Spot / Distant, in jurul pozitiei luminii
+        // cercurile de raza deja desenate devin sine de rotatie:
+        // XY -> rotire in jurul Z, XZ -> in jurul Y, YZ -> in jurul X
+        let mut ring_axis: Option<usize> = None;
         if let Some(li) = self.light_sel {
             if li < self.lights.len() && self.lights[li].kind != crate::lights::LightKind::Point {
                 let lp = Vec3::from(self.lights[li].pos);
-                let rr = (lp - self.cam.eye()).length().max(1.0) * 0.07;
-                if let Some(sp) = to_screen(&params.view_proj, rect, lp) {
-                    if let Some(tp) = to_screen(&params.view_proj, rect, lp + Vec3::new(rr, 0.0, 0.0)) {
-                        let rpx = (tp - sp).length();
-                        if rpx > 12.0 {
-                            if let Some(ptr) = resp.interact_pointer_pos() {
-                                light_ring_hover = ((ptr - sp).length() - rpx).abs() < 9.0;
-                                if resp.drag_started_by(egui::PointerButton::Primary) && light_ring_hover && self.light_axis.is_none() {
-                                    let a0 = (ptr.y - sp.y).atan2(ptr.x - sp.x);
-                                    let dir = Vec3::from(self.lights[li].target) - lp;
-                                    self.light_rot = Some((a0, [dir.x, dir.y, dir.z]));
-                                }
+                let r = self.lights[li].radius.max(0.1);
+                if let Some(ptr) = resp.interact_pointer_pos() {
+                    let mut best = 12.0f32;
+                    for plane in 0..3 {
+                        let mut closest = f32::MAX;
+                        for k in 0..64 {
+                            let t = k as f32 / 64.0 * std::f32::consts::TAU;
+                            let (u, v) = (t.cos() * r, t.sin() * r);
+                            let q = match plane {
+                                0 => lp + Vec3::new(u, v, 0.0),  // XY
+                                1 => lp + Vec3::new(u, 0.0, v), // XZ
+                                _ => lp + Vec3::new(0.0, u, v), // YZ
+                            };
+                            if let Some(s) = to_screen(&params.view_proj, rect, q) {
+                                closest = closest.min((s - ptr).length());
                             }
                         }
+                        if closest < best {
+                            best = closest;
+                            ring_axis = Some(plane);
+                        }
+                    }
+                    light_ring_hover = ring_axis.is_some();
+                    if resp.drag_started_by(egui::PointerButton::Primary) && ring_axis.is_some() && self.light_axis.is_none() {
+                        let dir = Vec3::from(self.lights[li].target) - lp;
+                        self.light_rot = Some((0.0, [dir.x, dir.y, dir.z]));
                     }
                 }
             }
         }
-        if let Some((li, (a0, dir0))) = self.light_sel.zip(self.light_rot) {
+        if let (Some(li), Some((_, dir0))) = (self.light_sel, self.light_rot) {
             if li < self.lights.len() && resp.dragged_by(egui::PointerButton::Primary) {
-                if let (Some(sp), Some(ptr)) = (to_screen(&params.view_proj, rect, Vec3::from(self.lights[li].pos)), resp.interact_pointer_pos()) {
-                    let a = (ptr.y - sp.y).atan2(ptr.x - sp.x);
-                    let da = a - a0;
-                    let d = glam::Vec3::new(dir0[0], dir0[1], dir0[2]);
-                    let c = da.cos();
-                    let s = da.sin();
-                    let rot = glam::Vec3::new(d.x * c - d.y * s, d.x * s + d.y * c, d.z);
-                    self.lights[li].target = (Vec3::from(self.lights[li].pos) + rot).to_array();
-                }
+                // planul cercului prins determina axa de rotire: XY->Z, XZ->Y, YZ->X
+                let mut axis = Vec3::ZERO;
+                axis[match ring_axis.unwrap_or(0) { 0 => 2, 1 => 1, _ => 0 }] = 1.0;
+                let da = resp.drag_delta().x * 0.012;
+                let d = Vec3::new(dir0[0], dir0[1], dir0[2]);
+                let rot = glam::Quat::from_axis_angle(axis, da).mul_vec3(d);
+                self.lights[li].target = (Vec3::from(self.lights[li].pos) + rot).to_array();
+                let dir = Vec3::from(self.lights[li].target) - Vec3::from(self.lights[li].pos);
+                self.light_rot = Some((da, [dir.x, dir.y, dir.z]));
             }
         }
         if resp.drag_stopped() {
@@ -4711,6 +4766,8 @@ impl App {
                 Purpose::ExportMaterialX => "Export MaterialX",
                 Purpose::ImportMaterialX => "Import MaterialX",
                 Purpose::LoadHdri => "Environment map",
+                Purpose::ExportIfcMap => "Export IFC mapping",
+                Purpose::ImportIfcMap => "Import IFC mapping",
                 Purpose::ExportMaterials => "Export material library",
                 Purpose::ImportMaterials => "Import material library",
                 Purpose::ExportVideo => "Export Animation",

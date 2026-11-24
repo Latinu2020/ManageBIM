@@ -125,6 +125,16 @@ pub struct ExportStats {
 
 /// Scrie fisierul IFC. `items`: (model, element) de exportat; `origin`: coordonatele reale ale originii scenei.
 pub fn write_ifc(items: &[(&Model, &Element)], origin: DVec3, project: &str, now: &str) -> (String, ExportStats) {
+    write_ifc_mvd(items, origin, project, now, crate::ifc_mvd::Mvd::Reference)
+}
+
+/// Scrie fisierul IFC conform unui Model View Definition.
+pub fn write_ifc_mvd(items: &[(&Model, &Element)], origin: DVec3, project: &str, now: &str, mvd: crate::ifc_mvd::Mvd) -> (String, ExportStats) {
+    write_ifc_full(items, origin, project, now, mvd, &[])
+}
+
+/// Export cu mapare categorie -> clasa IFC.
+pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str, now: &str, mvd: crate::ifc_mvd::Mvd, map: &[crate::ifc_map::MapRule]) -> (String, ExportStats) {
     let mut w = W { s: String::new(), n: 0 };
     let mut st = ExportStats { elements: 0, triangles: 0, properties: 0, closed: 0, instances: 0 };
     let person = w.add("IFCPERSON($,$,'',$,$,$,$,$)");
@@ -306,9 +316,23 @@ pub fn write_ifc(items: &[(&Model, &Element)], origin: DVec3, project: &str, now
         let bp = w.add(&format!("IFCCARTESIANPOINT(({},{},{}))", f(base.x as f64), f(base.y as f64), f(base.z as f64)));
         let bax = w.add(&format!("IFCAXIS2PLACEMENT3D(#{bp},#{zdir},#{xdir})"));
         let epl = w.add(&format!("IFCLOCALPLACEMENT(#{spl},#{bax})"));
-        let (class, extra, otype) = match ifc_class(&e.ifc_type) {
-            Some((c, x)) => (c, x, "$".to_string()),
-            None => ("IfcBuildingElementProxy", 2, if e.ifc_type.trim().is_empty() { "$".into() } else { step_str(&e.ifc_type) }),
+        let mut mapped: Option<(&str, &str)> = None;
+        if let Some(r) = crate::ifc_map::resolve(map, &e.ifc_type).or_else(|| crate::ifc_map::resolve(map, &e.name)) {
+            if r.class.eq_ignore_ascii_case("Not Exported") || r.class.trim().is_empty() {
+                st.elements = st.elements.saturating_sub(0); // elementul nu se scrie
+                continue;
+            }
+            mapped = Some((r.class.as_str(), r.ifc_type.as_str()));
+        }
+        let (class, extra, otype) = if let Some((c, ty)) = mapped {
+            let cl = ifc_class(c).map(|(x, _)| x).unwrap_or(c);
+            let ex = ifc_class(c).map(|(_, x)| x).unwrap_or(2);
+            (cl, ex, if ty.trim().is_empty() { "$".into() } else { step_str(ty) })
+        } else {
+            match ifc_class(&e.ifc_type) {
+                Some((c, x)) => (c, x, "$".to_string()),
+                None => ("IfcBuildingElementProxy", 2, if e.ifc_type.trim().is_empty() { "$".into() } else { step_str(&e.ifc_type) }),
+            }
         };
         let mut gid = if is_ifc_guid(&e.guid) { e.guid.clone() } else { guid_from(&format!("{}|{}|{}", m.path, e.guid, k)) };
         if !used_guids.insert(gid.clone()) {
@@ -332,10 +356,23 @@ pub fn write_ifc(items: &[(&Model, &Element)], origin: DVec3, project: &str, now
             if p.name.trim().is_empty() {
                 continue;
             }
-            groups.entry(if p.group.trim().is_empty() { "Properties" } else { p.group.as_str() }).or_default().push((p.name.as_str(), p.value.as_str()));
+            let g = if p.group.trim().is_empty() { "Properties" } else { p.group.as_str() };
+            if !mvd.keep_prop(g, &p.name) {
+                continue;
+            }
+            groups.entry(g).or_default().push((p.name.as_str(), p.value.as_str()));
         }
-        if !e.ifc_type.is_empty() || !e.guid.is_empty() {
-            groups.entry("ManageBIM").or_default().extend([("Source IFC type", e.ifc_type.as_str()), ("Source GUID", e.guid.as_str()), ("Source model", m.name.as_str())]);
+        if (mvd != crate::ifc_mvd::Mvd::Site) && (!e.ifc_type.is_empty() || !e.guid.is_empty()) {
+            let g = "ManageBIM";
+            let extra = [
+                ("Source IFC type", e.ifc_type.as_str()),
+                ("Source GUID", e.guid.as_str()),
+                ("Source model", m.name.as_str()),
+            ];
+            let kept: Vec<_> = extra.into_iter().filter(|(n, _)| mvd.keep_prop(g, n)).collect();
+            if !kept.is_empty() {
+                groups.entry(g).or_default().extend(kept);
+            }
         }
         for (g, props) in groups {
             let mut seen = std::collections::HashSet::new();
@@ -363,7 +400,8 @@ pub fn write_ifc(items: &[(&Model, &Element)], origin: DVec3, project: &str, now
         }
     }
     let header = format!(
-        "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ViewDefinition [ReferenceView_V1.2]'),'2;1');\nFILE_NAME({},{},(''),('ManageBIM'),{},'ManageBIM','');\nFILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;\n",
+        "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ViewDefinition [{}]'),'2;1');\nFILE_NAME({},{},(''),('ManageBIM'),{},'ManageBIM','');\nFILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;\n",
+        mvd.view_name().replace([' ', '.'], ""),
         step_str(&format!("{project}.ifc")),
         step_str(now),
         step_str(&format!("ManageBIM {}", env!("CARGO_PKG_VERSION")))

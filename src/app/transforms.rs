@@ -306,6 +306,24 @@ impl App {
                 Ok(n) => self.toast(format!("MaterialX exported: {n} materials → {}", crate::file_name(&path))),
                 Err(e) => self.error(e),
             },
+            Purpose::ExportIfcMap => {
+                let mut p = path.clone();
+                if !p.to_ascii_lowercase().ends_with(".csv") {
+                    p.push_str(".csv");
+                }
+                match std::fs::write(&p, crate::ifc_map::to_csv(&self.settings.ifc_map)) {
+                    Ok(()) => self.toast(format!("IFC mapping exported: {} rules → {}", self.settings.ifc_map.len(), crate::file_name(&p))),
+                    Err(e) => self.error(e.to_string()),
+                }
+            }
+            Purpose::ImportIfcMap => match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|s| crate::ifc_map::from_csv(&s)) {
+                Ok(rules) => {
+                    self.settings.ifc_map = rules;
+                    self.settings.save();
+                    self.toast(format!("{} mapping rules imported", self.settings.ifc_map.len()));
+                }
+                Err(e) => self.error(format!("Mapping CSV: {e}")),
+            },
             Purpose::LoadHdri => {
                 match crate::hdri::load(&path) {
                     Ok(h) => {
@@ -629,6 +647,8 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::ExportMaterialX => d.set_title("Export MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx"]).set_file_name("materials.mtlx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportMaterialX => d.set_title("Import MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx", "xml"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::LoadHdri => d.set_title("Environment map (.hdr or photo)").add_filter("HDR image", &["hdr"]).add_filter("Photo (equirectangular)", &["png", "jpg", "jpeg"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportIfcMap => d.set_title("Export IFC category mapping").add_filter("CSV", &["csv"]).set_file_name("ifc-mapping.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ImportIfcMap => d.set_title("Import IFC category mapping").add_filter("CSV", &["csv"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpHtml => d.set_title("Viewpoints report (HTML)").add_filter("HTML report", &["html"]).set_file_name("viewpoints_report.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpXlsx => d.set_title("Viewpoints report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("viewpoints_report.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpPdf => d.set_title("Sheets (PDF)").add_filter("PDF", &["pdf"]).set_file_name("sheets.pdf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
