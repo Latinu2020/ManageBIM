@@ -308,6 +308,7 @@ impl App {
         self.section = Section::default();
         self.viewpoints.clear();
         self.lights.clear();
+        self.light_sel = None;
         self.sets.clear();
         self.clash_tests = vec![ClashTest::new("Test 1".into())];
         self.cur_test = 0;

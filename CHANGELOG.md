@@ -3,6 +3,11 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.24 - 2026-11-24
+- **Lighting like in Navisworks**: a dedicated **Render › Lighting** tab with **Create Light** (Point / Spot / Distant), a light list, and full controls for **lux (power)**, range, colour, position, target and cone angle. Lights are saved in the project.
+- **Lights can be placed and moved in the 3D view**: the **Place in 3D** tool drops a point light where you click on a surface; lights are drawn as markers in the viewport, can be selected by clicking the marker and moved by dragging it with the mouse (Esc returns to Select). A Lighting button was added to the Render ribbon.
+- Three light types in the path trace: point (inverse-square falloff), spot (cone with soft edge aimed at a target) and distant (parallel rays, like the sun), all with shadows and GGX highlights.
+
 ## 0.27.23 - 2026-11-24
 - **Photorealistic renders**: the offline renderer now supports a real environment map - load a Radiance `.hdr` or an equirectangular PNG/JPG photo and the sky is replaced with real light and reflections. Added with intensity, rotation, sun direction, exposure and a choice of Outdoor / Studio / Sunset when no image is loaded.
 - **Point lights in the model**: add lamps at the scene origin or at the centre of the current selection, then edit position (X/Y/Z), colour, power and radius. They are saved in the project and used by the path trace render with shadows and GGX highlights.

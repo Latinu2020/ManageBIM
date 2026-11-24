@@ -524,6 +524,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.render_subtab, 0, "🖼 Image");
             ui.selectable_value(&mut self.render_subtab, 1, format!("🎨 Materials ({})", self.mat_assign.len()));
+            ui.selectable_value(&mut self.render_subtab, 2, format!("💡 Lighting ({})", self.lights.len()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("🎞 Animations…").on_hover_text("Camera animations, 4D and video export are in their own window").clicked() {
                     self.open_panel(Panel::Animation);
@@ -533,6 +534,10 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
         ui.separator();
         if self.render_subtab == 1 {
             self.materials_ui(ui);
+            return;
+        }
+        if self.render_subtab == 2 {
+            self.lighting_ui(ui);
             return;
         }
         ui.columns(2, |cols| {

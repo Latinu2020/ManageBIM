@@ -144,6 +144,8 @@ pub enum Tool {
     RedErase,
     /// click pe podea: puncte ale traseului de mers
     WalkPath,
+    /// click in 3D: plaseaza o lumina punctuala pe suprafata aleasa
+    PlaceLight,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -1207,6 +1209,8 @@ pub struct App {
     pub cam: Camera,
     /// lumini punctuale plasate in model (lampi)
     pub lights: Vec<crate::lights::SceneLight>,
+    /// lumina selectata in panoul Lighting / viewport
+    pub light_sel: Option<usize>,
     pub selected: BTreeSet<ElemId>,
     pub primary: Option<ElemId>,
     pub hidden: HashSet<ElemId>,
@@ -1596,6 +1600,7 @@ impl App {
             renderer: Arc::new(Mutex::new(Renderer::new())),
             cam: Camera::default(),
             lights: Vec::new(),
+            light_sel: None,
             selected: BTreeSet::new(),
             primary: None,
             hidden: HashSet::new(),

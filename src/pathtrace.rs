@@ -545,22 +545,46 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
 
     // lampi punctuale plasate in model: lumina difuza + reflexie GGX, cu umbra
     for lamp in sc.lights.iter() {
-        let lv = Vec3::from(lamp.pos) - p;
-        let d = lv.length();
-        if d < 1e-3 || (lamp.radius > 0.0 && d > lamp.radius) {
+        use crate::lights::LightKind;
+        let (l, d, atten_base) = match lamp.kind {
+            LightKind::Point | LightKind::Spot => {
+                let lv = Vec3::from(lamp.pos) - p;
+                let d = lv.length();
+                if d < 1e-3 || (lamp.radius > 0.0 && d > lamp.radius) {
+                    continue;
+                }
+                let dir = lv / d;
+                let atten = lamp.power.max(0.0) / (1.0 + (d / lamp.radius.max(1.0)).powi(2));
+                (dir, d, atten)
+            }
+            LightKind::Distant => {
+                let dir = (Vec3::from(lamp.target) - Vec3::from(lamp.pos)).normalize_or_zero();
+                if dir == Vec3::ZERO {
+                    continue;
+                }
+                (dir, 1e5, lamp.power.max(0.0))
+            }
+        };
+        let mut atten = atten_base;
+        if lamp.kind == LightKind::Spot {
+            let half = (lamp.angle.clamp(5.0, 120.0) * 0.5).to_radians();
+            let axis = (Vec3::from(lamp.target) - Vec3::from(lamp.pos)).normalize_or_zero();
+            let a = l.dot(axis).max(0.0);
+            let soft = half.cos().max(1e-4);
+            atten *= (((a - soft) / (1.0 - soft)).clamp(0.0, 1.0)).powf(1.5);
+        }
+        if atten <= 0.0 {
             continue;
         }
-        let l = lv / d;
         let nl = n.dot(l).max(0.0);
         if nl <= 0.0 {
             continue;
         }
         let shadow = if sc.hit(p, l, d - 1e-2).is_some() { 0.12 } else { 1.0 };
-        let atten = lamp.power.max(0.0) / (1.0 + (d / lamp.radius.max(1.0)).powi(2)) * shadow;
         let lc = lamp.linear();
         let g = ggx(n, vd, l, gloss.max(0.05), f0);
         for (k, v) in col.iter_mut().enumerate() {
-            *v += (base[k] * (1.0 - metal) * DIFFUSE + g[k]) * nl * atten * lc[k];
+            *v += (base[k] * (1.0 - metal) * DIFFUSE + g[k]) * nl * atten * shadow * lc[k];
         }
     }
 
@@ -815,7 +839,7 @@ mod tests {
         let j0 = start_arc((48, 48, 12, 0.0), sc.clone(), eye, fwd, up, right, 50.0, Vec3::ZERO, 0.0, (1, 0.05, 0.0), None, false);
         while !j0.done.load(Ordering::Relaxed) { std::thread::sleep(std::time::Duration::from_millis(5)); }
         let dark = lum(&j0, 24, 24);
-        let lamp = crate::lights::SceneLight { name: "L".into(), pos: [0.0, 0.0, 5.0], color: [255, 255, 255], power: 8.0, radius: 20.0, enabled: true };
+        let lamp = crate::lights::SceneLight { name: "L".into(), pos: [0.0, 0.0, 5.0], color: [255, 255, 255], power: 8.0, radius: 20.0, enabled: true, ..Default::default() };
         let sc2 = std::sync::Arc::new(Scene {
             tris: sc.tris.clone(), colors: sc.colors.clone(), mats: sc.mats.clone(), extra: sc.extra.clone(),
             textures: sc.textures.clone(), planes: sc.planes.clone(), lights: vec![lamp],

@@ -28,6 +28,7 @@ mod settings;
 mod script_catalog;
 mod script_builder_ui;
 mod materials_panel;
+mod lighting_panel;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
 fn accent() -> Color32 {
@@ -1319,6 +1320,10 @@ impl App {
             }
             if rbtn(ui, "◎", "Path trace", "Progressive path traced image: preview, samples, time limit, Cancel, export PNG", false, true).clicked() {
                 self.pathtrace_open = true;
+            }
+            if rbtn(ui, "💡", "Lighting", "Create point / spot / distant lights, set their power (lux) and range, place and move them in the 3D view", false, true).clicked() {
+                self.render_subtab = 2;
+                self.open_panel(Panel::Render);
             }
             if rbtn(ui, "🎞", "Video", "Animations and video export", false, true).clicked() {
                 self.open_panel(Panel::Animation);
@@ -2999,65 +3004,6 @@ impl App {
                         ui.label("Exposure").on_hover_text("Overall brightness (ACES tonemap keeps the highlights)");
                         ui.add(egui::Slider::new(&mut self.render.exposure, 0.1..=3.0).step_by(0.05));
                     });
-                    // ---- lampi in model
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("LAMPS IN MODEL").small().strong().color(accent()))
-                            .on_hover_text("Point lights placed in the scene. They are saved in the project and used by the path trace render.");
-                        if ui.small_button("➕ Add").on_hover_text("Add a lamp at the scene origin").clicked() {
-                            let mut l = crate::lights::SceneLight::default();
-                            l.name = format!("Lamp {}", self.lights.len() + 1);
-                            l.pos = self.cam.eye().to_array();
-                            self.lights.push(l);
-                        }
-                        if ui.add_enabled(!self.selected.is_empty(), egui::Button::new("🎯 At selection").small())
-                            .on_hover_text("Place a lamp at the centre of the selected elements").clicked()
-                        {
-                            let bb = self.ids_aabb(&self.selected.iter().copied().collect::<Vec<_>>());
-                            let c = bb.center();
-                            let mut l = crate::lights::SceneLight::default();
-                            l.name = format!("Lamp {}", self.lights.len() + 1);
-                            l.pos = [c.x, c.y, c.z + 0.5];
-                            self.lights.push(l);
-                        }
-                    });
-                    if self.lights.is_empty() {
-                        ui.label(RichText::new("No lamps yet - add one above, then drag its position with the number fields.").small().weak());
-                    }
-                    let mut del = None;
-                    for (li, lamp) in self.lights.iter_mut().enumerate() {
-                        egui::Frame::none().fill(ui.visuals().faint_bg_color).rounding(crate::theme::RADIUS_SM).inner_margin(egui::Margin::symmetric(6.0, 4.0)).show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.checkbox(&mut lamp.enabled, "");
-                                ui.add(egui::TextEdit::singleline(&mut lamp.name).desired_width(90.0));
-                                let mut col = Color32::from_rgb(lamp.color[0], lamp.color[1], lamp.color[2]);
-                                if ui.color_edit_button_srgba(&mut col).changed() {
-                                    lamp.color = [col.r(), col.g(), col.b()];
-                                }
-                                if ui.small_button("🗑").on_hover_text("Remove lamp").clicked() {
-                                    del = Some(li);
-                                }
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new("x").small());
-                                ui.add(egui::DragValue::new(&mut lamp.pos[0]).speed(0.05).suffix(" m"));
-                                ui.label(RichText::new("y").small());
-                                ui.add(egui::DragValue::new(&mut lamp.pos[1]).speed(0.05).suffix(" m"));
-                                ui.label(RichText::new("z").small());
-                                ui.add(egui::DragValue::new(&mut lamp.pos[2]).speed(0.05).suffix(" m"));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new("Power").small());
-                                ui.add(egui::Slider::new(&mut lamp.power, 0.0..=10.0).step_by(0.1));
-                                ui.label(RichText::new("Radius").small());
-                                ui.add(egui::DragValue::new(&mut lamp.radius).range(0.0..=200.0).speed(0.5).suffix(" m"));
-                            });
-                        });
-                        ui.add_space(2.0);
-                    }
-                    if let Some(i) = del {
-                        self.lights.remove(i);
-                    }
                     ui.horizontal(|ui| {
                         let avail = crate::oidn::available();
                         let r = ui.add_enabled(avail.is_ok(), egui::Checkbox::new(&mut self.settings.render_denoise, "Denoise (Intel Open Image Denoise)"));
@@ -3697,6 +3643,58 @@ impl App {
                 self.xform_point(s, n, id);
             }
         }
+        // ---- lumini: selectare prin click pe marker si mutare prin drag in 3D
+        let mut light_drag = false;
+        if let Some(ptr) = resp.interact_pointer_pos() {
+            for (li, lamp) in self.lights.iter().enumerate() {
+                if let Some(sp) = to_screen(&params.view_proj, rect, Vec3::from(lamp.pos)) {
+                    if (sp - ptr).length() < 13.0 {
+                        if resp.clicked() {
+                            self.light_sel = Some(li);
+                        }
+                        if resp.dragged() && self.light_sel == Some(li) {
+                            light_drag = true;
+                        }
+                    }
+                }
+            }
+        }
+        if light_drag {
+            if let Some(ptr) = resp.interact_pointer_pos() {
+                if let Some(li) = self.light_sel {
+                    let (o, d) = self.cam.ray(uv(ptr), aspect);
+                    let lp = Vec3::from(self.lights[li].pos);
+                    let n = self.cam.fwd();
+                    let den = d.dot(n);
+                    if den.abs() > 1e-4 {
+                        let t = (lp - o).dot(n) / den;
+                        if t > 0.0 {
+                            self.lights[li].pos = (o + d * t).to_array();
+                        }
+                    }
+                }
+            }
+        }
+        // markerele luminilor: bec galben + raza de actiune (ca in Navisworks)
+        for (li, lamp) in self.lights.iter().enumerate() {
+            if !lamp.enabled {
+                continue;
+            }
+            if let Some(sp) = to_screen(&params.view_proj, rect, Vec3::from(lamp.pos)) {
+                let col = if self.light_sel == Some(li) { Color32::from_rgb(255, 235, 120) } else { Color32::from_rgb(230, 180, 60) };
+                painter.circle_filled(sp, 5.0, col.gamma_multiply(0.85));
+                painter.circle_stroke(sp, 5.0, Stroke::new(1.5_f32, Color32::BLACK));
+                if lamp.kind != crate::lights::LightKind::Point {
+                    let axis = Vec3::from(lamp.target) - Vec3::from(lamp.pos);
+                    if let Some(tp) = to_screen(&params.view_proj, rect, Vec3::from(lamp.pos) + axis * 0.15) {
+                        painter.line_segment([sp, tp], Stroke::new(1.5_f32, col));
+                    }
+                }
+                if self.light_sel == Some(li) {
+                    painter.text(sp + EV::new(9.0, -18.0), Align2::LEFT_TOP, &lamp.name, FontId::proportional(11.0), col);
+                }
+            }
+        }
         let grid_click = resp.clicked() && self.grid_pick > 0 && snap.is_some() && !xform_click;
         if grid_click {
             if let Some(s) = snap {
@@ -3727,6 +3725,20 @@ impl App {
                         if let Some((_, _, hit, _)) = self.pick(o, d) {
                             self.path_run = None;
                             self.walk_path.push(hit);
+                        }
+                    }
+                    Tool::PlaceLight => {
+                        // ca in Navisworks: click pe o suprafata = lumina plasata acolo
+                        let (o, d) = self.cam.ray(uv(p), aspect);
+                        if let Some((_, _, hit, n)) = self.pick(o, d) {
+                            let mut l = crate::lights::SceneLight::default();
+                            l.name = format!("Point light {}", self.lights.len() + 1);
+                            let nv = n[0];
+                            l.pos = (hit + nv * 0.15).to_array();
+                            l.target = (hit - nv).to_array();
+                            self.light_sel = Some(self.lights.len());
+                            self.lights.push(l);
+                            self.tool = Tool::Select;
                         }
                     }
                     Tool::RedErase => {

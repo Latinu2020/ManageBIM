@@ -2,10 +2,33 @@
 //! Pozitia e in coordonatele locale ale scenei (aceleasi ca vertecii / camera).
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum LightKind {
+    #[default]
+    Point,
+    Spot,
+    Distant,
+}
+
+impl LightKind {
+    pub const ALL: [LightKind; 3] = [LightKind::Point, LightKind::Spot, LightKind::Distant];
+    pub fn label(self) -> &'static str {
+        match self { Self::Point => "Point light", Self::Spot => "Spot light", Self::Distant => "Distant light" }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SceneLight {
     pub name: String,
+    #[serde(default)]
+    pub kind: LightKind,
     pub pos: [f32; 3],
+    /// directia / tinta pentru Spot si Distant
+    #[serde(default)]
+    pub target: [f32; 3],
+    /// unghiul cone-ului pentru Spot (grade, 5..=120)
+    #[serde(default = "default_angle")]
+    pub angle: f32,
     /// culoarea luminii (sRGB 0..255)
     pub color: [u8; 3],
     /// putere relativa (0..10)
@@ -17,10 +40,14 @@ pub struct SceneLight {
 }
 
 fn yes() -> bool { true }
+fn default_angle() -> f32 { 45.0 }
 
 impl Default for SceneLight {
     fn default() -> Self {
-        Self { name: "Lamp".into(), pos: [0.0; 3], color: [255, 236, 200], power: 2.0, radius: 12.0, enabled: true }
+        Self {
+            name: "Lamp".into(), kind: LightKind::Point, pos: [0.0; 3], target: [0.0, 0.0, -1.0],
+            angle: default_angle(), color: [255, 236, 200], power: 2.0, radius: 12.0, enabled: true,
+        }
     }
 }
 
