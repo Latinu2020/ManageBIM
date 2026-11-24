@@ -20,6 +20,10 @@ pub const DN_FAILED: u8 = 3;
 const SUN_RADIUS: f32 = 0.035;
 /// distanta pana la care un obstacol intuneca lumina cerului (ambient occlusion), in metri
 const AO_DIST: f32 = 2.5;
+/// raza becului (m) pentru lampile Point / Spot: umbrele lampilor au margini moi, ca in realitate
+const LAMP_RADIUS: f32 = 0.06;
+/// raza unghiulara (rad) a luminilor Distant: penumbra ca la soare
+const DISTANT_RADIUS: f32 = 0.02;
 
 pub struct Scene {
     pub tris: Vec<Vec3>,   // 3 vertexuri per triunghi
@@ -296,6 +300,17 @@ impl Rng {
     }
 }
 
+/// punct uniform in sfera unitate (respingere): esantionarea suprafetei luminii -> umbre moi
+fn in_unit_ball(rng: &mut Rng) -> Vec3 {
+    for _ in 0..16 {
+        let v = Vec3::new(rng.next() * 2.0 - 1.0, rng.next() * 2.0 - 1.0, rng.next() * 2.0 - 1.0);
+        if v.length_squared() <= 1.0 {
+            return v;
+        }
+    }
+    Vec3::ZERO
+}
+
 /// baza ortonormala in jurul lui n
 fn basis(n: Vec3) -> (Vec3, Vec3) {
     let a = if n.x.abs() > 0.9 { Vec3::Y } else { Vec3::X };
@@ -557,7 +572,8 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
         use crate::lights::LightKind;
         let (l, d, atten_base) = match lamp.kind {
             LightKind::Point | LightKind::Spot => {
-                let lv = Vec3::from(lamp.pos) - p;
+                // un punct aleator pe bec (nu centrul): umbrele moi apar prin acumularea esantioanelor
+                let lv = Vec3::from(lamp.pos) + in_unit_ball(rng) * LAMP_RADIUS - p;
                 let d = lv.length();
                 if d < 1e-3 {
                     continue;
@@ -571,11 +587,17 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
                 (dir, d, atten)
             }
             LightKind::Distant => {
+                // directia de propagare e pozitie -> tinta; spre lumina (l) e opusul ei.
+                // (inainte se folosea directia de propagare: luminau fetele din spate, umbrele erau inversate)
                 let dir = (Vec3::from(lamp.target) - Vec3::from(lamp.pos)).normalize_or_zero();
                 if dir == Vec3::ZERO {
                     continue;
                 }
-                (dir, 1e5, lamp.power.max(0.0))
+                let l = (-dir + in_unit_ball(rng) * DISTANT_RADIUS).normalize_or_zero();
+                if l == Vec3::ZERO {
+                    continue;
+                }
+                (l, 1e5, lamp.power.max(0.0))
             }
         };
         let mut atten = atten_base;
@@ -861,6 +883,30 @@ mod tests {
         let j1 = start_arc((48, 48, 12, 0.0), sc2, eye, fwd, up, right, 50.0, Vec3::ZERO, 0.0, (1, 0.05, 0.0), false, None, false);
         while !j1.done.load(Ordering::Relaxed) { std::thread::sleep(std::time::Duration::from_millis(5)); }
         assert!(lum(&j1, 24, 24) > dark + 0.05, "lampa nu lumineaza: {} vs {}", lum(&j1, 24, 24), dark);
+    }
+
+    #[test]
+    fn distant_light_shines_along_its_direction() {
+        // lumina Distant de sus in jos lumineaza fata de sus a cubului; indreptata in sus, nu
+        let sc = scene_with(255, [0; 4], Vec::new());
+        let eye = Vec3::new(0.0, -12.0, 9.0);
+        let fwd = (Vec3::new(0.0, 0.0, 1.5) - eye).normalize();
+        let right = fwd.cross(Vec3::Z).normalize();
+        let up = right.cross(fwd);
+        let shot = |target_z: f32| {
+            let lamp = crate::lights::SceneLight { name: "D".into(), kind: crate::lights::LightKind::Distant, pos: [0.0, 0.0, 10.0], target: [0.0, 0.0, target_z], color: [255, 255, 255], power: 3.0, radius: 0.0, enabled: true, ..Default::default() };
+            let s = std::sync::Arc::new(Scene {
+                tris: sc.tris.clone(), colors: sc.colors.clone(), mats: sc.mats.clone(), extra: sc.extra.clone(),
+                textures: sc.textures.clone(), planes: sc.planes.clone(), lights: vec![lamp],
+                bvh: crate::model::Bvh::build(&sc.tris),
+            });
+            let j = start_arc((48, 48, 12, 0.0), s, eye, fwd, up, right, 50.0, Vec3::ZERO, 0.0, (1, 0.05, 0.0), false, None, false);
+            while !j.done.load(Ordering::Relaxed) { std::thread::sleep(std::time::Duration::from_millis(5)); }
+            lum(&j, 24, 24)
+        };
+        let down = shot(0.0);
+        let upward = shot(20.0);
+        assert!(down > upward + 0.05, "Distant in jos {down} vs in sus {upward}");
     }
 
     #[test]

@@ -570,12 +570,21 @@ impl App {
         // lampile din model ajung in shader-ul GPU: lumina se vede in timp real in 3D
         let mut lamps = [Vec4::ZERO; 8];
         let mut lamp_data = [Vec4::ZERO; 8];
+        let mut lamp_dir = [Vec4::ZERO; 8];
         for (k, l) in self.lights.iter().filter(|l| l.enabled).take(8).enumerate() {
             let col = l.linear();
-            lamps[k] = Vec4::new(l.pos[0], l.pos[1], l.pos[2], l.power / 20.0);
-            lamp_data[k] = Vec4::new(col[0], col[1], col[2], l.radius.max(0.1));
+            lamps[k] = Vec4::new(l.pos[0], l.pos[1], l.pos[2], l.power.max(0.0) / 20.0);
+            // raza 0 = nelimitata: trimisa ca 0 (inainte devenea 0.1 m si lumina disparea complet)
+            lamp_data[k] = Vec4::new(col[0], col[1], col[2], l.radius.max(0.0));
+            let d = l.direction();
+            let w = match l.kind {
+                crate::lights::LightKind::Point => -2.0,
+                crate::lights::LightKind::Distant => 2.0,
+                crate::lights::LightKind::Spot => (l.angle.clamp(5.0, 120.0) * 0.5).to_radians().cos(),
+            };
+            lamp_dir[k] = Vec4::new(d.x, d.y, d.z, w);
         }
         FrameParams { view_proj: vp, eye: self.cam.eye(), planes, nplanes: pl.len().min(6) as i32, sun: self.render.sun_dir(), light: self.render.light(),
-            lamps, lamp_data, nlamps: self.lights.iter().filter(|l| l.enabled).count().min(8) as i32, point_size: self.point_size, caps: self.section_caps, ao: if self.settings.visual_style == crate::render::VisualStyle::Wireframe || self.settings.visual_style == crate::render::VisualStyle::Hidden { 0.0 } else { self.render.ao }, edges: if self.settings.visual_style == crate::render::VisualStyle::Concept || self.settings.visual_style == crate::render::VisualStyle::Hidden { self.render.edges.max(0.9) } else { self.render.edges }, style: self.settings.visual_style, depth_k: [proj.z_axis.z, proj.w_axis.z, if self.cam.ortho { 1.0 } else { 0.0 }, proj.y_axis.y], shadows: self.render.shadows && self.settings.visual_style != crate::render::VisualStyle::Wireframe && self.settings.visual_style != crate::render::VisualStyle::Hidden && !(self.lod_moving() && self.scene_tris() > 2_000_000), scene: self.shadow_sphere() }
+            lamps, lamp_data, lamp_dir, night: self.render.night, nlamps: self.lights.iter().filter(|l| l.enabled).count().min(8) as i32, point_size: self.point_size, caps: self.section_caps, ao: if self.settings.visual_style == crate::render::VisualStyle::Wireframe || self.settings.visual_style == crate::render::VisualStyle::Hidden { 0.0 } else { self.render.ao }, edges: if self.settings.visual_style == crate::render::VisualStyle::Concept || self.settings.visual_style == crate::render::VisualStyle::Hidden { self.render.edges.max(0.9) } else { self.render.edges }, style: self.settings.visual_style, depth_k: [proj.z_axis.z, proj.w_axis.z, if self.cam.ortho { 1.0 } else { 0.0 }, proj.y_axis.y], shadows: self.render.shadows && self.settings.visual_style != crate::render::VisualStyle::Wireframe && self.settings.visual_style != crate::render::VisualStyle::Hidden && !(self.lod_moving() && self.scene_tris() > 2_000_000), scene: self.shadow_sphere() }
     }
 }

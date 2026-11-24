@@ -1217,12 +1217,26 @@ pub struct App {
     pub light_sel: Option<usize>,
     /// axa UCS (0=X, 1=Y, 2=Z) prinsa pentru mutarea luminii
     pub light_axis: Option<usize>,
-    /// rotirea directiei luminii prin cercul gizmo (unghiul initial la inceputul dragului)
-    pub light_rot: Option<(f32, [f32; 3])>,
+    /// rotirea directiei luminii prin cercul gizmo: (axa de rotire 0=X 1=Y 2=Z, unghiul din cadrul
+    /// precedent, true = unghi masurat pe ecran - planul cercului e vazut din profil)
+    pub light_rot: Option<(usize, f32, bool)>,
     /// modul gizmo-ului de lumina: false = Move (sagetile), true = Rotate (cercurile)
     pub light_rotate_mode: bool,
     /// filtrul de cautare in catalogul de clasificare
     pub class_search: String,
+    /// fereastra Classification (catalog local + bSDD online)
+    pub class_open: bool,
+    /// 0 = catalog local, 1 = bSDD online
+    pub class_tab: usize,
+    pub bsdd_query: String,
+    /// URI-ul dictionarului bSDD ales (gol = toate)
+    pub bsdd_dict: String,
+    pub bsdd_results: Vec<crate::bsdd::BsddClass>,
+    pub bsdd_total: usize,
+    pub bsdd_status: String,
+    pub bsdd_rx: Option<std::sync::mpsc::Receiver<crate::bsdd::SearchResult>>,
+    pub bsdd_dicts: Vec<crate::bsdd::BsddDictionary>,
+    pub bsdd_dicts_rx: Option<std::sync::mpsc::Receiver<Result<Vec<crate::bsdd::BsddDictionary>, String>>>,
     pub selected: BTreeSet<ElemId>,
     pub primary: Option<ElemId>,
     pub hidden: HashSet<ElemId>,
@@ -1617,6 +1631,16 @@ impl App {
             light_rot: None,
             light_rotate_mode: false,
             class_search: String::new(),
+            class_open: false,
+            class_tab: 0,
+            bsdd_query: String::new(),
+            bsdd_dict: String::new(),
+            bsdd_results: Vec::new(),
+            bsdd_total: 0,
+            bsdd_status: String::new(),
+            bsdd_rx: None,
+            bsdd_dicts: Vec::new(),
+            bsdd_dicts_rx: None,
             selected: BTreeSet::new(),
             primary: None,
             hidden: HashSet::new(),

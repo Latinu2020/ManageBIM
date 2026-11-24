@@ -59,7 +59,8 @@ pub fn from_json(s: &str) -> Result<Catalog, String> {
 
 pub fn to_csv(c: &Catalog) -> String {
     let q = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
-    let mut out = format!("{};{};{};{}\n", q("System"), q("Code"), q("Name"), q("Description"));
+    // BOM: Excel deschide fisierul ca UTF-8 (diacriticele raman corecte)
+    let mut out = format!("\u{feff}{};{};{};{}\n", q("System"), q("Code"), q("Name"), q("Description"));
     for i in c {
         out.push_str(&format!("{};{};{};{}\n", q(&i.system), q(&i.code), q(&i.name), q(&i.description)));
     }
@@ -67,9 +68,16 @@ pub fn to_csv(c: &Catalog) -> String {
 }
 
 pub fn from_csv(s: &str) -> Result<Catalog, String> {
+    // BOM-ul pus de Excel; separatorul: ';' (Excel RO / EU) sau ',' (Excel EN), dupa antet
+    let s = s.trim_start_matches('\u{feff}');
+    let header = s.lines().next().unwrap_or("");
+    let sep = if header.matches(';').count() >= header.matches(',').count() { ';' } else { ',' };
     let mut out = Vec::new();
     for line in s.lines().skip(1) {
-        let fields: Vec<String> = parse_csv_line(line, b';');
+        if line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<String> = parse_csv_line(line, sep);
         if fields.len() < 3 {
             continue;
         }
@@ -88,15 +96,22 @@ pub fn from_csv(s: &str) -> Result<Catalog, String> {
     Ok(out)
 }
 
-fn parse_csv_line(s: &str, sep: u8) -> Vec<String> {
+/// O linie CSV (RFC 4180): campuri intre ghilimele, "" = ghilimea literala, text UTF-8
+/// (inainte se citea octet cu octet si diacriticele / „—" ieseau stricate).
+fn parse_csv_line(s: &str, sep: char) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
     let mut quoted = false;
-    for &b in s.as_bytes() {
-        match b {
-            b'"' => quoted = !quoted,
-            b if b == sep && !quoted => out.push(std::mem::take(&mut cur)),
-            _ => cur.push(b as char),
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        match c {
+            '"' if quoted && it.peek() == Some(&'"') => {
+                cur.push('"');
+                it.next();
+            }
+            '"' => quoted = !quoted,
+            c if c == sep && !quoted => out.push(std::mem::take(&mut cur)),
+            _ => cur.push(c),
         }
     }
     out.push(cur);
@@ -115,6 +130,15 @@ mod tests {
         let back = from_csv(&csv).unwrap();
         assert_eq!(back.len(), c.len());
         assert_eq!(back[0].code, c[0].code);
+    }
+
+    #[test]
+    fn csv_keeps_utf8_quotes_and_comma_separator() {
+        let c = vec![ClassItem { system: "Uniclass 2015".into(), code: "EF_20".into(), name: "Pereți \"exteriori\" — fațadă".into(), description: "a;b".into() }];
+        let back = from_csv(&format!("\u{feff}{}", to_csv(&c))).unwrap();
+        assert_eq!(back, c);
+        let comma = from_csv("System,Code,Name\nOmniClass,23-13 31 13,\"Walls, exterior\"\n").unwrap();
+        assert_eq!(comma[0].name, "Walls, exterior");
     }
 
     #[test]

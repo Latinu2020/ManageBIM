@@ -120,7 +120,11 @@ pub struct FrameParams {
     pub lamps: [Vec4; 8],
     /// rgb = culoare, w = raza (m)
     pub lamp_data: [Vec4; 8],
+    /// xyz = directia luminii (spre tinta), w = tipul: -2 punct, 2 distanta (soare), altfel cos(jumatate de con) pentru spot
+    pub lamp_dir: [Vec4; 8],
     pub nlamps: i32,
+    /// scena de noapte: cer si lumina ambientala aproape stinse, doar lampile lumineaza
+    pub night: bool,
     pub scene: Vec4,
 }
 
@@ -223,8 +227,10 @@ uniform sampler2D u_shadow;
 uniform mat4 u_svp;
 uniform vec4 u_sp;     // x = marimea unui texel in lume, y = adancimea totala (m), z = umbre pornite
 uniform vec4 u_lamps[8];     // xyz = pozitie, w = putere
-uniform vec4 u_lamp_data[8]; // rgb = culoare liniara, w = raza
+uniform vec4 u_lamp_data[8]; // rgb = culoare liniara, w = raza (0 = nelimitata)
+uniform vec4 u_lamp_dir[8];  // xyz = directia (spre tinta), w = -2 punct / 2 distanta / cos(jumatate de con) spot
 uniform int u_nlamps;
+uniform int u_night;
 
 // 1 = in lumina, 0 = in umbra (3x3 PCF: margini moi)
 float shadow_at(vec3 p, vec3 n) {
@@ -371,35 +377,62 @@ void main() {
     vec3 amb = mix(vec3(0.90, 0.86, 0.80), vec3(0.94, 0.97, 1.04), sky);
     vec3 fdir = normalize(vec3(-u_sun.x, -u_sun.y, 0.45));
     float fill = max(dot(n, fdir), 0.0);
-    vec3 k = amb * (0.21 + 0.14 * sky) * u_light.y + vec3(1.02, 0.99, 0.94) * (0.30 * sun * u_light.z) + vec3(0.31 * head + 0.07 * fill * u_light.y);
-    // lampi in model ( Interactive Ray Trace ca in Navisworks ): lumina cade pe suprafete in timp real
+    // noaptea: cerul, soarele si lumina de umplere aproape stinse - lampile din model dau lumina
+    float dayf = u_night == 1 ? 0.0 : 1.0;
+    float ambf = u_night == 1 ? 0.07 : 1.0;
+    vec3 k = (amb * (0.21 + 0.14 * sky) * u_light.y + vec3(0.31 * head + 0.07 * fill * u_light.y)) * ambf + vec3(1.02, 0.99, 0.94) * (0.30 * sun * u_light.z) * dayf;
+    // umbra aruncata: fetele intoarse spre soare dar acoperite devin vizibil mai inchise (ca afara, unde soarele domina)
+    k *= mix(1.0, mix(0.62, 1.0, shv), smoothstep(0.0, 0.25, dot(n, u_sun)) * step(0.5, u_sp.z) * dayf);
+    // lampi in model ( Interactive Ray Trace ca in Navisworks ): lumina cade pe suprafete in timp real.
+    // Punct = in toate directiile; Spot = con orientat spre tinta (rotirea din gizmo se vede imediat);
+    // Distant = raze paralele pe directia luminii. Raza 0 = fara cadere cu distanta.
+    // Se adauga DUPA umbra soarelui: lampile nu sunt intunecate de umbra soarelui.
+    vec3 lamp_spec = vec3(0.0);
+    vec3 klamp = vec3(0.0);
     for (int li = 0; li < 8; li++) {
         if (li >= u_nlamps) break;
-        vec3 lv = u_lamps[li].xyz - v_pos;
-        float d = length(lv);
+        vec4 ld = u_lamp_dir[li];
+        vec3 L;
+        float att;
         float radius = u_lamp_data[li].w;
-        // raza 0 = lumina nelimitata (ca soarele): fara cadere cu distanta
-        float att = radius <= 0.001 ? u_lamps[li].w * 26.0 : u_lamps[li].w * 26.0 / (1.0 + (d / radius) * (d / radius));
-        float nl = max(dot(n, lv / max(d, 0.001)), 0.0);
-        k += u_lamp_data[li].rgb * nl * att;
+        if (ld.w > 1.5) {
+            L = -ld.xyz;
+            att = u_lamps[li].w * 9.0;
+        } else {
+            vec3 lv = u_lamps[li].xyz - v_pos;
+            float d = length(lv);
+            L = lv / max(d, 0.001);
+            att = radius <= 0.001 ? u_lamps[li].w * 26.0 : u_lamps[li].w * 26.0 / (1.0 + (d / radius) * (d / radius));
+            if (ld.w > -1.5) {
+                // con: centrul cel mai luminos, marginea moale (ca in randarea offline)
+                float ca = dot(-L, ld.xyz);
+                float cone = clamp((ca - ld.w) / max(1.0 - ld.w, 1e-4), 0.0, 1.0);
+                att *= pow(cone, 1.5);
+            }
+        }
+        float nl = max(dot(n, L), 0.0);
+        klamp += u_lamp_data[li].rgb * nl * att;
+        // luciu de la lampa: punctul luminos se vede pe suprafetele lucioase
+        vec3 hl = normalize(L + vd);
+        lamp_spec += u_lamp_data[li].rgb * pow(max(dot(n, hl), 0.0), 48.0) * nl * att * 0.25;
     }
-    // umbra aruncata: fetele intoarse spre soare dar acoperite devin vizibil mai inchise (ca afara, unde soarele domina)
-    k *= mix(1.0, mix(0.62, 1.0, shv), smoothstep(0.0, 0.25, dot(n, u_sun)) * step(0.5, u_sp.z));
+    k += klamp;
     // un luciu mic pentru orice material (suprafetele nu mai par plate / de hartie)
     // harta de rugozitate (0 = oglinda) e inversul luciului; harta de metalicitate inlocuieste valoarea globala
     float gloss = pbr_rough >= 0.0 ? clamp(1.0 - pbr_rough, 0.03, 1.0) : (u_style == 0 ? max(v_mat.y, 0.07) : ((u_style == 2 || u_style == 4) ? 0.0 : 0.07));
     float metal = u_style == 0 ? (pbr_rough >= 0.0 ? pbr_metal : v_mat.z) : 0.0;
     if (u_style == 2 || u_style == 4) {
         // concept / hidden-line: lumina moale, fara reflexii
-        vec3 cc = base * (0.62 + 0.30 * head + 0.10 * sky + 0.08 * sun) * u_light.x;
+        // lampile se vad si aici (pata de lumina colorata), noaptea fondul e stins
+        vec3 cc = (base * (0.62 + 0.30 * head + 0.10 * sky + 0.08 * sun) * mix(0.12, 1.0, dayf) + base * klamp * 0.6) * u_light.x;
         o_col = vec4(min(cc, vec3(1.0)) * a, a);
         return;
     }
     vec3 h = normalize(u_sun + vd);
-    float spec = pow(max(dot(n, h), 0.0), mix(12.0, 160.0, gloss)) * gloss * shv;
+    float spec = pow(max(dot(n, h), 0.0), mix(12.0, 160.0, gloss)) * gloss * shv * dayf;
     float rim = pow(1.0 - head, 4.0) * gloss * 0.35;
     vec3 sc = mix(vec3(1.0), base, metal);
-    vec3 c = base * k * (1.0 - 0.35 * metal) + sc * (spec * 0.85 + rim) + metal * base * 0.22 * sky;
+    vec3 c = base * k * (1.0 - 0.35 * metal) + sc * (spec * 0.85 + rim * ambf) + metal * base * 0.22 * sky * ambf + lamp_spec * max(gloss, 0.15);
     if (u_style == 0) {
         // realist: reflexia cerului (Fresnel) - sticla, metal, suprafete lucioase prind cerul si solul
         vec3 rv = reflect(-vd, n);
@@ -408,7 +441,7 @@ void main() {
         vec3 fres = f0 + (1.0 - f0) * pow(1.0 - head, 5.0);
         bool glass = a < 0.95;
         float refl = glass ? 0.9 : gloss * 0.6;
-        c = mix(c, env * u_light.z * 1.1, clamp(fres * refl, 0.0, 1.0));
+        c = mix(c, env * u_light.z * 1.1 * mix(0.04, 1.0, dayf), clamp(fres * refl, 0.0, 1.0));
         // sticla: mai opaca la unghiuri razante (ca in realitate)
         if (glass) a = clamp(a + (1.0 - a) * pow(1.0 - head, 3.0) * 0.8, 0.0, 1.0);
         // tonuri filmice (ACES): contrast si saturatie naturale, luminile nu se ard
@@ -648,7 +681,13 @@ impl Renderer {
         }
         gl.uniform_4_f32_slice(gl.get_uniform_location(prog, "u_lamps").as_ref(), &lv);
         gl.uniform_4_f32_slice(gl.get_uniform_location(prog, "u_lamp_data").as_ref(), &lc);
+        let mut ld = [0.0f32; 32];
+        for (i, l) in p.lamp_dir.iter().enumerate() {
+            ld[i * 4..i * 4 + 4].copy_from_slice(&l.to_array());
+        }
+        gl.uniform_4_f32_slice(gl.get_uniform_location(prog, "u_lamp_dir").as_ref(), &ld);
         gl.uniform_1_i32(gl.get_uniform_location(prog, "u_nlamps").as_ref(), p.nlamps);
+        gl.uniform_1_i32(gl.get_uniform_location(prog, "u_night").as_ref(), p.night as i32);
         gl.uniform_1_i32(gl.get_uniform_location(prog, "u_caps").as_ref(), p.caps as i32);
         gl.uniform_1_i32(gl.get_uniform_location(prog, "u_style").as_ref(), p.style.code());
         let u_pass = gl.get_uniform_location(prog, "u_pass");

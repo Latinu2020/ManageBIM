@@ -51,8 +51,14 @@ impl App {
             if ui.selectable_label(!self.light_rotate_mode, "✥ Move").on_hover_text("Drag the red X / green Y / blue Z arrows to move the light").clicked() {
                 self.light_rotate_mode = false;
             }
-            if ui.selectable_label(self.light_rotate_mode, "⟳ Rotate").on_hover_text("Drag a circle to rotate the light direction around that plane's axis (XY → Z, XZ → Y, YZ → X)").clicked() {
+            if ui.selectable_label(self.light_rotate_mode, "⟳ Rotate").on_hover_text("Drag a circle to aim a Spot / Distant light: blue circle turns around Z (left / right), green around Y, red around X (up / down)").clicked() {
                 self.light_rotate_mode = true;
+                // o lumina punctuala nu are directie: spunem cum se orienteaza
+                if let Some(i) = self.light_sel.filter(|&i| i < self.lights.len()) {
+                    if self.lights[i].kind == crate::lights::LightKind::Point {
+                        self.toast("Point lights shine in all directions - change the type to Spot or Distant to aim the light");
+                    }
+                }
             }
             if ui.checkbox(&mut self.render.night, "🌙 Night").on_hover_text("Dark sky and low ambient light - the lamps in the model light the scene").clicked() {
                 // nimic altceva: starea se citeste la pornirea randarii
@@ -128,14 +134,27 @@ impl App {
                     ui.label(RichText::new("Position").small());
                     for axis in 0..3 {
                         ui.label(RichText::new(["x", "y", "z"][axis]).small());
-                        ui.add(egui::DragValue::new(&mut lamp.pos[axis]).speed(0.05).suffix(" m"));
+                        ui.add(egui::DragValue::new(&mut lamp.pos[axis]).speed(0.05).max_decimals(2).suffix(" m"));
                     }
                 });
                 if lamp.kind != crate::lights::LightKind::Point {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("Target").small());
                         for axis in 0..3 {
-                            ui.add(egui::DragValue::new(&mut lamp.target[axis]).speed(0.05).suffix(" m"));
+                            ui.add(egui::DragValue::new(&mut lamp.target[axis]).speed(0.05).max_decimals(2).suffix(" m"));
+                        }
+                    });
+                    // orientare numerica (ca la Rotate din gizmo): azimut in plan + inclinare fata de orizontala
+                    ui.horizontal(|ui| {
+                        let (mut az, mut tilt) = lamp.aim_angles();
+                        ui.label(RichText::new("Aim").small()).on_hover_text("Direction of the light: azimuth (0° = +X, 90° = +Y) and tilt (-90° = straight down)");
+                        let a = ui.add(egui::DragValue::new(&mut az).range(-180.0..=180.0).speed(1.0).max_decimals(1).suffix("° az"));
+                        let t = ui.add(egui::DragValue::new(&mut tilt).range(-90.0..=90.0).speed(1.0).max_decimals(1).suffix("° tilt"));
+                        if a.changed() || t.changed() {
+                            lamp.set_aim_angles(az, tilt);
+                        }
+                        if ui.small_button("⬇").on_hover_text("Aim straight down").clicked() {
+                            lamp.set_aim_angles(az, -90.0);
                         }
                     });
                 }

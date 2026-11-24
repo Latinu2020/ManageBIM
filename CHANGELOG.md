@@ -3,6 +3,18 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.30 - 2026-11-24
+- **Light rotation with the gizmo works**: dragging a Rotate circle no longer orbits the camera at the same time (the circles used to run away from the cursor), the grabbed circle stays active for the whole drag, and the angle follows the mouse around the circle (ray / plane intersection) instead of only horizontal movement. The circle colour shows the axis it turns around (blue = Z, green = Y, red = X); the current **Azimuth / Tilt** is shown under the light while rotating.
+- **Spot and Distant lights are aimed in the 3D view in real time**: the GPU shader now uses the light direction and the spot cone (before, every light was drawn as a point light, so rotating had no visible effect). The spot cone and the direction arrow are drawn in the viewport. New **Aim** fields (azimuth / tilt, ⬇ straight down) in the Lighting panel.
+- **Lights are clearly visible in 3D**: glowing bulb marker with rays in the light colour, readable label on a dark background, disabled lights shown greyed out. **Click a light in the 3D view to select it** and show its gizmo.
+- Fixed: lights with **Range 0 (unlimited)** disappeared in the 3D view (the range was sent to the GPU as 0.1 m).
+- **Night mode in the viewport**: dark sky, sun and ambient off - the lamps light the model (before, Night only affected the offline render). Lamps also add highlights on glossy surfaces and light the Concept style.
+- **Path trace**: fixed **Distant lights shining from the wrong side** (lit back faces, inverted shadows). Point / Spot lamps have a small bulb size and Distant lights a small angular size, so their shadows have **soft, realistic edges**.
+- **bSDD classification window** (BIM › bSDD, or the command palette): the button used to open the Properties panel. Now a dedicated window with two tabs - the **Local catalogue** (table with search, remove, import / export) and **bSDD online**: live search in the buildingSMART Data Dictionary (IFC 4.3, Uniclass, ETIM, NL-SfB, … with a dictionary filter), assign a class to the selected elements (code, name and URI are saved), ⭐ keep a class in the local catalogue for offline use. Shows the current classifications of the selection and can clear them.
+- **Classifications are exported to IFC** as `IfcClassification` + `IfcClassificationReference` + `IfcRelAssociatesClassification` (with the bSDD URI as Location) - they were only written as a property set before. Classifications read from an IFC file are exported back the same way.
+- Classification CSV: fixed broken diacritics and "—" (the file was read byte by byte), `""` quotes inside fields, Excel files with `,` separator or a UTF-8 BOM; the exported CSV opens correctly in Excel.
+- 9 new tests (light aiming, bSDD parsing, CSV, IFC classification references, Distant light direction).
+
 ## 0.27.29 - 2026-11-24
 - **Light gizmo with Move / Rotate modes** (like Navisworks): a **Move** button uses the X/Y/Z arrows to move the light; a **Rotate** button shows three thick circles (XY → Z axis, XZ → Y, YZ → X) that you drag to aim the light. Previously the thin range circles were hard to grab and rotation was not discoverable.
 - **No more limited light range**: radius 0 means unlimited (no distance falloff) in both the GPU viewport and the offline render; the range slider now goes up to 5000 m.

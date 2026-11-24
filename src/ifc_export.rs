@@ -193,6 +193,8 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
     let mut styles: HashMap<[u8; 4], u64> = HashMap::new();
     let mut rep_maps: HashMap<u64, u64> = HashMap::new();
     let mut used_guids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // clasificari -> IfcClassificationReference: (sistem, cod, nume, URI) -> elementele
+    let mut class_refs: BTreeMap<(String, String, String, String), Vec<u64>> = BTreeMap::new();
     for (k, (m, e)) in items.iter().enumerate() {
         let tris = m.tris(e);
         if tris.len() < 3 {
@@ -349,6 +351,9 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
         ));
         contained.entry(sid).or_default().push(el);
         st.elements += 1;
+        for key in element_classes(&e.props) {
+            class_refs.entry(key).or_default().push(el);
+        }
 
         // proprietati: un IfcPropertySet pe grup (fara cele calculate de ManageBIM pentru arbore)
         let mut groups: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
@@ -393,6 +398,21 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
             w.add(&format!("IFCRELDEFINESBYPROPERTIES({},#{oh},$,$,(#{el}),#{ps})", step_str(&guid_from(&format!("rdp|{gid}|{g}")))));
         }
     }
+    // IfcClassification (un sistem) + IfcClassificationReference (un cod) + legatura cu elementele
+    let mut systems: BTreeMap<String, u64> = BTreeMap::new();
+    for ((system, code, name, uri), els) in &class_refs {
+        let sys = *systems.entry(system.clone()).or_insert_with(|| {
+            let loc = if system.eq_ignore_ascii_case("IFC") { "'https://identifier.buildingsmart.org/uri/buildingsmart/ifc/4.3'".to_string() } else { "$".to_string() };
+            w.add(&format!("IFCCLASSIFICATION($,$,$,{},$,{loc},$)", step_str(system)))
+        });
+        let loc = if uri.is_empty() { "$".to_string() } else { step_str(uri) };
+        let nm = if name.is_empty() { "$".to_string() } else { step_str(name) };
+        let r = w.add(&format!("IFCCLASSIFICATIONREFERENCE({loc},{},{nm},#{sys},$,$)", step_str(code)));
+        for chunk in els.chunks(5000) {
+            let list = chunk.iter().map(|i| format!("#{i}")).collect::<Vec<_>>().join(",");
+            w.add(&format!("IFCRELASSOCIATESCLASSIFICATION({},#{oh},$,$,({list}),#{r})", step_str(&guid_from(&format!("rac|{system}|{code}|{}|{now}", chunk[0])))));
+        }
+    }
     for (sid, els) in contained {
         for chunk in els.chunks(5000) {
             let list = chunk.iter().map(|i| format!("#{i}")).collect::<Vec<_>>().join(",");
@@ -409,9 +429,51 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
     (format!("{header}{}ENDSEC;\nEND-ISO-10303-21;\n", w.s), st)
 }
 
+/// Clasificarile unui element, din cele doua forme de proprietati:
+/// - atribuite in ManageBIM (bSDD / catalog): grup = sistemul, "Classification" = "cod — nume",
+///   optional "Classification URI";
+/// - citite din IFC: grup "Classification", nume = sistemul, valoare = codul, "<sistem> name" = denumirea.
+fn element_classes(props: &[crate::model::Prop]) -> Vec<(String, String, String, String)> {
+    let find = |g: &str, n: &str| props.iter().find(|p| p.group == g && p.name.eq_ignore_ascii_case(n)).map(|p| p.value.trim().to_string()).unwrap_or_default();
+    let mut out = Vec::new();
+    for p in props {
+        let v = p.value.trim();
+        if v.is_empty() {
+            continue;
+        }
+        if p.name.eq_ignore_ascii_case("Classification") && !p.group.eq_ignore_ascii_case("Classification") {
+            let (code, name) = match v.split_once(" — ").or_else(|| v.split_once(" - ")) {
+                Some((c, n)) => (c.trim().to_string(), n.trim().to_string()),
+                None => (v.to_string(), String::new()),
+            };
+            out.push((p.group.trim().to_string(), code, name, find(&p.group, "Classification URI")));
+        } else if p.group.eq_ignore_ascii_case("Classification") && !p.name.ends_with(" name") && !p.name.eq_ignore_ascii_case("Classification URI") {
+            out.push((p.name.trim().to_string(), v.to_string(), find(&p.group, &format!("{} name", p.name)), String::new()));
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn classification_props_become_references() {
+        let p = |g: &str, n: &str, v: &str| crate::model::Prop { group: g.into(), name: n.into(), value: v.into() };
+        let props = vec![
+            p("IFC", "Classification", "IfcWall — Wall"),
+            p("IFC", "Classification URI", "https://identifier.buildingsmart.org/uri/buildingsmart/ifc/4.3/class/IfcWall"),
+            p("Classification", "Uniclass 2015", "EF_20_10_20"),
+            p("Classification", "Uniclass 2015 name", "Walls"),
+        ];
+        let c = element_classes(&props);
+        assert_eq!(c.len(), 2);
+        assert!(c.contains(&("IFC".into(), "IfcWall".into(), "Wall".into(), "https://identifier.buildingsmart.org/uri/buildingsmart/ifc/4.3/class/IfcWall".into())));
+        assert!(c.contains(&("Uniclass 2015".into(), "EF_20_10_20".into(), "Walls".into(), String::new())));
+    }
 
     #[test]
     fn step_strings_and_guids() {
