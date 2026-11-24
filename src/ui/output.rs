@@ -444,45 +444,111 @@ impl App {
         if !self.view_templates_open { return; }
         let mut open = true;
         let mut apply: Option<usize> = None;
+        let mut update: Option<usize> = None;
         let mut del: Option<usize> = None;
         let mut dup: Option<usize> = None;
         let mut set_default: Option<usize> = None;
+        let mut swap: Option<(usize, usize)> = None;
+        let mut save = false;
+        let n = self.view_templates.len();
         egui::Window::new(crate::theme::icon_job("◫", "View Templates", 14.0, ctx.style().visuals.text_color()))
             .id(egui::Id::new("view_templates_win"))
             .open(&mut open)
-            .default_width(420.0)
+            .default_width(560.0)
+            .default_height(480.0)
             .resizable(true)
             .show(ctx, |ui| {
-                ui.label(RichText::new("Complete view presets saved in the project: camera, visibility, section, style, colours, selection and measures.").small().weak());
-                ui.label(RichText::new("Ctrl+1…9 jump directly to a template · ◀ ▶ next to the ViewCube cycles.").small().weak());
-                ui.separator();
-                if self.view_templates.is_empty() {
-                    ui.label(RichText::new("No templates yet. Use View › View Templates › Save.").weak());
-                }
-                egui::ScrollArea::vertical().max_height(340.0).show(ui, |ui| {
-                    for (i, t) in self.view_templates.iter_mut().enumerate() {
-                        egui::Frame::none().fill(ui.visuals().faint_bg_color).rounding(crate::theme::RADIUS_MD).stroke(egui::Stroke::new(1.0_f32, crate::theme::border())).inner_margin(egui::Margin::symmetric(8.0, 5.0)).show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                if t.is_default { ui.label(RichText::new("★").color(crate::theme::accent()).size(13.0)); }
-                                ui.add(egui::TextEdit::singleline(&mut t.name).desired_width(150.0));
-                                if ui.small_button("▶").on_hover_text("Apply this view").clicked() { apply = Some(i); }
-                                if ui.small_button("⧉").on_hover_text("Duplicate").clicked() { dup = Some(i); }
-                                if ui.small_button("★").on_hover_text("Set as default (applied when the project opens)").clicked() { set_default = Some(i); }
-                                if ui.small_button("🗑").on_hover_text("Delete template").clicked() { del = Some(i); }
-                            });
-                            ui.add(egui::TextEdit::singleline(&mut t.note).hint_text("note (what this view shows)").desired_width(380.0).font(egui::TextStyle::Small));
-                        });
-                        ui.add_space(3.0);
+                ui.horizontal(|ui| {
+                    if ui.add(egui::Button::new(RichText::new("➕ Save current view").strong().color(Color32::WHITE)).fill(accent())).clicked() {
+                        save = true;
                     }
+                    ui.label(RichText::new("Ctrl+1…9 applies a template · ◀ ▶ next to the ViewCube cycles").small().weak());
                 });
                 ui.separator();
-                if ui.small_button("➕ Save current view as template").clicked() { self.save_view_template(); }
+                if n == 0 {
+                    ui.add_space(8.0);
+                    ui.label(RichText::new("No templates yet").strong());
+                    ui.label(RichText::new("Set up a view (camera, hidden elements, section, style, colours) and press Save current view. Templates are saved in the project.").small().weak());
+                    return;
+                }
+                let cur = self.vt_current;
+                egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| {
+                    for i in 0..n {
+                        let active = cur == i;
+                        let frame_col = if active { accent() } else { crate::theme::border() };
+                        egui::Frame::none()
+                            .fill(if active { accent().gamma_multiply(0.10) } else { ui.visuals().faint_bg_color })
+                            .rounding(crate::theme::RADIUS_MD)
+                            .stroke(egui::Stroke::new(1.0_f32, frame_col))
+                            .inner_margin(egui::Margin::symmetric(10.0, 7.0))
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                let t = &mut self.view_templates[i];
+                                ui.horizontal(|ui| {
+                                    // numarul scurtaturii Ctrl+1..9
+                                    let key = if i < 9 { format!("{}", i + 1) } else { "·".into() };
+                                    ui.label(RichText::new(key).monospace().strong().color(accent())).on_hover_text("Ctrl + this number applies the template");
+                                    if t.is_default {
+                                        ui.label(RichText::new("★").color(accent())).on_hover_text("Default: applied when the project opens");
+                                    }
+                                    ui.add(egui::TextEdit::singleline(&mut t.name).desired_width(170.0).font(egui::TextStyle::Body));
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        if ui.small_button("🗑").on_hover_text("Delete").clicked() { del = Some(i); }
+                                        if ui.small_button("⧉").on_hover_text("Duplicate").clicked() { dup = Some(i); }
+                                        if ui.small_button("★").on_hover_text("Set as default (applied when the project opens)").clicked() { set_default = Some(i); }
+                                        if ui.add_enabled(i + 1 < n, egui::Button::new("↓").small()).on_hover_text("Move down").clicked() { swap = Some((i, i + 1)); }
+                                        if ui.add_enabled(i > 0, egui::Button::new("↑").small()).on_hover_text("Move up").clicked() { swap = Some((i, i - 1)); }
+                                        if ui.small_button("⟳ Update").on_hover_text("Overwrite this template with the current view (keeps name, note and what it includes)").clicked() { update = Some(i); }
+                                        if ui.add(egui::Button::new(RichText::new("▶ Apply").strong())).clicked() { apply = Some(i); }
+                                    });
+                                });
+                                // rezumat: ce contine sablonul
+                                let mut chips: Vec<String> = vec![t.visual_style.label().to_string()];
+                                if t.section.enabled {
+                                    chips.push(if t.section.mode == crate::app::SectionMode::Box { "Section box".into() } else { "Section planes".into() });
+                                }
+                                if !t.hidden.is_empty() { chips.push(format!("{} hidden", t.hidden.len())); }
+                                if !t.overrides.is_empty() { chips.push(format!("{} coloured", t.overrides.len())); }
+                                if !t.selected.is_empty() { chips.push(format!("{} selected", t.selected.len())); }
+                                if t.show_grids { chips.push("Grids".into()); }
+                                if t.show_levels { chips.push("Levels".into()); }
+                                ui.horizontal_wrapped(|ui| {
+                                    for c in &chips {
+                                        egui::Frame::none().fill(ui.visuals().extreme_bg_color).rounding(8.0).inner_margin(egui::Margin::symmetric(6.0, 1.0)).show(ui, |ui| {
+                                            ui.label(RichText::new(c).small());
+                                        });
+                                    }
+                                });
+                                // ce aplica (ca „Include" din View Templates in Revit)
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.label(RichText::new("Applies").small().weak());
+                                    for (k, label) in crate::app::VT_INCLUDE.iter().enumerate() {
+                                        ui.checkbox(&mut t.include[k], RichText::new(*label).small());
+                                    }
+                                });
+                                ui.add(egui::TextEdit::singleline(&mut t.note).hint_text("Note: what this view is for").desired_width(f32::INFINITY).font(egui::TextStyle::Small));
+                            });
+                        ui.add_space(4.0);
+                    }
+                });
             });
+        if save { self.save_view_template(); }
         if let Some(i) = apply { self.apply_view_template(i); }
-        if let Some(i) = set_default { for (k, t) in self.view_templates.iter_mut().enumerate() { t.is_default = k == i; } }
+        if let Some(i) = update { self.update_view_template(i); }
+        if let Some(i) = set_default {
+            for (k, t) in self.view_templates.iter_mut().enumerate() {
+                t.is_default = k == i && !t.is_default;
+            }
+        }
+        if let Some((a, b)) = swap {
+            self.view_templates.swap(a, b);
+            if self.vt_current == a { self.vt_current = b; } else if self.vt_current == b { self.vt_current = a; }
+        }
         if let Some(i) = dup {
             if let Some(t) = self.view_templates.get(i).cloned() {
-                let mut c = t; c.name = format!("{} copy", c.name); c.is_default = false;
+                let mut c = t;
+                c.name = format!("{} copy", c.name);
+                c.is_default = false;
                 self.view_templates.insert(i + 1, c);
             }
         }

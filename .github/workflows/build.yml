@@ -131,7 +131,9 @@ jobs:
           path: dist/*.exe
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # se publica daca Windows si installerul au reusit; pachetele Linux / FreeBSD se adauga cand exista
+    # (inainte, un esec pe Linux sau FreeBSD oprea tot release-ul, si installerul Windows nu ajungea pe GitHub)
+    if: startsWith(github.ref, 'refs/tags/v') && !cancelled() && needs.windows.result == 'success' && needs.setup.result == 'success'
     needs: [windows, linux, freebsd, setup]
     runs-on: ubuntu-latest
     permissions:

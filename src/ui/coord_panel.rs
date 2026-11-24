@@ -57,6 +57,9 @@ impl App {
                     if ui.button("⚡ Auto voids").on_hover_text("A void wherever a pipe / duct / cable tray crosses a wall or slab").clicked() {
                         self.auto_voids();
                     }
+                    if ui.button("➡ Send voids to Revit").on_hover_text("Write the APPROVED voids for the Revit add-in; in Revit press ManageBIM › Voids to cut them into the host walls and slabs").clicked() {
+                        self.send_voids_to_revit();
+                    }
                     if ui.button("⚠ Clash test").on_hover_text("New Clash Detective test: coordination objects vs all models (what enters a clearance zone, what a void hits...)").clicked() {
                         self.coord_clash_test();
                     }

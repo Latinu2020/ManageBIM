@@ -1088,6 +1088,8 @@ pub enum Purpose {
     ExportAsBuilt,
     ExportSectionCad,
     ExportSectionPdf,
+    /// planșa cu mai multe vederi din cubul de sectiune (fatade + vedere de sus)
+    ExportMultiView,
     ExportCobie,
     ImportOverlay,
     ImportCheckRules,
@@ -1227,11 +1229,20 @@ pub struct App {
     pub light_rotate_mode: bool,
     /// filtrul de cautare in catalogul de clasificare
     pub class_search: String,
+    /// verificarea actualizarilor (GitHub): in curs, rezultatul, descarcarea installerului
+    pub update_rx: Option<std::sync::mpsc::Receiver<crate::update::CheckResult>>,
+    pub update_info: Option<crate::update::UpdateInfo>,
+    pub update_dl_rx: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
+    pub update_checked: bool,
+    pub update_manual: bool,
+    pub update_open: bool,
     /// obiectele de coordonare (clearance / provision for void / placeholder) si modelul lor virtual
     pub coord_objects: Vec<crate::coord_objects::CoordObject>,
     pub coord_slot: Option<usize>,
     pub coord_sel: Option<usize>,
     pub coord_open: bool,
+    /// fata obiectului de coordonare tras cu mouse-ul (0..5 = -X +X -Y +Y -Z +Z, 6 = mutare in plan)
+    pub coord_drag: Option<usize>,
     /// marja zonelor de mentenanta in jurul selectiei si a golurilor automate (m)
     pub coord_margin: f32,
     pub void_margin: f32,
@@ -1655,10 +1666,17 @@ impl App {
             light_rot: None,
             light_rotate_mode: false,
             class_search: String::new(),
+            update_rx: None,
+            update_info: None,
+            update_dl_rx: None,
+            update_checked: false,
+            update_manual: false,
+            update_open: false,
             coord_objects: Vec::new(),
             coord_slot: None,
             coord_sel: None,
             coord_open: false,
+            coord_drag: None,
             coord_margin: 0.6,
             void_margin: 0.05,
             class_open: false,
@@ -3022,7 +3040,18 @@ pub struct ViewTemplate {
     /// notă scurtă (ce vezi în acest template)
     #[serde(default)]
     pub note: String,
+    /// ce aplica sablonul (ca „Include" din View Templates in Revit): camera, vizibilitate + selectie,
+    /// sectiune, stil vizual (+ axe / niveluri / capace), culori; implicit totul
+    #[serde(default = "vt_include_all")]
+    pub include: [bool; 5],
 }
+
+fn vt_include_all() -> [bool; 5] {
+    [true; 5]
+}
+
+/// etichetele flagurilor `ViewTemplate::include`
+pub const VT_INCLUDE: [&str; 5] = ["Camera", "Visibility", "Section", "Style", "Colours"];
 
 /// O stare a vizualizarii in istoricul Undo / Redo.
 #[derive(Clone)]
@@ -3063,6 +3092,11 @@ pub struct CadOverlay {
     /// liniile (x1, y1, x2, y2) in coordonatele scenei; recitite din fisier la deschiderea proiectului
     #[serde(skip)]
     pub segs: Arc<Vec<[f32; 4]>>,
+}
+
+/// valoare implicita `true` pentru campurile de setari adaugate mai tarziu (serde)
+pub fn yes_default() -> bool {
+    true
 }
 
 fn yes_bool() -> bool {

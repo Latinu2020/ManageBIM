@@ -61,6 +61,9 @@ impl App {
                     if ui.checkbox(&mut self.settings.color_icons, "Coloured ribbon icons").on_hover_text("Colour the ribbon icons by what they do: files yellow, export blue, delete / clash red, measure green, view purple, section orange, search teal.").changed() {
                         self.settings.save();
                     }
+                    if ui.checkbox(&mut self.settings.check_updates, "Check for updates at start-up").on_hover_text("Reads the public release page on GitHub when ManageBIM starts; a new version shows an Update button in the status bar. Nothing about you or your models is sent.").changed() {
+                        self.settings.save();
+                    }
                     ui.horizontal(|ui| {
                         ui.label("3D background");
                         for (code, label, tip) in [("theme", "Theme", "The gradient of the current theme"), ("white", "White", "Clean white - for reports and prints"), ("grey", "Grey", "Neutral grey - good contrast for all colours"), ("black", "Black", "Black - for presentations"), ("sky", "Sky", "Blue sky gradient")] {

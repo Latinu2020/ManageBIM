@@ -35,7 +35,7 @@ impl App {
     pub(super) fn script_builder_ui(&mut self, ui: &mut egui::Ui) {
         ui.collapsing(RichText::new("🧩 Visual script builder — create a script without code").strong(), |ui| {
             let ix = self.scenario_props();
-            ui.label(RichText::new("1. Alege un scenariu gata făcut sau adaugă pași   2. Alege valorile din liste   3. ▶ Run").small().weak());
+            ui.label(RichText::new(crate::i18n::tr("1. Pick a ready-made scenario or add steps   2. Choose the values from the lists   3. ▶ Run")).small().weak());
             ui.add_space(2.0);
             ui.horizontal(|ui| {
                 ui.label("Name");
@@ -74,7 +74,7 @@ impl App {
                 }
             });
             if ix.total == 0 {
-                ui.label(RichText::new("ℹ Încarcă un model ca să apară listele de proprietăți și previzualizarea.").small().color(Color32::from_rgb(230, 170, 60)));
+                ui.label(RichText::new(crate::i18n::tr("ℹ Load a model to see the property lists and the preview.")).small().color(Color32::from_rgb(230, 170, 60)));
             }
             // meniu de adaugare pas
             let add_id = ui.make_persistent_id("vb_add_menu");
@@ -175,15 +175,15 @@ impl App {
                         let v = |k: usize| st.values.get(k).cloned().unwrap_or_default();
                         let msg = match st.kind {
                             StepKind::SelectWhere => Some(match ix.count_where(&v(0), &v(1)) {
-                                Some(0) => "⚠ Nu se selectează nimic: nicio potrivire în model".to_string(),
-                                Some(n) => format!("👁 Va selecta {n} elemente"),
-                                None => "👁 Număr necunoscut (proprietate cu foarte multe valori)".to_string(),
+                                Some(0) => crate::i18n::tr("⚠ Nothing will be selected: no match in the model").to_string(),
+                                Some(n) => if crate::i18n::is_romanian() { format!("👁 Va selecta {n} elemente") } else { format!("👁 Will select {n} elements") },
+                                None => crate::i18n::tr("👁 Unknown count (property with very many values)").to_string(),
                             }),
                             StepKind::FindEmpty => Some(match ix.count_empty(&v(0)) {
-                                0 => "✔ Toate elementele au proprietatea completată".to_string(),
-                                n => format!("👁 Va găsi {n} din {} elemente fără „{}”", ix.total, v(0)),
+                                0 => crate::i18n::tr("✔ Every element has this property filled in").to_string(),
+                                n => if crate::i18n::is_romanian() { format!("👁 Va găsi {n} din {} elemente fără „{}”", ix.total, v(0)) } else { format!("👁 Will find {n} of {} elements without \"{}\"", ix.total, v(0)) },
                             }),
-                            StepKind::SetProp => Some("👁 Se scrie pe elementele selectate de pașii de mai sus".to_string()),
+                            StepKind::SetProp => Some(crate::i18n::tr("👁 Written on the elements selected by the steps above").to_string()),
                             _ => None,
                         };
                         if let Some(m) = msg {
@@ -211,7 +211,7 @@ impl App {
                 _ => {}
             }
             if self.scenario.steps.is_empty() {
-                ui.label(RichText::new("Niciun pas încă. Apasă ➕ Add step sau 📋 Templates.").small().weak());
+                ui.label(RichText::new(crate::i18n::tr("No steps yet. Press ➕ Add step or 📋 Templates.")).small().weak());
             }
             ui.separator();
             ui.horizontal(|ui| {

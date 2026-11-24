@@ -171,6 +171,7 @@ impl App {
             Purpose::ExportWeb => self.export_web(&path),
             Purpose::ExportAsBuilt => self.export_asbuilt_xlsx(&path),
             Purpose::ExportSectionCad | Purpose::ExportSectionPdf => self.export_section_cad(&path),
+            Purpose::ExportMultiView => self.export_multiview(&path),
             Purpose::ExportCobie => match std::fs::write(&path, crate::cobie::workbook(self)) {
                 Ok(()) => self.toast(format!("COBie workbook saved: {}", crate::file_name(&path))),
                 Err(e) => self.error(format!("Cannot write {path}: {e}")),
@@ -621,6 +622,7 @@ impl App {
                 Purpose::ExportAsBuilt => d.set_title("As-built report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("as_built.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportSectionCad => d.set_title("Section cut (DWG / DXF)").add_filter("AutoCAD DWG (2018)", &["dwg"]).add_filter("DXF", &["dxf"]).add_filter("PDF sheet", &["pdf"]).set_file_name("section.dwg").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportSectionPdf => d.set_title("Section cut on sheet (PDF)").add_filter("PDF", &["pdf"]).set_file_name("section.pdf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportMultiView => d.set_title("Multi-view drawing (DWG 1:1 / PDF)").add_filter("AutoCAD DWG (2018)", &["dwg"]).add_filter("DXF", &["dxf"]).add_filter("PDF sheet", &["pdf"]).set_file_name("views.dwg").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCobie => d.set_title("COBie handover (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("cobie.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportOverlay => d.set_title("2D drawing to overlay on the model").add_filter("DWG / DXF", &["dwg", "dxf"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportCheckRules => d.set_title("Import IDS or rules").add_filter("IDS / ManageBIM rules", &["ids", "xml", "mbrules", "json"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -746,6 +748,7 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::ExportAsBuilt => "as_built.xlsx".into(),
                 Purpose::ExportSectionCad => "section.dwg".into(),
                 Purpose::ExportSectionPdf => "section.pdf".into(),
+                Purpose::ExportMultiView => "views.dwg".into(),
                 Purpose::ExportCobie => "cobie.xlsx".into(),
                 Purpose::ImportOverlay => String::new(),
                 Purpose::ImportCheckRules => String::new(),

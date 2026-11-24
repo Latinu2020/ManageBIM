@@ -31,6 +31,9 @@ mod materials_panel;
 mod lighting_panel;
 mod classification_panel;
 mod coord_panel;
+mod update_panel;
+mod script_window;
+mod pathtrace_window;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
 fn accent() -> Color32 {
@@ -1094,36 +1097,6 @@ impl App {
     }
 
     fn ribbon_sections(&mut self, ui: &mut egui::Ui) {
-        rgroup(ui, crate::i18n::tr("Cut View"), |ui| {
-            let box_on = self.section.enabled && self.section.mode == SectionMode::Box;
-            if rbtn(ui, "🟩", "Pick face", "Click a face of the section box in the 3D view (it turns light green) to make the 2D drawing from it. Esc cancels.", self.face_pick, box_on).clicked() {
-                self.face_pick = !self.face_pick;
-            }
-            let cur = self.settings.cad_view;
-            egui::ComboBox::from_id_salt("cad_cut_view").selected_text(crate::i18n::tr(cur.label())).show_ui(ui, |ui| {
-                for v in crate::app::CadView::ALL {
-                    let label = crate::i18n::tr(v.label());
-                    let mut tmp = v;
-                    if ui.selectable_value(&mut tmp, cur, label).clicked() {
-                        self.settings.cad_view = v;
-                        // fata nou aleasa => planul chiar pe fata (0% inset).
-                        // Highlightul RAMANE inchis: utilizatorul il deschide doar cand are nevoie.
-                        if v != crate::app::CadView::Current {
-                            self.settings.cad_view_pos = 0.0;
-                        }
-                        self.settings.save();
-                    }
-                }
-            });
-            if ui.checkbox(&mut self.settings.show_cad_plane, crate::i18n::tr("Highlight plane")).on_hover_text("Off by default: picking a face in Cut View turns it on.").changed() {
-                self.settings.save();
-            }
-            if ui.checkbox(&mut self.settings.show_section_box, "Hide section box").on_hover_text("Hides only the box drawing and its face arrows in 3D. The cut and all exports stay active.").changed() {
-                self.settings.save();
-            }
-            // „Behind edges" a fost eliminat ca buton: tot ce e in cub de la plan
-            // incolo se vede mereu (linii continue), cu hasura pe planul de taiere.
-        });
         rgroup(ui, "Sectioning", |ui| {
             let sec = self.section.enabled;
             if rbtn(ui, "✂", "Enable", "Turn sectioning on / off", sec, true).clicked() {
@@ -1151,6 +1124,11 @@ impl App {
                 self.section_sel_sig = 0;
             }
             self.panel_btn(ui, Panel::Section, "⚙", "Planes", "Section planes & box");
+            // contur cub on/off (inainte era o bifa „Hide section box" care facea invers)
+            if rbtn(ui, "▣", "Box outline", "Show the outline of the section box and its face arrows in 3D. The cut and all exports stay active when it is off.", self.settings.show_section_box, true).clicked() {
+                self.settings.show_section_box = !self.settings.show_section_box;
+                self.settings.save();
+            }
             // exporturile (DWG / PDF / Title Block / Overlay / Preview) sunt DOAR în tab-ul Annotation
         });
         // acces rapid: nivelul, sus / jos, box de nivel sau taietura de plan
@@ -1211,6 +1189,10 @@ impl App {
             if rbtn(ui, "🗺", "2D Preview", "Small closable map-style preview of the cut, before exporting", self.section_preview_open, self.section.enabled).clicked() {
                 self.section_preview_open = !self.section_preview_open;
             }
+            let box_on = self.section.enabled && self.section.mode == SectionMode::Box;
+            if rbtn(ui, "◫", "Multi view", "All views of the section box on one drawing, like an Inventor sheet: Front, Right, Back, Left elevations and the Top view. DWG / DXF at 1:1 in model space (Front stays in real coordinates), or PDF on a sheet.", false, box_on).clicked() {
+                self.request_path(Purpose::ExportMultiView);
+            }
         });
         rgroup(ui, "Cut View", |ui| {
             let box_on = self.section.enabled && self.section.mode == SectionMode::Box;
@@ -1232,9 +1214,6 @@ impl App {
                     }
                 }
             });
-            if ui.checkbox(&mut self.settings.show_cad_plane, crate::i18n::tr("Highlight plane")).on_hover_text("Shows the cut plane quad and its drag handle in 3D").changed() {
-                self.settings.save();
-            }
         });
         rgroup(ui, "Annotations", |ui| {
             if rbtn(ui, "✏", "Title Block", "Edit the title block, sheet format (A3 - A0) and scale", self.title_block_open, true).clicked() {
@@ -1532,10 +1511,9 @@ impl App {
         });
     }
 
-    /// Salvează starea curentă de vizualizare ca şablon în proiect.
-    fn save_view_template(&mut self) {
-        let name = format!("View {}", self.view_templates.len() + 1);
-        self.view_templates.push(crate::app::ViewTemplate {
+    /// Starea curenta de vizualizare ca sablon (numele / nota / flagurile se completeaza de apelant).
+    fn view_template_snapshot(&self, name: String) -> crate::app::ViewTemplate {
+        crate::app::ViewTemplate {
             name,
             hidden: self.hidden.iter().copied().collect(),
             section: self.section.clone(),
@@ -1550,24 +1528,54 @@ impl App {
             vp_filter: self.vp_filter.clone(),
             is_default: false,
             note: String::new(),
-        });
+            include: [true; 5],
+        }
+    }
+
+    /// Salvează starea curentă de vizualizare ca şablon în proiect.
+    fn save_view_template(&mut self) {
+        let t = self.view_template_snapshot(format!("View {}", self.view_templates.len() + 1));
+        self.view_templates.push(t);
+        self.vt_current = self.view_templates.len() - 1;
         self.toast("View template saved (in project)");
     }
 
-    /// Aplică un şablon de vizualizare (vizibilitate + secțiune + stil).
+    /// Suprascrie sablonul `i` cu vederea curenta, pastrand numele, nota, steaua si ce include.
+    fn update_view_template(&mut self, i: usize) {
+        let Some(old) = self.view_templates.get(i).cloned() else { return };
+        let mut t = self.view_template_snapshot(old.name.clone());
+        t.note = old.note;
+        t.is_default = old.is_default;
+        t.include = old.include;
+        self.view_templates[i] = t;
+        self.toast(format!("'{}' updated with the current view", old.name));
+    }
+
+    /// Aplică un şablon de vizualizare - doar partile bifate la „Include".
     fn apply_view_template(&mut self, i: usize) {
         let Some(t) = self.view_templates.get(i).cloned() else { return };
-        self.hidden = t.hidden.into_iter().collect();
-        self.section = t.section;
-        self.cam = t.cam;
-        self.settings.visual_style = t.visual_style;
-        self.show_grids = t.show_grids;
-        self.show_levels = t.show_levels;
-        self.section_caps = t.section_caps;
-        self.overrides = t.overrides.into_iter().collect();
-        self.selected = t.selected.into_iter().collect();
-        self.measures = t.measures;
-        self.vp_filter = t.vp_filter;
+        let [cam, vis, sec, style, col] = t.include;
+        if vis {
+            self.hidden = t.hidden.into_iter().collect();
+            self.selected = t.selected.into_iter().collect();
+            self.measures = t.measures;
+            self.vp_filter = t.vp_filter;
+        }
+        if sec {
+            self.section = t.section;
+        }
+        if cam {
+            self.fly_to(t.cam);
+        }
+        if style {
+            self.settings.visual_style = t.visual_style;
+            self.show_grids = t.show_grids;
+            self.show_levels = t.show_levels;
+            self.section_caps = t.section_caps;
+        }
+        if col {
+            self.overrides = t.overrides.into_iter().collect();
+        }
         self.vt_current = i;
         self.colors_dirty = true;
         self.toast(format!("Applied '{}'", t.name));
@@ -2851,307 +2859,6 @@ impl App {
         });
     }
 
-    fn script_window(&mut self, ctx: &egui::Context) {
-        if !self.script_open { return; }
-        let mut open = self.script_open;
-        egui::Window::new("📜 Script Library")
-            .open(&mut open)
-            .default_size([620.0, 540.0])
-            .min_width(450.0)
-            .min_height(320.0)
-            .resizable(true)
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    if ui.button("📁 Choose folder…").on_hover_text("Pick the folder with your .rhai scripts").clicked() {
-                        self.request_path(Purpose::SelectScriptsDir);
-                    }
-                    if ui.button("↺ Default").on_hover_text("Use %APPDATA%\\ManageBIM\\Scripts").clicked() {
-                        self.settings.scripts_dir.clear();
-                        self.settings.save();
-                        self.toast("Scripts folder reset to default.");
-                    }
-                    if ui.button("➕ New script").clicked() {
-                        match script::create(&self.settings.scripts_dir) {
-                            Ok(p) => self.toast(format!("Script created: {}", crate::file_name(&p.to_string_lossy().to_string()))),
-                            Err(e) => self.error(e),
-                        }
-                    }
-                    if ui.button("📥 Install examples").clicked() {
-                        match script::install_examples(&self.settings.scripts_dir) {
-                            Ok(n) => self.toast(format!("Installed {n} example scripts.")),
-                            Err(e) => self.error(e),
-                        }
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Folder:").small().strong());
-                    ui.label(RichText::new(script::dir(&self.settings.scripts_dir).display().to_string()).small().color(crate::theme::accent()));
-                    if ui.small_button("📋").on_hover_text("Copy folder path").clicked() {
-                        ui.ctx().copy_text(script::dir(&self.settings.scripts_dir).to_string_lossy().to_string());
-                        self.toast("Scripts folder path copied to clipboard.");
-                    }
-                });
-                ui.separator();
-                self.script_builder_ui(ui);
-                ui.separator();
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.label(RichText::new("BUILT-IN SCRIPTS").size(12.0).strong().color(ui.visuals().weak_text_color()));
-                    let mut last_cat = "";
-                    for spec in script_catalog::CATALOG {
-                        if spec.category != last_cat {
-                            ui.add_space(4.0);
-                            ui.label(RichText::new(spec.category).strong().size(13.0));
-                            last_cat = spec.category;
-                        }
-                        let accent = crate::theme::accent();
-                        egui::Frame::none().fill(ui.visuals().faint_bg_color).rounding(7.0).inner_margin(egui::Margin::symmetric(9.0, 6.0)).show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new(spec.name).strong());
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if ui.button(RichText::new("▶ Run").color(accent)).clicked() {
-                                        let src = script_catalog::source(spec, &self.settings.script_params);
-                                        self.run_source(spec.name, &src);
-                                    }
-                                });
-                            });
-                            ui.label(RichText::new(spec.desc).small().weak());
-                            if !spec.params.is_empty() {
-                                ui.collapsing("Parameters", |ui| {
-                                    egui::Grid::new(("script_params", spec.id)).num_columns(2).spacing([8.0, 3.0]).show(ui, |ui| {
-                                        for p in spec.params {
-                                            let mut changed = false;
-                                            {
-                                                let val = self.settings.script_params.entry(p.key.to_string()).or_insert_with(|| p.default.to_string());
-                                                ui.label(p.label);
-                                                if ui.add(egui::TextEdit::singleline(val).desired_width(190.0)).changed() {
-                                                    changed = true;
-                                                }
-                                            }
-                                            if changed { self.settings.save(); }
-                                            ui.end_row();
-                                        }
-                                    });
-                                });
-                            }
-                        });
-                        ui.add_space(3.0);
-                    }
-                    ui.separator();
-                    ui.label(RichText::new("MY SCRIPTS (.rhai)").size(12.0).strong().color(ui.visuals().weak_text_color()));
-                    let scripts = script::list(&self.settings.scripts_dir);
-                    if scripts.is_empty() {
-                        ui.label(RichText::new("No .rhai files yet — use New script or Install examples.").weak().small());
-                    } else {
-                        for p in scripts {
-                            let name = crate::file_name(&p.to_string_lossy().to_string());
-                            ui.horizontal(|ui| {
-                                ui.label("📜");
-                                ui.label(&name);
-                                if ui.button("▶ Run").clicked() {
-                                    self.run_script(&p.to_string_lossy().to_string());
-                                }
-                                if ui.small_button("🗑").on_hover_text("Delete this script").clicked() {
-                                    let _ = std::fs::remove_file(&p);
-                                    self.toast(format!("Deleted {name}"));
-                                }
-                            })
-                            .response
-                            .on_hover_text(p.display().to_string());
-                        }
-                    }
-                    ui.separator();
-                    ui.collapsing(RichText::new("📖 Manual scripturi (Rhai) — ghid în română").strong(), |ui| {
-                        ui.label(RichText::new("Nu trebuie să scrii cod: folosește «Visual script builder» de mai sus. Acest ghid e pentru când vrei să scrii singur.").small().weak());
-                        ui.add_space(4.0);
-                        ui.label(RichText::new("REGULI DE BAZĂ").strong().color(crate::theme::accent()));
-                        for (rule, desc) in crate::script_guide::RULES_RO {
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new(*rule).strong().monospace());
-                                ui.label(RichText::new(*desc).small());
-                            });
-                        }
-                        ui.add_space(6.0);
-                        ui.label(RichText::new("FUNCȚII DISPONIBILE (9)").strong().color(crate::theme::accent()));
-                        for e in crate::script_guide::ENTRIES {
-                            egui::Frame::none().fill(ui.visuals().faint_bg_color).rounding(crate::theme::RADIUS_SM).inner_margin(egui::Margin::symmetric(7.0, 4.0)).show(ui, |ui| {
-                                ui.label(RichText::new(e.func).strong().monospace().color(crate::theme::accent()));
-                                ui.label(RichText::new(e.ro).small());
-                                ui.label(RichText::new(e.example).small().monospace().color(ui.visuals().weak_text_color()));
-                                ui.label(RichText::new(e.effect_ro).small().weak());
-                            });
-                            ui.add_space(2.0);
-                        }
-                    });
-                });
-            });
-        self.script_open = open;
-    }
-
-    fn pathtrace_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.pathtrace_open;
-        let running = self.pathtrace.as_ref().map(|j| !j.done.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(false);
-        egui::Window::new("Path trace (progressive CPU)")
-            .open(&mut open)
-            .default_size([420.0, 520.0])
-            .min_width(360.0)
-            .min_height(400.0)
-            .resizable(true)
-            .show(ctx, |ui| {
-                ui.add_enabled_ui(!running, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Resolution");
-                        let (mut w, h0) = (self.pathtrace_params.0, self.pathtrace_params.1);
-                        // proportia: patrat / 16:9 / 4:3 (inaltimea se calculeaza din latime)
-                        let mut ratio = if h0 == w { 0 } else if h0 == w * 9 / 16 { 1 } else if h0 == w * 3 / 4 { 2 } else { 0 };
-                        egui::ComboBox::from_id_salt("pt_res").width(80.0).selected_text(format!("{w} px")).show_ui(ui, |ui| {
-                            for r in [128u32, 256, 512, 1024, 1920, 2048, 4096] {
-                                ui.selectable_value(&mut w, r, format!("{r} px"));
-                            }
-                        });
-                        egui::ComboBox::from_id_salt("pt_ratio").width(70.0).selected_text(["1:1", "16:9", "4:3"][ratio]).show_ui(ui, |ui| {
-                            for (k, l) in ["1:1", "16:9", "4:3"].into_iter().enumerate() {
-                                ui.selectable_value(&mut ratio, k, l);
-                            }
-                        });
-                        let h = match ratio { 1 => w * 9 / 16, 2 => w * 3 / 4, _ => w };
-                        self.pathtrace_params.0 = w;
-                        self.pathtrace_params.1 = h;
-                        ui.label(RichText::new(format!("{w}×{h}")).weak());
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Samples");
-                        ui.add(egui::DragValue::new(&mut self.pathtrace_params.2).range(1..=1024).speed(4.0));
-                        ui.label("Time limit (s, 0 = off)");
-                        ui.add(egui::DragValue::new(&mut self.pathtrace_params.3).range(0.0..=600.0).speed(1.0));
-                    });
-                    ui.checkbox(&mut self.render.with_materials, "🎨 Render with materials")
-                        .on_hover_text("Uses the assigned materials (colours, image textures, brick / tile / wood patterns, gloss, metal, glass). With no materials assigned yet, they are added automatically by IFC type. Hidden elements and the section are respected.");
-                    // ---- lumini
-                    ui.separator();
-                    ui.label(RichText::new("LIGHTS").small().strong().color(accent()));
-                    ui.horizontal(|ui| {
-                        ui.label("Environment");
-                        for (m, label, tip) in [(0u8, "Outdoor", "Sky with clouds and the sun - natural light"), (1, "Studio", "Neutral softbox light - good for product shots"), (2, "Sunset", "Warm orange horizon")] {
-                            if ui.selectable_label(self.render.env_mode == m, label).on_hover_text(tip).clicked() {
-                                self.render.env_mode = m;
-                            }
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        if ui.button("🗺 Load HDRI / photo…").on_hover_text("Radiance .hdr or an equirectangular PNG/JPG photo. This replaces the procedural sky and gives real reflections and light.").clicked() {
-                            self.request_path(Purpose::LoadHdri);
-                        }
-                        if !self.render.hdri_path.is_empty() {
-                            ui.label(RichText::new(crate::file_name(&self.render.hdri_path)).small().color(accent()))
-                                .on_hover_text(&self.render.hdri_path);
-                            if ui.small_button("✖").on_hover_text("Back to the procedural sky").clicked() {
-                                self.render.hdri_path.clear();
-                            }
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Environment ×").on_hover_text("How strong the image-based light is");
-                        ui.add(egui::Slider::new(&mut self.render.env_intensity, 0.0..=3.0).step_by(0.05));
-                        ui.label("rotate");
-                        ui.add(egui::DragValue::new(&mut self.render.env_rotation).range(-360.0..=360.0).speed(1.0).suffix("°"));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Sun").on_hover_text("Direction and strength of the sun");
-                        ui.add(egui::DragValue::new(&mut self.render.sun_az).range(-180.0..=180.0).speed(1.0).suffix("°"));
-                        ui.add(egui::DragValue::new(&mut self.render.sun_el).range(1.0..=90.0).speed(1.0).suffix("°"));
-                        ui.add(egui::Slider::new(&mut self.render.sun_power, 0.0..=3.0).step_by(0.05));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Exposure").on_hover_text("Overall brightness (ACES tonemap keeps the highlights)");
-                        ui.add(egui::Slider::new(&mut self.render.exposure, 0.1..=3.0).step_by(0.05));
-                    });
-                    ui.horizontal(|ui| {
-                        let avail = crate::oidn::available();
-                        let r = ui.add_enabled(avail.is_ok(), egui::Checkbox::new(&mut self.settings.render_denoise, "Denoise (Intel Open Image Denoise)"));
-                        if r.changed() {
-                            self.settings.save();
-                        }
-                        match &avail {
-                            Ok(_) => {
-                                r.on_hover_text("Removes the render noise at the end with AI (Intel OIDN, on the CPU). A clean image needs far fewer samples - 16-32 are often enough.");
-                            }
-                            Err(e) => {
-                                r.on_disabled_hover_text(e.clone());
-                                ui.label(RichText::new("not installed").small().weak());
-                            }
-                        }
-                    });
-                });
-                ui.horizontal(|ui| {
-                    if !running {
-                        if ui.add(egui::Button::new(RichText::new("▶ Start").strong().color(Color32::WHITE)).fill(accent())).clicked() {
-                            self.start_pathtrace();
-                        }
-                    } else {
-                        if ui.button("⏸ Cancel").clicked() {
-                            self.cancel_pathtrace();
-                        }
-                    }
-                    if ui.add_enabled(self.pathtrace_tex.is_some(), egui::Button::new("💾 Export PNG…")).clicked() {
-                        self.request_path(Purpose::ExportPathTrace);
-                    }
-                });
-                if let Some(job) = &self.pathtrace {
-                    let n = job.count.load(std::sync::atomic::Ordering::Relaxed);
-                    let total = job.samples_target;
-                    let frac = if total > 0 { n as f32 / total as f32 } else { 0.0 };
-                    let done = job.done.load(std::sync::atomic::Ordering::Relaxed);
-                    // timerul se opreste la „Ready": pastram secundele de la terminare
-                    let secs = if done { self.pathtrace_done_at.unwrap_or(job.started.elapsed().as_secs_f32()) } else { job.started.elapsed().as_secs_f32() };
-                    let fmt_dur = |s: f32| -> String {
-                        if s < 60.0 { format!("{s:.0}s") } else { format!("{}m {:02}s", (s / 60.0) as u32, (s % 60.0) as u32) }
-                    };
-                    let eta = if n > 0 && !done {
-                        let rate = n as f32 / secs.max(0.1);
-                        let by_samples = total.saturating_sub(n) as f32 / rate.max(1e-6);
-                        let by_limit = if job.time_limit_secs > 0.0 { (job.time_limit_secs - secs).max(0.0) } else { f32::INFINITY };
-                        let e = by_samples.min(by_limit);
-                        if e.is_finite() { format!(" · ~{} {}", fmt_dur(e), crate::i18n::tr("left")) } else { String::new() }
-                    } else {
-                        String::new()
-                    };
-                    let txt = if n == 0 {
-                        format!("{} · {:.1} s", crate::i18n::tr("Preparing scene / first sample"), secs)
-                    } else if done {
-                        format!("{} · {n} {} · {:.1} s", crate::i18n::tr("Finished"), crate::i18n::tr("samples"), secs)
-                    } else {
-                        format!("{n} / {total} {} · {:.1} s{eta}", crate::i18n::tr("samples"), secs)
-                    };
-                    let dn = job.denoise_state.load(std::sync::atomic::Ordering::Relaxed);
-                    let txt = if dn == crate::pathtrace::DN_RUNNING { format!("{n} {} · {}", crate::i18n::tr("samples"), crate::i18n::tr("Denoising…")) } else { txt };
-                    ui.add(egui::ProgressBar::new(frac).text(txt).animate(dn == crate::pathtrace::DN_RUNNING));
-                    match dn {
-                        crate::pathtrace::DN_DONE => {
-                            ui.label(RichText::new("✔ Denoised with Intel Open Image Denoise").small().color(Color32::from_rgb(80, 200, 120)));
-                        }
-                        crate::pathtrace::DN_FAILED => {
-                            let m = job.denoise_msg.lock().map(|m| m.clone()).unwrap_or_default();
-                            ui.label(RichText::new(format!("⚠ Denoise failed - the noisy image is kept. {m}")).small().color(Color32::from_rgb(230, 170, 60)));
-                        }
-                        _ => {}
-                    }
-                    if done && n > 0 {
-                        ui.label(RichText::new(crate::i18n::tr("Ready - press Export PNG to save the image.")).strong().color(Color32::from_rgb(80, 200, 120)));
-                    }
-                }
-                if let Some(tex) = &self.pathtrace_tex {
-                    ui.separator();
-                    // imaginea pastreaza proportia randarii (1:1 / 16:9 / 4:3)
-                    let avail = ui.available_size();
-                    let ts = tex.size_vec2();
-                    let k = (avail.x / ts.x.max(1.0)).min(avail.y / ts.y.max(1.0)).max(0.05);
-                    ui.image((tex.id(), ts * k));
-                } else {
-                    ui.label(RichText::new("Start a trace to see the preview.").weak());
-                }
-            });
-        self.pathtrace_open = open;
-    }
 
     fn float_windows(&mut self, ctx: &egui::Context) {
         for p in self.settings.layout.in_area(Dock::Float) {
@@ -3308,6 +3015,7 @@ impl App {
                         self.settings.nav_bar = !self.settings.nav_bar;
                         self.settings.save();
                     }
+                    self.update_badge(ui);
                     ui.label(RichText::new(format!("{:.0} FPS", self.fps)).weak()).on_hover_text("Frames per second");
                     // unitatea de lungime: acelasi sistem ca in Settings (m / mm / in / ft)
                     let cur_u = if self.settings.unit_system.is_empty() { "m".to_string() } else { self.settings.unit_system.clone() };
@@ -3599,6 +3307,118 @@ impl App {
                 self.box_drag = None;
             }
         }
+        // ---- obiectul de coordonare ales (fereastra Coordination objects deschisa): sageti pe fiecare
+        // fata, ca la cubul de sectiune - tragi si fata se muta pe axa ei; cercul din centru il muta in plan.
+        // Modelul virtual se reface la eliberarea mouse-ului (in timpul tragerii se vede conturul nou).
+        let mut coord_hover: Option<usize> = None;
+        let coord_edit = if self.coord_open { self.coord_sel.filter(|&i| i < self.coord_objects.len()) } else { None };
+        if let Some(ci) = coord_edit {
+            let vpm = params.view_proj;
+            let (a, b) = (Vec3::from(self.coord_objects[ci].min), Vec3::from(self.coord_objects[ci].max));
+            let c = (a + b) * 0.5;
+            let kc = self.coord_objects[ci].kind.color();
+            let base = Color32::from_rgb(kc[0], kc[1], kc[2]);
+            // conturul cutiei (vizibil si prin pereti)
+            let corner = |i: u32| Vec3::new(if i & 1 == 0 { a.x } else { b.x }, if i & 2 == 0 { a.y } else { b.y }, if i & 4 == 0 { a.z } else { b.z });
+            for (i, j) in [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)] {
+                if let (Some(p), Some(q)) = (to_screen(&vpm, rect, corner(i)), to_screen(&vpm, rect, corner(j))) {
+                    painter.line_segment([p, q], Stroke::new(1.8_f32, base));
+                }
+            }
+            let size = (b - a).max_element().max(0.05);
+            let probe_c = if resp.drag_started_by(egui::PointerButton::Primary) { ui.input(|i| i.pointer.press_origin()).or(hover) } else { hover };
+            for k in 0..7 {
+                let (p0, end, tip, d) = if k < 6 {
+                    let (ax, s) = (k / 2, if k % 2 == 0 { -1.0f32 } else { 1.0 });
+                    let mut fc = c;
+                    fc[ax] = if s < 0.0 { a[ax] } else { b[ax] };
+                    let mut e = Vec3::ZERO;
+                    e[ax] = s;
+                    let (Some(p0), Some(p1)) = (to_screen(&vpm, rect, fc), to_screen(&vpm, rect, fc + e * size * 0.2)) else { continue };
+                    let d = (p1 - p0).normalized();
+                    if !(d.x.is_finite() && d.y.is_finite()) {
+                        continue;
+                    }
+                    (p0, p0 + d * 44.0, p0 + d * 30.0, d)
+                } else {
+                    let Some(p0) = to_screen(&vpm, rect, c) else { continue };
+                    (p0, p0, p0, EV::ZERO)
+                };
+                let near = probe_c.map_or(false, |h| {
+                    let ab = end - p0;
+                    let t = ((h - p0).dot(ab) / ab.length_sq().max(1e-6)).clamp(0.0, 1.0);
+                    rect.contains(h) && h.distance(p0 + ab * t) < 13.0
+                });
+                if near && self.coord_drag.is_none() && coord_hover.is_none() && handle_hover.is_none() {
+                    coord_hover = Some(k);
+                }
+                let active = self.coord_drag == Some(k) || (coord_hover == Some(k) && self.coord_drag.is_none());
+                let col = if active { Color32::from_rgb(255, 220, 60) } else { base };
+                if k < 6 {
+                    painter.line_segment([p0, tip], Stroke::new(if active { 5.0_f32 } else { 3.5 }, col));
+                    let n = EV::new(-d.y, d.x);
+                    painter.add(egui::Shape::convex_polygon(vec![end, tip + n * 8.0, tip - n * 8.0], col, Stroke::new(1.2_f32, Color32::WHITE)));
+                    painter.circle(p0, 5.0, col, Stroke::new(1.2_f32, Color32::WHITE));
+                } else {
+                    // mutare in plan orizontal: cerc cu cruce
+                    painter.circle(p0, 9.0, col.gamma_multiply(0.85), Stroke::new(1.5_f32, Color32::WHITE));
+                    painter.line_segment([p0 - EV::new(5.0, 0.0), p0 + EV::new(5.0, 0.0)], Stroke::new(1.5_f32, Color32::WHITE));
+                    painter.line_segment([p0 - EV::new(0.0, 5.0), p0 + EV::new(0.0, 5.0)], Stroke::new(1.5_f32, Color32::WHITE));
+                }
+            }
+            if coord_hover.is_some() || self.coord_drag.is_some() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+            }
+            if resp.drag_started_by(egui::PointerButton::Primary) && coord_hover.is_some() {
+                self.coord_drag = coord_hover;
+            }
+            if let Some(k) = self.coord_drag {
+                if resp.dragged_by(egui::PointerButton::Primary) {
+                    let o = &mut self.coord_objects[ci];
+                    if k < 6 {
+                        let (ax, minf) = (k / 2, k % 2 == 0);
+                        let mut fc = c;
+                        fc[ax] = if minf { a[ax] } else { b[ax] };
+                        let mut e = Vec3::ZERO;
+                        e[ax] = 1.0;
+                        if let (Some(s0), Some(s1)) = (to_screen(&vpm, rect, fc), to_screen(&vpm, rect, fc + e)) {
+                            let sv = s1 - s0;
+                            let ppm = sv.length();
+                            if ppm > 1e-3 {
+                                let dm = resp.drag_delta().dot(sv / ppm) / ppm;
+                                if minf {
+                                    o.min[ax] = (o.min[ax] + dm).min(o.max[ax] - 0.01);
+                                } else {
+                                    o.max[ax] = (o.max[ax] + dm).max(o.min[ax] + 0.01);
+                                }
+                            }
+                        }
+                    } else if let Some(h) = resp.interact_pointer_pos() {
+                        // mutare: punctul de sub cursor in planul orizontal al centrului
+                        let (ro, rd) = self.cam.ray(uv(h), aspect);
+                        if rd.z.abs() > 1e-4 {
+                            let t = (c.z - ro.z) / rd.z;
+                            if t > 0.0 {
+                                let p = ro + rd * t;
+                                let (pd, prev) = {
+                                    let (ro0, rd0) = self.cam.ray(uv(h - resp.drag_delta()), aspect);
+                                    let t0 = (c.z - ro0.z) / rd0.z;
+                                    (p, ro0 + rd0 * t0)
+                                };
+                                let mv = Vec3::new(pd.x - prev.x, pd.y - prev.y, 0.0);
+                                if mv.is_finite() {
+                                    o.set_center(c + mv);
+                                }
+                            }
+                        }
+                    }
+                }
+                if !resp.dragged() {
+                    self.coord_drag = None;
+                    self.rebuild_coord_model();
+                }
+            }
+        }
         // ---- lumini: gizmo in 3D. Move = sagetile X/Y/Z, Rotate = cercurile XY / XZ / YZ.
         // Testul de atingere si inceputul tragerii se fac INAINTE de navigare: altfel orbitul misca
         // camera in acelasi cadru cu lumina, iar cercurile fug de sub cursor (rotirea nu mergea).
@@ -3753,7 +3573,7 @@ impl App {
         }
         // gizmo-ul de lumina are prioritate: nu lasam orbitul / panul sa miste camera in acelasi timp
         let light_handle = self.light_axis.is_some() || self.light_rot.is_some() || self.tool == Tool::PlaceLight;
-        let handle_drag = self.box_drag.is_some() || light_handle || (handle_hover.is_some() && resp.drag_started_by(egui::PointerButton::Primary));
+        let handle_drag = self.box_drag.is_some() || light_handle || self.coord_drag.is_some() || (handle_hover.is_some() && resp.drag_started_by(egui::PointerButton::Primary));
         // selectie cu fereastra (unealta Window): tragerea cu butonul stang deseneaza dreptunghiul
         let box_tool = self.tool == Tool::Window && !handle_drag;
         if box_tool {
@@ -4050,7 +3870,9 @@ impl App {
                     _ => [Vec3::new(a.x, a.y, v), Vec3::new(b.x, a.y, v), Vec3::new(b.x, b.y, v), Vec3::new(a.x, b.y, v)],
                 }
             };
-            for (f, alpha, w) in [(chosen.filter(|_| self.settings.cad_view_pos <= 1e-4), 46u8, 2.0f32), (face_hover, 80u8, 3.0f32)] {
+            // fata aleasa e desenata de planul de taiere (verde, urmeaza si tragerea lui); aici doar hover-ul
+            let _ = chosen;
+            for (f, alpha, w) in [(face_hover, 80u8, 3.0f32)] {
                 let Some((ax, max)) = f else { continue };
                 let q = face_quad(ax, max);
                 let pts: Option<Vec<Pos2>> = q.iter().map(|p| to_screen(&params.view_proj, rect, *p)).collect();
@@ -4281,7 +4103,9 @@ impl App {
         // Highlightul e INCHIS implicit: apare doar cand utilizatorul a ales o
         // FATA a cubului in Cut View (Top / Bottom / Front / Back / Left / Right).
         // In modul Current (implicit) nu se vede niciun plan.
-        let cut_show = self.settings.show_cad_plane
+        // planul vederii alese (verde deschis): mereu vizibil cu cubul de sectiune - nu mai e nevoie de bifa
+        // „Highlight plane"; fara cub ramane optiunea din Settings
+        let cut_show = (self.settings.show_cad_plane || (self.section.enabled && self.section.mode == SectionMode::Box))
             && self.report_job.is_none()
             && self.settings.cad_view != crate::app::CadView::Current;
         if cut_show {
@@ -4487,6 +4311,10 @@ impl App {
             if self.show_levels && bb.is_valid() && g.levels.len() < 60 {
                 let lcol = Color32::from_rgba_unmultiplied(235, 200, 120, 60);
                 let oz = self.origin_f64().z;
+                // 0.28: etichetele nu intra sub bara de navigare de jos si nu se suprapun intre ele
+                let floor_y = if self.settings.nav_bar { rect.bottom() - 74.0 } else { rect.bottom() - 10.0 };
+                let mut placed: Vec<f32> = Vec::new();
+                let mut labels: Vec<(Pos2, String)> = Vec::new();
                 for (name, z) in &g.levels {
                     let c = |x: f32, y: f32| Vec3::new(x, y, *z);
                     let (x0, y0, x1, y1) = (bb.min.x, bb.min.y, bb.max.x, bb.max.y);
@@ -4496,9 +4324,19 @@ impl App {
                     if let Some(s) = to_screen(&vp, rect, c(x0, y0)) {
                         if rect.contains(s) {
                             let el = *z as f64 + oz - if self.use_user_levels { self.level_zero } else { 0.0 };
-                            label_bg(&painter, s, &format!("{name}  {el:+.2}"), Color32::from_rgb(235, 200, 120));
+                            labels.push((s, format!("{name}  {el:+.2}")));
                         }
                     }
+                }
+                // de jos in sus: fiecare eticheta sta deasupra barei si la cel putin 24 px de cea de dedesubt
+                labels.sort_by(|a, b| b.0.y.total_cmp(&a.0.y));
+                for (s, text) in labels {
+                    let mut y = s.y.min(floor_y);
+                    while placed.iter().any(|p| (p - y).abs() < 24.0) {
+                        y -= 24.0;
+                    }
+                    placed.push(y);
+                    label_bg(&painter, Pos2::new(s.x, y), &text, Color32::from_rgb(235, 200, 120));
                 }
             }
         }
@@ -4923,6 +4761,8 @@ impl App {
         self.title_block_window(ctx);
         self.classification_window(ctx);
         self.coord_objects_window(ctx);
+        self.poll_updates(ctx);
+        self.update_window(ctx);
         self.command_palette(ctx);
         self.asbuilt_window(ctx);
         if let Some(pr) = &mut self.prompt {
@@ -4954,6 +4794,7 @@ impl App {
                 Purpose::ExportAsBuilt => "As-built report (Excel)",
                 Purpose::ExportSectionCad => "Section cut (DWG / DXF)",
                 Purpose::ExportSectionPdf => "Section cut on sheet (PDF)",
+                Purpose::ExportMultiView => "Multi-view drawing",
                 Purpose::ExportCobie => "COBie handover (Excel)",
                 Purpose::ImportOverlay => "DWG overlay",
                 Purpose::ImportCheckRules => "Import IDS or rules",
@@ -5395,15 +5236,31 @@ impl App {
         if self.toasts.is_empty() {
             return;
         }
+        // 0.28: O SINGURA notificare vizibila (cea mai noua; erorile au prioritate), cu un contor „+N"
+        // pentru celelalte - nu se mai aduna cate trei peste model; istoria completa e in Log (Project)
+        let total = self.toasts.len();
+        let shown = self.toasts.iter().rposition(|t| t.2).unwrap_or(total - 1);
+        let (m, t, err) = self.toasts[shown].clone();
         egui::Area::new(egui::Id::new("toasts")).anchor(Align2::RIGHT_BOTTOM, [-16.0, -40.0]).interactable(false).show(ctx, |ui| {
-            for (m, t, err) in self.toasts.iter().rev().take(5) {
-                let a = (1.0 - (t.elapsed().as_secs_f32() - 5.0).max(0.0)).clamp(0.0, 1.0);
-                egui::Frame::popup(ui.style()).fill(if *err { Color32::from_rgb(110, 30, 30) } else { Color32::from_rgb(30, 45, 65) }).multiply_with_opacity(a).show(ui, |ui| {
-                    ui.set_max_width(420.0);
-                    ui.label(RichText::new(m).color(Color32::WHITE));
+            let a = (1.0 - (t.elapsed().as_secs_f32() - 5.0).max(0.0)).clamp(0.0, 1.0);
+            egui::Frame::popup(ui.style())
+                .fill(if err { Color32::from_rgb(110, 30, 30) } else { Color32::from_rgb(30, 45, 65) })
+                .rounding(crate::theme::RADIUS_MD)
+                .inner_margin(egui::Margin::symmetric(12.0, 8.0))
+                .multiply_with_opacity(a)
+                .show(ui, |ui| {
+                    ui.set_max_width(440.0);
+                    ui.horizontal(|ui| {
+                        let (ic, col) = if err { ("⚠", Color32::from_rgb(255, 170, 160)) } else { ("✔", Color32::from_rgb(120, 220, 150)) };
+                        ui.label(RichText::new(crate::theme::ph(ic)).font(crate::theme::icon_font(15.0)).color(col));
+                        ui.label(RichText::new(&m).color(Color32::WHITE));
+                        if total > 1 {
+                            egui::Frame::none().fill(Color32::from_rgba_unmultiplied(59, 130, 246, 70)).rounding(6.0).inner_margin(egui::Margin::symmetric(6.0, 1.0)).show(ui, |ui| {
+                                ui.label(RichText::new(format!("+{}", total - 1)).small().color(Color32::from_rgb(190, 215, 255)));
+                            });
+                        }
+                    });
                 });
-                ui.add_space(4.0);
-            }
         });
     }
 }
@@ -6031,6 +5888,7 @@ fn commands() -> Vec<Cmd> {
         c!("Language: Română / English", "View", "🌐", "limba romana engleza interfata language", |a| a.toggle_language()),
         c!("Title block & sheet format", "Annotation", "✏", "cartus format a3 a2 a1 a0 scara editare", |a| a.title_block_open = true),
         c!("Classification / bSDD", "BIM", "🏷", "clasificare bsdd uniclass omniclass cod etim buildingsmart", |a| a.class_open = true),
+        c!("Check for updates", "Help", "⬇", "update actualizare versiune noua github", |a| a.check_updates(true)),
         c!("DWG overlay (2D drawing over the model)", "Annotation", "🗺", "suprapunere plan dwg dxf 2d", |a| a.overlay_open = true),
         c!("Save view template", "View", "➕", "save view template vizibilitate sectiune stil", |a| a.save_view_template()),
         c!("Apply view template", "View", "◫", "apply view template manage vizibilitate sectiune stil", |a| a.view_templates_open = !a.view_templates_open),

@@ -47,6 +47,14 @@ pub fn count() -> usize {
 
 /// (engleza, romana)
 pub const PAIRS: &[(&str, &str)] = &[
+    // Visual script builder (0.28: texte in engleza, romana doar aici)
+    ("1. Pick a ready-made scenario or add steps   2. Choose the values from the lists   3. ▶ Run", "1. Alege un scenariu gata făcut sau adaugă pași   2. Alege valorile din liste   3. ▶ Run"),
+    ("ℹ Load a model to see the property lists and the preview.", "ℹ Încarcă un model ca să apară listele de proprietăți și previzualizarea."),
+    ("⚠ Nothing will be selected: no match in the model", "⚠ Nu se selectează nimic: nicio potrivire în model"),
+    ("👁 Unknown count (property with very many values)", "👁 Număr necunoscut (proprietate cu foarte multe valori)"),
+    ("✔ Every element has this property filled in", "✔ Toate elementele au proprietatea completată"),
+    ("👁 Written on the elements selected by the steps above", "👁 Se scrie pe elementele selectate de pașii de mai sus"),
+    ("No steps yet. Press ➕ Add step or 📋 Templates.", "Niciun pas încă. Apasă ➕ Add step sau 📋 Templates."),
     // ---- file (tab-uri)
     ("Home", "Acasă"),
     ("Select", "Selecție"),

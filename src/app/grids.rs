@@ -583,6 +583,98 @@ impl App {
         out
     }
 
+    /// Desenul cu mai multe vederi din cubul de sectiune, ca o plansa Inventor: fatadele Front, Right,
+    /// Back, Left pe un rand si vederea Top deasupra lui Front. In DWG / DXF totul e la scara 1:1 in model
+    /// space (metri): vederea Front ramane in coordonatele ei REALE (se poate atasa ca overlay),
+    /// celelalte sunt asezate langa ea, la dimensiunea lor reala. In PDF: pe plansa cu cartus.
+    pub fn export_multiview(&mut self, path: &str) {
+        use crate::app::CadView;
+        if !(self.section.enabled && self.section.mode == crate::app::SectionMode::Box) {
+            return self.error("Turn on the section box first (Sections › Model box): the views are made from its faces.");
+        }
+        let (old_view, old_pos) = (self.settings.cad_view, self.settings.cad_view_pos);
+        let mut views: Vec<(CadView, Vec<(String, [f64; 4])>, Vec<CadText>)> = Vec::new();
+        for v in [CadView::Front, CadView::Right, CadView::Back, CadView::Left, CadView::Top] {
+            self.settings.cad_view = v;
+            self.settings.cad_view_pos = 0.0;
+            if let Some((segs, texts, _, _)) = self.section_drawing() {
+                views.push((v, segs, texts));
+            }
+        }
+        self.settings.cad_view = old_view;
+        self.settings.cad_view_pos = old_pos;
+        if views.is_empty() {
+            return self.error("Nothing to draw: move the section box over the model.");
+        }
+        let bbox = |segs: &[(String, [f64; 4])]| {
+            let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+            for (_, s) in segs {
+                x0 = x0.min(s[0]).min(s[2]);
+                y0 = y0.min(s[1]).min(s[3]);
+                x1 = x1.max(s[0]).max(s[2]);
+                y1 = y1.max(s[1]).max(s[3]);
+            }
+            [x0, y0, x1, y1]
+        };
+        // spatiul dintre vederi: 15% din cea mai mare latime (minim 2 m)
+        let maxw = views.iter().map(|v| { let b = bbox(&v.1); (b[2] - b[0]).max(b[3] - b[1]) }).fold(0.0, f64::max);
+        let gap = (maxw * 0.15).max(2.0);
+        let front = views.iter().find(|v| v.0 == CadView::Front).map(|v| bbox(&v.1)).unwrap_or_else(|| bbox(&views[0].1));
+        let mut all: Vec<(String, [f64; 4])> = Vec::new();
+        let mut texts: Vec<CadText> = Vec::new();
+        let mut x_cursor = front[0];
+        let elev_top = views.iter().filter(|v| v.0 != CadView::Top).map(|v| { let b = bbox(&v.1); b[3] - b[1] }).fold(0.0, f64::max);
+        for (v, segs, tx) in &views {
+            let b = bbox(segs);
+            // translatia vederii: Front pe loc; fatadele pe acelasi rand (aceeasi baza); Top deasupra lui Front
+            let (dx, dy) = match v {
+                CadView::Front => (0.0, 0.0),
+                CadView::Top => (front[0] - b[0], front[1] + elev_top + gap - b[1]),
+                _ => (x_cursor - b[0], front[1] - b[1]),
+            };
+            if *v != CadView::Top {
+                x_cursor = b[2] + dx + gap;
+            }
+            for (l, s) in segs {
+                all.push((l.clone(), [s[0] + dx, s[1] + dy, s[2] + dx, s[3] + dy]));
+            }
+            for t in tx {
+                let mut t = t.clone();
+                t.x += dx;
+                t.y += dy;
+                texts.push(t);
+            }
+            // titlul vederii sub ea, ca in Inventor
+            let name = format!("{} VIEW", v.label().to_uppercase());
+            texts.push(CadText::new("VIEW_TITLES", b[0] + dx, b[1] + dy - gap * 0.35, 5.0, 0.0, name));
+        }
+        if path.to_lowercase().ends_with(".pdf") {
+            let project = self.project_path.as_ref().map(|p| model_label(&crate::file_name(p))).unwrap_or_else(|| "ManageBIM".into());
+            let bytes = crate::pdf::section_sheet(&all, &texts, &self.title_block, &project, "Views from the section box", &now_string());
+            return match std::fs::write(path, bytes) {
+                Ok(()) => self.toast(format!("{} views exported as PDF: {}", views.len(), crate::file_name(path))),
+                Err(e) => self.error(format!("Cannot write {path}: {e}")),
+            };
+        }
+        let dwg = path.to_lowercase().ends_with(".dwg");
+        let dxf_path = if dwg { std::path::Path::new(path).with_extension("dxf").to_string_lossy().to_string() } else { with_ext(path, "dxf") };
+        let content = cut_dxf_annot(&all, &texts, 0.1);
+        if let Err(e) = std::fs::write(&dxf_path, content) {
+            return self.error(format!("Cannot write {dxf_path}: {e}"));
+        }
+        let n = views.len();
+        if !dwg {
+            return self.toast(format!("{n} views exported at 1:1 in model space (Front in real coordinates): {}", crate::file_name(&dxf_path)));
+        }
+        match crate::formats::dxf_to_dwg(&dxf_path) {
+            Ok(out) => {
+                let _ = std::fs::remove_file(&dxf_path);
+                self.toast(format!("{n} views exported at 1:1 in model space (Front in real coordinates): {}", crate::file_name(&out)))
+            }
+            Err(e) => self.toast(format!("Saved as DXF ({}) - {e}", crate::file_name(&dxf_path))),
+        }
+    }
+
     /// Exportul DWG / DXF / PDF al tăieturii. Folosește EXACT același desen ca previewul.
     pub fn export_section_cad(&mut self, path: &str) {
         let view = self.settings.cad_view;
@@ -637,8 +729,20 @@ impl App {
             let mirror = view.mirrored();
             let meta = format!("999\nMB_CUT_PLANE axis={axis} value={value:.4} mirror={} origin={:.4},{:.4},{:.4}\n", if mirror { 1 } else { 0 }, o.x, o.y, o.z);
             content = content.replacen("2\nHEADER\n", &format!("2\nHEADER\n{meta}"), 1);
-            // sidecar pentru DWG (conversia poate elimina comentariile DXF)
-            let _ = std::fs::write(format!("{path}.mbplane"), meta.lines().nth(1).unwrap_or("").to_string());
+            // ...si ca text minuscul IN desen (strat MB_CUT_PLANE): supravietuieste conversiei in DWG,
+            // redenumirii fisierului si salvarii din AutoCAD - comentariul DXF si fisierul alaturat nu
+            let line = meta.lines().nth(1).unwrap_or("").to_string();
+            let (mut x0, mut y0) = (f64::MAX, f64::MAX);
+            for (_, s) in &segs {
+                x0 = x0.min(s[0]).min(s[2]);
+                y0 = y0.min(s[1]).min(s[3]);
+            }
+            let text = format!("0\nTEXT\n8\nMB_CUT_PLANE\n62\n8\n10\n{:.4}\n20\n{:.4}\n30\n0.0\n40\n0.002\n1\n{line}\n", if x0.is_finite() { x0 } else { 0.0 }, if y0.is_finite() { y0 } else { 0.0 });
+            if let Some(p) = content.rfind("0\nENDSEC\n0\nEOF") {
+                content.insert_str(p, &text);
+            }
+            // sidecar pentru DWG (rezerva pentru desenele exportate de versiuni mai vechi)
+            let _ = std::fs::write(format!("{path}.mbplane"), line);
         }
         if let Err(e) = std::fs::write(&dxf_path, content) {
             return self.error(format!("Cannot write {dxf_path}: {e}"));
@@ -820,17 +924,15 @@ impl App {
         let mut note = String::from("2D overlay");
         if let Some((ax, val, mir, old)) = crate::formats::read_cut_plane_meta(path) {
             let cur = self.origin_f64();
-            ov.z = val; // valoarea salvata e deja in coordonate LOCALE
+            // planul salvat e in coordonatele locale de la export; liniile 2D sunt in coordonate REALE
+            // (lume), deci se aduc singure in coordonatele de acum - corectam doar planul, o singura data
+            // (inainte se mai adauga si o deplasare, iar desenul pleca din loc cand originea era alta)
+            let shift = (old[ax.min(2)] - cur[ax.min(2)]) as f32;
+            ov.z = val + if old == glam::DVec3::ZERO { 0.0 } else { shift };
             ov.mirror = mir;
             ov.vert = match ax { 0 => Some(1), 1 => Some(0), _ => None };
-            // daca originul s-a schimbat intre export si import, compensam
-            let (ox, oy) = match ax {
-                0 => (cur.y - old.y, cur.z - old.z),
-                1 => (cur.x - old.x, cur.z - old.z),
-                _ => (cur.x - old.x, cur.y - old.y),
-            };
-            ov.dx = ox as f32;
-            ov.dy = oy as f32;
+            ov.dx = 0.0;
+            ov.dy = 0.0;
             note = format!("section cut restored at {:+.3} m", ov.z);
         }
         match self.load_overlay_segs(&mut ov) {
@@ -859,7 +961,14 @@ impl App {
             Some(1) => (o.y, o.z), // XZ: 2D = (y, z)
             _ => (o.x, o.y),       // XY: plan la Z
         };
-        let segs: Vec<[f32; 4]> = lines.iter().map(|(_, p)| [(p[0] - sx) as f32, (p[1] - sy) as f32, (p[2] - sx) as f32, (p[3] - sy) as f32]).collect();
+        // vederile Back / Right sunt exportate oglindite (x = -lume): desenarea inverseaza x inapoi, deci
+        // aici originea se aduna in loc sa se scada (altfel desenul ajungea in partea opusa a originii)
+        let ox = if ov.mirror { -sx } else { sx };
+        let segs: Vec<[f32; 4]> = lines
+            .iter()
+            .filter(|(l, _)| !l.eq_ignore_ascii_case("MB_CUT_PLANE"))
+            .map(|(_, p)| [(p[0] - ox) as f32, (p[1] - sy) as f32, (p[2] - ox) as f32, (p[3] - sy) as f32])
+            .collect();
         let n = segs.len();
         ov.segs = Arc::new(segs);
         Ok(n)

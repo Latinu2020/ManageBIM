@@ -753,9 +753,9 @@ pub fn read_cut_plane_meta(path: &str) -> Option<(usize, f32, bool, glam::DVec3)
     if let Ok(s) = std::fs::read_to_string(format!("{path}.mbplane")) {
         if let Some(m) = parse(s.lines().next().unwrap_or("")) { return Some(m); }
     }
-    let b = std::fs::read(path).ok()?;
-    let text = String::from_utf8_lossy(&b);
-    text.lines().find_map(parse)
+    // textul ascuns din desen (strat MB_CUT_PLANE) sau comentariul DXF; DWG-ul e convertit in text DXF
+    let text = dxf_text_of(path).ok().or_else(|| std::fs::read(path).ok().map(|b| String::from_utf8_lossy(&b).to_string()))?;
+    text.lines().map(|l| l.trim()).find_map(parse)
 }
 
 pub fn load_dxf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
@@ -1951,4 +1951,23 @@ pub fn cad_lines(path: &str) -> Result<(Vec<(String, [f64; 4])>, f64), String> {
         }
     }
     Ok((out, scale))
+}
+
+#[cfg(test)]
+mod cut_plane_meta_tests {
+    #[test]
+    fn meta_is_read_from_the_hidden_text_inside_the_drawing() {
+        // fara fisierul alaturat .mbplane si fara comentariul din HEADER: doar textul de pe stratul MB_CUT_PLANE
+        let dir = std::env::temp_dir().join(format!("mb_meta_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("cut.dxf");
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20\n0.0\n30\n0.0\n11\n1.0\n21\n0.0\n31\n0.0\n0\nTEXT\n8\nMB_CUT_PLANE\n10\n0.0\n20\n0.0\n30\n0.0\n40\n0.002\n1\nMB_CUT_PLANE axis=1 value=12.5000 mirror=1 origin=100.0000,200.0000,0.0000\n0\nENDSEC\n0\nEOF\n";
+        std::fs::write(&p, dxf).unwrap();
+        let (ax, v, mir, o) = super::read_cut_plane_meta(&p.to_string_lossy()).expect("meta");
+        assert_eq!(ax, 1);
+        assert!((v - 12.5).abs() < 1e-4);
+        assert!(mir);
+        assert_eq!(o, glam::DVec3::new(100.0, 200.0, 0.0));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

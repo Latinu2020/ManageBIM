@@ -3,6 +3,24 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.28.0 - 2026-11-24 (stable)
+- **Professional interface**
+  - Ribbon buttons show their **full name** on one or two lines (no more "Clearan…", "Pick fa…"); slightly larger buttons.
+  - **Vector icons everywhere**: 15 ribbon icons that showed as an empty square now have a real icon, coloured by role (green clearance, orange void, violet placeholder, yellow auto).
+  - **One notification at a time** (the newest, errors first) with a **+N** counter, instead of three stacked over the model.
+  - **Level labels** stay above the navigation bar and never overlap each other.
+  - Removed duplicates: the **Cut View** group is only in Annotation (it was in Sections too); the **Highlight plane** checkbox is gone - the chosen face of the section box is always shown light green. Sections has a **Box outline** button instead of the reversed "Hide section box" checkbox.
+  - **One language on screen**: the script builder and the script manual follow the interface language (they were in Romanian in the English interface).
+- **Coordination objects edited in 3D**: with the Coordination objects window open, the selected object shows arrows on its six faces (drag to resize, like the section box) and a centre handle to move it.
+- **Voids sent to Revit**: approved provisions for void are written for the Revit add-in (*Send voids to Revit*); the new **ManageBIM Voids** command in Revit 2023 - 2026 cuts them into the host walls (rectangular opening) and floors / roofs (shaft opening), in shared coordinates. Not yet tested inside Revit.
+- **Multi-view drawing** (Annotation › Multi view): Front, Right, Back, Left and Top views of the section box on one drawing, like an Inventor sheet, with view titles. **DWG / DXF at 1:1 in model space** - the Front view stays in real coordinates; or PDF on a sheet.
+- **DWG overlay lands exactly where it was cut**: the cut plane is now stored as hidden text inside the drawing itself (survives renaming, DWG conversion and saving in AutoCAD); Back / Right views were placed on the wrong side of the origin and an extra offset could move the drawing - both fixed.
+- **Path trace**: large window with the **live preview** next to the settings; **light bounced from lamps** (walls lit by a lamp light the floor and ceiling); fixed **Spot lights that lit nothing** in the final render (the cone was measured the wrong way).
+- **View Templates** redesigned: Ctrl+N number, summary of what each holds, **Update** with the current view, move up / down, and **Applies** choices (Camera, Visibility, Section, Style, Colours) like Revit's Include; the camera flies to the view.
+- **Check for updates**: at start-up (can be turned off in Settings) or from Ctrl+K; a new version shows an **Update** button in the status bar that downloads and starts the installer.
+- **CI**: the GitHub release is published when Windows and the setup build, even if the Linux / FreeBSD builds fail (they blocked every release before).
+- Code health: the Script Library and Path trace windows moved out of `ui.rs` into their own modules. 5 new tests.
+
 ## 0.27.32 - 2026-11-24
 - **Coordination objects** (Coordination tab), like in Navisworks / Solibri:
   - **Clearance zones**: maintenance / access space around the selected equipment (adjustable margin, 0.6 m by default).

@@ -61,6 +61,17 @@ namespace ManageBIM.Revit
                 ib.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
                 ib.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
             }
+            var voids = new PushButtonData("ManageBIMVoids", "ManageBIM\nVoids", asm, typeof(VoidsCommand).FullName)
+            {
+                ToolTip = "Create the voids approved in ManageBIM: openings in walls, shaft openings in floors and roofs",
+                LongDescription = "In ManageBIM: Coordination › Objects, set the provisions for void to Approved and press 'Send voids to Revit'. " +
+                                  "This command cuts them into the host walls and slabs (found by IFC GUID, or by position), in shared coordinates. Undo with Ctrl+Z.",
+            };
+            if (panel.AddItem(voids) is PushButton vb)
+            {
+                vb.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
+                vb.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
+            }
             var reference = new PushButtonData("ManageBIMReference", "ManageBIM\nReference", asm, typeof(ReferenceCommand).FullName)
             {
                 ToolTip = "Bring a model from ManageBIM in as reference geometry (Generic Models, pinned group)",

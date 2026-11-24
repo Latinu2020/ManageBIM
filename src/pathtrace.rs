@@ -301,6 +301,48 @@ impl Rng {
 }
 
 /// punct uniform in sfera unitate (respingere): esantionarea suprafetei luminii -> umbre moi
+/// Lumina directa (difuza) a lampilor intr-un punct cu normala `n`, cu umbre: folosita pentru ricoseul
+/// luminii lampilor (punctul vazut de o raza de emisfera). Aceeasi atenuare si con ca lumina directa.
+fn lamp_irradiance(sc: &Scene, p: Vec3, n: Vec3, rng: &mut Rng) -> [f32; 3] {
+    use crate::lights::LightKind;
+    let mut e = [0.0f32; 3];
+    for lamp in sc.lights.iter() {
+        let (l, d, mut atten) = match lamp.kind {
+            LightKind::Point | LightKind::Spot => {
+                let lv = Vec3::from(lamp.pos) + in_unit_ball(rng) * LAMP_RADIUS - p;
+                let d = lv.length();
+                if d < 1e-3 {
+                    continue;
+                }
+                let a = if lamp.radius <= 0.001 { lamp.power.max(0.0) } else { lamp.power.max(0.0) / (1.0 + (d / lamp.radius).powi(2)) };
+                (lv / d, d, a)
+            }
+            LightKind::Distant => {
+                let dir = (Vec3::from(lamp.target) - Vec3::from(lamp.pos)).normalize_or_zero();
+                if dir == Vec3::ZERO {
+                    continue;
+                }
+                (-dir, 1e5, lamp.power.max(0.0))
+            }
+        };
+        if lamp.kind == LightKind::Spot {
+            let half = (lamp.angle.clamp(5.0, 120.0) * 0.5).to_radians();
+            let axis = (Vec3::from(lamp.target) - Vec3::from(lamp.pos)).normalize_or_zero();
+            let soft = half.cos().max(1e-4);
+            atten *= (((-l).dot(axis).max(0.0) - soft) / (1.0 - soft)).clamp(0.0, 1.0).powf(1.5);
+        }
+        let nl = n.dot(l).max(0.0);
+        if atten <= 0.0 || nl <= 0.0 || sc.hit(p, l, d - 1e-2).is_some() {
+            continue;
+        }
+        let lc = lamp.linear();
+        for (k, v) in e.iter_mut().enumerate() {
+            *v += DIFFUSE * nl * atten * lc[k];
+        }
+    }
+    e
+}
+
 fn in_unit_ball(rng: &mut Rng) -> Vec3 {
     for _ in 0..16 {
         let v = Vec3::new(rng.next() * 2.0 - 1.0, rng.next() * 2.0 - 1.0, rng.next() * 2.0 - 1.0);
@@ -549,6 +591,25 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
     let amb = 0.30 + 0.28 * up;
     let k = amb * open;
     let mut col = [base[0] * irradiance[0] * k, base[1] * irradiance[1] * k, base[2] * irradiance[2] * k];
+    // 0.28: lumina reflectata de la lampi (un ricoseu difuz). Raza de emisfera de mai sus loveste o
+    // suprafata apropiata; lumina directa a lampilor in acel punct, colorata de suprafata, se intoarce
+    // aici. Un perete luminat de o lampa lumineaza astfel podeaua si tavanul - interioare realiste.
+    if !sc.lights.is_empty() && depth == 0 {
+        if let Some((t2, tri2)) = sc.hit(p + n * 1e-3, hd, 40.0) {
+            let q = p + n * 1e-3 + hd * t2;
+            let j = tri2 as usize * 3;
+            let mut n2 = (tris[j + 1] - tris[j]).cross(tris[j + 2] - tris[j]).normalize_or_zero();
+            if n2.dot(hd) > 0.0 {
+                n2 = -n2;
+            }
+            let (b2, ..) = sc.surface(tri2 as usize, q, n2);
+            let e = lamp_irradiance(sc, q + n2 * 1e-3, n2, rng);
+            // cos-weighted: pdf si cos se simplifica; 0.55 = albedo mediu al ricoseului (conservare)
+            for (k2, v) in col.iter_mut().enumerate() {
+                *v += base[k2] * b2[k2] * e[k2] * 0.55 * (1.0 - metal);
+            }
+        }
+    }
 
     let vd = -d;
     let head = n.dot(vd).abs();
@@ -604,7 +665,9 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
         if lamp.kind == LightKind::Spot {
             let half = (lamp.angle.clamp(5.0, 120.0) * 0.5).to_radians();
             let axis = (Vec3::from(lamp.target) - Vec3::from(lamp.pos)).normalize_or_zero();
-            let a = l.dot(axis).max(0.0);
+            // l arata SPRE lampa; conul se masoara dinspre lampa spre punct (-l). Inainte era l: spoturile
+            // nu luminau nimic in randarea finala
+            let a = (-l).dot(axis).max(0.0);
             let soft = half.cos().max(1e-4);
             atten *= (((a - soft) / (1.0 - soft)).clamp(0.0, 1.0)).powf(1.5);
         }
@@ -883,6 +946,30 @@ mod tests {
         let j1 = start_arc((48, 48, 12, 0.0), sc2, eye, fwd, up, right, 50.0, Vec3::ZERO, 0.0, (1, 0.05, 0.0), false, None, false);
         while !j1.done.load(Ordering::Relaxed) { std::thread::sleep(std::time::Duration::from_millis(5)); }
         assert!(lum(&j1, 24, 24) > dark + 0.05, "lampa nu lumineaza: {} vs {}", lum(&j1, 24, 24), dark);
+    }
+
+    #[test]
+    fn spot_light_lights_inside_its_cone() {
+        // spot deasupra cubului, indreptat in jos: lumineaza; indreptat in sus: nu (inainte nu lumina deloc)
+        let sc = scene_with(255, [0; 4], Vec::new());
+        let eye = Vec3::new(0.0, -12.0, 9.0);
+        let fwd = (Vec3::new(0.0, 0.0, 1.5) - eye).normalize();
+        let right = fwd.cross(Vec3::Z).normalize();
+        let up = right.cross(fwd);
+        let shot = |target_z: f32| {
+            let lamp = crate::lights::SceneLight { name: "S".into(), kind: crate::lights::LightKind::Spot, pos: [0.0, 0.0, 6.0], target: [0.0, 0.0, target_z], angle: 70.0, color: [255, 255, 255], power: 8.0, radius: 0.0, enabled: true, ..Default::default() };
+            let s = std::sync::Arc::new(Scene {
+                tris: sc.tris.clone(), colors: sc.colors.clone(), mats: sc.mats.clone(), extra: sc.extra.clone(),
+                textures: sc.textures.clone(), planes: sc.planes.clone(), lights: vec![lamp],
+                bvh: crate::model::Bvh::build(&sc.tris),
+            });
+            let j = start_arc((48, 48, 12, 0.0), s, eye, fwd, up, right, 50.0, Vec3::ZERO, 0.0, (1, 0.05, 0.0), false, None, false);
+            while !j.done.load(Ordering::Relaxed) { std::thread::sleep(std::time::Duration::from_millis(5)); }
+            lum(&j, 24, 24)
+        };
+        let down = shot(0.0);
+        let upward = shot(20.0);
+        assert!(down > upward + 0.05, "spot in jos {down} vs in sus {upward}");
     }
 
     #[test]

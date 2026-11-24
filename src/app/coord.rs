@@ -191,6 +191,36 @@ impl App {
         self.toast("Clash test created: Coordination objects vs all models - press Run Test.");
     }
 
+    /// Trimite golurile APROBATE catre add-in-ul Revit: %LOCALAPPDATA%\ManageBIM\Outbox\voids.txt,
+    /// text simplu, coordonate WORLD in metri. In Revit, comanda "ManageBIM Voids" creeaza golurile reale
+    /// in peretii si placile gazda. Intoarce numarul de goluri scrise.
+    pub fn send_voids_to_revit(&mut self) {
+        let o = self.origin_f64();
+        let voids: Vec<&CoordObject> = self.coord_objects.iter().filter(|c| c.kind == CoordKind::ProvisionForVoid && c.status == "Approved").collect();
+        if voids.is_empty() {
+            return self.error("No approved voids. Set the status of the voids to Approved in the Coordination objects window, then send them.");
+        }
+        let mut s = String::from("# ManageBIM voids for Revit - world coordinates in metres\n");
+        for v in &voids {
+            let (a, b) = (Vec3::from(v.min).as_dvec3() + o, Vec3::from(v.max).as_dvec3() + o);
+            // gazda: GUID-ul IFC dintre paranteze (daca exista), altfel numele
+            let host_guid = v.host.rsplit_once('(').map(|(_, g)| g.trim_end_matches(')').trim().to_string()).unwrap_or_default();
+            s.push_str(&format!(
+                "void\t{}\t{:.4} {:.4} {:.4}\t{:.4} {:.4} {:.4}\t{}\t{}\n",
+                v.name.replace(['\t', '\n'], " "),
+                a.x, a.y, a.z, b.x, b.y, b.z,
+                host_guid,
+                crate::ifc_export::guid_from(&v.guid_seed()),
+            ));
+        }
+        let Some(dir) = crate::formats::data_root().map(|d| d.join("ManageBIM").join("Outbox")) else { return self.error("LOCALAPPDATA is not set") };
+        let _ = std::fs::create_dir_all(&dir);
+        match std::fs::write(dir.join("voids.txt"), s) {
+            Ok(()) => self.toast(format!("{} approved void(s) sent to Revit - in Revit press ManageBIM › Voids to create them.", voids.len())),
+            Err(e) => self.error(format!("Cannot write the voids for Revit: {e}")),
+        }
+    }
+
     pub fn remove_coord_object(&mut self, i: usize) {
         if i < self.coord_objects.len() {
             self.coord_objects.remove(i);
