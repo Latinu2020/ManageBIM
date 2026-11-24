@@ -11,7 +11,7 @@ plan voids and clearance zones, produce **Inventor-style 2D drawings**, render w
 
 [![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.28.0-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.0/ManageBIM-Setup-0.28.0.exe)
 &nbsp;
-[![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Releases-334155?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/Latinu2020/ManageBIM/releases)
+[![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Build%20from%20source-334155?style=for-the-badge&logo=linux&logoColor=white)](#building-from-source)
 
 [![Build](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml/badge.svg)](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml)
 ![Version](https://img.shields.io/badge/version-0.28.0-blue)
@@ -101,8 +101,8 @@ plan voids and clearance zones, produce **Inventor-style 2D drawings**, render w
 | Platform | Package | Notes |
 |---|---|---|
 | **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.28.0.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.0/ManageBIM-Setup-0.28.0.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime, Intel Open Image Denoise and the scanned PBR material library. Per-user, **no administrator rights**, folder of your choice. |
-| **Linux** (x86-64) | `ManageBIM-<version>-x86_64.AppImage` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | One file: `chmod +x`, then run. No installation, no root. |
-| **FreeBSD** (x86-64) | `ManageBIM-<version>-freebsd-x86_64.tar.gz` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | Unpack and run `ManageBIM/ManageBIM`. Needs `pkg install mesa-libs libxkbcommon`. |
+| **Linux** (x86-64) | [Build from source](#building-from-source) | Prebuilt AppImage packages are paused while the Linux build is being fixed; `cargo build --release` and `packaging/linux/build-appimage.sh` make the same single-file AppImage. |
+| **FreeBSD** (x86-64) | [Build from source](#building-from-source) | Prebuilt packages are paused while the FreeBSD build is being fixed; see *Linux and FreeBSD packages* below. Needs `pkg install mesa-libs libxkbcommon`. |
 
 ## What's new
 
@@ -261,7 +261,7 @@ cargo build --release --bin ManageBIM
 sh packaging/freebsd/build-tarball.sh       # -> dist/ManageBIM-<version>-freebsd-x86_64.tar.gz
 ```
 
-Every push is built and tested on Windows, Linux and FreeBSD by [GitHub Actions](.github/workflows/build.yml); a `v*` tag publishes the packages to Releases.
+Every push is built and tested on Windows, Linux and FreeBSD by [GitHub Actions](.github/workflows/build.yml); a `v*` tag publishes the Windows setup to Releases (the Linux and FreeBSD packages are added again once their builds pass).
 </details>
 
 | Folder | Content |
