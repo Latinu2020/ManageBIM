@@ -3643,57 +3643,123 @@ impl App {
                 self.xform_point(s, n, id);
             }
         }
-        // ---- lumini: selectare prin click pe marker si mutare prin drag in 3D
-        let mut light_drag = false;
-        if let Some(ptr) = resp.interact_pointer_pos() {
-            for (li, lamp) in self.lights.iter().enumerate() {
-                if let Some(sp) = to_screen(&params.view_proj, rect, Vec3::from(lamp.pos)) {
-                    if (sp - ptr).length() < 13.0 {
-                        if resp.clicked() {
-                            self.light_sel = Some(li);
-                        }
-                        if resp.dragged() && self.light_sel == Some(li) {
-                            light_drag = true;
-                        }
-                    }
-                }
-            }
-        }
-        if light_drag {
-            if let Some(ptr) = resp.interact_pointer_pos() {
-                if let Some(li) = self.light_sel {
-                    let (o, d) = self.cam.ray(uv(ptr), aspect);
-                    let lp = Vec3::from(self.lights[li].pos);
-                    let n = self.cam.fwd();
-                    let den = d.dot(n);
-                    if den.abs() > 1e-4 {
-                        let t = (lp - o).dot(n) / den;
-                        if t > 0.0 {
-                            self.lights[li].pos = (o + d * t).to_array();
+        // ---- lumini: gizmo UCS in 3D (sageati X/Y/Z) + raza de actiune
+        let mut light_axis_hover: Option<usize> = None;
+        if let Some(li) = self.light_sel {
+            if li < self.lights.len() {
+                let lp = Vec3::from(self.lights[li].pos);
+                let len = (lp - self.cam.eye()).length().max(0.5) * 0.10;
+                if let Some(ptr) = resp.interact_pointer_pos() {
+                    for a in 0..3 {
+                        let mut axis = Vec3::ZERO;
+                        axis[a] = 1.0;
+                        if let (Some(sp), Some(tp)) = (
+                            to_screen(&params.view_proj, rect, lp),
+                            to_screen(&params.view_proj, rect, lp + axis * len),
+                        ) {
+                            let v = tp - sp;
+                            if v.length() > 1.0 {
+                                let t = ((ptr - sp).dot(v) / v.dot(v)).clamp(0.0, 1.0);
+                                if (ptr - (sp + v * t)).length() < 9.0 {
+                                    light_axis_hover = Some(a);
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        // markerele luminilor: bec galben + raza de actiune (ca in Navisworks)
+        if resp.drag_started_by(egui::PointerButton::Primary) {
+            self.light_axis = light_axis_hover;
+        }
+        if let (Some(li), Some(a)) = (self.light_sel, self.light_axis) {
+            if li < self.lights.len() && resp.dragged_by(egui::PointerButton::Primary) {
+                let lp = Vec3::from(self.lights[li].pos);
+                let len = (lp - self.cam.eye()).length().max(0.5) * 0.10;
+                let mut axis = Vec3::ZERO;
+                axis[a] = 1.0;
+                if let (Some(sp), Some(tp)) = (
+                    to_screen(&params.view_proj, rect, lp),
+                    to_screen(&params.view_proj, rect, lp + axis * len),
+                ) {
+                    let v = tp - sp;
+                    if v.length() > 1.0 {
+                        let meters = resp.drag_delta().dot(v) / v.dot(v) * len;
+                        if meters.abs() > 1e-5 {
+                            let mut p = lp;
+                            p[a] += meters;
+                            self.lights[li].pos = p.to_array();
+                            self.lights[li].target[a] += meters;
+                        }
+                    }
+                }
+            }
+        }
+        if resp.drag_stopped() {
+            self.light_axis = None;
+        }
+        // desenare: lumina selectata = gizmo UCS; celelalte = bec colorat cu raza
         for (li, lamp) in self.lights.iter().enumerate() {
             if !lamp.enabled {
                 continue;
             }
-            if let Some(sp) = to_screen(&params.view_proj, rect, Vec3::from(lamp.pos)) {
-                let col = if self.light_sel == Some(li) { Color32::from_rgb(255, 235, 120) } else { Color32::from_rgb(230, 180, 60) };
-                painter.circle_filled(sp, 5.0, col.gamma_multiply(0.85));
-                painter.circle_stroke(sp, 5.0, Stroke::new(1.5_f32, Color32::BLACK));
-                if lamp.kind != crate::lights::LightKind::Point {
-                    let axis = Vec3::from(lamp.target) - Vec3::from(lamp.pos);
-                    if let Some(tp) = to_screen(&params.view_proj, rect, Vec3::from(lamp.pos) + axis * 0.15) {
-                        painter.line_segment([sp, tp], Stroke::new(1.5_f32, col));
+            let lp = Vec3::from(lamp.pos);
+            let lc = Color32::from_rgb(lamp.color[0], lamp.color[1], lamp.color[2]);
+            let col = if self.light_sel == Some(li) { lc } else { lc.gamma_multiply(0.7) };
+            let Some(sp) = to_screen(&params.view_proj, rect, lp) else { continue };
+            if self.light_sel == Some(li) {
+                // raza de actiune: cercuri in planele XY / XZ / YZ
+                if lamp.radius > 0.0 {
+                    for axis in 0..3 {
+                        let mut pts = Vec::with_capacity(33);
+                        for k in 0..=32 {
+                            let t = k as f32 / 32.0 * std::f32::consts::TAU;
+                            let (u, v) = (t.cos() * lamp.radius, t.sin() * lamp.radius);
+                            let q = match axis {
+                                0 => lp + Vec3::new(0.0, u, v),
+                                1 => lp + Vec3::new(u, 0.0, v),
+                                _ => lp + Vec3::new(u, v, 0.0),
+                            };
+                            if let Some(s) = to_screen(&params.view_proj, rect, q) {
+                                pts.push(s);
+                            }
+                        }
+                        if pts.len() > 1 {
+                            painter.add(egui::Shape::line(pts, Stroke::new(1.0_f32, col.gamma_multiply(0.30))));
+                        }
                     }
                 }
-                if self.light_sel == Some(li) {
-                    painter.text(sp + EV::new(9.0, -18.0), Align2::LEFT_TOP, &lamp.name, FontId::proportional(11.0), col);
+                let len = (lp - self.cam.eye()).length().max(0.5) * 0.10;
+                let axis_col = [Color32::from_rgb(240, 80, 70), Color32::from_rgb(80, 220, 100), Color32::from_rgb(80, 140, 255)];
+                for a in 0..3 {
+                    let mut axis = Vec3::ZERO;
+                    axis[a] = 1.0;
+                    if let Some(tp) = to_screen(&params.view_proj, rect, lp + axis * len) {
+                        let v = tp - sp;
+                        if v.length() > 1.0 {
+                            let active = self.light_axis == Some(a) || light_axis_hover == Some(a);
+                            let w: f32 = if active { 4.0 } else { 2.5 };
+                            let c = if active { axis_col[a].gamma_multiply(1.4_f32) } else { axis_col[a] };
+                            painter.line_segment([sp, tp], Stroke::new(w, c));
+                            let dir = v / v.length();
+                            let perp = egui::vec2(-dir.y, dir.x);
+                            let tip = [tp, tp - dir * 10.0 + perp * 4.5, tp - dir * 10.0 - perp * 4.5];
+                            painter.add(egui::Shape::closed_line(tip.to_vec(), Stroke::new(w, c)));
+                            painter.text(tp + dir * 11.0, Align2::CENTER_CENTER, ["X", "Y", "Z"][a], FontId::proportional(11.0), c);
+                        }
+                    }
                 }
             }
+            let sz = (2.0 + lamp.power.max(0.0).min(20.0) * 0.35).clamp(3.0, 9.0);
+            painter.circle_filled(sp, sz, col);
+            painter.circle_stroke(sp, sz, Stroke::new(1.5_f32, Color32::BLACK));
+            if lamp.kind != crate::lights::LightKind::Point {
+                let axis = Vec3::from(lamp.target) - lp;
+                if let Some(tp) = to_screen(&params.view_proj, rect, lp + axis * 0.15) {
+                    painter.line_segment([sp, tp], Stroke::new(2.0_f32, col));
+                }
+            }
+            painter.text(sp + EV::new(10.0, -18.0), Align2::LEFT_TOP, format!("{} · {:.1} lux", lamp.name, lamp.power), FontId::proportional(11.0), col);
         }
         let grid_click = resp.clicked() && self.grid_pick > 0 && snap.is_some() && !xform_click;
         if grid_click {

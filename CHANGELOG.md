@@ -3,6 +3,11 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.25 - 2026-11-24
+- **Fixed the light gizmo in the 3D view**: the previous marker was only a flat painted dot, so the added light was not visible or movable. Lights are now real visible entities with a UCS gizmo - arrows for X (red), Y (green), Z (blue) that you grab and drag with the mouse.
+- The three action circles (XY / XZ / YZ) show the light's range; the centre dot scales with the power (lux), and the label shows the name and lux value. Changes to colour / power / range update the 3D marker immediately.
+- Spot / Distant lights also show their direction axis in the viewport.
+
 ## 0.27.24 - 2026-11-24
 - **Lighting like in Navisworks**: a dedicated **Render › Lighting** tab with **Create Light** (Point / Spot / Distant), a light list, and full controls for **lux (power)**, range, colour, position, target and cone angle. Lights are saved in the project.
 - **Lights can be placed and moved in the 3D view**: the **Place in 3D** tool drops a point light where you click on a surface; lights are drawn as markers in the viewport, can be selected by clicking the marker and moved by dragging it with the mouse (Esc returns to Select). A Lighting button was added to the Render ribbon.

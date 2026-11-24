@@ -9,12 +9,12 @@
 Open **IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP and point clouds** together, run clash detection and model checks,<br>
 manage issues and markups, publish drawings — and stay in sync with Revit and Navisworks.
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.27.24-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.24/ManageBIM-Setup-0.27.24.exe)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.27.25-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.25/ManageBIM-Setup-0.27.25.exe)
 &nbsp;
 [![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Releases-334155?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/Latinu2020/ManageBIM/releases)
 
 [![Build](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml/badge.svg)](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-0.27.24-blue)
+![Version](https://img.shields.io/badge/version-0.27.25-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20FreeBSD-0078d4)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-b7410e)
 ![No admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a)
@@ -73,10 +73,12 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 
 | Platform | Package | Notes |
 |---|---|---|
-| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.27.24.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.24/ManageBIM-Setup-0.27.24.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime and Intel Open Image Denoise. Per-user, **no administrator rights**. |
+| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.27.25.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.25/ManageBIM-Setup-0.27.25.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime and Intel Open Image Denoise. Per-user, **no administrator rights**. |
 | **Linux** (x86-64) | `ManageBIM-<version>-x86_64.AppImage` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | One file: `chmod +x`, then run. No installation, no root. |
 | **FreeBSD** (x86-64) | `ManageBIM-<version>-freebsd-x86_64.tar.gz` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | Unpack and run `ManageBIM/ManageBIM`. Needs `pkg install mesa-libs libxkbcommon`. |
 
+> **0.27.25** — lights are now **real visible entities in the 3D view** with a UCS gizmo (X/Y/Z arrows you drag to move them), action-range circles, and a marker that updates instantly when you change colour, lux or range.
+>
 > **0.27.24** — **Navisworks-style lighting**: Render › Lighting with Create Light (Point / Spot / Distant), lux, range, colour and angle controls; place lights by clicking in the 3D view, select their markers and drag them to move. Lights are saved in the project.
 >
 > **0.27.23** — **photorealistic renders** with a real HDRI / photo environment, **point lights placed in the model** (position, colour, power, radius, saved in the project), richer procedural PBR textures, a three-column Materials window and a full-detail option for the 3D view.
@@ -112,7 +114,7 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 > **0.27.0** — progressive CPU path tracing, Navisworks-style clash workflow, Hidden line, uniform ribbon buttons and a full-height Properties panel with all element properties.
 >
 > **Windows:** the installer is not digitally signed yet — if SmartScreen asks, choose *More info › Run anyway*.
-> Silent install: `ManageBIM-Setup-0.27.24.exe /S` (add `/NoAddins` for the application only).
+> Silent install: `ManageBIM-Setup-0.27.25.exe /S` (add `/NoAddins` for the application only).
 >
 > **Linux / FreeBSD:** the add-ins (Revit, Navisworks, AutoCAD) and the native STEP / IGES reader exist only on Windows; everything else is the same.
 
