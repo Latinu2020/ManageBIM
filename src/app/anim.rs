@@ -419,7 +419,7 @@ impl App {
                 }
             }
         };
-        self.pathtrace = Some(crate::pathtrace::start_arc((w, h, samples, tlimit), scene, cam.eye(), cam.fwd(), cam.up(), cam.right(), cam.fov_deg, sun, light, env, hdri, denoise));
+        self.pathtrace = Some(crate::pathtrace::start_arc((w, h, samples, tlimit), scene, cam.eye(), cam.fwd(), cam.up(), cam.right(), cam.fov_deg, sun, light, env, self.render.night, hdri, denoise));
         self.toast(format!("Path tracing {}×{} · {} samples · {} s max{}", w, h, samples, tlimit, if denoise { " · denoise" } else { "" }));
     }
 

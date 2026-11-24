@@ -46,6 +46,17 @@ impl App {
                     ui.close_menu();
                 }
             });
+            ui.separator();
+            ui.label(RichText::new("Gizmo").small().strong().color(accent())).on_hover_text("Move: drag the X/Y/Z arrows. Rotate: drag the circles to aim the light.");
+            if ui.selectable_label(!self.light_rotate_mode, "✥ Move").on_hover_text("Drag the red X / green Y / blue Z arrows to move the light").clicked() {
+                self.light_rotate_mode = false;
+            }
+            if ui.selectable_label(self.light_rotate_mode, "⟳ Rotate").on_hover_text("Drag a circle to rotate the light direction around that plane's axis (XY → Z, XZ → Y, YZ → X)").clicked() {
+                self.light_rotate_mode = true;
+            }
+            if ui.checkbox(&mut self.render.night, "🌙 Night").on_hover_text("Dark sky and low ambient light - the lamps in the model light the scene").clicked() {
+                // nimic altceva: starea se citeste la pornirea randarii
+            }
             let placing = self.tool == Tool::PlaceLight;
             if ui.selectable_label(placing, "🎯 Place in 3D").on_hover_text("Click a surface in the 3D view to place a point light; press Esc to go back to Select").clicked() {
                 self.tool = if placing { Tool::Select } else { Tool::PlaceLight };
@@ -110,7 +121,8 @@ impl App {
                     ui.label(RichText::new("Lux (power)").small());
                     ui.add(egui::Slider::new(&mut lamp.power, 0.0..=20.0).step_by(0.1));
                     ui.label(RichText::new("Range").small());
-                    ui.add(egui::DragValue::new(&mut lamp.radius).range(0.0..=500.0).speed(0.5).suffix(" m"));
+                    ui.add(egui::DragValue::new(&mut lamp.radius).range(0.0..=5000.0).speed(0.5).suffix(" m"))
+                        .on_hover_text("0 m = unlimited range (light does not fall off with distance)");
                 });
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Position").small());

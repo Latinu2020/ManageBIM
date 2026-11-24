@@ -29,6 +29,7 @@ mod script_catalog;
 mod script_builder_ui;
 mod materials_panel;
 mod lighting_panel;
+mod classification_panel;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
 fn accent() -> Color32 {
@@ -1251,6 +1252,9 @@ impl App {
     /// Toate comenzile BIM (IFC, IDS, clasificare, date, schimb) intr-un singur tab.
     fn ribbon_bim(&mut self, ui: &mut egui::Ui) {
         let has = self.loaded_models().next().is_some();
+        egui::CollapsingHeader::new(RichText::new("🏷 Classification (bSDD / Uniclass)").small().strong()).show(ui, |ui| {
+            self.classification_ui(ui);
+        });
         rgroup(ui, "IFC export", |ui| {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("MVD").small().weak()).on_hover_text("Model View Definition: which properties are written to the IFC file");
@@ -3688,7 +3692,8 @@ impl App {
         }
         // ---- lumini: gizmo UCS in 3D (sageati X/Y/Z) + raza de actiune + cerc de rotire
         let mut light_axis_hover: Option<usize> = None;
-        let mut light_ring_hover = false;
+        let mut light_ring_hover: Option<usize> = None;
+        if !self.light_rotate_mode {
         if let Some(li) = self.light_sel {
             if li < self.lights.len() {
                 let lp = Vec3::from(self.lights[li].pos);
@@ -3713,19 +3718,22 @@ impl App {
                 }
             }
         }
-        // cercurile de raza deja desenate devin sine de rotatie:
+        } // end if !light_rotate_mode (Move)
+        // In modul Rotate, cercurile de raza devin sine de rotatie:
         // XY -> rotire in jurul Z, XZ -> in jurul Y, YZ -> in jurul X
         let mut ring_axis: Option<usize> = None;
+        if self.light_rotate_mode {
         if let Some(li) = self.light_sel {
-            if li < self.lights.len() && self.lights[li].kind != crate::lights::LightKind::Point {
+            if li < self.lights.len() {
+                // raza de rotatie e fixa, usor de prins, indiferent de raza luminii
                 let lp = Vec3::from(self.lights[li].pos);
-                let r = self.lights[li].radius.max(0.1);
+                let r = (lp - self.cam.eye()).length().max(1.0) * 0.16;
                 if let Some(ptr) = resp.interact_pointer_pos() {
-                    let mut best = 12.0f32;
+                    let mut best = 20.0f32;
                     for plane in 0..3 {
                         let mut closest = f32::MAX;
-                        for k in 0..64 {
-                            let t = k as f32 / 64.0 * std::f32::consts::TAU;
+                        for k in 0..96 {
+                            let t = k as f32 / 96.0 * std::f32::consts::TAU;
                             let (u, v) = (t.cos() * r, t.sin() * r);
                             let q = match plane {
                                 0 => lp + Vec3::new(u, v, 0.0),  // XY
@@ -3741,14 +3749,15 @@ impl App {
                             ring_axis = Some(plane);
                         }
                     }
-                    light_ring_hover = ring_axis.is_some();
-                    if resp.drag_started_by(egui::PointerButton::Primary) && ring_axis.is_some() && self.light_axis.is_none() {
+                    light_ring_hover = ring_axis;
+                    if resp.drag_started_by(egui::PointerButton::Primary) && ring_axis.is_some() {
                         let dir = Vec3::from(self.lights[li].target) - lp;
                         self.light_rot = Some((0.0, [dir.x, dir.y, dir.z]));
                     }
                 }
             }
         }
+        } // end if light_rotate_mode
         if let (Some(li), Some((_, dir0))) = (self.light_sel, self.light_rot) {
             if li < self.lights.len() && resp.dragged_by(egui::PointerButton::Primary) {
                 // planul cercului prins determina axa de rotire: XY->Z, XZ->Y, YZ->X
@@ -3804,25 +3813,34 @@ impl App {
             let col = if self.light_sel == Some(li) { lc } else { lc.gamma_multiply(0.7) };
             let Some(sp) = to_screen(&params.view_proj, rect, lp) else { continue };
             if self.light_sel == Some(li) {
-                // cercul de rotire a directiei (Spot / Distant)
-                if lamp.kind != crate::lights::LightKind::Point {
-                    let rr = (lp - self.cam.eye()).length().max(1.0) * 0.07;
-                    if let Some(tp) = to_screen(&params.view_proj, rect, lp + Vec3::new(rr, 0.0, 0.0)) {
-                        let rpx = (tp - sp).length();
-                        if rpx > 12.0 {
-                            let mut pts = Vec::with_capacity(49);
-                            for k in 0..=48 {
-                                let t = k as f32 / 48.0 * std::f32::consts::TAU;
-                                pts.push(sp + egui::vec2(t.cos() * rpx, t.sin() * rpx));
+                // modul Rotate: cercurile groase sunt sine de rotatie (XY=Z, XZ=Y, YZ=X)
+                if self.light_rotate_mode {
+                    let r = (lp - self.cam.eye()).length().max(1.0) * 0.16;
+                    let ring_cols = [Color32::from_rgb(240, 80, 70), Color32::from_rgb(80, 220, 100), Color32::from_rgb(80, 140, 255)];
+                    for plane in 0..3 {
+                        let mut pts = Vec::with_capacity(97);
+                        for k in 0..=96 {
+                            let t = k as f32 / 96.0 * std::f32::consts::TAU;
+                            let (u, v) = (t.cos() * r, t.sin() * r);
+                            let q = match plane {
+                                0 => lp + Vec3::new(u, v, 0.0),
+                                1 => lp + Vec3::new(u, 0.0, v),
+                                _ => lp + Vec3::new(0.0, u, v),
+                            };
+                            if let Some(s) = to_screen(&params.view_proj, rect, q) {
+                                pts.push(s);
                             }
-                            let rc = if light_ring_hover || self.light_rot.is_some() { Color32::from_rgb(255, 240, 140) } else { col.gamma_multiply(0.55) };
-                            let rw: f32 = if light_ring_hover { 3.5 } else { 2.0 };
+                        }
+                        if pts.len() > 1 {
+                            let active = light_ring_hover == Some(plane) || self.light_rot.is_some();
+                            let rc = if active { ring_cols[plane].gamma_multiply(1.3_f32) } else { ring_cols[plane].gamma_multiply(0.65_f32) };
+                            let rw: f32 = if active { 4.5 } else { 2.5 };
                             painter.add(egui::Shape::line(pts, Stroke::new(rw, rc)));
                         }
                     }
                 }
-                // raza de actiune: cercuri in planele XY / XZ / YZ
-                if lamp.radius > 0.0 {
+                // raza de actiune: cercuri subtiri in planele XY / XZ / YZ
+                if lamp.radius > 0.0 && !self.light_rotate_mode {
                     for axis in 0..3 {
                         let mut pts = Vec::with_capacity(33);
                         for k in 0..=32 {
@@ -3845,6 +3863,9 @@ impl App {
                 let len = (lp - self.cam.eye()).length().max(0.5) * 0.13;
                 let axis_col = [Color32::from_rgb(240, 80, 70), Color32::from_rgb(80, 220, 100), Color32::from_rgb(80, 140, 255)];
                 for a in 0..3 {
+                    if self.light_rotate_mode {
+                        break;
+                    }
                     let mut axis = Vec3::ZERO;
                     axis[a] = 1.0;
                     if let Some(tp) = to_screen(&params.view_proj, rect, lp + axis * len) {
@@ -4768,6 +4789,8 @@ impl App {
                 Purpose::LoadHdri => "Environment map",
                 Purpose::ExportIfcMap => "Export IFC mapping",
                 Purpose::ImportIfcMap => "Import IFC mapping",
+                Purpose::ImportClassifications => "Import classifications",
+                Purpose::ExportClassifications => "Export classifications",
                 Purpose::ExportMaterials => "Export material library",
                 Purpose::ImportMaterials => "Import material library",
                 Purpose::ExportVideo => "Export Animation",

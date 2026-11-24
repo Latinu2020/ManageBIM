@@ -324,6 +324,26 @@ impl App {
                 }
                 Err(e) => self.error(format!("Mapping CSV: {e}")),
             },
+            Purpose::ImportClassifications => match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|s| {
+                if path.to_ascii_lowercase().ends_with(".csv") { crate::classification::from_csv(&s) } else { crate::classification::from_json(&s) }
+            }) {
+                Ok(c) => {
+                    self.settings.classifications = c;
+                    self.settings.save();
+                    self.toast(format!("{} classifications imported", self.settings.classifications.len()));
+                }
+                Err(e) => self.error(format!("Classification catalogue: {e}")),
+            },
+            Purpose::ExportClassifications => {
+                let mut p = path.clone();
+                if !p.to_ascii_lowercase().ends_with(".csv") {
+                    p.push_str(".csv");
+                }
+                match std::fs::write(&p, crate::classification::to_csv(&self.settings.classifications)) {
+                    Ok(()) => self.toast(format!("{} classifications exported → {}", self.settings.classifications.len(), crate::file_name(&p))),
+                    Err(e) => self.error(e.to_string()),
+                }
+            }
             Purpose::LoadHdri => {
                 match crate::hdri::load(&path) {
                     Ok(h) => {
@@ -649,6 +669,8 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::LoadHdri => d.set_title("Environment map (.hdr or photo)").add_filter("HDR image", &["hdr"]).add_filter("Photo (equirectangular)", &["png", "jpg", "jpeg"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportIfcMap => d.set_title("Export IFC category mapping").add_filter("CSV", &["csv"]).set_file_name("ifc-mapping.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportIfcMap => d.set_title("Import IFC category mapping").add_filter("CSV", &["csv"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ImportClassifications => d.set_title("Import classification catalogue").add_filter("CSV / JSON", &["csv", "json"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportClassifications => d.set_title("Export classification catalogue").add_filter("CSV", &["csv"]).set_file_name("classifications.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpHtml => d.set_title("Viewpoints report (HTML)").add_filter("HTML report", &["html"]).set_file_name("viewpoints_report.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpXlsx => d.set_title("Viewpoints report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("viewpoints_report.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpPdf => d.set_title("Sheets (PDF)").add_filter("PDF", &["pdf"]).set_file_name("sheets.pdf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),

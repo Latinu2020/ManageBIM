@@ -33,7 +33,7 @@ pub struct SceneLight {
     pub color: [u8; 3],
     /// putere relativa (0..10)
     pub power: f32,
-    /// raza de actiune in metri (0 = nelimitata)
+    /// raza de actiune in metri (0 = nelimitata, lumina nu scade cu distanta)
     pub radius: f32,
     #[serde(default = "yes")]
     pub enabled: bool,

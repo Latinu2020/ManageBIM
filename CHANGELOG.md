@@ -3,6 +3,12 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.29 - 2026-11-24
+- **Light gizmo with Move / Rotate modes** (like Navisworks): a **Move** button uses the X/Y/Z arrows to move the light; a **Rotate** button shows three thick circles (XY → Z axis, XZ → Y, YZ → X) that you drag to aim the light. Previously the thin range circles were hard to grab and rotation was not discoverable.
+- **No more limited light range**: radius 0 means unlimited (no distance falloff) in both the GPU viewport and the offline render; the range slider now goes up to 5000 m.
+- **Night scene**: a "🌙 Night" toggle darkens the sky and reduces ambient light so the lamps in the model light the scene like in the Navisworks example.
+- **Local classification catalogue (D6)**: a bSDD / Uniclass / OmniClass panel in the BIM tab with search and one-click assignment of a code to the selected elements (saved as a property "Classification" and exported to IFC). The catalogue can be imported/exported as CSV or JSON. IDS 1.0 import, export and validation were already present in Model Checker.
+
 ## 0.27.28 - 2026-11-24
 - **Single BIM ribbon tab**: all BIM operations (IFC export with MVD, category-to-IFC-class mapping, bSDD, IDS check, COBie, properties, quantities, glTF, BCF, Navisworks sets) are now in one **BIM** tab. Removed duplicates from Export / Share.
 - **IFC MVD export**: choose Reference View, Design Transfer View, Coordination View 2.0 or Site View before export; the chosen view filters which property sets are written and is recorded in the IFC header.

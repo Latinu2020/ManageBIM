@@ -1132,6 +1132,8 @@ pub enum Purpose {
     LoadHdri,
     ExportIfcMap,
     ImportIfcMap,
+    ImportClassifications,
+    ExportClassifications,
     ExportProfile,
     ImportProfile,
     ExportCompare,
@@ -1217,6 +1219,10 @@ pub struct App {
     pub light_axis: Option<usize>,
     /// rotirea directiei luminii prin cercul gizmo (unghiul initial la inceputul dragului)
     pub light_rot: Option<(f32, [f32; 3])>,
+    /// modul gizmo-ului de lumina: false = Move (sagetile), true = Rotate (cercurile)
+    pub light_rotate_mode: bool,
+    /// filtrul de cautare in catalogul de clasificare
+    pub class_search: String,
     pub selected: BTreeSet<ElemId>,
     pub primary: Option<ElemId>,
     pub hidden: HashSet<ElemId>,
@@ -1609,6 +1615,8 @@ impl App {
             light_sel: None,
             light_axis: None,
             light_rot: None,
+            light_rotate_mode: false,
+            class_search: String::new(),
             selected: BTreeSet::new(),
             primary: None,
             hidden: HashSet::new(),

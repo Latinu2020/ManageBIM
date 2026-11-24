@@ -377,8 +377,9 @@ void main() {
         if (li >= u_nlamps) break;
         vec3 lv = u_lamps[li].xyz - v_pos;
         float d = length(lv);
-        float radius = max(u_lamp_data[li].w, 0.1);
-        float att = u_lamps[li].w * 26.0 / (1.0 + (d / radius) * (d / radius));
+        float radius = u_lamp_data[li].w;
+        // raza 0 = lumina nelimitata (ca soarele): fara cadere cu distanta
+        float att = radius <= 0.001 ? u_lamps[li].w * 26.0 : u_lamps[li].w * 26.0 / (1.0 + (d / radius) * (d / radius));
         float nl = max(dot(n, lv / max(d, 0.001)), 0.0);
         k += u_lamp_data[li].rgb * nl * att;
     }

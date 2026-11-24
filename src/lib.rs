@@ -19,6 +19,7 @@ pub mod materials;
 pub mod lights;
 pub mod ifc_mvd;
 pub mod ifc_map;
+pub mod classification;
 pub mod hdri;
 pub mod materialx;
 pub mod pdf;

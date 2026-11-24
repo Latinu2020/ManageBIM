@@ -231,6 +231,8 @@ pub struct PathTraceJob {
     pub light: f32,
     /// mediu: (mod, intensitate, rotatie grade)
     pub env: (u8, f32, f32),
+    /// scena de noapte: cer intunecat
+    pub night: bool,
     /// HDRI / fotografie folosita ca mediu (None = cer procedural)
     pub hdri: Option<std::sync::Arc<crate::hdri::Hdri>>,
     /// albedo (RGB) + normala (XYZ) ale primei intersectii, acumulate ca `buf` (6 valori / pixel)
@@ -246,7 +248,7 @@ pub struct PathTraceJob {
 
 // We'll use Arc<PathTraceJob> everywhere instead.
 #[allow(clippy::too_many_arguments)]
-pub fn start_arc(params: (u32, u32, u32, f32), scene: Arc<Scene>, cam_eye: Vec3, cam_fwd: Vec3, cam_up: Vec3, cam_right: Vec3, fov_deg: f32, sun: Vec3, light: f32, env: (u8, f32, f32), hdri: Option<std::sync::Arc<crate::hdri::Hdri>>, denoise: bool) -> Arc<PathTraceJob> {
+pub fn start_arc(params: (u32, u32, u32, f32), scene: Arc<Scene>, cam_eye: Vec3, cam_fwd: Vec3, cam_up: Vec3, cam_right: Vec3, fov_deg: f32, sun: Vec3, light: f32, env: (u8, f32, f32), night: bool, hdri: Option<std::sync::Arc<crate::hdri::Hdri>>, denoise: bool) -> Arc<PathTraceJob> {
     let (w, h, samples, tlimit) = params;
     let job = Arc::new(PathTraceJob {
         width: w, height: h, samples_target: samples, time_limit_secs: tlimit,
@@ -255,7 +257,7 @@ pub fn start_arc(params: (u32, u32, u32, f32), scene: Arc<Scene>, cam_eye: Vec3,
         count: AtomicU32::new(0),
         done: AtomicBool::new(false),
         started: Instant::now(),
-        scene, cam_eye, cam_fwd, cam_up, cam_right, fov_deg, sun, light, env, hdri,
+        scene, cam_eye, cam_fwd, cam_up, cam_right, fov_deg, sun, light, env, night, hdri,
         aux: Mutex::new(vec![0.0; (w * h * 6) as usize]),
         denoise,
         denoise_state: AtomicU8::new(DN_OFF),
@@ -374,6 +376,13 @@ fn denoise_job(job: &PathTraceJob) -> Result<Vec<f32>, String> {
 /// Mediul (IBL) pe directia d: cer, orizont, soare si nori slabi.
 /// E procedural, deci functioneaza offline; inlocuieste gradientul albastru din randarea veche.
 fn env(job: &PathTraceJob, d: Vec3) -> [f32; 3] {
+    if job.night {
+        // cer de noapte: foarte putina lumina, lasam lampile sa domine
+        let up = (d.z * 0.5 + 0.5).clamp(0.0, 1.0);
+        let s = job.sun.normalize_or_zero();
+        let moon = 0.35 * d.dot(s).max(0.0).powf(180.0);
+        return [0.012 + 0.045 * up + moon, 0.018 + 0.055 * up + moon, 0.045 + 0.10 * up + moon * 1.1];
+    }
     env_cols(job.env, job.sun, d, job.hdri.as_deref())
 }
 
@@ -550,11 +559,15 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
             LightKind::Point | LightKind::Spot => {
                 let lv = Vec3::from(lamp.pos) - p;
                 let d = lv.length();
-                if d < 1e-3 || (lamp.radius > 0.0 && d > lamp.radius) {
+                if d < 1e-3 {
                     continue;
                 }
                 let dir = lv / d;
-                let atten = lamp.power.max(0.0) / (1.0 + (d / lamp.radius.max(1.0)).powi(2));
+                let atten = if lamp.radius <= 0.001 {
+                    lamp.power.max(0.0)
+                } else {
+                    lamp.power.max(0.0) / (1.0 + (d / lamp.radius).powi(2))
+                };
                 (dir, d, atten)
             }
             LightKind::Distant => {
@@ -691,7 +704,7 @@ mod tests {
         let fwd = (Vec3::new(0.0, 0.0, 0.5) - eye).normalize();
         let right = fwd.cross(Vec3::Z).normalize();
         let up = right.cross(fwd);
-        let job = start_arc((48, 48, 16, 0.0), sc, eye, fwd, up, right, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, (0, 1.0, 0.0), None, false);
+        let job = start_arc((48, 48, 16, 0.0), sc, eye, fwd, up, right, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, (0, 1.0, 0.0), false, None, false);
         while !job.done.load(Ordering::Relaxed) {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
@@ -754,7 +767,7 @@ mod tests {
         let fwd = (Vec3::new(0.0, 0.0, 0.5) - eye).normalize();
         let right = fwd.cross(Vec3::Z).normalize();
         let up = right.cross(fwd);
-        let job = start_arc((size, size, samples, 0.0), scene(), eye, fwd, up, right, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, (0, 1.0, 0.0), None, denoise);
+        let job = start_arc((size, size, samples, 0.0), scene(), eye, fwd, up, right, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, (0, 1.0, 0.0), false, None, denoise);
         let t = Instant::now();
         while !job.done.load(Ordering::Relaxed) {
             assert!(t.elapsed().as_secs() < 60, "render too slow");
@@ -836,7 +849,7 @@ mod tests {
         let fwd = (Vec3::new(0.0, 0.0, 1.5) - eye).normalize();
         let right = fwd.cross(Vec3::Z).normalize();
         let up = right.cross(fwd);
-        let j0 = start_arc((48, 48, 12, 0.0), sc.clone(), eye, fwd, up, right, 50.0, Vec3::ZERO, 0.0, (1, 0.05, 0.0), None, false);
+        let j0 = start_arc((48, 48, 12, 0.0), sc.clone(), eye, fwd, up, right, 50.0, Vec3::ZERO, 0.0, (1, 0.05, 0.0), false, None, false);
         while !j0.done.load(Ordering::Relaxed) { std::thread::sleep(std::time::Duration::from_millis(5)); }
         let dark = lum(&j0, 24, 24);
         let lamp = crate::lights::SceneLight { name: "L".into(), pos: [0.0, 0.0, 5.0], color: [255, 255, 255], power: 8.0, radius: 20.0, enabled: true, ..Default::default() };
@@ -845,7 +858,7 @@ mod tests {
             textures: sc.textures.clone(), planes: sc.planes.clone(), lights: vec![lamp],
             bvh: crate::model::Bvh::build(&sc.tris),
         });
-        let j1 = start_arc((48, 48, 12, 0.0), sc2, eye, fwd, up, right, 50.0, Vec3::ZERO, 0.0, (1, 0.05, 0.0), None, false);
+        let j1 = start_arc((48, 48, 12, 0.0), sc2, eye, fwd, up, right, 50.0, Vec3::ZERO, 0.0, (1, 0.05, 0.0), false, None, false);
         while !j1.done.load(Ordering::Relaxed) { std::thread::sleep(std::time::Duration::from_millis(5)); }
         assert!(lum(&j1, 24, 24) > dark + 0.05, "lampa nu lumineaza: {} vs {}", lum(&j1, 24, 24), dark);
     }
