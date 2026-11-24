@@ -3526,7 +3526,9 @@ impl App {
                 self.box_drag = None;
             }
         }
-        let handle_drag = self.box_drag.is_some() || (handle_hover.is_some() && resp.drag_started_by(egui::PointerButton::Primary));
+        // gizmo-ul de lumina are prioritate: nu lasam orbitul / panul sa miste camera in acelasi timp
+        let light_handle = self.light_axis.is_some() || self.tool == Tool::PlaceLight;
+        let handle_drag = self.box_drag.is_some() || light_handle || (handle_hover.is_some() && resp.drag_started_by(egui::PointerButton::Primary));
         // selectie cu fereastra (unealta Window): tragerea cu butonul stang deseneaza dreptunghiul
         let box_tool = self.tool == Tool::Window && !handle_drag;
         if box_tool {
@@ -3643,12 +3645,13 @@ impl App {
                 self.xform_point(s, n, id);
             }
         }
-        // ---- lumini: gizmo UCS in 3D (sageati X/Y/Z) + raza de actiune
+        // ---- lumini: gizmo UCS in 3D (sageati X/Y/Z) + raza de actiune + cerc de rotire
         let mut light_axis_hover: Option<usize> = None;
+        let mut light_ring_hover = false;
         if let Some(li) = self.light_sel {
             if li < self.lights.len() {
                 let lp = Vec3::from(self.lights[li].pos);
-                let len = (lp - self.cam.eye()).length().max(0.5) * 0.30;
+                let len = (lp - self.cam.eye()).length().max(0.5) * 0.13;
                 if let Some(ptr) = resp.interact_pointer_pos() {
                     for a in 0..3 {
                         let mut axis = Vec3::ZERO;
@@ -3669,13 +3672,51 @@ impl App {
                 }
             }
         }
+        // cercul de rotire: numai pentru Spot / Distant, in jurul pozitiei luminii
+        if let Some(li) = self.light_sel {
+            if li < self.lights.len() && self.lights[li].kind != crate::lights::LightKind::Point {
+                let lp = Vec3::from(self.lights[li].pos);
+                let rr = (lp - self.cam.eye()).length().max(1.0) * 0.07;
+                if let Some(sp) = to_screen(&params.view_proj, rect, lp) {
+                    if let Some(tp) = to_screen(&params.view_proj, rect, lp + Vec3::new(rr, 0.0, 0.0)) {
+                        let rpx = (tp - sp).length();
+                        if rpx > 12.0 {
+                            if let Some(ptr) = resp.interact_pointer_pos() {
+                                light_ring_hover = ((ptr - sp).length() - rpx).abs() < 9.0;
+                                if resp.drag_started_by(egui::PointerButton::Primary) && light_ring_hover && self.light_axis.is_none() {
+                                    let a0 = (ptr.y - sp.y).atan2(ptr.x - sp.x);
+                                    let dir = Vec3::from(self.lights[li].target) - lp;
+                                    self.light_rot = Some((a0, [dir.x, dir.y, dir.z]));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some((li, (a0, dir0))) = self.light_sel.zip(self.light_rot) {
+            if li < self.lights.len() && resp.dragged_by(egui::PointerButton::Primary) {
+                if let (Some(sp), Some(ptr)) = (to_screen(&params.view_proj, rect, Vec3::from(self.lights[li].pos)), resp.interact_pointer_pos()) {
+                    let a = (ptr.y - sp.y).atan2(ptr.x - sp.x);
+                    let da = a - a0;
+                    let d = glam::Vec3::new(dir0[0], dir0[1], dir0[2]);
+                    let c = da.cos();
+                    let s = da.sin();
+                    let rot = glam::Vec3::new(d.x * c - d.y * s, d.x * s + d.y * c, d.z);
+                    self.lights[li].target = (Vec3::from(self.lights[li].pos) + rot).to_array();
+                }
+            }
+        }
+        if resp.drag_stopped() {
+            self.light_rot = None;
+        }
         if resp.drag_started_by(egui::PointerButton::Primary) {
             self.light_axis = light_axis_hover;
         }
         if let (Some(li), Some(a)) = (self.light_sel, self.light_axis) {
             if li < self.lights.len() && resp.dragged_by(egui::PointerButton::Primary) {
                 let lp = Vec3::from(self.lights[li].pos);
-                let len = (lp - self.cam.eye()).length().max(0.5) * 0.30;
+                let len = (lp - self.cam.eye()).length().max(0.5) * 0.13;
                 let mut axis = Vec3::ZERO;
                 axis[a] = 1.0;
                 if let (Some(sp), Some(tp)) = (
@@ -3708,6 +3749,23 @@ impl App {
             let col = if self.light_sel == Some(li) { lc } else { lc.gamma_multiply(0.7) };
             let Some(sp) = to_screen(&params.view_proj, rect, lp) else { continue };
             if self.light_sel == Some(li) {
+                // cercul de rotire a directiei (Spot / Distant)
+                if lamp.kind != crate::lights::LightKind::Point {
+                    let rr = (lp - self.cam.eye()).length().max(1.0) * 0.07;
+                    if let Some(tp) = to_screen(&params.view_proj, rect, lp + Vec3::new(rr, 0.0, 0.0)) {
+                        let rpx = (tp - sp).length();
+                        if rpx > 12.0 {
+                            let mut pts = Vec::with_capacity(49);
+                            for k in 0..=48 {
+                                let t = k as f32 / 48.0 * std::f32::consts::TAU;
+                                pts.push(sp + egui::vec2(t.cos() * rpx, t.sin() * rpx));
+                            }
+                            let rc = if light_ring_hover || self.light_rot.is_some() { Color32::from_rgb(255, 240, 140) } else { col.gamma_multiply(0.55) };
+                            let rw: f32 = if light_ring_hover { 3.5 } else { 2.0 };
+                            painter.add(egui::Shape::line(pts, Stroke::new(rw, rc)));
+                        }
+                    }
+                }
                 // raza de actiune: cercuri in planele XY / XZ / YZ
                 if lamp.radius > 0.0 {
                     for axis in 0..3 {
@@ -3729,7 +3787,7 @@ impl App {
                         }
                     }
                 }
-                let len = (lp - self.cam.eye()).length().max(0.5) * 0.30;
+                let len = (lp - self.cam.eye()).length().max(0.5) * 0.13;
                 let axis_col = [Color32::from_rgb(240, 80, 70), Color32::from_rgb(80, 220, 100), Color32::from_rgb(80, 140, 255)];
                 for a in 0..3 {
                     let mut axis = Vec3::ZERO;

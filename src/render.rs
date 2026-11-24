@@ -116,6 +116,11 @@ pub struct FrameParams {
     pub style: VisualStyle,
     /// umbre aruncate de soare + sfera care cuprinde scena (centru, raza) pentru harta de umbre
     pub shadows: bool,
+    /// lampi in model: xyz = pozitie, w = putere (lux / 20)
+    pub lamps: [Vec4; 8],
+    /// rgb = culoare, w = raza (m)
+    pub lamp_data: [Vec4; 8],
+    pub nlamps: i32,
     pub scene: Vec4,
 }
 
@@ -217,6 +222,9 @@ out vec4 o_col;
 uniform sampler2D u_shadow;
 uniform mat4 u_svp;
 uniform vec4 u_sp;     // x = marimea unui texel in lume, y = adancimea totala (m), z = umbre pornite
+uniform vec4 u_lamps[8];     // xyz = pozitie, w = putere
+uniform vec4 u_lamp_data[8]; // rgb = culoare liniara, w = raza
+uniform int u_nlamps;
 
 // 1 = in lumina, 0 = in umbra (3x3 PCF: margini moi)
 float shadow_at(vec3 p, vec3 n) {
@@ -364,6 +372,16 @@ void main() {
     vec3 fdir = normalize(vec3(-u_sun.x, -u_sun.y, 0.45));
     float fill = max(dot(n, fdir), 0.0);
     vec3 k = amb * (0.21 + 0.14 * sky) * u_light.y + vec3(1.02, 0.99, 0.94) * (0.30 * sun * u_light.z) + vec3(0.31 * head + 0.07 * fill * u_light.y);
+    // lampi in model ( Interactive Ray Trace ca in Navisworks ): lumina cade pe suprafete in timp real
+    for (int li = 0; li < 8; li++) {
+        if (li >= u_nlamps) break;
+        vec3 lv = u_lamps[li].xyz - v_pos;
+        float d = length(lv);
+        float radius = max(u_lamp_data[li].w, 0.1);
+        float att = u_lamps[li].w * 9.0 / (1.0 + (d / radius) * (d / radius));
+        float nl = max(dot(n, lv / max(d, 0.001)), 0.0);
+        k += u_lamp_data[li].rgb * nl * att;
+    }
     // umbra aruncata: fetele intoarse spre soare dar acoperite devin vizibil mai inchise (ca afara, unde soarele domina)
     k *= mix(1.0, mix(0.62, 1.0, shv), smoothstep(0.0, 0.25, dot(n, u_sun)) * step(0.5, u_sp.z));
     // un luciu mic pentru orice material (suprafetele nu mai par plate / de hartie)
@@ -620,6 +638,16 @@ impl Renderer {
         }
         gl.uniform_4_f32_slice(gl.get_uniform_location(prog, "u_planes").as_ref(), &pl);
         gl.uniform_1_i32(gl.get_uniform_location(prog, "u_nplanes").as_ref(), p.nplanes);
+        // lampi (max 8), ca in Navisworks Interactive Ray Trace
+        let mut lv = [0.0f32; 32];
+        let mut lc = [0.0f32; 32];
+        for (i, l) in p.lamps.iter().enumerate() {
+            lv[i * 4..i * 4 + 4].copy_from_slice(&l.to_array());
+            lc[i * 4..i * 4 + 4].copy_from_slice(&p.lamp_data[i].to_array());
+        }
+        gl.uniform_4_f32_slice(gl.get_uniform_location(prog, "u_lamps").as_ref(), &lv);
+        gl.uniform_4_f32_slice(gl.get_uniform_location(prog, "u_lamp_data").as_ref(), &lc);
+        gl.uniform_1_i32(gl.get_uniform_location(prog, "u_nlamps").as_ref(), p.nlamps);
         gl.uniform_1_i32(gl.get_uniform_location(prog, "u_caps").as_ref(), p.caps as i32);
         gl.uniform_1_i32(gl.get_uniform_location(prog, "u_style").as_ref(), p.style.code());
         let u_pass = gl.get_uniform_location(prog, "u_pass");

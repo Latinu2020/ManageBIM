@@ -1213,6 +1213,8 @@ pub struct App {
     pub light_sel: Option<usize>,
     /// axa UCS (0=X, 1=Y, 2=Z) prinsa pentru mutarea luminii
     pub light_axis: Option<usize>,
+    /// rotirea directiei luminii prin cercul gizmo (unghiul initial la inceputul dragului)
+    pub light_rot: Option<(f32, [f32; 3])>,
     pub selected: BTreeSet<ElemId>,
     pub primary: Option<ElemId>,
     pub hidden: HashSet<ElemId>,
@@ -1604,6 +1606,7 @@ impl App {
             lights: Vec::new(),
             light_sel: None,
             light_axis: None,
+            light_rot: None,
             selected: BTreeSet::new(),
             primary: None,
             hidden: HashSet::new(),

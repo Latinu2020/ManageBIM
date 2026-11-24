@@ -3,6 +3,11 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.27 - 2026-11-24
+- **Lights illuminate the 3D model in real time**: point lights are now sent to the GPU shader (up to 8 lights with position, colour, power/lux and range), so changing the lux or colour immediately changes how the model is lit - like the Interactive Ray Trace in Navisworks. Previously the lights only affected the offline path trace.
+- **Fixed gizmo dragging**: dragging an X/Y/Z arrow no longer orbits the camera at the same time. The arrows are shorter for easier handling, and Spot/Distant lights have a **rotation ring** - drag it to turn the light direction around its position.
+- The light marker, colour and lux label update live in the 3D view.
+
 ## 0.27.26 - 2026-11-24
 - **Fixed light deletion**: the per-row 🗑 button removed the selection instead of the light; **Remove** did nothing when no row was selected. Both now delete the light correctly.
 - **New lights are created at the centre of the model** (2 m above it), not at the camera, so they are immediately visible in the scene; the camera zooms to them. Added a **🎯 Focus** button to fly to a light created far away in an older project.
