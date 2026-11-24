@@ -375,10 +375,59 @@ pub fn save_to_user_library(mats: &[Material]) -> Result<std::path::PathBuf, Str
     Ok(f)
 }
 
-/// Biblioteca completa: materialele incluse + ale utilizatorului (cele cu acelasi nume le inlocuiesc).
+/// Folderul bibliotecii PBR livrate cu aplicatia: `<exe>\materials` (installer) sau, la rularea
+/// din sursele proiectului, `third_party\pbr-library` (descarcat de `fetch_pro_library`).
+pub fn bundled_library_dir() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.to_path_buf();
+    let mut cands = vec![dir.join("materials")];
+    // target\release\ManageBIM.exe -> <repo>\third_party\pbr-library
+    if let Some(repo) = dir.parent().and_then(|p| p.parent()) {
+        cands.push(repo.join("third_party").join("pbr-library"));
+    }
+    cands.into_iter().find(|d| d.join("library.bimmat").is_file())
+}
+
+/// Biblioteca PBR livrata cu aplicatia (materiale scanate ambientCG, CC0); caile din fisier sunt
+/// relative la folderul ei. Gol daca nu e instalata.
+pub fn bundled_library() -> Vec<Material> {
+    let Some(dir) = bundled_library_dir() else { return Vec::new() };
+    let Some(mut mats) = std::fs::read_to_string(dir.join("library.bimmat")).ok().and_then(|s| serde_json::from_str::<Vec<Material>>(&s).ok()) else { return Vec::new() };
+    for m in &mut mats {
+        for p in [&mut m.texture, &mut m.normal_map, &mut m.roughness_map, &mut m.metallic_map, &mut m.ao_map, &mut m.height_map] {
+            if !p.is_empty() && !std::path::Path::new(p.as_str()).is_absolute() {
+                *p = dir.join(p.as_str()).to_string_lossy().to_string();
+            }
+        }
+    }
+    // doar materialele ale caror imagini exista (installer partial / fisiere sterse)
+    mats.retain(|m| m.texture.is_empty() || std::path::Path::new(&m.texture).is_file());
+    mats
+}
+
+/// Material din biblioteca procedurala veche (gen_pbr_library): imagini in `Materials\PBR Library\<nume>\albedo.png`.
+pub fn is_generated(m: &Material) -> bool {
+    let t = m.texture.replace('\\', "/").to_ascii_lowercase();
+    t.contains("/materials/pbr library/") && t.ends_with("/albedo.png")
+}
+
+/// Biblioteca completa: materialele incluse, inlocuite de biblioteca PBR livrata cu aplicatia,
+/// apoi de ale utilizatorului (cele cu acelasi nume le inlocuiesc).
 pub fn full_library() -> Vec<Material> {
     let mut lib = library();
+    let bundled = bundled_library();
+    for m in &bundled {
+        match lib.iter_mut().find(|x| x.name == m.name) {
+            Some(x) => *x = m.clone(),
+            None => lib.push(m.clone()),
+        }
+    }
     for m in user_library() {
+        // texturile procedurale generate de gen_pbr_library (0.27.21) nu mai inlocuiesc
+        // materialele scanate livrate cu aplicatia; materialele proprii ale utilizatorului da
+        if is_generated(&m) && bundled.iter().any(|b| b.name == m.name) {
+            continue;
+        }
         match lib.iter_mut().find(|x| x.name == m.name) {
             Some(x) => *x = m,
             None => lib.push(m),
@@ -547,4 +596,20 @@ pub fn import_pbr(path: &str, dest_root: &std::path::Path) -> Result<Material, S
         normal_strength: 1.0, rough_mult: 1.0, metal_mult: 1.0,
         coat: 0, coat_roughness: 5, sheen: 0, ior: default_ior(),
     })
+}
+
+#[cfg(test)]
+mod bundled_tests {
+    use super::*;
+
+    #[test]
+    fn generated_procedural_textures_are_recognised() {
+        let mut m = library()[0].clone();
+        m.texture = r"C:\Users\X\AppData\Roaming\ManageBIM\Materials\PBR Library\Brick_red\albedo.png".into();
+        assert!(is_generated(&m));
+        m.texture = r"C:\Users\X\AppData\Roaming\ManageBIM\Materials\Pro Library\Bricks104\Bricks104_1K-JPG_Color.jpg".into();
+        assert!(!is_generated(&m));
+        m.texture = r"D:\textures\my_brick.png".into();
+        assert!(!is_generated(&m));
+    }
 }

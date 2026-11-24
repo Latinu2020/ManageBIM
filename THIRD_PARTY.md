@@ -53,3 +53,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 - **SQLite** (prin rusqlite, citirea bazei de date Plant 3D) - domeniu public / MIT.
 - **acadrust** (citire DWG) - MPL-2.0.
 - Celelalte biblioteci Rust (egui, glam, rayon...) - MIT / Apache-2.0, lista completă în `Cargo.lock`.
+
+## ambientCG materials (default PBR library)
+
+ManageBIM ships with PBR texture sets from
+[ambientCG](https://ambientcg.com) (Lennart Demes). They are licensed **CC0 1.0 Universal**
+(public domain dedication): free for personal and commercial use, no attribution required.
+They are bundled in the installer (`<app>\materials\`, from `third_party\pbr-library`); a 2K version can be downloaded from Render › Materials.

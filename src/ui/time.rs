@@ -533,13 +533,19 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
         });
         ui.separator();
         if self.render_subtab == 1 {
-            self.materials_ui(ui);
+            // derulare in panou: editorul de materiale nu mai impinge panoul de jos peste vederea 3D
+            egui::ScrollArea::vertical().id_salt("materials_scroll").auto_shrink([false, false]).show(ui, |ui| self.materials_ui(ui));
             return;
         }
         if self.render_subtab == 2 {
-            self.lighting_ui(ui);
+            // derulare in panou: lista de lumini nu mai cere ca panoul de jos sa fie marit peste vederea 3D
+            egui::ScrollArea::vertical().id_salt("lighting_scroll").auto_shrink([false, false]).show(ui, |ui| self.lighting_ui(ui));
             return;
         }
+        egui::ScrollArea::vertical().id_salt("render_img_scroll").auto_shrink([false, false]).show(ui, |ui| self.render_image_tab(ui));
+    }
+
+    fn render_image_tab(&mut self, ui: &mut egui::Ui) {
         ui.columns(2, |cols| {
             let ui = &mut cols[0];
             ui.label(RichText::new("IMAGE SETTINGS").small().strong().color(ui.visuals().weak_text_color()));

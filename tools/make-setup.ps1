@@ -27,6 +27,9 @@ Copy-Item (Join-Path $rel 'ManageBIM.exe'), (Join-Path $rel 'bimc-convert.exe') 
 if (Test-Path (Join-Path $rel 'occt')) { Copy-Item (Join-Path $rel 'occt') (Join-Path $app 'occt') -Recurse }
 # Intel Open Image Denoise (Render › Denoise) - tools\get-oidn.ps1 il descarca in third_party\oidn
 $oidn = Join-Path $root 'third_party\oidn'
+# biblioteca PBR implicita (materiale scanate ambientCG, CC0) - cargo run --release --bin fetch_pro_library
+$pbr = Join-Path $root 'third_party\pbr-library'
+if (Test-Path (Join-Path $pbr 'library.bimmat')) { Copy-Item $pbr (Join-Path $app 'materials') -Recurse } else { Write-Warning 'Default PBR library missing (cargo run --release --bin fetch_pro_library) - only the simple built-in materials will be available.' }
 if (Test-Path (Join-Path $oidn 'OpenImageDenoise.dll')) { Copy-Item $oidn (Join-Path $app 'oidn') -Recurse } else { Write-Warning 'Open Image Denoise missing (tools\get-oidn.ps1) - Render denoise will be unavailable.' }
 foreach ($n in 'ManageBIM-Revit-AddIn', 'ManageBIM-AutoCAD-AddIn', 'ManageBIM-Navisworks-AddIn') {
     $f = Join-Path $rel "$n.exe"

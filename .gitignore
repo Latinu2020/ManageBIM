@@ -23,3 +23,5 @@
 # add-in binaries copied into the installer payload by the build scripts
 /installers/payload/**/*.dll
 /installers/payload/**/*.exe
+# biblioteca PBR implicita (ambientCG CC0, descarcata de cargo run --bin fetch_pro_library)
+/third_party/pbr-library/

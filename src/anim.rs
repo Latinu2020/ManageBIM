@@ -340,7 +340,7 @@ fn sun_el() -> f32 {
 impl RenderSettings {
     /// (expunere, ambient, soare) pentru shader, in limite sigure
     pub fn light(&self) -> Vec3 {
-        Vec3::new(self.exposure.clamp(0.3, 2.5), self.ambient.clamp(0.0, 3.0), self.sun_power.clamp(0.0, 3.0))
+        Vec3::new(self.exposure.clamp(0.3, 2.5), self.ambient.clamp(0.0, 3.0), self.sun_power.clamp(0.0, 10.0))
     }
     pub fn reset_light(&mut self) {
         (self.sun_az, self.sun_el, self.exposure, self.ambient, self.sun_power, self.ao) = (sun_az(), sun_el(), 1.0, 1.0, 1.0, ao_default());

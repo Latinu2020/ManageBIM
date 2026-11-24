@@ -21,6 +21,7 @@ pub mod ifc_mvd;
 pub mod ifc_map;
 pub mod classification;
 pub mod bsdd;
+pub mod pro_materials;
 pub mod hdri;
 pub mod materialx;
 pub mod pdf;

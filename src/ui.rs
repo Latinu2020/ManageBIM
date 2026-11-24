@@ -143,7 +143,8 @@ impl eframe::App for App {
             return;
         }
         self.status_bar(ctx);
-        let maxh = (ctx.screen_rect().height() * 0.65).max(200.0);
+        // panoul de jos: cel mult jumatate din ecran (65% doar cand e maximizat), vederea 3D ramane vizibila
+        let maxh = (ctx.screen_rect().height() * if self.settings.layout.bottom_tall { 0.65 } else { 0.5 }).max(200.0);
         let side_max = (ctx.screen_rect().width() * 0.38).max(260.0);
         // zonele de panouri: fixate (pin) sau auto-hide (banda subtire cu file, panoul apare peste model)
         let mut strips: [Option<Rect>; 3] = [None; 3];
@@ -1618,8 +1619,10 @@ impl App {
             }
         });
         rgroup(ui, "Scene", |ui| {
-            if rbtn(ui, "💡", "Lighting", "Brightness, ambient light and sun (also used for renders and videos)", self.show_light, true).clicked() {
-                self.show_light = !self.show_light;
+            // un singur loc pentru lumina: soare, cer, lampi (Render › Lighting)
+            if rbtn(ui, "💡", "Lighting", "Sun, sky, brightness and lamps - all in the Lighting panel (also used for renders and videos)", false, true).clicked() {
+                self.render_subtab = 2;
+                self.open_panel(Panel::Render);
             }
             let has_cloud = self.loaded_models().any(|(_, m)| m.cloud.is_some());
             if rbtn(ui, "☁", "Point Cloud", "Point density and size (E57 point clouds)", self.show_cloud, has_cloud).clicked() {
@@ -2735,7 +2738,13 @@ impl App {
                     ui.set_max_height(h);
                     let clip = ui.max_rect().intersect(ui.clip_rect());
                     ui.set_clip_rect(clip);
-                    self.panel_body(ui, a);
+                    // panourile fara derulare proprie: continutul inalt se deruleaza in panou,
+                    // nu mai impinge panoul de jos peste vederea 3D
+                    if matches!(a, Panel::Project | Panel::Section | Panel::Measure | Panel::Coords | Panel::Profiler | Panel::Compare) {
+                        egui::ScrollArea::vertical().id_salt(("bottom_scroll", a)).max_height(h).auto_shrink([false, false]).show(ui, |ui| self.panel_body(ui, a));
+                    } else {
+                        self.panel_body(ui, a);
+                    }
                 });
             } else {
                 // panourile laterale nu au voie sa impinga viewport-ul: continutul lat se deruleaza
@@ -3142,9 +3151,10 @@ impl App {
             let size = if max {
                 [(screen.width() - 40.0).max(640.0), (screen.height() - 90.0).max(480.0)]
             } else if p == Panel::Clash {
-                [1100.0, 760.0]
+                // nu mai mare decat ~60% din ecran: vederea 3D ramane vizibila
+                [1100.0f32.min(screen.width() * 0.62), 760.0f32.min(screen.height() * 0.6)]
             } else {
-                [560.0, 400.0]
+                [560.0f32.min(screen.width() * 0.5), 400.0f32.min(screen.height() * 0.5)]
             };
             // id-ul include starea: la toggle egui recreaza fereastra cu dimensiunea noua
             egui::Window::new(crate::theme::title_job(p.title(), 14.0, ctx.style().visuals.text_color()))
@@ -3167,7 +3177,16 @@ impl App {
                         }
                         ui.menu_button("⏷ Dock…", |ui| self.panel_menu(ui, p));
                     });
-                    self.panel_body(ui, p);
+                    // continutul nu are voie sa mareasca fereastra peste ecran (tabele lungi, liste):
+                    // ramane in marimea ferestrei, care se poate trage de margini
+                    let h = ui.available_height().clamp(80.0, (screen.height() - 120.0).max(200.0));
+                    let size = EV::new(ui.available_width(), h);
+                    ui.allocate_ui_with_layout(size, egui::Layout::top_down(egui::Align::Min), |ui| {
+                        ui.set_max_height(h);
+                        let clip = ui.max_rect().intersect(ui.clip_rect());
+                        ui.set_clip_rect(clip);
+                        self.panel_body(ui, p);
+                    });
                 });
             if !open {
                 self.settings.layout.close(p);
@@ -3667,6 +3686,17 @@ impl App {
                 if let Some(a) = light_axis_hover {
                     self.light_axis = Some(a);
                 } else if let Some(plane) = light_ring_hover {
+                    // o lumina punctuala nu are directie: o transformam in Spot, ca rotirea sa aiba efect
+                    if let Some((li, ..)) = light_g {
+                        if self.lights[li].kind == crate::lights::LightKind::Point {
+                            self.lights[li].kind = crate::lights::LightKind::Spot;
+                            self.lights[li].angle = self.lights[li].angle.max(60.0);
+                            if self.lights[li].name.starts_with("Point light") {
+                                self.lights[li].name = self.lights[li].name.replacen("Point light", "Spot light", 1);
+                            }
+                            self.toast("Point light changed to a Spot light so it can be aimed");
+                        }
+                    }
                     let ai = [2usize, 1, 0][plane];
                     // planul aproape din profil (raza paralela cu el): masuram unghiul pe ecran
                     let (_, d) = cam_c.ray(uv(ptr), aspect);
@@ -3951,7 +3981,7 @@ impl App {
             if let Some(sp) = to_screen(&params.view_proj, rect, lp) {
                 let lamp = &self.lights[li];
                 let msg = if lamp.kind == crate::lights::LightKind::Point {
-                    "Point light shines in all directions - set the type to Spot or Distant to aim it".to_string()
+                    "Point light: drag a circle to turn it into a Spot light and aim it".to_string()
                 } else {
                     let (az, tilt) = lamp.aim_angles();
                     format!("Azimuth {az:.0}° · Tilt {tilt:.0}°  (drag a circle)")
@@ -5246,74 +5276,7 @@ impl App {
             let mut open = true;
             let mut changed = false;
             egui::Window::new("💡 Lighting").open(&mut open).collapsible(false).resizable(false).default_width(330.0).show(ctx, |ui| {
-                egui::Grid::new("light").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-                    ui.label("Brightness");
-                    changed |= ui.add(egui::Slider::new(&mut self.render.exposure, 0.3..=2.5).fixed_decimals(2)).changed();
-                    ui.end_row();
-                    ui.label("Ambient light");
-                    changed |= ui.add(egui::Slider::new(&mut self.render.ambient, 0.0..=3.0).fixed_decimals(2)).changed();
-                    ui.end_row();
-                    ui.label("Sun intensity");
-                    changed |= ui.add(egui::Slider::new(&mut self.render.sun_power, 0.0..=3.0).fixed_decimals(2)).changed();
-                    ui.end_row();
-                    ui.label("Shadows").on_hover_text("Shadows cast by the sun (3D view, images and videos)");
-                    changed |= ui.checkbox(&mut self.render.shadows, "Cast shadows").changed();
-                    ui.end_row();
-                    ui.label("Sun position");
-                    changed |= ui.checkbox(&mut self.render.sun_from_time, "From date, time and location").on_hover_text("Real sun position (shadow studies): date, local time, latitude / longitude and the project north").changed();
-                    ui.end_row();
-                    if self.render.sun_from_time {
-                        ui.label("Date");
-                        ui.horizontal(|ui| {
-                            changed |= ui.add(egui::TextEdit::singleline(&mut self.render.sun_date).desired_width(90.0).hint_text("YYYY-MM-DD")).changed();
-                            for (lbl, d) in [("21 Mar", "-03-21"), ("21 Jun", "-06-21"), ("21 Dec", "-12-21")] {
-                                if ui.small_button(lbl).clicked() {
-                                    let y = self.render.sun_date.get(..4).unwrap_or("2026").to_string();
-                                    self.render.sun_date = format!("{y}{d}");
-                                    changed = true;
-                                }
-                            }
-                        });
-                        ui.end_row();
-                        ui.label("Local time");
-                        let h = self.render.sun_hour;
-                        changed |= ui.add(egui::Slider::new(&mut self.render.sun_hour, 4.0..=21.0).step_by(0.25).custom_formatter(|v, _| format!("{:02}:{:02}", v as u32, ((v.fract()) * 60.0).round() as u32))).changed();
-                        let _ = h;
-                        ui.end_row();
-                        ui.label("Latitude / longitude");
-                        ui.horizontal(|ui| {
-                            changed |= ui.add(egui::DragValue::new(&mut self.render.lat).range(-89.0..=89.0).speed(0.05).suffix("°")).changed();
-                            changed |= ui.add(egui::DragValue::new(&mut self.render.lon).range(-180.0..=180.0).speed(0.05).suffix("°")).changed();
-                        });
-                        ui.end_row();
-                        ui.label("Time zone / North");
-                        ui.horizontal(|ui| {
-                            changed |= ui.add(egui::DragValue::new(&mut self.render.tz).range(-12.0..=14.0).speed(0.25).prefix("UTC+")).on_hover_text("Romania: +2 in winter, +3 in summer").changed();
-                            changed |= ui.add(egui::DragValue::new(&mut self.render.north_deg).range(-180.0..=180.0).speed(0.5).suffix("°")).on_hover_text("Project north: angle of true north from the model +Y axis (counter-clockwise)").changed();
-                        });
-                        ui.end_row();
-                        if changed {
-                            self.render.update_sun();
-                        }
-                        let (az, el) = crate::timeline::parse_date(&self.render.sun_date).map(|d| crate::anim::sun_position(d, self.render.sun_hour, self.render.tz, self.render.lat, self.render.lon)).unwrap_or((0.0, 0.0));
-                        ui.label("");
-                        ui.label(RichText::new(if el < 0.0 { format!("Sun below the horizon ({el:.0}°)") } else { format!("Sun: azimuth {az:.0}° from north, {el:.0}° high") }).small().weak());
-                        ui.end_row();
-                    } else {
-                        ui.label("Sun azimuth");
-                        changed |= ui.add(egui::Slider::new(&mut self.render.sun_az, -180.0..=180.0).suffix("°")).changed();
-                        ui.end_row();
-                        ui.label("Sun height");
-                        changed |= ui.add(egui::Slider::new(&mut self.render.sun_el, 5.0..=90.0).suffix("°")).changed();
-                        ui.end_row();
-                    }
-                    ui.label("Contact shadows").on_hover_text("Ambient occlusion (SSAO): soft shadows in corners and where elements meet");
-                    changed |= ui.add(egui::Slider::new(&mut self.render.ao, 0.0..=1.0).fixed_decimals(2)).changed();
-                    ui.end_row();
-                    ui.label("Edges").on_hover_text("Fine outlines on element edges and silhouettes (0 = off)");
-                    changed |= ui.add(egui::Slider::new(&mut self.render.edges, 0.0..=1.0).fixed_decimals(2)).changed();
-                    ui.end_row();
-                });
+                changed |= self.sun_settings_ui(ui, "light");
                 ui.horizontal(|ui| {
                     if ui.button("⟲ Default").clicked() {
                         self.render.reset_light();

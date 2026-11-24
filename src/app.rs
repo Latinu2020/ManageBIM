@@ -1514,6 +1514,8 @@ pub struct App {
     pub tex_loaded_res: u32,
     /// materiale PBR importate recent, care asteapta o alegere de asignare
     pub pending_mat_assign: Vec<String>,
+    /// descarcarea bibliotecii profesionale ambientCG (CC0) in curs
+    pub pro_lib_job: Option<std::sync::Arc<std::sync::Mutex<crate::pro_materials::Progress>>>,
     /// previzualizarea hartii de culoare a materialului selectat
     pub mat_preview: Option<(String, eframe::egui::TextureHandle)>,
     pub tex_failed: HashSet<String>,
@@ -1843,6 +1845,7 @@ impl App {
             pbr_layers: HashMap::new(),
             tex_loaded_res: crate::materials::tex_size(),
             pending_mat_assign: Vec::new(),
+            pro_lib_job: None,
             mat_preview: None,
             tex_failed: HashSet::new(),
             pending_csv: Vec::new(),

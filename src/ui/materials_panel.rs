@@ -81,6 +81,8 @@ impl App {
             }
         }
 
+        // ---- biblioteca profesionala (ambientCG, CC0): progres si finalizare
+        self.pro_library_ui(ui);
         // ---- toolbar
         ui.horizontal_wrapped(|ui| {
             if ui.small_button("➕ New").clicked() {
@@ -395,5 +397,78 @@ impl App {
         if changed {
             self.materials_changed();
         }
+    }
+}
+
+impl App {
+    /// Biblioteca profesionala de materiale (texturi scanate ambientCG, CC0): descarcare cu progres,
+    /// apoi materialele inlocuiesc variantele incluse cu acelasi nume si se aplica dupa tipul IFC.
+    fn pro_library_ui(&mut self, ui: &mut egui::Ui) {
+        // finalizare
+        let finished = self.pro_lib_job.as_ref().map(|j| j.lock().unwrap_or_else(|e| e.into_inner()).finished).unwrap_or(false);
+        if finished {
+            let job = self.pro_lib_job.take().unwrap();
+            let g = job.lock().unwrap_or_else(|e| e.into_inner());
+            let mats = g.installed.clone();
+            let errors = g.errors.clone();
+            drop(g);
+            if !mats.is_empty() {
+                if let Err(e) = crate::materials::save_to_user_library(&mats) {
+                    self.error(format!("Materials downloaded but the library could not be saved: {e}"));
+                }
+                for m in &mats {
+                    match self.materials.iter_mut().find(|x| x.name == m.name) {
+                        Some(x) => *x = m.clone(),
+                        None => self.materials.push(m.clone()),
+                    }
+                }
+                if self.mat_assign.is_empty() {
+                    self.auto_materials();
+                }
+                self.materials_on = true;
+                self.materials_changed();
+                self.toast(format!("{} professional PBR materials installed - they replace the built-in ones and are used by \"Auto by IFC type\".", mats.len()));
+            }
+            if !errors.is_empty() {
+                self.error(format!("{} material(s) could not be downloaded:\n{}", errors.len(), errors.join("\n")));
+            }
+        }
+        let frame = egui::Frame::none().fill(accent().gamma_multiply(0.10)).rounding(crate::theme::RADIUS_SM).inner_margin(egui::Margin::symmetric(8.0, 6.0));
+        frame.show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            if let Some(job) = self.pro_lib_job.clone() {
+                let (done, total, cur) = {
+                    let g = job.lock().unwrap_or_else(|e| e.into_inner());
+                    (g.done, g.total.max(1), g.current.clone())
+                };
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(RichText::new(format!("Downloading professional materials… {done} / {total}  ·  {cur}")).small());
+                    if ui.small_button("Cancel").clicked() {
+                        job.lock().unwrap_or_else(|e| e.into_inner()).cancel = true;
+                    }
+                });
+                ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_height(6.0));
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+            } else {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("✨ Professional PBR library").strong().color(accent()));
+                    let included = crate::materials::bundled_library_dir().is_some();
+                    ui.label(RichText::new(if included { format!("✓ {} scanned materials included (concrete, brick, plaster, metals, wood, tiles, roof, stone, grass…) - ambientCG, CC0. Download 2K for sharper close-ups.", crate::pro_materials::PRO_LIBRARY.len()) } else { format!("{} scanned materials (concrete, brick, plaster, metals, wood, tiles, roof, stone, grass…) from ambientCG - CC0, free for commercial use.", crate::pro_materials::PRO_LIBRARY.len()) }).small().weak());
+                    for (res, size, tip) in [("1K", "~85 MB", "1024 px - fast, good for the 3D view"), ("2K", "~500 MB", "2048 px - sharper close-ups and print renders (set Settings › Appearance › Texture size to 2048)")] {
+                        if included && res == "1K" {
+                            continue;
+                        }
+                        if ui.button(RichText::new(format!("⬇ Install {res}  ({size})")).strong()).on_hover_text(format!("{tip}. Downloads the maps (colour, normal, roughness, metallic, AO, height) into your material library; materials with the same name replace the built-in ones.")).clicked() {
+                            match crate::pro_materials::spawn_install(if res == "1K" { "1K" } else { "2K" }) {
+                                Ok(j) => self.pro_lib_job = Some(j),
+                                Err(e) => self.error(e),
+                            }
+                        }
+                    }
+                });
+            }
+        });
+        ui.add_space(3.0);
     }
 }
