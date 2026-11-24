@@ -120,6 +120,8 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools\build-occt.ps1
       - name: Build the application and the add-in installers
         run: cargo build --release --features addins --bin ManageBIM --bin bimc-convert --bin ManageBIM-Revit-AddIn --bin ManageBIM-AutoCAD-AddIn --bin ManageBIM-Navisworks-AddIn
+      - name: Download the default PBR material library (28 ambientCG CC0 materials)
+        run: cargo run --release --bin fetch_pro_library
       - name: Package the setup wizard
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\make-setup.ps1 -Out dist
@@ -132,6 +134,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [windows, linux, freebsd, setup]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -140,3 +144,15 @@ jobs:
         with:
           files: artifacts/**/*
           generate_release_notes: true
+      # pe GitHub raman doar ultimele 3 versiuni (release + tag); istoricul complet e in CHANGELOG.md
+      - name: Keep only the last 3 releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release list --repo "$REPO" --limit 200 --json tagName,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[3:] | .[].tagName' |
+          while read -r tag; do
+            echo "Deleting old release $tag"
+            gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag
+          done

@@ -3,6 +3,22 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.32 - 2026-11-24
+- **Coordination objects** (Coordination tab), like in Navisworks / Solibri:
+  - **Clearance zones**: maintenance / access space around the selected equipment (adjustable margin, 0.6 m by default).
+  - **Provision for void**: proposed openings for services through walls and slabs. **Auto voids** finds every pipe, duct or cable tray that really crosses a wall or slab (not those running along it) and proposes a void with a margin, recording the host element.
+  - **Placeholder volumes**: space reserved for equipment that is not modelled yet, or a corridor for a route.
+  - They form a model **"Coordination objects"** that appears in the Selection Tree, Properties, Find and **Clash Detective** (one click creates the test "Coordination objects vs model"), are saved in the project and exported to IFC (IfcBuildingElementProxy with the PredefinedType property). A window lists them with size (mm), centre, status (Proposed / Approved / Rejected / Built), discipline, host and notes, with show / hide, zoom and delete.
+- **2D drawings from the section box, like Inventor drawing views**:
+  - **Pick face** (Annotation / Sections › Cut View): hover a face of the section box - it turns light green - and click it; the drawing is made from that face (Top, Bottom, Front, Back, Left, Right). The separate orange plane is no longer needed (the cut plane is light green too).
+  - The drawing now shows the **visible edges** beyond the cut (the real edges of the shapes, no mesh diagonals) and optional **hidden lines** dashed, besides the thick cut outline, hatch, levels and dimensions.
+  - Line weights like a technical drawing in the PDF (cut 1.1 / visible 0.55 / hidden 0.4 dashed / hatch 0.25) and a HIDDEN linetype layer in DWG / DXF. The coordinates stay exact: an exported DWG attached back as an overlay lands in the same place.
+  - New **2D Drawing Preview**: cream sheet with frame and title block, resizable, zoom with the wheel, pan by dragging, double-click to fit, toggles for visible edges / hidden lines / hatch / dimensions, PDF and DWG buttons.
+- **Hidden line visual style fixed**: it showed only the outer silhouette on white, so the building almost disappeared. Now all the edges of the shapes are drawn in black with a very light grey shading by face orientation, like a technical drawing. The help text in the corner of the view is readable on light backgrounds.
+- **Lights**: removed the thin range circles around the selected light.
+- **Installer redesigned** (all in English): numbered steps with progress, a banner and feature cards, component cards, a real percentage while installing and a clear finish page. **Choose the install folder** with **Browse…** (warns about folders that need administrator rights); upgrades reuse the folder of the previous installation and uninstall works from any folder.
+- 8 new tests (hidden-line removal, coordination objects and voids).
+
 ## 0.27.31 - 2026-11-24
 - **Rotating a light always works**: dragging a Rotate circle on a **Point** light (the type created by Place in 3D) turns it into a Spot light so it can be aimed - before, nothing happened because a point light has no direction.
 - **New lights are created above the model**, aimed down at the roof, so the light and its pool are visible at once (before they were placed inside the building, at its centre).

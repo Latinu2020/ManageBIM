@@ -19,11 +19,13 @@ param(
     # lista add-in-urilor de instalat (revit,acad,navis); gol = toate cele gasite
     [string]$Addins = '',
     [switch]$NoDesktop,
-    [string]$TestRoot = ''
+    [string]$TestRoot = '',
+    # folderul aplicatiei ales in asistent (implicit %LOCALAPPDATA%\Programs\ManageBIM)
+    [string]$InstallDir = ''
 )
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
-$version = '0.27.31'
+$version = '0.27.32'
 
 # --- locatii (redirectionate in modul test)
 if ($TestRoot) {
@@ -39,6 +41,9 @@ if ($TestRoot) {
     $StartMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 }
 $AppDir = Join-Path $LocalApp 'Programs\ManageBIM'
+if ($InstallDir) { $AppDir = $InstallDir }
+# dezinstalarea ruleaza din folderul aplicatiei (uninstall.ps1): oriunde a fost instalata
+if ($Uninstall -and (Test-Path (Join-Path $here 'ManageBIM.exe'))) { $AppDir = $here }
 $Exe = Join-Path $AppDir 'ManageBIM.exe'
 $PF = $env:ProgramFiles
 

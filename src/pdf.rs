@@ -249,13 +249,39 @@ pub fn section_sheet(segs: &[(String, [f64; 4])], texts: &[crate::app::CadText],
         let ox = M as f64 + 16.0 + (aw - (x1 - x0) * sc) / 2.0 - x0 * sc;
         let oy = (M + STRIP) as f64 + 16.0 + (ah - (y1 - y0) * sc) / 2.0 - y0 * sc;
         let map = |x: f64, y: f64| -> (f32, f32) { ((x * sc + ox) as f32, (y * sc + oy) as f32) };
-        // liniile taieturii: un stil pentru contururi, unul mai deschis pentru hasura
-        for (layer, p) in segs {
+        // grosimi ca in desenul tehnic (ISO 128, stil Inventor): conturul taiat gros, muchiile vizibile
+        // medii, cele ascunse subtiri si intrerupte, hasura / cotele / axele fine.
+        // Ordinea: intai liniile fine, la sfarsit contururile groase (raman deasupra).
+        let rank = |l: &str| match l.to_ascii_uppercase().as_str() {
+            "HATCH" | "GRIDS" | "LEVELS" | "DIMS" => 0,
+            "HIDDEN" | "BEHIND" => 1,
+            "VISIBLE" => 2,
+            _ => 3,
+        };
+        let mut order: Vec<usize> = (0..segs.len()).collect();
+        order.sort_by_key(|&i| rank(&segs[i].0));
+        // capete si colturi rotunjite: liniile groase se imbina curat
+        c.extend_from_slice(b"1 J 1 j
+");
+        let mut last = "";
+        for i in order {
+            let (layer, p) = &segs[i];
             let (ax, ay) = map(p[0], p[1]);
             let (bx, by) = map(p[2], p[3]);
-            let style = if layer.eq_ignore_ascii_case("HATCH") { "0.72 0.74 0.78 RG 0.35 w " } else { "0.10 0.12 0.16 RG 0.7 w " };
-            c.extend_from_slice(format!("{style}{ax:.2} {ay:.2} m {bx:.2} {by:.2} l S\n").as_bytes());
+            let style = match rank(layer) {
+                0 if layer.eq_ignore_ascii_case("HATCH") => "[] 0 d 0.62 0.64 0.68 RG 0.25 w ",
+                0 => "[] 0 d 0.35 0.40 0.50 RG 0.3 w ",
+                1 => "[2.4 1.6] 0 d 0.40 0.42 0.46 RG 0.4 w ",
+                2 => "[] 0 d 0.08 0.09 0.11 RG 0.55 w ",
+                _ => "[] 0 d 0.0 0.0 0.0 RG 1.1 w ",
+            };
+            if style != last {
+                c.extend_from_slice(style.as_bytes());
+                last = style;
+            }
+            c.extend_from_slice(format!("{ax:.2} {ay:.2} m {bx:.2} {by:.2} l S\n").as_bytes());
         }
+        c.extend_from_slice(b"[] 0 d\n");
         // etichetele: CadText.mm e inaltimea pe hartie (1 mm = 72/25.4 pt)
         for t in texts {
             let (x, y) = map(t.x, t.y);

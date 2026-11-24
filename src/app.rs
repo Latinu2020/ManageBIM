@@ -30,6 +30,7 @@ mod grids;
 mod autosave;
 mod sync;
 mod userprops;
+mod coord;
 
 #[path = "walk.rs"]
 pub mod walk;
@@ -869,6 +870,8 @@ pub struct ProjectFile {
     /// lumini punctuale (lampi) in model
     #[serde(default)]
     pub lights: Vec<crate::lights::SceneLight>,
+    #[serde(default)]
+    pub coord_objects: Vec<crate::coord_objects::CoordObject>,
     pub viewpoints: Vec<Viewpoint>,
     pub sets: Vec<SelSet>,
     pub clash_tests: Vec<ClashTest>,
@@ -1224,6 +1227,14 @@ pub struct App {
     pub light_rotate_mode: bool,
     /// filtrul de cautare in catalogul de clasificare
     pub class_search: String,
+    /// obiectele de coordonare (clearance / provision for void / placeholder) si modelul lor virtual
+    pub coord_objects: Vec<crate::coord_objects::CoordObject>,
+    pub coord_slot: Option<usize>,
+    pub coord_sel: Option<usize>,
+    pub coord_open: bool,
+    /// marja zonelor de mentenanta in jurul selectiei si a golurilor automate (m)
+    pub coord_margin: f32,
+    pub void_margin: f32,
     /// fereastra Classification (catalog local + bSDD online)
     pub class_open: bool,
     /// 0 = catalog local, 1 = bSDD online
@@ -1373,6 +1384,14 @@ pub struct App {
     pub cad_levels: bool,
     /// Cut to DWG: hașura pe elementele tăiate (oprită = desen curat, doar contur)
     pub cad_hatch: bool,
+    /// desenul 2D: muchiile vizibile ale formei dupa planul de taiere (ca vederile din Inventor)
+    pub cad_visible_edges: bool,
+    /// desenul 2D: muchiile ascunse, cu linie intrerupta
+    pub cad_hidden_edges: bool,
+    /// cache-ul liniilor vizibile / ascunse (cheie = vederea + modelele), calculul e costisitor
+    pub hlr_cache: std::sync::Mutex<Option<(String, Vec<(String, [f64; 4])>)>>,
+    /// alegerea unei fete a cubului de sectiune cu mouse-ul, pentru desenul 2D
+    pub face_pick: bool,
     /// istoricul vizualizarii (Undo / Redo): starile, pozitia curenta, semnatura ultimei stari
     pub hist: Vec<ViewSnap>,
     /// şabloane de vizualizare salvate în proiect, aplicate cu un click
@@ -1394,6 +1413,9 @@ pub struct App {
     pub overlay_open: bool,
     /// fereastra mica de preview 2D a sectiunii (inainte de export), inchizabila
     pub section_preview_open: bool,
+    /// previewul 2D: zoom (1 = incape in fereastra) si deplasare (pixeli)
+    pub prev_zoom: f32,
+    pub prev_pan: [f32; 2],
     /// cartusul planselor (PDF / DWG) si fereastra lui de editare
     pub title_block: crate::pdf::TitleBlock,
     pub title_block_open: bool,
@@ -1633,6 +1655,12 @@ impl App {
             light_rot: None,
             light_rotate_mode: false,
             class_search: String::new(),
+            coord_objects: Vec::new(),
+            coord_slot: None,
+            coord_sel: None,
+            coord_open: false,
+            coord_margin: 0.6,
+            void_margin: 0.05,
             class_open: false,
             class_tab: 0,
             bsdd_query: String::new(),
@@ -1748,6 +1776,10 @@ impl App {
             cad_dims: true,
             cad_levels: true,
             cad_hatch: true,
+            cad_visible_edges: true,
+            cad_hidden_edges: false,
+            hlr_cache: std::sync::Mutex::new(None),
+            face_pick: false,
             hist: Vec::new(),
             view_templates: Vec::new(),
             view_templates_open: false,
@@ -1761,6 +1793,8 @@ impl App {
             overlays: Vec::new(),
             overlay_open: false,
             section_preview_open: false,
+            prev_zoom: 1.0,
+            prev_pan: [0.0, 0.0],
             title_block: Default::default(),
             title_block_open: false,
             box_drag: None,
@@ -2548,7 +2582,7 @@ pub fn cut_dxf_layers(segs: &[(String, [f64; 4])], extra: &[&str]) -> String {
     s.push_str("0\nTABLE\n2\nLAYER\n");
     s.push_str(&format!("70\n{}\n", layers.len()));
     for (_i, l) in layers.iter().enumerate() {
-        let behind = l.eq_ignore_ascii_case("BEHIND");
+        let behind = l.eq_ignore_ascii_case("BEHIND") || l.eq_ignore_ascii_case("HIDDEN");
         let ltype = if behind { "HIDDEN" } else { "CONTINUOUS" };
         // 27.11: paletă de desen tehnic (stil Inventor), nu culori aleatoare:
         //   7 = alb/negru (context), 8 = gri, 5 = albastru, 1 = roșu (accente).

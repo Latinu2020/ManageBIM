@@ -68,6 +68,8 @@ struct Options {
     addins: Option<Vec<&'static str>>,
     desktop: bool,
     test_root: Option<PathBuf>,
+    /// folder ales in asistent (None = cel implicit)
+    install_dir: Option<PathBuf>,
 }
 
 struct Paths {
@@ -98,6 +100,9 @@ fn install(paths: &Paths, opt: &Options, on_line: &dyn Fn(String)) -> Result<Str
         }
         if !opt.desktop {
             c.arg("-NoDesktop");
+        }
+        if let Some(d) = &opt.install_dir {
+            c.arg("-InstallDir").arg(d);
         }
         if let Some(t) = &opt.test_root {
             c.arg("-TestRoot").arg(t);
@@ -206,13 +211,16 @@ struct Wizard {
     navis: bool,
     desktop: bool,
     launch: bool,
+    /// folderul de instalare (editabil, cu Browse)
+    dir: String,
     running_programs: Vec<String>,
     job: Arc<Mutex<Job>>,
     started: bool,
-    pub launch_now: Arc<Mutex<bool>>,
+    /// folderul aplicatiei de pornit dupa Finish (None = nu porni)
+    pub launch_now: Arc<Mutex<Option<PathBuf>>>,
 }
 
-// Paleta prototipului aprobat (design-preview-actual.html) - consecventă cu aplicația.
+// Paleta aplicatiei (tema inchisa): consecventa cu ManageBIM.
 const NORD_BG: Color32 = Color32::from_rgb(15, 20, 32);
 const NORD_PANEL: Color32 = Color32::from_rgb(22, 29, 44);
 const NORD_PANEL2: Color32 = Color32::from_rgb(29, 38, 56);
@@ -220,9 +228,9 @@ const NORD_LINE: Color32 = Color32::from_rgb(42, 53, 73);
 const NORD_ACCENT: Color32 = Color32::from_rgb(59, 130, 246);
 const NORD_CYAN: Color32 = Color32::from_rgb(34, 211, 238);
 const NORD_GREEN: Color32 = Color32::from_rgb(74, 222, 128);
-const NORD_ORANGE: Color32 = Color32::from_rgb(251, 146, 60);
 const NORD_YELLOW: Color32 = Color32::from_rgb(250, 204, 21);
 const NORD_RED: Color32 = Color32::from_rgb(248, 113, 113);
+const NORD_VIOLET: Color32 = Color32::from_rgb(167, 139, 250);
 const NORD_TEXT: Color32 = Color32::from_rgb(230, 236, 245);
 const NORD_MUTED: Color32 = Color32::from_rgb(141, 155, 179);
 
@@ -239,14 +247,48 @@ fn running(names: &[&str]) -> Vec<String> {
     names.iter().filter(|n| out.contains(&format!("\"{}\"", n.to_lowercase()))).map(|n| n.trim_end_matches(".exe").to_string()).collect()
 }
 
+/// Folderul unei instalari anterioare (Settings > Apps: InstallLocation), daca a fost ales altul.
+fn previous_location() -> Option<PathBuf> {
+    let mut c = std::process::Command::new("reg.exe");
+    c.args(["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\ManageBIM", "/v", "InstallLocation"]).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000);
+    }
+    let out = String::from_utf8_lossy(&c.output().ok()?.stdout).to_string();
+    let line = out.lines().find(|l| l.contains("InstallLocation"))?;
+    let v = line.split("REG_SZ").nth(1)?.trim();
+    let p = PathBuf::from(v);
+    p.join("ManageBIM.exe").is_file().then_some(p)
+}
+
+/// Folder in care un utilizator obisnuit (fara administrator) nu poate scrie.
+fn needs_admin(p: &Path) -> bool {
+    let s = p.to_string_lossy().to_lowercase();
+    ["program files", "\\windows\\", "programdata"].iter().any(|k| s.contains(k))
+}
+
+/// Buton principal (albastru plin, text alb) / secundar (contur).
+fn primary(t: &str) -> egui::Button<'static> {
+    egui::Button::new(RichText::new(t.to_string()).size(14.0).strong().color(Color32::WHITE)).fill(NORD_ACCENT).rounding(7.0).min_size(egui::vec2(110.0, 34.0))
+}
+fn secondary(t: &str) -> egui::Button<'static> {
+    egui::Button::new(RichText::new(t.to_string()).size(14.0).color(NORD_TEXT)).fill(NORD_PANEL2).stroke(egui::Stroke::new(1.0_f32, NORD_LINE)).rounding(7.0).min_size(egui::vec2(96.0, 34.0))
+}
+
 impl Wizard {
     fn new(paths: Paths, test_root: Option<PathBuf>, no_addins: bool) -> Wizard {
-        let old = installed_version(&paths.app_dir);
+        // actualizare: acelasi folder ca instalarea anterioara (si cand a fost ales altul decat cel implicit)
+        let prev = if test_root.is_none() { previous_location() } else { None };
+        let app_dir = prev.unwrap_or_else(|| paths.app_dir.clone());
+        let old = installed_version(&app_dir);
         let found = find_programs();
         let (revit, acad, navis) = (!no_addins && !found.revit.is_empty(), !no_addins && !found.acad.is_empty(), !no_addins && !found.navis.is_empty());
         Wizard {
             page: Page::Welcome,
-            paths: Arc::new(paths),
+            dir: app_dir.display().to_string(),
+            paths: Arc::new(Paths { app_dir, local: paths.local }),
             test_root,
             old,
             found,
@@ -258,7 +300,7 @@ impl Wizard {
             running_programs: Vec::new(),
             job: Arc::new(Mutex::new(Job::default())),
             started: false,
-            launch_now: Arc::new(Mutex::new(false)),
+            launch_now: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -277,7 +319,11 @@ impl Wizard {
         if self.navis {
             list.push("navis");
         }
-        let opt = Options { addins: Some(list), desktop: self.desktop, test_root: self.test_root.clone() };
+        // folderul ales in asistent
+        let dir = PathBuf::from(self.dir.trim());
+        let custom = dir != self.paths.app_dir || self.paths.app_dir != self.paths.local.join("Programs").join("ManageBIM");
+        self.paths = Arc::new(Paths { app_dir: dir.clone(), local: self.paths.local.clone() });
+        let opt = Options { addins: Some(list), desktop: self.desktop, test_root: self.test_root.clone(), install_dir: custom.then_some(dir) };
         let (job, paths, ctx) = (self.job.clone(), self.paths.clone(), ctx.clone());
         std::thread::spawn(move || {
             let j2 = job.clone();
@@ -291,116 +337,204 @@ impl Wizard {
         });
     }
 
+    /// Bara laterala: sigla, versiunea si pasii numerotati (cerc + linie de legatura).
     fn steps(&self, ui: &mut egui::Ui) {
-        ui.add_space(18.0);
-        ui.label(RichText::new("◆ ManageBIM").size(20.0).strong().color(NORD_CYAN));
-        ui.label(RichText::new(format!("version {VERSION}")).color(NORD_MUTED).size(11.0));
-        ui.add_space(28.0);
-        for (p, name) in [(Page::Welcome, "Bun venit"), (Page::Components, "Componente"), (Page::Installing, "Instalare"), (Page::Finish, "Gata")] {
-            let cur = p == self.page;
-            let done = (p as u8) < (self.page as u8);
-            let mark = if done { "✔" } else if cur { "▶" } else { "•" };
-            let col = if cur { NORD_CYAN } else if done { NORD_GREEN } else { NORD_MUTED };
-            let txt = if cur { RichText::new(format!("{mark}  {name}")).size(14.0).color(col).strong() } else { RichText::new(format!("{mark}  {name}")).size(13.0).color(col) };
-            ui.label(txt);
-            if cur {
-                let r = ui.available_rect_before_wrap();
-                ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(r.width(), 2.0)), 1.0, NORD_CYAN);
+        ui.add_space(24.0);
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::hover());
+            let p = ui.painter();
+            let sq = |x: f32, y: f32, s: f32, c: Color32| p.rect_filled(egui::Rect::from_min_size(r.min + egui::vec2(x, y), egui::vec2(s, s)), 3.0, c);
+            sq(12.0, 1.0, 16.0, Color32::from_rgb(70, 140, 230));
+            sq(2.0, 9.0, 16.0, Color32::from_rgb(235, 135, 45));
+            sq(13.0, 15.0, 14.0, Color32::from_rgb(70, 190, 100));
+            ui.label(RichText::new("ManageBIM").size(19.0).strong().color(NORD_TEXT));
+        });
+        ui.add_space(4.0);
+        egui::Frame::none().fill(NORD_ACCENT.gamma_multiply(0.18)).rounding(10.0).inner_margin(egui::Margin::symmetric(8.0, 2.0)).show(ui, |ui| {
+            ui.label(RichText::new(format!("v{VERSION}")).size(11.0).color(NORD_CYAN));
+        });
+        ui.add_space(30.0);
+        let steps = [(Page::Welcome, "Welcome", "Overview"), (Page::Components, "Options", "Folder & add-ins"), (Page::Installing, "Install", "Copying files"), (Page::Finish, "Finish", "Ready to use")];
+        for (i, (p, name, sub)) in steps.iter().enumerate() {
+            let cur = *p == self.page;
+            let done = (*p as u8) < (self.page as u8) || (self.page == Page::Finish && *p == Page::Finish);
+            let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 46.0), egui::Sense::hover());
+            let painter = ui.painter();
+            let c = egui::pos2(r.left() + 14.0, r.top() + 14.0);
+            if i + 1 < steps.len() {
+                let col = if done { NORD_GREEN.gamma_multiply(0.7) } else { NORD_LINE };
+                painter.line_segment([c + egui::vec2(0.0, 15.0), egui::pos2(c.x, r.bottom() + 2.0)], egui::Stroke::new(2.0_f32, col));
             }
-            ui.add_space(10.0);
+            let (fill, ring, txt) = if done {
+                (NORD_GREEN, NORD_GREEN, "✔".to_string())
+            } else if cur {
+                (NORD_ACCENT, NORD_CYAN, format!("{}", i + 1))
+            } else {
+                (NORD_PANEL2, NORD_LINE, format!("{}", i + 1))
+            };
+            painter.circle(c, 13.0, fill, egui::Stroke::new(1.5_f32, ring));
+            painter.text(c, egui::Align2::CENTER_CENTER, txt, egui::FontId::proportional(12.0), if done { NORD_BG } else { Color32::WHITE });
+            let tc = if cur { NORD_TEXT } else if done { NORD_TEXT.gamma_multiply(0.8) } else { NORD_MUTED };
+            painter.text(egui::pos2(c.x + 24.0, c.y - 8.0), egui::Align2::LEFT_TOP, *name, egui::FontId::proportional(if cur { 14.5 } else { 13.5 }), tc);
+            painter.text(egui::pos2(c.x + 24.0, c.y + 8.0), egui::Align2::LEFT_TOP, *sub, egui::FontId::proportional(10.5), NORD_MUTED.gamma_multiply(0.85));
         }
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+            ui.add_space(14.0);
+            ui.label(RichText::new("No administrator rights needed").size(10.5).color(NORD_GREEN.gamma_multiply(0.85)));
+            ui.label(RichText::new("BIM coordination & presentation").size(10.5).color(NORD_MUTED));
+        });
     }
 
     fn page_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        let title = |ui: &mut egui::Ui, t: &str| {
+        let title = |ui: &mut egui::Ui, t: &str, sub: &str| {
+            ui.add_space(18.0);
+            ui.label(RichText::new(t).size(23.0).strong().color(NORD_TEXT));
+            if !sub.is_empty() {
+                ui.add_space(2.0);
+                ui.label(RichText::new(sub).size(13.0).color(NORD_MUTED));
+            }
             ui.add_space(14.0);
-            ui.label(RichText::new(t).size(21.0).strong().color(NORD_TEXT));
-            ui.add_space(10.0);
         };
+        let card_frame = |col: Color32| egui::Frame::none().fill(NORD_PANEL2).rounding(10.0).stroke(egui::Stroke::new(1.0_f32, col)).inner_margin(egui::Margin::symmetric(12.0, 9.0));
         match self.page {
             Page::Welcome => {
-                match &self.old {
-                    Some(v) if v == VERSION => {
-                        title(ui, "Reinstall ManageBIM");
-                        ui.label(RichText::new(format!("ManageBIM {v} is already installed on this PC.\nIt will be reinstalled (repair).")).size(14.0));
-                        ui.add_space(6.0);
-                        ui.label("Your settings, projects and models are kept. The add-ins are reinstalled too.");
-                    }
-                    Some(v) => {
-                        title(ui, "Upgrade ManageBIM");
-                        ui.label(RichText::new(format!("ManageBIM {v} is installed on this PC.\nIt will be upgraded to {VERSION}.")).size(14.0));
-                        ui.add_space(6.0);
-                        ui.label("Your settings, projects and models are kept. The add-ins are updated too.");
-                    }
-                    None => {
-                        title(ui, "Welcome to ManageBIM Setup");
-                        ui.label(RichText::new(format!("This wizard installs ManageBIM {VERSION} for {}.", std::env::var("USERNAME").unwrap_or_default())).size(14.0));
-                    }
+                let (t, sub) = match &self.old {
+                    Some(v) if v == VERSION => ("Repair ManageBIM".to_string(), format!("ManageBIM {v} is already installed - it will be reinstalled. Settings, projects and models are kept.")),
+                    Some(v) => ("Upgrade ManageBIM".to_string(), format!("ManageBIM {v} is installed - it will be upgraded to {VERSION}. Settings, projects and models are kept.")),
+                    None => ("Welcome to ManageBIM".to_string(), format!("This wizard installs ManageBIM {VERSION} for {}.", std::env::var("USERNAME").unwrap_or_else(|_| "you".into()))),
+                };
+                title(ui, &t, &sub);
+                // banner cu degrade
+                let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 74.0), egui::Sense::hover());
+                let mut mesh = egui::Mesh::default();
+                for (p, c) in [(r.left_top(), Color32::from_rgb(30, 64, 175)), (r.right_top(), Color32::from_rgb(14, 116, 144)), (r.right_bottom(), Color32::from_rgb(13, 82, 104)), (r.left_bottom(), Color32::from_rgb(23, 45, 120))] {
+                    mesh.colored_vertex(p, c);
                 }
-                ui.add_space(10.0);
-                let card = |ui: &mut egui::Ui, icon: &str, title: &str, desc: &str, col: Color32| {
-                    egui::Frame::none()
-                        .fill(NORD_PANEL2)
-                        .rounding(9.0)
-                        .stroke(egui::Stroke::new(1.0_f32, NORD_LINE))
-                        .stroke(egui::Stroke::new(1.0_f32, col.gamma_multiply(0.55)))
-                        .inner_margin(egui::Margin::symmetric(10.0, 6.0))
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new(icon).size(17.0).color(col));
-                                ui.vertical(|ui| {
-                                    ui.label(RichText::new(title).strong().size(13.0));
-                                    ui.label(RichText::new(desc).small().color(NORD_TEXT.gamma_multiply(0.72)));
+                mesh.add_triangle(0, 1, 2);
+                mesh.add_triangle(0, 2, 3);
+                ui.painter().add(egui::Shape::mesh(mesh));
+                ui.painter().text(r.left_top() + egui::vec2(16.0, 14.0), egui::Align2::LEFT_TOP, "Review, coordinate and present BIM models", egui::FontId::proportional(16.0), Color32::WHITE);
+                ui.painter().text(r.left_top() + egui::vec2(16.0, 40.0), egui::Align2::LEFT_TOP, "IFC · Revit · Navisworks · DWG · STEP · point clouds - in one fast 3D view", egui::FontId::proportional(12.0), Color32::from_rgb(200, 225, 255));
+                ui.add_space(14.0);
+                let feats = [
+                    ("⚠", "Clash Detective", "Hard & clearance tests, voids, BCF issues", NORD_RED),
+                    ("🧭", "Federated review", "Selection tree, properties, sets, viewpoints", NORD_ACCENT),
+                    ("☀", "Photoreal render", "Scanned PBR materials, lights, sun, path tracing", NORD_YELLOW),
+                    ("📐", "2D drawings", "Inventor-style views, PDF / DWG export", NORD_CYAN),
+                    ("🏷", "Open BIM", "IFC4 + MVD, bSDD classification, IDS, COBie", NORD_GREEN),
+                    ("🎞", "4D & automation", "TimeLiner, animations, video, Rhai scripts", NORD_VIOLET),
+                ];
+                let w = (ui.available_width() - 10.0) / 2.0;
+                for row in feats.chunks(2) {
+                    ui.horizontal(|ui| {
+                        for (icon, name, desc, col) in row {
+                            ui.allocate_ui(egui::vec2(w, 58.0), |ui| {
+                                card_frame(col.gamma_multiply(0.45)).show(ui, |ui| {
+                                    ui.set_width(w - 26.0);
+                                    ui.set_height(38.0);
+                                    ui.horizontal(|ui| {
+                                        ui.label(RichText::new(*icon).size(18.0).color(*col));
+                                        ui.vertical(|ui| {
+                                            ui.label(RichText::new(*name).strong().size(13.0).color(NORD_TEXT));
+                                            ui.label(RichText::new(*desc).size(11.0).color(NORD_MUTED));
+                                        });
+                                    });
                                 });
                             });
-                        });
-                    ui.add_space(5.0);
-                };
-                ui.label(RichText::new("What you can do with ManageBIM").size(15.0).strong().color(NORD_ACCENT));
-                ui.add_space(6.0);
-                card(ui, "⚔", "Clash Detective", "Hard & clearance tests, Navisworks-style workflow, BCF reports", NORD_RED);
-                card(ui, "🧭", "Federated review", "IFC, DWG, Revit / Navisworks, STEP, point clouds in one view", NORD_ACCENT);
-                card(ui, "📜", "Scripts (Rhai)", "Automate selection, properties and clash tests from the Script tab", NORD_GREEN);
-                card(ui, "🎞", "Path trace & 4D", "Progressive CPU renders, animations, TimeLiner and PDF sheets", NORD_YELLOW);
-                ui.add_space(8.0);
-                ui.label(RichText::new("No administrator rights - ManageBIM is installed only for your Windows user.").small().color(NORD_GREEN));
-                ui.label(RichText::new(format!("Folder: {}", self.paths.app_dir.display())).small().color(NORD_TEXT.gamma_multiply(0.7)));
+                        }
+                    });
+                    ui.add_space(4.0);
+                }
             }
             Page::Components => {
-                title(ui, "Choose components");
-                ui.add_enabled(false, egui::Checkbox::new(&mut true, "ManageBIM application (required)"));
-                ui.checkbox(&mut self.desktop, "Desktop shortcut");
-                ui.add_space(10.0);
-                ui.label(RichText::new("Add-ins (plugins) for the programs found on this PC").strong());
+                title(ui, "Installation options", "Choose where ManageBIM goes and which add-ins to install.");
+                // ---- folderul
+                ui.label(RichText::new("Install location").strong().color(NORD_TEXT));
                 ui.add_space(4.0);
-                let row = |ui: &mut egui::Ui, on: &mut bool, name: &str, found: &[String], what: &str| {
-                    let ok = !found.is_empty();
-                    if !ok {
-                        *on = false;
+                ui.horizontal(|ui| {
+                    ui.add(egui::TextEdit::singleline(&mut self.dir).desired_width(ui.available_width() - 110.0).font(egui::TextStyle::Monospace));
+                    if ui.add(secondary("📁 Browse…")).clicked() {
+                        let start = PathBuf::from(self.dir.trim());
+                        let mut d = rfd::FileDialog::new().set_title("Choose the ManageBIM installation folder");
+                        if let Some(parent) = start.parent().filter(|p| p.is_dir()) {
+                            d = d.set_directory(parent);
+                        }
+                        if let Some(p) = d.pick_folder() {
+                            // un subfolder ManageBIM, ca sa nu se amestece cu alte fisiere
+                            let p = if p.file_name().map_or(false, |n| n.to_string_lossy().eq_ignore_ascii_case("ManageBIM")) { p } else { p.join("ManageBIM") };
+                            self.dir = p.display().to_string();
+                        }
                     }
-                    ui.add_enabled(ok, egui::Checkbox::new(on, name));
-                    let txt = if ok { format!("      {what} - found: {}", found.join(", ")) } else { "      not installed on this PC".to_string() };
-                    ui.label(RichText::new(txt).small().color(if ok { NORD_TEXT.gamma_multiply(0.75) } else { NORD_TEXT.gamma_multiply(0.45) }));
+                });
+                let dir = PathBuf::from(self.dir.trim());
+                if needs_admin(&dir) {
+                    ui.label(RichText::new("⚠ This folder needs administrator rights - choose a folder in your user profile or on a data drive.").size(11.5).color(NORD_YELLOW));
+                } else if self.test_root.is_none() && dir != self.paths.local.join("Programs").join("ManageBIM") {
+                    ui.label(RichText::new("Custom folder - upgrades will install here too.").size(11.5).color(NORD_MUTED));
+                } else {
+                    ui.label(RichText::new("Default: your user folder, no administrator rights.").size(11.5).color(NORD_MUTED));
+                }
+                if ui.small_button("↺ Default folder").clicked() {
+                    self.dir = self.paths.local.join("Programs").join("ManageBIM").display().to_string();
+                }
+                ui.add_space(12.0);
+                // ---- componente
+                ui.label(RichText::new("Components").strong().color(NORD_TEXT));
+                ui.add_space(4.0);
+                let comp = |ui: &mut egui::Ui, on: &mut bool, enabled: bool, name: &str, desc: &str, col: Color32| {
+                    card_frame(if *on { col.gamma_multiply(0.55) } else { NORD_LINE }).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            ui.add_enabled(enabled, egui::Checkbox::without_text(on));
+                            ui.vertical(|ui| {
+                                ui.label(RichText::new(name).strong().size(13.0).color(if enabled { NORD_TEXT } else { NORD_MUTED }));
+                                ui.label(RichText::new(desc).size(11.0).color(NORD_MUTED));
+                            });
+                        });
+                    });
+                    ui.add_space(4.0);
                 };
-                row(ui, &mut self.revit, "Revit", &self.found.revit, "Export, Send to ManageBIM, ManageBIM Issues");
-                row(ui, &mut self.acad, "AutoCAD / Plant 3D", &self.found.acad, "Send to ManageBIM (with Plant 3D properties)");
-                row(ui, &mut self.navis, "Navisworks", &self.found.navis, "Export, Send to ManageBIM, ManageBIM Issues");
-                ui.add_space(10.0);
+                comp(ui, &mut true, false, "ManageBIM application", "Viewer, clash detection, 2D drawings, render, 28 scanned PBR materials, OpenCascade, denoiser", NORD_ACCENT);
+                comp(ui, &mut self.desktop, true, "Desktop shortcut", "Start ManageBIM from the desktop", NORD_ACCENT);
+                let addin = |found: &[String], what: &str| if found.is_empty() { "Not installed on this PC".to_string() } else { format!("{what} - found: {}", found.join(", ")) };
+                let (rf, af, nf) = (self.found.revit.clone(), self.found.acad.clone(), self.found.navis.clone());
+                if rf.is_empty() {
+                    self.revit = false;
+                }
+                if af.is_empty() {
+                    self.acad = false;
+                }
+                if nf.is_empty() {
+                    self.navis = false;
+                }
+                comp(ui, &mut self.revit, !rf.is_empty(), "Revit add-in", &addin(&rf, "Export, Send to ManageBIM, Issues"), NORD_ACCENT);
+                comp(ui, &mut self.acad, !af.is_empty(), "AutoCAD / Plant 3D add-in", &addin(&af, "Send to ManageBIM with Plant 3D properties"), NORD_ACCENT);
+                comp(ui, &mut self.navis, !nf.is_empty(), "Navisworks add-in", &addin(&nf, "Export, Send to ManageBIM, Issues"), NORD_ACCENT);
                 if !self.running_programs.is_empty() {
+                    ui.add_space(4.0);
                     ui.label(RichText::new(format!("⚠ Close these programs before installing: {}", self.running_programs.join(", "))).color(NORD_YELLOW));
                 }
             }
             Page::Installing => {
-                title(ui, if self.old.is_some() { "Upgrading…" } else { "Installing…" });
+                title(ui, if self.old.is_some() { "Upgrading ManageBIM…" } else { "Installing ManageBIM…" }, &format!("Into {}", self.dir.trim()));
                 self.start(ctx);
                 let j = self.job.lock().unwrap();
-                ui.add(egui::ProgressBar::new(((j.lines.len() as f32) / 14.0).min(0.95)).animate(true).fill(NORD_ACCENT));
+                // ~14 linii de progres la o instalare completa
+                let frac = ((j.lines.len() as f32) / 14.0).min(0.97);
+                ui.add(egui::ProgressBar::new(frac).desired_height(14.0).fill(NORD_ACCENT).text(RichText::new(format!("{:.0}%", frac * 100.0)).color(Color32::WHITE)).rounding(7.0));
+                ui.add_space(6.0);
+                if let Some(last) = j.lines.last() {
+                    ui.label(RichText::new(last.trim_start_matches("[OK]").trim()).size(12.5).color(NORD_TEXT));
+                }
                 ui.add_space(8.0);
-                egui::ScrollArea::vertical().max_height(230.0).stick_to_bottom(true).show(ui, |ui| {
-                    for l in &j.lines {
-                        let (t, c) = if let Some(r) = l.strip_prefix("[OK]") { (format!("✔ {}", r.trim()), NORD_GREEN) } else if l.contains("WARNING") { (l.clone(), NORD_YELLOW) } else { (l.clone(), NORD_TEXT.gamma_multiply(0.8)) };
-                        ui.label(RichText::new(t).color(c).small());
-                    }
+                card_frame(NORD_LINE).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    egui::ScrollArea::vertical().max_height(220.0).stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
+                        for l in &j.lines {
+                            let (t, c) = if let Some(r) = l.strip_prefix("[OK]") { (format!("✔ {}", r.trim()), NORD_GREEN) } else if l.contains("WARNING") { (l.clone(), NORD_YELLOW) } else { (l.clone(), NORD_TEXT.gamma_multiply(0.75)) };
+                            ui.label(RichText::new(t).color(c).size(11.5).monospace());
+                        }
+                    });
                 });
                 let finished = j.done.is_some();
                 drop(j);
@@ -412,32 +546,48 @@ impl Wizard {
                 let j = self.job.lock().unwrap();
                 match &j.done {
                     Some(Ok(log)) => {
-                        title(ui, if self.old.is_some() { "ManageBIM has been upgraded" } else { "ManageBIM is installed" });
-                        for l in log.lines().filter(|l| l.contains("[OK]")) {
-                            ui.label(RichText::new(format!("✔ {}", l.trim().trim_start_matches("[OK]").trim())).color(NORD_GREEN));
-                        }
-                        let warns: Vec<&str> = log.lines().filter(|l| l.contains("WARNING")).collect();
-                        if !warns.is_empty() {
-                            ui.add_space(6.0);
-                            for w in warns {
-                                ui.label(RichText::new(w.trim()).color(NORD_YELLOW).small());
-                            }
-                        }
+                        ui.add_space(18.0);
+                        ui.horizontal(|ui| {
+                            let (r, _) = ui.allocate_exact_size(egui::vec2(44.0, 44.0), egui::Sense::hover());
+                            ui.painter().circle_filled(r.center(), 21.0, NORD_GREEN);
+                            ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, "✔", egui::FontId::proportional(22.0), NORD_BG);
+                            ui.vertical(|ui| {
+                                ui.label(RichText::new(if self.old.is_some() { "ManageBIM has been upgraded" } else { "ManageBIM is ready" }).size(22.0).strong().color(NORD_TEXT));
+                                ui.label(RichText::new(format!("Version {VERSION} · {}", self.dir.trim())).size(12.0).color(NORD_MUTED));
+                            });
+                        });
                         ui.add_space(12.0);
-                        ui.label(RichText::new("Getting started").strong().color(NORD_ACCENT));
-                        ui.label(RichText::new("• Help › Demo — open a sample federated project").small());
-                        ui.label(RichText::new("• Ctrl+K — search any command or element").small());
-                        ui.label(RichText::new("• ⚙ Settings — fonts / DPI, DWG export, scripts folder").small());
+                        card_frame(NORD_GREEN.gamma_multiply(0.35)).show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            for l in log.lines().filter(|l| l.contains("[OK]")) {
+                                ui.label(RichText::new(format!("✔ {}", l.trim().trim_start_matches("[OK]").trim())).size(12.0).color(NORD_GREEN));
+                            }
+                            for w in log.lines().filter(|l| l.contains("WARNING")) {
+                                ui.label(RichText::new(w.trim()).color(NORD_YELLOW).size(11.5));
+                            }
+                        });
+                        ui.add_space(10.0);
+                        card_frame(NORD_LINE).show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.label(RichText::new("Getting started").strong().color(NORD_ACCENT));
+                            ui.label(RichText::new("• Help › Demo - open a sample federated project").size(12.0));
+                            ui.label(RichText::new("• Ctrl+K - search any command or element").size(12.0));
+                            ui.label(RichText::new("• Render › Materials › Auto by IFC type - photoreal materials in one click").size(12.0));
+                        });
                         drop(j);
-                        ui.checkbox(&mut self.launch, "Start ManageBIM now");
+                        ui.add_space(8.0);
+                        ui.checkbox(&mut self.launch, RichText::new("Start ManageBIM now").size(13.5));
                     }
                     Some(Err(e)) => {
-                        title(ui, "The installation failed");
-                        egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                            ui.label(RichText::new(e).color(NORD_RED));
+                        title(ui, "The installation failed", "Nothing was changed in your existing installation.");
+                        card_frame(NORD_RED.gamma_multiply(0.5)).show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                                ui.label(RichText::new(e).color(NORD_RED).monospace().size(11.5));
+                            });
                         });
                         ui.add_space(8.0);
-                        ui.label(RichText::new(format!("Details: {}", self.paths.local.join("ManageBIM-setup.log").display())).small());
+                        ui.label(RichText::new(format!("Details: {}", self.paths.local.join("ManageBIM-setup.log").display())).size(11.5).color(NORD_MUTED));
                     }
                     None => {}
                 }
@@ -457,50 +607,58 @@ impl eframe::App for Wizard {
                 self.page = Page::Installing;
             }
         }
-        egui::TopBottomPanel::bottom("buttons").frame(egui::Frame::none().fill(NORD_PANEL).inner_margin(egui::Margin::symmetric(16.0, 10.0))).show(ctx, |ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let btn = |t: &str| egui::Button::new(RichText::new(t).size(14.0)).min_size(egui::vec2(96.0, 30.0));
-                match self.page {
-                    Page::Welcome => {
-                        if ui.add(btn("Cancel")).clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        egui::TopBottomPanel::bottom("buttons")
+            .frame(egui::Frame::none().fill(NORD_PANEL).inner_margin(egui::Margin::symmetric(18.0, 12.0)).stroke(egui::Stroke::new(1.0_f32, NORD_LINE)))
+            .show(ctx, |ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    match self.page {
+                        Page::Welcome => {
+                            if ui.add(primary("Next  ›")).clicked() {
+                                self.running_programs = running(&["ManageBIM.exe", "Revit.exe", "acad.exe", "Roamer.exe"]);
+                                self.page = Page::Components;
+                            }
+                            if ui.add(secondary("Cancel")).clicked() {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
                         }
-                        if ui.add(btn("Next  ›").fill(NORD_ACCENT.gamma_multiply(0.45))).clicked() {
-                            self.running_programs = running(&["ManageBIM.exe", "Revit.exe", "acad.exe", "Roamer.exe"]);
-                            self.page = Page::Components;
+                        Page::Components => {
+                            let label = if self.old.is_some() { "Upgrade" } else { "Install" };
+                            let dir = PathBuf::from(self.dir.trim());
+                            let blocked = self.running_programs.iter().any(|p| p.eq_ignore_ascii_case("ManageBIM")) || self.dir.trim().is_empty() || needs_admin(&dir);
+                            if ui.add_enabled(!blocked, primary(label)).clicked() {
+                                self.page = Page::Installing;
+                            }
+                            if ui.add(secondary("‹  Back")).clicked() {
+                                self.page = Page::Welcome;
+                            }
+                            if ui.add(secondary("Cancel")).clicked() {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                if ui.small_button("⟳ Check again").on_hover_text("Check again which programs are still open").clicked() {
+                                    self.running_programs = running(&["ManageBIM.exe", "Revit.exe", "acad.exe", "Roamer.exe"]);
+                                }
+                            });
+                        }
+                        Page::Installing => {
+                            ui.add_enabled(false, secondary("Please wait…"));
+                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                ui.spinner();
+                            });
+                        }
+                        Page::Finish => {
+                            if ui.add(primary("Finish")).clicked() {
+                                let ok = matches!(self.job.lock().unwrap().done, Some(Ok(_)));
+                                *self.launch_now.lock().unwrap() = (ok && self.launch).then(|| PathBuf::from(self.dir.trim()));
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
                         }
                     }
-                    Page::Components => {
-                        if ui.add(btn("Cancel")).clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                        let label = if self.old.is_some() { "Upgrade" } else { "Install" };
-                        let blocked = self.running_programs.iter().any(|p| p.eq_ignore_ascii_case("ManageBIM"));
-                        if ui.add_enabled(!blocked, btn(label).fill(NORD_ACCENT.gamma_multiply(0.45))).clicked() {
-                            self.page = Page::Installing;
-                        }
-                        if ui.add(btn("‹  Back")).clicked() {
-                            self.page = Page::Welcome;
-                        }
-                        if ui.small_button("⟳ Check again").on_hover_text("Check again which programs are still open").clicked() {
-                            self.running_programs = running(&["ManageBIM.exe", "Revit.exe", "acad.exe", "Roamer.exe"]);
-                        }
-                    }
-                    Page::Installing => {
-                        ui.add_enabled(false, btn("Please wait…"));
-                    }
-                    Page::Finish => {
-                        if ui.add(btn("Finish").fill(NORD_ORANGE.gamma_multiply(0.75))).clicked() {
-                            let ok = matches!(self.job.lock().unwrap().done, Some(Ok(_)));
-                            *self.launch_now.lock().unwrap() = ok && self.launch;
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    }
-                }
+                });
             });
-        });
-        egui::SidePanel::left("steps").exact_width(170.0).resizable(false).frame(egui::Frame::none().fill(NORD_PANEL).inner_margin(egui::Margin::symmetric(18.0, 8.0))).show(ctx, |ui| self.steps(ui));
-        egui::CentralPanel::default().frame(egui::Frame::none().fill(NORD_BG).inner_margin(egui::Margin::symmetric(24.0, 8.0))).show(ctx, |ui| {
+        egui::SidePanel::left("steps").exact_width(190.0).resizable(false).frame(egui::Frame::none().fill(NORD_PANEL).inner_margin(egui::Margin::symmetric(18.0, 8.0)).stroke(egui::Stroke::new(1.0_f32, NORD_LINE))).show(ctx, |ui| self.steps(ui));
+        egui::CentralPanel::default().frame(egui::Frame::none().fill(NORD_BG).inner_margin(egui::Margin::symmetric(26.0, 8.0))).show(ctx, |ui| {
             let c = ui.ctx().clone();
             egui::ScrollArea::vertical().show(ui, |ui| self.page_ui(ui, &c));
         });
@@ -551,7 +709,7 @@ fn main() {
     let paths = Paths { app_dir: local.join("Programs").join("ManageBIM"), local };
 
     if silent {
-        let opt = Options { addins: if no_addins { Some(Vec::new()) } else { None }, desktop: true, test_root };
+        let opt = Options { addins: if no_addins { Some(Vec::new()) } else { None }, desktop: true, test_root, install_dir: None };
         if install(&paths, &opt, &|_| {}).is_err() {
             std::process::exit(1);
         }
@@ -564,7 +722,7 @@ fn main() {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(format!("ManageBIM {VERSION} Setup"))
-            .with_inner_size([720.0, 560.0])
+            .with_inner_size([820.0, 600.0])
             .with_resizable(false)
             .with_maximize_button(false)
             .with_icon(icon()),
@@ -590,7 +748,7 @@ fn main() {
         // fara OpenGL (ex. sesiune remote veche): instalare directa, cu mesaj la final
         #[cfg(windows)]
         win::msg(&format!("The setup window could not be opened ({e}).\nManageBIM will be installed with the default options."), 0x40);
-        let opt = Options { addins: if no_addins { Some(Vec::new()) } else { None }, desktop: true, test_root: None };
+        let opt = Options { addins: if no_addins { Some(Vec::new()) } else { None }, desktop: true, test_root: None, install_dir: None };
         let p = Paths { app_dir: app_dir.clone(), local: app_dir.parent().and_then(|p| p.parent()).map(|p| p.to_path_buf()).unwrap_or_default() };
         if let Err(e) = install(&p, &opt, &|_| {}) {
             #[cfg(windows)]
@@ -599,7 +757,9 @@ fn main() {
         }
         return;
     }
-    if *launch.lock().unwrap() {
-        let _ = std::process::Command::new(app_dir.join("ManageBIM.exe")).current_dir(&app_dir).spawn();
+    // folderul ales in asistent (poate fi altul decat cel implicit)
+    let dir = launch.lock().unwrap().clone();
+    if let Some(dir) = dir {
+        let _ = std::process::Command::new(dir.join("ManageBIM.exe")).current_dir(&dir).spawn();
     }
 }

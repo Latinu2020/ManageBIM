@@ -30,6 +30,7 @@ mod script_builder_ui;
 mod materials_panel;
 mod lighting_panel;
 mod classification_panel;
+mod coord_panel;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
 fn accent() -> Color32 {
@@ -1094,6 +1095,10 @@ impl App {
 
     fn ribbon_sections(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, crate::i18n::tr("Cut View"), |ui| {
+            let box_on = self.section.enabled && self.section.mode == SectionMode::Box;
+            if rbtn(ui, "🟩", "Pick face", "Click a face of the section box in the 3D view (it turns light green) to make the 2D drawing from it. Esc cancels.", self.face_pick, box_on).clicked() {
+                self.face_pick = !self.face_pick;
+            }
             let cur = self.settings.cad_view;
             egui::ComboBox::from_id_salt("cad_cut_view").selected_text(crate::i18n::tr(cur.label())).show_ui(ui, |ui| {
                 for v in crate::app::CadView::ALL {
@@ -1208,6 +1213,10 @@ impl App {
             }
         });
         rgroup(ui, "Cut View", |ui| {
+            let box_on = self.section.enabled && self.section.mode == SectionMode::Box;
+            if rbtn(ui, "🟩", "Pick face", "Click a face of the section box in the 3D view (it turns light green): the 2D drawing is made from that face - Top, Bottom, Front, Back, Left or Right. Esc cancels.", self.face_pick, box_on).clicked() {
+                self.face_pick = !self.face_pick;
+            }
             let cur = self.settings.cad_view;
             egui::ComboBox::from_id_salt("annot_cut_view").selected_text(crate::i18n::tr(cur.label())).show_ui(ui, |ui| {
                 for v in crate::app::CadView::ALL {
@@ -1326,6 +1335,7 @@ impl App {
             self.panel_btn(ui, Panel::Find, "🔍", "Find Items", "Search by properties");
             self.panel_btn(ui, Panel::Sets, "📋", "Sets", "Selection & search sets");
         });
+        self.coord_ribbon(ui);
     }
 
     fn ribbon_models(&mut self, ui: &mut egui::Ui) {
@@ -3943,15 +3953,6 @@ impl App {
                         }
                     }
                 } else {
-                    // raza de actiune: cercuri subtiri in planele XY / XZ / YZ
-                    if lamp.radius > 0.0 {
-                        for plane in 0..3 {
-                            let pts: Vec<Pos2> = (0..=48).filter_map(|k| to_screen(&params.view_proj, rect, ring_point(lp, plane, lamp.radius, k as f32 / 48.0 * tau))).collect();
-                            if pts.len() > 1 {
-                                painter.add(egui::Shape::line(pts, Stroke::new(1.0_f32, lc.gamma_multiply(0.35))));
-                            }
-                        }
-                    }
                     let len = dist * 0.13;
                     for a in 0..3 {
                         if let Some(tp) = to_screen(&params.view_proj, rect, lp + unit(a) * len) {
@@ -3998,8 +3999,92 @@ impl App {
                 self.grid_pick_point(s);
             }
         }
+        // ---- alegerea unei fete a cubului de sectiune pentru desenul 2D (Annotation › Pick face):
+        // fata de sub cursor se coloreaza verde deschis; click = vederea din acea fata (Top / Front ...)
+        let box_on = self.section.enabled && self.section.mode == SectionMode::Box;
+        if self.face_pick && (!box_on || ui.input(|i| i.key_pressed(Key::Escape))) {
+            self.face_pick = false;
+        }
+        let mut face_hover: Option<(usize, bool)> = None;
+        if self.face_pick && box_on {
+            if let Some(h) = hover.filter(|h| rect.contains(*h)) {
+                let (o, d) = self.cam.ray(uv(h), aspect);
+                let (a, b) = (Vec3::from(self.section.bmin), Vec3::from(self.section.bmax));
+                // slab method: fata prin care intra raza (sau iese, daca ochiul e in cub)
+                let (mut t0, mut t1) = (f32::MIN, f32::MAX);
+                let (mut f0, mut f1) = ((0usize, false), (0usize, false));
+                let mut ok = true;
+                for ax in 0..3 {
+                    if d[ax].abs() < 1e-9 {
+                        if o[ax] < a[ax] || o[ax] > b[ax] {
+                            ok = false;
+                        }
+                        continue;
+                    }
+                    let (ta, tb) = ((a[ax] - o[ax]) / d[ax], (b[ax] - o[ax]) / d[ax]);
+                    let (near, far, near_max) = if ta < tb { (ta, tb, false) } else { (tb, ta, true) };
+                    if near > t0 {
+                        t0 = near;
+                        f0 = (ax, near_max);
+                    }
+                    if far < t1 {
+                        t1 = far;
+                        f1 = (ax, !near_max);
+                    }
+                }
+                if ok && t0 <= t1 && t1 > 0.0 {
+                    face_hover = Some(if t0 > 0.0 { f0 } else { f1 });
+                }
+            }
+            ui.ctx().set_cursor_icon(if face_hover.is_some() { egui::CursorIcon::PointingHand } else { egui::CursorIcon::Crosshair });
+        }
+        // fata aleasa (vederea curenta) si fata de sub cursor: verde deschis, transparent
+        if box_on {
+            let (a, b) = (Vec3::from(self.section.bmin), Vec3::from(self.section.bmax));
+            let chosen = self.settings.cad_view.axis().map(|ax| (ax, matches!(self.settings.cad_view, crate::app::CadView::Back | crate::app::CadView::Right | crate::app::CadView::Top)));
+            let face_quad = |ax: usize, max: bool| -> [Vec3; 4] {
+                let v = if max { b[ax] } else { a[ax] };
+                match ax {
+                    0 => [Vec3::new(v, a.y, a.z), Vec3::new(v, b.y, a.z), Vec3::new(v, b.y, b.z), Vec3::new(v, a.y, b.z)],
+                    1 => [Vec3::new(a.x, v, a.z), Vec3::new(b.x, v, a.z), Vec3::new(b.x, v, b.z), Vec3::new(a.x, v, b.z)],
+                    _ => [Vec3::new(a.x, a.y, v), Vec3::new(b.x, a.y, v), Vec3::new(b.x, b.y, v), Vec3::new(a.x, b.y, v)],
+                }
+            };
+            for (f, alpha, w) in [(chosen.filter(|_| self.settings.cad_view_pos <= 1e-4), 46u8, 2.0f32), (face_hover, 80u8, 3.0f32)] {
+                let Some((ax, max)) = f else { continue };
+                let q = face_quad(ax, max);
+                let pts: Option<Vec<Pos2>> = q.iter().map(|p| to_screen(&params.view_proj, rect, *p)).collect();
+                if let Some(pts) = pts {
+                    painter.add(egui::Shape::convex_polygon(pts.clone(), Color32::from_rgba_unmultiplied(120, 230, 120, alpha), Stroke::NONE));
+                    painter.add(egui::Shape::closed_line(pts, Stroke::new(w, Color32::from_rgb(90, 210, 100))));
+                }
+            }
+            if let Some((ax, max)) = face_hover {
+                let name = match (ax, max) { (0, false) => "Left", (0, true) => "Right", (1, false) => "Front", (1, true) => "Back", (2, false) => "Bottom", _ => "Top" };
+                if let Some(h) = hover {
+                    let g = painter.layout_no_wrap(format!("{name} face · click for the 2D drawing"), FontId::proportional(13.0), Color32::WHITE);
+                    let pos = h + EV::new(18.0, 18.0);
+                    painter.rect_filled(Rect::from_min_size(pos - EV::splat(5.0), g.size() + EV::splat(10.0)), 5.0, Color32::from_rgba_unmultiplied(20, 70, 35, 230));
+                    painter.galley(pos, g, Color32::WHITE);
+                }
+            }
+        }
+        let face_click = resp.clicked() && self.face_pick && face_hover.is_some();
+        if face_click {
+            if let Some((ax, max)) = face_hover {
+                use crate::app::CadView;
+                self.settings.cad_view = match (ax, max) { (0, false) => CadView::Left, (0, true) => CadView::Right, (1, false) => CadView::Front, (1, true) => CadView::Back, (2, false) => CadView::Bottom, _ => CadView::Top };
+                // exact pe fata cubului, fara planul portocaliu separat
+                self.settings.cad_view_pos = 0.0;
+                self.settings.show_cad_plane = false;
+                self.face_pick = false;
+                self.section_preview_open = true;
+                self.settings.save();
+                self.toast(format!("{} face chosen - the 2D drawing is in the preview; export it as PDF / DWG", self.settings.cad_view.label()));
+            }
+        }
         // click pe becul unei lumini (unealta Select / Window): selecteaza lumina si ii arata gizmo-ul
-        let light_click = if resp.clicked() && !grid_click && !xform_click && matches!(self.tool, Tool::Select | Tool::Window) {
+        let light_click = if resp.clicked() && !grid_click && !xform_click && !face_click && !self.face_pick && matches!(self.tool, Tool::Select | Tool::Window) {
             resp.interact_pointer_pos().and_then(|p| {
                 self.lights
                     .iter()
@@ -4015,7 +4100,7 @@ impl App {
         if let Some(i) = light_click {
             self.light_sel = Some(i);
         }
-        if resp.clicked() && !grid_click && !xform_click && light_click.is_none() {
+        if resp.clicked() && !grid_click && !xform_click && light_click.is_none() && !face_click && !self.face_pick {
             if let Some(p) = resp.interact_pointer_pos() {
                 match self.tool {
                     Tool::Measure(k) => {
@@ -4251,7 +4336,8 @@ impl App {
                 _ => [Vec3::new(lo.x, lo.y, value), Vec3::new(hi.x, lo.y, value), Vec3::new(hi.x, hi.y, value), Vec3::new(lo.x, hi.y, value)],
             };
             let n = 8;
-            let fill = Color32::from_rgba_unmultiplied(255, 170, 50, 32);
+            // planul de taiere: verde deschis, ca fata aleasa a cubului
+            let fill = Color32::from_rgba_unmultiplied(120, 230, 120, 34);
             for i in 0..n {
                 for j in 0..n {
                     let at = |u: f32, v: f32| {
@@ -4267,7 +4353,7 @@ impl App {
                 }
             }
             for k in 0..4 {
-                line(quad[k], quad[(k + 1) % 4], Color32::from_rgb(255, 180, 70), 2.0);
+                line(quad[k], quad[(k + 1) % 4], Color32::from_rgb(90, 210, 100), 2.0);
             }
             // ---- manerul de tragere: bareta pe axa planului, cu sageti in ambele capete
             let mut c = (lo + hi) * 0.5;
@@ -4650,7 +4736,8 @@ impl App {
                     "Click: select · drag: orbit · middle-drag: pan · wheel: zoom · double-click: focus".to_string()
                 },
                 FontId::proportional(12.0),
-                pal.overlay_weak,
+                // pe fundal deschis (Hidden line, fundal alb / cer) textul e inchis, altfel nu se vede
+                if self.settings.visual_style == crate::render::VisualStyle::Hidden || matches!(self.settings.vp_bg.as_str(), "white" | "sky") { Color32::from_rgb(90, 96, 106) } else { pal.overlay_weak },
             );
         }
     }
@@ -4835,6 +4922,7 @@ impl App {
         self.overlay_window(ctx);
         self.title_block_window(ctx);
         self.classification_window(ctx);
+        self.coord_objects_window(ctx);
         self.command_palette(ctx);
         self.asbuilt_window(ctx);
         if let Some(pr) = &mut self.prompt {

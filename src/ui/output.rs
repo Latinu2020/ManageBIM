@@ -490,68 +490,174 @@ impl App {
         self.view_templates_open = open;
     }
 
-    /// Fereastra mica, proportionala (A4 landscape), cu previewul 2D al sectiunii.
-    /// Fundal alb, hașura, cote în lanț, niveluri și cartuș — ca exportul DWG / PDF.
-    /// Se închide cu X; NU se întinde pe toată aplicația (dimensiune fixă).
+    /// Previewul 2D al desenului din cubul de sectiune, in stil Inventor: foaie crem cu chenar si
+    /// cartus, contur taiat gros, muchii vizibile, linii ascunse intrerupte, hasura fina.
+    /// Zoom cu rotita, deplasare cu mouse-ul, comutatoare si export direct in PDF / DWG.
+    /// Desenul e EXACT cel exportat (aceeasi functie `section_drawing`, aceleasi coordonate reale).
     pub(super) fn section_preview_window(&mut self, ctx: &egui::Context) {
         if !self.section_preview_open {
             return;
         }
         let mut open = true;
-        let (segs, texts) = self.section_preview_drawing();
-        let size = egui::vec2(470.0, 340.0); // ~1.38 = A4 landscape, rezonabil pentru un preview
-        egui::Window::new(crate::theme::icon_job("🗺", "2D Section Preview", 13.0, Color32::from_rgb(30, 40, 60)))
-            .id(egui::Id::new("sec_preview_win"))
+        let screen = ctx.screen_rect();
+        let size = egui::vec2(860.0f32.min(screen.width() * 0.6), 600.0f32.min(screen.height() * 0.62));
+        let mut export: Option<Purpose> = None;
+        egui::Window::new(crate::theme::icon_job("🗺", "2D Drawing Preview", 13.0, ctx.style().visuals.text_color()))
+            .id(egui::Id::new("sec_preview_win2"))
             .open(&mut open)
-            .fixed_size(size)
-            .resizable(false)
+            .default_size(size)
+            .min_width(420.0)
+            .min_height(300.0)
+            .resizable(true)
             .collapsible(false)
             .show(ctx, |ui| {
-                // hârtie albă care umple exact fereastra
-                let area = ui.available_rect_before_wrap();
-                ui.painter().rect_filled(area, 0.0, Color32::WHITE);
-                if !self.section.enabled {
-                    ui.painter().text(area.center(), Align2::CENTER_CENTER, "Activează Sections › Enable", FontId::proportional(12.0), Color32::from_rgb(90, 90, 90));
+                // ---- bara de unelte
+                let mut changed = false;
+                ui.horizontal_wrapped(|ui| {
+                    let view = self.settings.cad_view;
+                    ui.label(RichText::new(match view { crate::app::CadView::Current => "Plan / section".to_string(), v => format!("{} view", v.label()) }).strong());
+                    ui.separator();
+                    changed |= ui.toggle_value(&mut self.cad_visible_edges, "▭ Visible edges").on_hover_text("Edges of the shapes seen beyond the cut (like an Inventor drawing view)").changed();
+                    changed |= ui.toggle_value(&mut self.cad_hidden_edges, "┄ Hidden lines").on_hover_text("Edges behind other faces, dashed").changed();
+                    changed |= ui.toggle_value(&mut self.cad_hatch, "▨ Hatch").changed();
+                    changed |= ui.toggle_value(&mut self.cad_dims, "↔ Dimensions").changed();
+                    ui.separator();
+                    if ui.button("⛶ Fit").on_hover_text("Fit the drawing in the window (double-click the sheet does the same)").clicked() {
+                        self.prev_zoom = 1.0;
+                        self.prev_pan = [0.0, 0.0];
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("📐 DWG…").on_hover_text("Export this drawing to DWG / DXF in real coordinates (attach it back as an overlay and it lands exactly in place)").clicked() {
+                            self.cad_sheet = false;
+                            export = Some(Purpose::ExportSectionCad);
+                        }
+                        if ui.button(RichText::new("📄 PDF…").strong()).on_hover_text("Vector PDF sheet with title block").clicked() {
+                            export = Some(Purpose::ExportSectionPdf);
+                        }
+                    });
+                });
+                if changed {
+                    self.settings.save();
+                }
+                // ---- foaia
+                let (area, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
+                let painter = ui.painter_at(area);
+                let paper = Color32::from_rgb(246, 243, 232); // crem, ca foaia din Inventor
+                let ink = Color32::from_rgb(20, 22, 26);
+                painter.rect_filled(area, 4.0, Color32::from_rgb(120, 124, 132));
+                let sheet = area.shrink(10.0);
+                painter.rect_filled(sheet, 0.0, paper);
+                let frame = sheet.shrink(12.0);
+                painter.rect_stroke(frame, 0.0, Stroke::new(1.4_f32, ink));
+                if !self.section.enabled && self.settings.cad_view == crate::app::CadView::Current {
+                    painter.text(frame.center(), Align2::CENTER_CENTER, "Turn on the section box, then pick a face (Annotation › Pick face)", FontId::proportional(13.0), Color32::from_rgb(90, 90, 90));
                     return;
                 }
+                let (segs, texts) = self.section_preview_drawing();
                 if segs.is_empty() {
-                    ui.painter().text(area.center(), Align2::CENTER_CENTER, "Nicio muchie în plan — mută planul/cubul peste geometrie", FontId::proportional(11.0), Color32::from_rgb(90, 90, 90));
+                    painter.text(frame.center(), Align2::CENTER_CENTER, "Nothing to draw here - move the cube or the cut over the model", FontId::proportional(13.0), Color32::from_rgb(90, 90, 90));
                     return;
                 }
-                // bounding box pe toate segmentele + pozițiile textelor
+                // cartusul (jos-dreapta) - zona de desen e restul cadrului
+                let tb = egui::Rect::from_min_size(egui::pos2(frame.right() - 250.0, frame.bottom() - 58.0), egui::vec2(250.0, 58.0));
+                let draw_area = egui::Rect::from_min_max(frame.min + egui::vec2(14.0, 14.0), egui::pos2(frame.right() - 14.0, tb.top() - 8.0));
+                // zoom / deplasare
+                if resp.hovered() {
+                    let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+                    if scroll.abs() > 0.1 {
+                        let old = self.prev_zoom;
+                        let z = (old * (1.0 + scroll * 0.0025)).clamp(0.2, 60.0);
+                        // zoom spre cursor
+                        if let Some(h) = resp.hover_pos() {
+                            let c = draw_area.center() + egui::vec2(self.prev_pan[0], self.prev_pan[1]);
+                            let d = h - c;
+                            let k = z / old;
+                            self.prev_pan[0] -= d.x * (k - 1.0);
+                            self.prev_pan[1] -= d.y * (k - 1.0);
+                        }
+                        self.prev_zoom = z;
+                    }
+                }
+                if resp.dragged() {
+                    let d = resp.drag_delta();
+                    self.prev_pan[0] += d.x;
+                    self.prev_pan[1] += d.y;
+                }
+                if resp.double_clicked() {
+                    self.prev_zoom = 1.0;
+                    self.prev_pan = [0.0, 0.0];
+                }
                 let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
-                for (_, s) in &segs { x0 = x0.min(s[0]).min(s[2]); y0 = y0.min(s[1]).min(s[3]); x1 = x1.max(s[0]).max(s[2]); y1 = y1.max(s[1]).max(s[3]); }
-                for t in &texts { x0 = x0.min(t.x); y0 = y0.min(t.y); x1 = x1.max(t.x + 8.0); y1 = y1.max(t.y + 3.0); }
+                for (_, s) in &segs {
+                    x0 = x0.min(s[0]).min(s[2]);
+                    y0 = y0.min(s[1]).min(s[3]);
+                    x1 = x1.max(s[0]).max(s[2]);
+                    y1 = y1.max(s[1]).max(s[3]);
+                }
                 let (w, h) = ((x1 - x0).max(1e-3), (y1 - y0).max(1e-3));
-                let pad = 10.0_f32;
-                let inner = area.shrink(pad);
-                let sc = ((inner.width() / w as f32).min(inner.height() / h as f32)).max(1e-9);
-                let (ox, oy) = (inner.center().x - ((x0 + x1) * 0.5) as f32 * sc, inner.center().y + ((y0 + y1) * 0.5) as f32 * sc);
-                let pt = |x: f64, y: f64| egui::pos2(ox + x as f32 * sc, oy - y as f32 * sc);
-                let painter = ui.painter();
-                for (layer, s) in &segs {
-                    let col = match layer.as_str() {
-                        "HATCH" => Color32::from_rgb(150, 155, 165),
-                        "LEVELS" => Color32::from_rgb(70, 90, 130),
-                        "GRIDS" => Color32::from_rgb(170, 120, 70),
-                        "DIMS" => Color32::from_rgb(80, 90, 105),
-                        _ => Color32::from_rgb(25, 30, 40), // CUT = cerneală neagră
-                    };
-                    painter.line_segment([pt(s[0], s[1]), pt(s[2], s[3])], egui::Stroke::new(0.8_f32, col));
+                let fit = ((draw_area.width() as f64 / w).min(draw_area.height() as f64 / h)) as f32;
+                let sc = fit * self.prev_zoom;
+                let c = draw_area.center() + egui::vec2(self.prev_pan[0], self.prev_pan[1]);
+                let (cx, cy) = ((x0 + x1) * 0.5, (y0 + y1) * 0.5);
+                let pt = |x: f64, y: f64| egui::pos2(c.x + ((x - cx) as f32) * sc, c.y - ((y - cy) as f32) * sc);
+                let clip = painter.with_clip_rect(draw_area.expand(4.0));
+                // ordinea: fine (hasura, axe) -> ascunse -> vizibile -> conturul taiat gros
+                let rank = |l: &str| match l.to_ascii_uppercase().as_str() {
+                    "HATCH" | "GRIDS" | "LEVELS" | "DIMS" => 0,
+                    "HIDDEN" | "BEHIND" => 1,
+                    "VISIBLE" => 2,
+                    _ => 3,
+                };
+                let mut order: Vec<usize> = (0..segs.len()).collect();
+                order.sort_by_key(|&i| rank(&segs[i].0));
+                let thick = (1.7 * self.prev_zoom.sqrt()).clamp(1.2, 3.0);
+                for i in order {
+                    let (layer, s) = &segs[i];
+                    let (a, b) = (pt(s[0], s[1]), pt(s[2], s[3]));
+                    if !draw_area.expand(40.0).intersects(egui::Rect::from_two_pos(a, b)) {
+                        continue;
+                    }
+                    match rank(layer) {
+                        0 => {
+                            let col = if layer.eq_ignore_ascii_case("HATCH") { Color32::from_rgb(150, 150, 145) } else { Color32::from_rgb(70, 95, 140) };
+                            clip.line_segment([a, b], Stroke::new(0.6_f32, col));
+                        }
+                        1 => {
+                            clip.extend(egui::Shape::dashed_line(&[a, b], Stroke::new(0.8_f32, Color32::from_rgb(95, 98, 105)), 5.0, 3.0));
+                        }
+                        2 => {
+                            clip.line_segment([a, b], Stroke::new(1.0_f32, ink));
+                        }
+                        _ => {
+                            clip.line_segment([a, b], Stroke::new(thick, Color32::BLACK));
+                        }
+                    }
                 }
                 for t in &texts {
-                    painter.text(pt(t.x, t.y), Align2::LEFT_BOTTOM, &t.s, FontId::proportional(7.0), Color32::from_rgb(30, 35, 45));
+                    let size = (t.mm as f32 * 2.2 * self.prev_zoom.sqrt()).clamp(7.0, 18.0);
+                    clip.text(pt(t.x, t.y), Align2::LEFT_BOTTOM, &t.s, FontId::proportional(size), Color32::from_rgb(25, 30, 40));
                 }
-                // cartuș mic, jos-dreapta
-                let tb = egui::Rect::from_min_size(egui::pos2(area.right() - 116.0, area.bottom() - 34.0), egui::vec2(112.0, 30.0));
-                painter.rect_filled(tb, 0.0, Color32::WHITE);
-                painter.rect_stroke(tb, 0.0_f32, egui::Stroke::new(0.8_f32, Color32::from_rgb(40, 45, 55)));
-                painter.text(tb.left_top() + egui::vec2(4.0, 3.0), Align2::LEFT_TOP, "SECTION", FontId::proportional(8.0), Color32::from_rgb(30, 35, 45));
-                let title = match self.settings.cad_view { crate::app::CadView::Current => "Section".to_string(), v => format!("{} section", v.label()) };
-                painter.text(tb.left_top() + egui::vec2(4.0, 15.0), Align2::LEFT_TOP, &title, FontId::proportional(9.0), Color32::from_rgb(30, 35, 45));
-                let _ = size;
+                // ---- cartusul, ca in Inventor (proiect / titlu / scara / data / numar)
+                painter.rect_filled(tb, 0.0, paper);
+                painter.rect_stroke(tb, 0.0, Stroke::new(1.2_f32, ink));
+                let mid = tb.left() + 160.0;
+                painter.line_segment([egui::pos2(tb.left(), tb.top() + 26.0), egui::pos2(tb.right(), tb.top() + 26.0)], Stroke::new(0.8_f32, ink));
+                painter.line_segment([egui::pos2(mid, tb.top() + 26.0), egui::pos2(mid, tb.bottom())], Stroke::new(0.8_f32, ink));
+                let project = self.project_path.as_ref().map(|p| crate::file_name(p)).unwrap_or_else(|| "ManageBIM".into());
+                let title = match self.settings.cad_view { crate::app::CadView::Current => "Section".to_string(), v => format!("{} view", v.label()) };
+                painter.text(tb.left_top() + egui::vec2(6.0, 5.0), Align2::LEFT_TOP, self.title_block.project_or(&project), FontId::proportional(13.0), ink);
+                painter.text(egui::pos2(tb.left() + 6.0, tb.top() + 31.0), Align2::LEFT_TOP, "TITLE", FontId::proportional(8.0), Color32::from_rgb(90, 90, 90));
+                painter.text(egui::pos2(tb.left() + 6.0, tb.top() + 41.0), Align2::LEFT_TOP, &title, FontId::proportional(12.0), ink);
+                let scale = if self.title_block.scale > 0 { format!("1:{}", self.title_block.scale) } else { "Fit".into() };
+                painter.text(egui::pos2(mid + 6.0, tb.top() + 31.0), Align2::LEFT_TOP, format!("SCALE {scale}"), FontId::proportional(9.0), ink);
+                painter.text(egui::pos2(mid + 6.0, tb.top() + 44.0), Align2::LEFT_TOP, self.title_block.paper.clone(), FontId::proportional(9.0), ink);
+                // indicatorul de zoom, discret
+                painter.text(egui::pos2(frame.left() + 6.0, frame.bottom() - 6.0), Align2::LEFT_BOTTOM, format!("{:.0}%  ·  wheel: zoom  ·  drag: pan  ·  double-click: fit", self.prev_zoom * 100.0), FontId::proportional(10.0), Color32::from_rgb(110, 110, 110));
             });
         self.section_preview_open = open;
+        if let Some(p) = export {
+            self.request_path(p);
+        }
     }
 
     /// Segmentele + textele desenului 2D al sectiunii: tăietura, hașura, cote în lanț, niveluri, grile.

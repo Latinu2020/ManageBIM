@@ -914,15 +914,19 @@ void main() {
         float pix = 2.0 / max(u_k.w * u_h, 1e-3);
         float crease = ortho ? smoothstep(0.3, 1.0, lapAbs / pix) : smoothstep(0.0009, 0.004, lapAbs / max(abs(q0), 1e-6));
         // Hidden line: DOAR conturul general (silueta / salt de adancime) - fara crease.
-        edge = u_style == 4 ? smoothstep(0.02, 0.06, jump) : max(smoothstep(0.02, 0.06, jump), crease * 0.8);
+        // Hidden line: silueta SI muchiile dintre fete (desen tehnic); celelalte stiluri: muchii mai discrete
+        edge = u_style == 4 ? max(smoothstep(0.015, 0.05, jump), crease) : max(smoothstep(0.02, 0.06, jump), crease * 0.8);
     }
     if (u_style == 4) {
-        // HIDDEN LINE stil Rhino 3D: hartie alba, suprafete albe cu umbrire fina,
-        // DOAR conturul exterior negru (fara muchii interne / crease).
-        float ink = clamp(edge * 1.7, 0.0, 1.0);
-        vec3 paper = vec3(0.985, 0.988, 0.992);                  // fundal alb
-        vec3 shade = mix(paper, vec3(0.82, 0.84, 0.87), 0.22 * ao); // umbra moale pe suprafete
-        vec3 col = mix(shade, vec3(0.10, 0.12, 0.15), ink);       // cerneala neagra pe muchii
+        // HIDDEN LINE (desen tehnic, ca Rhino / Inventor): suprafete albe cu o nuanta gri foarte
+        // fina dupa orientare (volumele se citesc), toate muchiile formei cu cerneala neagra.
+        float ink = clamp(edge * 1.6, 0.0, 1.0);
+        vec3 paper = vec3(0.985, 0.988, 0.992);
+        // luminozitatea umbririi Concept (depinde de orientarea fetei), adusa intr-o banda ingusta de gri
+        float lum = dot(c.rgb / max(c.a, 1e-3), vec3(0.299, 0.587, 0.114));
+        float tone = mix(0.80, 1.0, smoothstep(0.25, 0.85, lum));
+        vec3 shade = paper * tone * mix(1.0, 0.86, clamp(1.0 - ao, 0.0, 1.0) * 2.0);
+        vec3 col = mix(shade, vec3(0.08, 0.09, 0.11), ink);
         o_col = vec4(col, c.a);
         return;
     }

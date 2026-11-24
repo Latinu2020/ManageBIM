@@ -4,23 +4,25 @@
 
 # ManageBIM
 
-### Federated BIM review & coordination — fast, light, free
+### Federated BIM review, coordination and presentation — fast, light, free
 
 Open **IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP and point clouds** together, run clash detection and model checks,<br>
-manage issues and markups, publish drawings — and stay in sync with Revit and Navisworks.
+plan voids and clearance zones, produce **Inventor-style 2D drawings**, render with **scanned PBR materials** — and stay in sync with Revit and Navisworks.
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.27.31-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.31/ManageBIM-Setup-0.27.31.exe)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.27.32-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.32/ManageBIM-Setup-0.27.32.exe)
 &nbsp;
 [![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Releases-334155?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/Latinu2020/ManageBIM/releases)
 
 [![Build](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml/badge.svg)](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-0.27.31-blue)
+![Version](https://img.shields.io/badge/version-0.27.32-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20FreeBSD-0078d4)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-b7410e)
 ![No admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 <img src="docs/images/main-window.png" alt="ManageBIM main window" width="920">
+
+**[Download](#download) · [What's new](#whats-new) · [Highlights](#highlights) · [Features](#features) · [Add-ins](#add-ins-windows) · [Build from source](#building-from-source)**
 
 </div>
 
@@ -33,8 +35,33 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 | ⚡ **Fast and light** | Native Rust + OpenGL. Opens large federated models in seconds; adaptive level of detail keeps navigation fluid. |
 | 🔗 **Works with your tools** | Add-ins for **Revit**, **Navisworks** and **AutoCAD / Plant 3D**: send models, bring issues back, sync the selection live, load ManageBIM models as references. |
 | 🧭 **Familiar** | Ribbon, Selection Tree, Find Items, Clash Detective, TimeLiner, viewpoints — the workflow you know from Navisworks. |
-| 📐 **Open standards** | IFC 2x3 / IFC4 in and out, **BCF 2.1 / 3.0**, **buildingSMART IDS 1.0**, DWG / DXF, E57 / LAS, glTF. |
+| 🧱 **Coordination, not just viewing** | Clearance zones, provisions for void (found automatically where services cross walls and slabs) and placeholder volumes take part in clash detection. |
+| 📐 **Drawings and presentation** | Pick a face of the section box and get a 2D view with visible and hidden lines (PDF / DWG); photoreal renders with 28 scanned PBR materials, lights and sun. |
+| 🌐 **Open standards** | IFC 2x3 / IFC4 in and out (MVD), **BCF 2.1 / 3.0**, **buildingSMART IDS 1.0**, **bSDD**, DWG / DXF, E57 / LAS, glTF, MaterialX. |
 | 🆓 **Free and open** | MIT licence, no account, no subscription, no administrator rights to install. |
+
+---
+
+## Highlights
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/drawing-2d.png" alt="2D drawing preview"><br><sub><b>2D drawings like Inventor</b> — the view from a face of the section box: thick cut outline, visible edges, dashed hidden lines, levels and dimensions on a sheet with a title block. Export to PDF or DWG in real coordinates (attach it back as an overlay and it lands in place).</sub></td>
+<td width="50%"><img src="docs/images/pick-face.png" alt="Pick a face of the section box"><br><sub><b>Pick face</b> — hover a face of the section box, it turns light green; click it and the drawing is made from that face (Top, Bottom, Front, Back, Left, Right).</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/coordination-objects.png" alt="Coordination objects"><br><sub><b>Coordination objects</b> — <b>Auto voids</b> proposes a provision for void wherever a duct, pipe or cable tray crosses a wall or slab; clearance zones and placeholder volumes complete the set. They appear in the tree, in Clash Detective and in the IFC export.</sub></td>
+<td width="50%"><img src="docs/images/materials-pbr.png" alt="Scanned PBR materials"><br><sub><b>Scanned PBR materials included</b> — 28 ambientCG (CC0) materials with colour, normal, roughness, metallic, AO and height maps, applied in one click by IFC type. OpenPBR / MaterialX import and export.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/lighting.png" alt="Lighting panel"><br><sub><b>Lighting like Navisworks</b> — Point, Spot and Distant lights lit in real time, a Move / Rotate gizmo, unlimited power and range, and Sun & sky (position by date, time and location, shadows, night mode) in one panel.</sub></td>
+<td width="50%"><img src="docs/images/bsdd.png" alt="bSDD classification"><br><sub><b>bSDD classification</b> — search the buildingSMART Data Dictionary online (IFC, Uniclass, ETIM, NL-SfB…) or a local catalogue and assign codes to the selection; exported as <code>IfcClassificationReference</code> with the bSDD URI.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/hidden-line.png" alt="Hidden line style"><br><sub><b>Hidden line style</b> — white technical-drawing look with every edge of the shapes in black and a light grey tone by face orientation.</sub></td>
+<td width="50%"><img src="docs/images/installer.png" alt="Setup wizard"><br><sub><b>Setup wizard</b> — per user, no administrator rights, choose the folder with Browse, Revit / AutoCAD / Navisworks add-ins detected automatically.</sub></td>
+</tr>
+</table>
 
 ---
 
@@ -73,60 +100,22 @@ manage issues and markups, publish drawings — and stay in sync with Revit and 
 
 | Platform | Package | Notes |
 |---|---|---|
-| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.27.31.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.31/ManageBIM-Setup-0.27.31.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime and Intel Open Image Denoise. Per-user, **no administrator rights**. |
+| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.27.32.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.27.32/ManageBIM-Setup-0.27.32.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime, Intel Open Image Denoise and the scanned PBR material library. Per-user, **no administrator rights**, folder of your choice. |
 | **Linux** (x86-64) | `ManageBIM-<version>-x86_64.AppImage` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | One file: `chmod +x`, then run. No installation, no root. |
 | **FreeBSD** (x86-64) | `ManageBIM-<version>-freebsd-x86_64.tar.gz` on [Releases](https://github.com/Latinu2020/ManageBIM/releases) | Unpack and run `ManageBIM/ManageBIM`. Needs `pkg install mesa-libs libxkbcommon`. |
 
-> **0.27.31** — light rotation works on every light type, Sun & sky moved into the Lighting panel, no limit on lux, bottom panels in columns that no longer cover the 3D view, and **28 professional scanned PBR materials included by default** (ambientCG, CC0).
+## What's new
+
+> **0.27.32** — **Coordination objects**: clearance zones, provisions for void (**Auto voids** where services cross walls and slabs) and placeholder volumes, part of Clash Detective and the IFC export. **Inventor-style 2D drawings** from a face of the section box (pick it in 3D, it turns light green) with visible and dashed hidden lines, a new zoomable preview and technical line weights in PDF / DWG. **Hidden line** style fixed, and a redesigned **installer** with a choice of install folder.
 >
-> **0.27.30** — **Light rotation fixed**: the Rotate circles now aim Spot / Distant lights without orbiting the camera, and the cone / direction is lit in real time in the 3D view. Lights are clearly visible (glowing markers, click to select), **Night** mode works in the viewport, and the **bSDD** button opens a Classification window with **online buildingSMART Data Dictionary search** — codes are exported to IFC as `IfcClassificationReference`.
+> **0.27.31** — light rotation works on every light type, **Sun & sky** moved into the Lighting panel, no limit on lux, bottom panels laid out in columns that no longer cover the 3D view, and **28 scanned PBR materials included by default** (ambientCG, CC0).
 >
-> **0.27.29** — **Move / Rotate modes** for the light gizmo (drag the circles to aim a light, like Navisworks), unlimited light range, a **Night** scene mode and a local **bSDD / Uniclass / OmniClass classification catalogue** with CSV import/export in the BIM tab.
->
-> **0.27.28** — all BIM tools in one **BIM** ribbon tab, **IFC MVD export** (Reference / Design Transfer / Coordination / Site), **Revit-style category → IFC class mapping** with CSV import/export, and light direction rotation by dragging the range circles.
->
-> **0.27.27** — lights now illuminate the **3D model in real time** (up to 8 lights in the GPU shader, with lux and range), fixed X/Y/Z gizmo dragging (no more camera orbit), shorter arrows and a rotation ring for Spot/Distant lights.
->
-> **0.27.26** — fixed light deletion, lights are created at the centre of the model (with a Focus button for old distant ones), and a much larger, easier-to-grab UCS gizmo.
->
-> **0.27.25** — lights are now **real visible entities in the 3D view** with a UCS gizmo (X/Y/Z arrows you drag to move them), action-range circles, and a marker that updates instantly when you change colour, lux or range.
->
-> **0.27.24** — **Navisworks-style lighting**: Render › Lighting with Create Light (Point / Spot / Distant), lux, range, colour and angle controls; place lights by clicking in the 3D view, select their markers and drag them to move. Lights are saved in the project.
->
-> **0.27.23** — **photorealistic renders** with a real HDRI / photo environment, **point lights placed in the model** (position, colour, power, radius, saved in the project), richer procedural PBR textures, a three-column Materials window and a full-detail option for the 3D view.
->
-> **0.27.22** — **OpenPBR** surface parameters (coat, sheen, IOR) and **MaterialX** `.mtlx` import/export, a rebuilt Materials window, and **professional path tracing** with image-based lighting (Outdoor / Studio / Sunset), GGX + Fresnel, clearcoat / sheen, 4 bounces and ACES tonemapping with adjustable lights.
->
-> **0.27.21** — a complete **local PBR material library** (28 materials with generated albedo / normal / roughness / metallic / AO maps, installed by default), fixed import for **freepbr.com / Poliigon** packs (names with "Metal…_Color"), and fixed "Not enough GPU texture layers" by loading textures only for assigned materials.
->
-> **0.27.20** — **proper PBR materials**: freepbr.com packs keep all six maps (albedo, normal, roughness, metallic, AO, height) with per-pixel normal mapping in the 3D view and the path trace, adjustable strengths, individual map replacement, albedo preview, auto-assign after import and selectable texture resolution up to **2048 px**.
->
-> **0.27.19** — **path tracing with materials** (textures, patterns, gloss, metal, glass, section and hidden elements), the same "Render with materials" option for the Render › Image PNG, **glTF / GLB export** for Blender, Rhino 8, Twinmotion, Unreal (colours, materials, hierarchy, BIM properties) and import of glTF Custom Properties; diagonal walls get their real length in QTO; major **stability** fixes (no crashes when a project closes during a clash test / report, no endless loading or video export after an internal error, damaged DWG / cache files no longer close the app).
->
-> **0.27.18** — **Clash Detective closer to Navisworks** (sortable columns, Item 1 / Item 2 properties panel, saved viewpoint per clash, animated transitions, configurable highlight colours, multi-page PDF report), **Intel Open Image Denoise** for the render with soft shadows and ambient occlusion, an easier **visual script builder** (drop-downs from the model, live preview, templates, reopen saved scenarios), status bar units / OSNAP, 3D background choice and interface polish.
->
-> **0.27.17** — **coloured ribbon icons** by category (can be turned off), configurable **selection highlight** colour and strength, **recent commands** at the top of the command palette and quick **UI size** buttons (90 / 100 / 125 / 150%).
->
-> **0.27.16** — new **visual script builder** in the Script Library: build scripts without code by adding steps (select, find missing data, set properties, clash tests, exports), reorder them, see the generated Rhai and save it as `.rhai`. A friendly **Romanian scripting manual** explains all 9 functions with examples.
->
-> **0.27.15** — removed the experimental **Future** tab; professional **markup tools** (BIM colour palette, line weights, Undo/Clear), view templates linked to viewpoints, a single global split-view toolbar, duplicate ribbon commands cleaned up and a restyled web viewer.
->
-> **0.27.14** — added the **Future** tab (IFC type colouring and SketchUp-style scaling) and the Revit **Send selection** command with local `addin.log` diagnostics — superseded by 0.27.15.
->
-> **0.27.13** — UI tuning with rounded corners in the Mitcad style, **PDF clash report**, full **View Templates** (camera, visibility, section, colours, selection, measures; Ctrl+1…9, ◀ ▶ next to the ViewCube, ★ default applied on open, ⧉ Duplicate), fixed split-view geometry and the Clash **Current selection** option, more professional render materials and installer / start page.
->
-> **0.27.12** — **OSNAP** (selectable Vertex / Midpoint / Edge / Surface, adjustable radius, F3 on/off), **units m / mm / in / ft** with configurable precision, **split-view** with a draggable divider and link / unlink cameras, a professional **Viewpoints** panel, customizable **keybindings** with conflict detection, **batch export** (PDF + HTML + Excel + BCF to one folder) and shareable **.mbprofile** settings profiles.
->
-> **0.27.11** — new **Annotation** ribbon tab (right after Sections) for **Cut to DWG / Cut on Sheet / Cut to PDF**, with a small proportional **2D Section Preview** window (white sheet with hatching, dimension chains, levels and title block) and separate toggles for **Dimensions** and **Levels** in the export. Section boxes now cut real 3D geometry (solid cap hatched on the cut plane) instead of flattened 2D lines; **Behind edges** is gone (everything in the box from the plane on is always visible). The **Hidden line** visual style is now Rhino 3D style: white paper, light shading and only the outer contour. The cut-plane highlight stays **off by default** — turn it on only when you need the drag handle.
->
-> **0.27.10 (hotfix)** — reliable viewpoint click / rename (separate drag handle), section cut edges computed and drawn as a technical drawing, dimension chains in DWG, and a clean Hidden-line style.
->
-> **0.27.9 (hotfix)** — dedicated **⚙ Settings window** (fonts / DPI 75–200%, themes, export, scripts folder), a clean **top status bar** (search / focus / theme / settings), a **Script** ribbon tab with a working Rhai engine and 3 example scripts (`select_where`, `set_prop`, `create_clash_test`...), **resizable columns + right-click › Rename** in Clash/TimeLiner, **DWG / DXF / PDF sections from Front / Back / Left / Right / Top / Bottom** with a highlighted 3D cut plane **taken directly from the section box**, **COBie 2.4 export** and **BCF 2.1 / 3.0 export**, **multi-core path tracing**, DWG re-import placed exactly on the original cut plane, viewpoint folder fixes, and a friendlier installer with feature recommendations. The installer includes OpenCascade and all three add-ins — **no administrator rights**.
->
-> **0.27.0** — progressive CPU path tracing, Navisworks-style clash workflow, Hidden line, uniform ribbon buttons and a full-height Properties panel with all element properties.
->
+> **0.27.30** — the Rotate circles aim Spot / Distant lights without orbiting the camera, lights are clearly visible and lit in real time, **Night** mode in the viewport, and the **bSDD** classification window with online buildingSMART Data Dictionary search, exported to IFC as `IfcClassificationReference`.
+
+Older versions: see the full **[CHANGELOG](CHANGELOG.md)**.
+
 > **Windows:** the installer is not digitally signed yet — if SmartScreen asks, choose *More info › Run anyway*.
-> Silent install: `ManageBIM-Setup-0.27.31.exe /S` (add `/NoAddins` for the application only).
+> Silent install: `ManageBIM-Setup-0.27.32.exe /S` (add `/NoAddins` for the application only).
 >
 > **Linux / FreeBSD:** the add-ins (Revit, Navisworks, AutoCAD) and the native STEP / IGES reader exist only on Windows; everything else is the same.
 
@@ -143,7 +132,7 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 - **Point clouds** — E57 and LAS, density and point size control, one item per scan.
 - **Selection Tree** (group by any property, category colours, counts), **Property Tree**, **Find Items** with condition chips, selection and search **sets**, **Select Same Type / Category**.
 - **Navigation** like Navisworks — orbit, pan, walk with gravity and collision, ViewCube, walk paths, viewpoints, animations; adaptive LOD on large models.
-- **Visual styles** — Realistic, Shaded, Concept, Wireframe and **Hidden line**; fine edges, soft contact shadows, **sun shadows by date, time and location**.
+- **Visual styles** — Realistic, Shaded, Concept, Wireframe and **Hidden line** (technical-drawing look, every edge in black); fine edges, soft contact shadows, **sun shadows by date, time and location**.
 - **Professional PBR materials included** — 28 scanned materials from ambientCG (CC0): concrete, exposed concrete, brick, plaster, steel, aluminium, zinc, copper, oak, parquet, tiles, clay roof tiles, asphalt, grass, marble, granite, paving… with colour, normal, roughness, metallic, AO and height maps, applied automatically by IFC type. Optional 2K download; import your own `.zip` packs (freepbr.com, Poly Haven, Poliigon) and **OpenPBR / MaterialX** `.mtlx`.
 - **Lighting like Navisworks** — Point, Spot and Distant lights lit in **real time** in the 3D view, with a **Move / Rotate gizmo** (drag the arrows to move, drag the circles to aim), unlimited power and range, and **Sun & sky** (brightness, ambient, sun position by date / time / location, shadows) plus a **Night** mode — all in one Lighting panel.
 - **Command palette** (Ctrl+K) — every command and every element name, in one search box.
@@ -158,9 +147,10 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 - **Clash Detective** like Navisworks — test list with New / Active / Reviewed / Approved / Resolved columns and test status (New / Done / Old), **Add Test, Reset All, Compact All, Delete All, Update All** (with a summary of what changed), Rules / Select / Results / Report tabs; hard and clearance tests with **severity levels** (Critical / Major / Minor) and **ready-made templates** by discipline, **smart rules** (normal connections ignored, responsible discipline assigned automatically, grouping by system), grouping by level / grid location / type / model / assignee / status; **Filter by Selection** (inclusive / exclusive); Approved / Resolved keep **who and when**; **SwitchBack** sends a clash to Revit / Navisworks with the camera and the two elements; **Scan vs Model** turns as-built discrepancies into clashes; **import / export of clash tests** as Navisworks XML (with the selection sets) or CSV / Excel; **clash matrix by test** (Selection A × Selection B, a sheet per status) and tests created from a **sets matrix**; HTML, CSV, BCF and Navisworks reports.
 - **Model Checker** — rules or **buildingSMART IDS 1.0** files (import **and export**): properties, attributes, classifications, materials; exact values, lists, patterns, ranges, optional / prohibited, **unique values** (duplicate marks, GUIDs). Excel and BCF reports. **Quick checks without IDS**: no level, name, classification, material or geometry, duplicates, duplicate GUIDs.
 - **Classification & bSDD** — search the **buildingSMART Data Dictionary** online (IFC 4.3, Uniclass, ETIM, NL-SfB… with a dictionary filter) or a local Uniclass / OmniClass catalogue, and assign codes to the selection; exported to IFC as `IfcClassificationReference` with the bSDD URI.
+- **Coordination objects** — **clearance zones** around equipment, **provisions for void** (Auto voids where pipes, ducts and cable trays cross walls and slabs, with the host element) and **placeholder volumes** for equipment not modelled yet; part of Clash Detective, saved with the project, exported to IFC.
 - **Live Link** — the selection follows **Revit** and **Navisworks** both ways (matched by UniqueId / IFC GUID).
 - **As-built check** — the model against the point cloud: built, partial, missing, not scanned; colours on the model and an Excel report.
-- **Sections & Annotation** — boxes with stretch arrows (like Revit), planes, **sections by level** from the status bar, filled cuts (solid cap hatched on the cut plane). The **Annotation** tab exports the cut to **DWG / DXF / PDF** with hatching, element tags, grid bubbles and **dimension chains**; separate **Dimensions** / **Levels** toggles let you drop what you don't need. A small **2D Section Preview** window (proportional, white sheet) shows the drawing before export. **Hidden line** style renders white paper with only the outer contour.
+- **Sections & Annotation** — boxes with stretch arrows (like Revit), planes, **sections by level** from the status bar, filled cuts (solid cap hatched on the cut plane). The **Annotation** tab exports the cut to **DWG / DXF / PDF** with hatching, element tags, grid bubbles and **dimension chains**; separate **Dimensions** / **Levels** toggles let you drop what you don't need. **Pick face**: click a face of the section box (it turns light green) to draw the view from it, **like an Inventor drawing view** — thick cut outline, visible edges beyond the cut and dashed **hidden lines**, with technical line weights. The **2D Drawing Preview** (cream sheet, title block, zoom / pan) shows exactly what is exported, in real coordinates.
 - **Grids and levels** — from IFC, from DWG / DXF, or created in the app; clash locations like **“C-4 / Level 2”**.
 - **Measure** with snapping, **relocate** models (point to point, rotate, align to a face), **compare** model versions (geometry and **parameter by parameter**, old → new), **TimeLiner** 4D (CSV, **MS Project** and **Primavera P6** XML; videos with date and legend) and **quantities**.
 - **Colour by parameter** with a legend in the view and on images / videos.

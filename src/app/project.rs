@@ -267,6 +267,9 @@ impl App {
     }
 
     pub fn reset(&mut self) {
+        self.coord_objects.clear();
+        self.coord_slot = None;
+        self.coord_sel = None;
         self.user_params.clear();
         self.overlays.clear();
         // istoricul vizualizarii se refera la elementele modelelor de acum
@@ -357,6 +360,12 @@ impl App {
     }
 
     pub fn remove_model(&mut self, slot: usize) {
+        // scoaterea modelului virtual = stergerea obiectelor de coordonare
+        if self.coord_slot == Some(slot) {
+            self.coord_objects.clear();
+            self.coord_slot = None;
+            self.coord_sel = None;
+        }
         self.file_stamps.remove(&slot);
         self.reloading.remove(&slot);
         self.changed_files.remove(&slot);
@@ -526,6 +535,7 @@ impl App {
             origin: self.origin.lock().unwrap_or_else(|e| e.into_inner()).map(|o| o.to_array()),
             camera: self.cam,
             lights: self.lights.clone(),
+            coord_objects: self.coord_objects.clone(),
             viewpoints: self.viewpoints.clone(),
             view_templates: self.view_templates.clone(),
             sets: self.sets.clone(),
@@ -671,6 +681,11 @@ impl App {
             if let Some(x) = pf.model_xf.get(i) {
                 self.model_xf[i] = *x;
             }
+            // slotul modelului virtual "Coordination objects": nu e un fisier, se reface din proiect
+            if mp == crate::coord_objects::COORD_PATH {
+                self.coord_slot = Some(i);
+                continue;
+            }
             if mp.is_empty() {
                 continue;
             }
@@ -705,6 +720,11 @@ impl App {
         let cam_ok = |c: &crate::camera::Camera| c.eye.iter().all(|v| v.is_finite()) && c.yaw.is_finite() && c.pitch.is_finite() && c.focus.is_finite() && c.fov_deg.is_finite();
         self.cam = if cam_ok(&pf.camera) { pf.camera } else { Default::default() };
         self.lights = pf.lights;
+        // obiectele de coordonare: modelul lor virtual se reface in slotul salvat
+        self.coord_objects = pf.coord_objects;
+        if !self.coord_objects.is_empty() || self.coord_slot.is_some() {
+            self.rebuild_coord_model();
+        }
         self.home = pf.home.filter(cam_ok);
         self.walk_path = pf.walk_path.iter().map(|p| Vec3::from(*p)).collect();
         self.path_run = None;
@@ -875,6 +895,10 @@ impl App {
                 }
                 continue;
             };
+            // modelul virtual al obiectelor de coordonare: se reface din proiect, nu se impacheteaza
+            if m.path == crate::coord_objects::COORD_PATH {
+                continue;
+            }
             let stem: String = std::path::Path::new(&m.path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| format!("model{slot}")).chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
             let (name, data) = if m.cloud.is_some() {
                 // nor de puncte: fisierul original (E57 / LAS)

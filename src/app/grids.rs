@@ -409,8 +409,11 @@ impl App {
                 }
             }
         }
-        // 27.11: NU se mai adaugă linii „din spate" (BEHIND / aplatizate) - nici în
-        // preview, nici în export. Doar ce taie efectiv planul, cu hașură și cote.
+        // Proiectia de dupa planul de taiere, ca o vedere de desen din Inventor: muchiile reale ale
+        // formei (fara diagonalele plasei), vizibile cu linie plina, ascunse cu linie intrerupta.
+        if self.cad_visible_edges || self.cad_hidden_edges {
+            segs.extend(self.section_projection(view, axis, value, clip, &models, &to2d));
+        }
         if segs.is_empty() {
             return None;
         }
@@ -484,6 +487,100 @@ impl App {
             segs.extend(extra);
         }
         Some((segs, texts, axis, value))
+    }
+
+    /// Liniile vizibile / ascunse de dupa planul de taiere (layere VISIBLE / HIDDEN), cu cache:
+    /// calculul (buffer de adancime + muchii) se reface doar cand se schimba vederea sau modelele.
+    fn section_projection(
+        &self,
+        view: crate::app::CadView,
+        axis: usize,
+        value: f32,
+        clip: Option<([f32; 3], [f32; 3])>,
+        models: &[(usize, Arc<Model>)],
+        to2d: &dyn Fn(Vec3) -> [f64; 2],
+    ) -> Vec<(String, [f64; 4])> {
+        use crate::app::CadView;
+        // directia privirii: ce e "dupa" plan (fata aleasa a cubului priveste spre interiorul lui)
+        let sign = match view {
+            CadView::Top => -1.0,
+            CadView::Bottom => 1.0,
+            CadView::Front | CadView::Left => 1.0,
+            CadView::Back | CadView::Right => -1.0,
+            CadView::Current => if axis == 2 { -1.0 } else { 1.0 },
+        };
+        let (bmin, bmax) = match clip {
+            Some((a, b)) => (Vec3::from(a), Vec3::from(b)),
+            None => {
+                let bb = self.scene_aabb();
+                if !bb.is_valid() {
+                    return Vec::new();
+                }
+                (bb.min, bb.max)
+            }
+        };
+        let key = format!(
+            "{axis}|{value:.4}|{sign}|{bmin:?}|{bmax:?}|{}|{}|{}|{}",
+            self.cad_visible_edges,
+            self.cad_hidden_edges,
+            self.hidden.len(),
+            models.iter().map(|(i, m)| format!("{i}:{:p}", Arc::as_ptr(m))).collect::<Vec<_>>().join(",")
+        );
+        if let Some((k, v)) = self.hlr_cache.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            if *k == key {
+                return v.clone();
+            }
+        }
+        let hv = crate::hlr::HlrView { axis, plane: value, sign, bmin, bmax, res: 1600 };
+        // triunghiurile elementelor din zona de dupa plan (o lista per element)
+        let (lo, hi) = if sign > 0.0 { (value, bmax[axis]) } else { (bmin[axis], value) };
+        let mut elements: Vec<Vec<[Vec3; 3]>> = Vec::new();
+        let mut total = 0usize;
+        for (mi, m) in models {
+            if m.cloud.is_some() {
+                continue;
+            }
+            for (ei, e) in m.elements.iter().enumerate() {
+                let id = ElemId { m: *mi as u32, e: ei as u32 };
+                if e.tri_count == 0 || e.default_hidden || self.hidden.contains(&id) {
+                    continue;
+                }
+                if (0..3).any(|d| e.aabb.min[d] > bmax[d] || e.aabb.max[d] < bmin[d]) || e.aabb.max[axis] < lo || e.aabb.min[axis] > hi {
+                    continue;
+                }
+                let mut tris = Vec::with_capacity(e.tri_count as usize);
+                for t in e.tri_start..e.tri_start + e.tri_count {
+                    let i = t as usize * 3;
+                    if let (Some(a), Some(b), Some(c)) = (m.pos.get(i), m.pos.get(i + 1), m.pos.get(i + 2)) {
+                        tris.push([Vec3::from(*a), Vec3::from(*b), Vec3::from(*c)]);
+                    }
+                }
+                total += tris.len();
+                elements.push(tris);
+                // modele uriase: limita, ca previewul sa ramana fluid (cubul mai mic = mai mult detaliu)
+                if total > 3_000_000 {
+                    break;
+                }
+            }
+        }
+        let r = crate::hlr::compute(&hv, &elements, self.cad_hidden_edges, 250_000);
+        let mut out = Vec::with_capacity(r.visible.len() + r.hidden.len());
+        let mut push = |layer: &str, a: Vec3, b: Vec3| {
+            let (p, q) = (to2d(a), to2d(b));
+            if (p[0] - q[0]).abs() + (p[1] - q[1]).abs() > 1e-5 {
+                out.push((layer.to_string(), [p[0], p[1], q[0], q[1]]));
+            }
+        };
+        if self.cad_visible_edges {
+            for (a, b) in &r.visible {
+                push("VISIBLE", *a, *b);
+            }
+        }
+        for (a, b) in &r.hidden {
+            push("HIDDEN", *a, *b);
+        }
+        *self.hlr_cache.lock().unwrap_or_else(|e| e.into_inner()) = Some((key, out.clone()));
+        out
     }
 
     /// Exportul DWG / DXF / PDF al tăieturii. Folosește EXACT același desen ca previewul.
