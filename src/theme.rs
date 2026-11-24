@@ -833,12 +833,12 @@ pub fn icon_tint(s: &str, dark: bool) -> Option<Color32> {
     let orange = c(250, 150, 60);
     let teal = c(70, 200, 200);
     Some(match s.trim() {
-        "📁" | "📂" | "📄" | "💾" | "📦" => yellow,
+        "📁" | "📂" | "📄" | "💾" | "⚡" => yellow,
         "📤" | "📥" | "🌐" | "🔗" | "☁" => blue,
         "🗑" | "⛔" | "🚫" | "✖" | "⚠" | "⏹" => red,
-        "📏" | "📐" | "◎" | "🎯" | "✔" | "▶" => green,
-        "👁" | "🎨" | "🖼" | "📷" | "🎞" | "🎬" | "💡" | "☀" | "🌙" | "🌃" => purple,
-        "✂" | "⬚" | "▣" | "🔲" | "▦" | "🏗" | "◆" => orange,
+        "📏" | "📐" | "◎" | "🎯" | "✔" | "▶" | "🛡" | "🟩" => green,
+        "👁" | "🎨" | "🖼" | "📷" | "🎞" | "🎬" | "💡" | "☀" | "🌙" | "🌃" | "📦" => purple,
+        "✂" | "⬚" | "▣" | "🔲" | "▦" | "🏗" | "◆" | "▤" | "▨" => orange,
         "🔍" | "🔎" | "📋" | "📊" | "🧭" | "📅" | "🌲" | "🛤" | "🚶" => teal,
         _ => return None,
     })
@@ -1022,6 +1022,23 @@ pub fn ph(s: &str) -> &str {
         "▶" => P::PLAY,
         "⏸" => P::PAUSE,
         "↔" => P::ARROWS_OUT_CARDINAL,
+        // 0.28: toate iconitele din ribbon au varianta vectoriala (fara patrate goale)
+        "#" => P::HASH,
+        "↶" => P::ARROW_U_UP_LEFT,
+        "⏩" => P::FAST_FORWARD,
+        "▤" => P::STACK,
+        "▨" => P::CHECKERBOARD,
+        "▲" => P::CARET_UP,
+        "▼" => P::CARET_DOWN,
+        "◫" => P::COLUMNS,
+        "⚡" => P::LIGHTNING,
+        "⬇" => P::ARROW_DOWN,
+        "🏷" => P::TAG,
+        "📜" => P::SCROLL,
+        "🗺" => P::MAP_TRIFOLD,
+        "🟩" => P::CUBE_TRANSPARENT,
+        "🛡" => P::SHIELD_CHECK,
+        "📦" => P::PACKAGE,
         _ => s,
     }
 }

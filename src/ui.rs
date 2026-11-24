@@ -5427,6 +5427,43 @@ fn rows_has(tabs: &[(String, Vec<(String, String)>)], tab: &str, name: &str) -> 
     tabs.iter().any(|t| t.0 == tab && t.1.iter().any(|(n, _)| n.eq_ignore_ascii_case(name)))
 }
 
+/// Eticheta unui buton din ribbon pe cel mult doua randuri, fara text taiat: un rand daca incape in
+/// `w`, altfel impartita la spatiul care da randurile cele mai egale; fontul scade putin doar daca un
+/// singur cuvant e mai lat decat butonul.
+fn ribbon_label_lines(ui: &egui::Ui, label: &str, w: f32) -> Vec<(String, FontId)> {
+    let width = |t: &str, f: &FontId| ui.fonts(|fo| fo.layout_no_wrap(t.to_string(), f.clone(), Color32::WHITE).size().x);
+    for size in [10.5_f32, 9.5, 8.8] {
+        let f = FontId::proportional(size);
+        if width(label, &f) <= w {
+            return vec![(label.to_string(), f)];
+        }
+        let words: Vec<&str> = label.split(' ').filter(|s| !s.is_empty()).collect();
+        let mut best: Option<(f32, String, String)> = None;
+        for i in 1..words.len() {
+            let (a, b) = (words[..i].join(" "), words[i..].join(" "));
+            let (wa, wb) = (width(&a, &f), width(&b, &f));
+            if wa <= w && wb <= w {
+                let worst = wa.max(wb);
+                if best.as_ref().map_or(true, |x| worst < x.0) {
+                    best = Some((worst, a, b));
+                }
+            }
+        }
+        if let Some((_, a, b)) = best {
+            return vec![(a, f.clone()), (b, f)];
+        }
+        // un singur cuvant lung (ex. „Placeholder"): despartit in silabe aproximative cu cratima
+        if words.len() == 1 && size < 9.0 {
+            let chars: Vec<char> = label.chars().collect();
+            let mid = chars.len() / 2;
+            let a: String = chars[..mid].iter().collect::<String>() + "-";
+            let b: String = chars[mid..].iter().collect();
+            return vec![(a, f.clone()), (b, f)];
+        }
+    }
+    vec![(label.to_string(), FontId::proportional(8.8))]
+}
+
 fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled: bool) -> egui::Response {
     let label = crate::i18n::tr(label);
     let tip = crate::i18n::tr_lines(tip);
@@ -5438,7 +5475,7 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     let size = if compact {
         egui::vec2(30.0, 30.0)
     } else {
-        egui::vec2(58.0, 42.0)
+        egui::vec2(62.0, 48.0)
     };
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let p = ui.painter();
@@ -5465,9 +5502,16 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     if compact {
         p.text(rect.center(), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), icol);
     } else {
-        p.text(rect.center_top() + egui::vec2(0.0, 13.0), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), icol);
-        let shown = if label.chars().count() > 8 { format!("{}…", label.chars().take(7).collect::<String>()) } else { label.to_string() };
-        p.text(rect.center_bottom() - egui::vec2(0.0, 8.0), Align2::CENTER_CENTER, &shown, font, col);
+        p.text(rect.center_top() + egui::vec2(0.0, 12.0), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), icol);
+        // eticheta intreaga (0.28): pe un rand daca incape, altfel pe doua (impartita la spatiul cel mai
+        // echilibrat); un cuvant prea lung primeste un font putin mai mic - nu mai taiem textul cu „…"
+        let lines = ribbon_label_lines(ui, &label, rect.width() - 4.0);
+        let n = lines.len() as f32;
+        for (k, (t, f)) in lines.iter().enumerate() {
+            let y = rect.bottom() - 7.0 - (n - 1.0 - k as f32) * 11.0;
+            p.text(egui::pos2(rect.center().x, y), Align2::CENTER_CENTER, t, f.clone(), col);
+        }
+        let _ = font;
     }
     let tip = if compact { format!("{label}\n{tip}") } else { tip.to_string() };
     if enabled {
@@ -5495,8 +5539,8 @@ fn rgroup(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui)) {
                         ui.set_min_height(avail_h - 8.0);
                         ui.set_max_height(avail_h - 6.0);
                     } else {
-                        ui.set_min_height(44.0);
-                        ui.set_max_height(50.0);
+                        ui.set_min_height(48.0);
+                        ui.set_max_height(54.0);
                     }
                     add(ui);
                 })
