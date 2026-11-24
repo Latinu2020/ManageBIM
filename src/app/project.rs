@@ -307,6 +307,7 @@ impl App {
         self.cur_measure.clear();
         self.section = Section::default();
         self.viewpoints.clear();
+        self.lights.clear();
         self.sets.clear();
         self.clash_tests = vec![ClashTest::new("Test 1".into())];
         self.cur_test = 0;
@@ -523,6 +524,7 @@ impl App {
             models: self.models.iter().map(|m| m.as_ref().map(|m| m.path.clone()).unwrap_or_default()).collect(),
             origin: self.origin.lock().unwrap_or_else(|e| e.into_inner()).map(|o| o.to_array()),
             camera: self.cam,
+            lights: self.lights.clone(),
             viewpoints: self.viewpoints.clone(),
             view_templates: self.view_templates.clone(),
             sets: self.sets.clone(),
@@ -701,6 +703,7 @@ impl App {
         // o camera cu NaN / infinit (proiect deteriorat) ar lasa vederea goala
         let cam_ok = |c: &crate::camera::Camera| c.eye.iter().all(|v| v.is_finite()) && c.yaw.is_finite() && c.pitch.is_finite() && c.focus.is_finite() && c.fov_deg.is_finite();
         self.cam = if cam_ok(&pf.camera) { pf.camera } else { Default::default() };
+        self.lights = pf.lights;
         self.home = pf.home.filter(cam_ok);
         self.walk_path = pf.walk_path.iter().map(|p| Vec3::from(*p)).collect();
         self.path_run = None;

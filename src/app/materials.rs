@@ -438,7 +438,8 @@ impl App {
                 self.lod_px = (self.lod_px / 1.15).max(2.0);
             }
         }
-        let min_px = if moving { self.lod_px } else { 0.6 };
+        // randarea / exportul folosesc oricum tot modelul; aici putem forta si viewport-ul la detaliu complet
+        let min_px = if self.settings.no_lod { 0.0 } else if moving { self.lod_px } else { 0.6 };
         let eye = c.eye();
         let mut out = HashMap::new();
         let slots: Vec<usize> = self.loaded_models().map(|(i, _)| i).collect();

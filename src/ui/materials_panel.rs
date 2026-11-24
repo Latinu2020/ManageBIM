@@ -160,7 +160,7 @@ impl App {
             ui.checkbox(&mut self.materials_on, "Show materials in 3D");
         });
 
-        ui.columns(2, |cols| {
+        ui.columns(3, |cols| {
             // ---- lista
             let ui = &mut cols[0];
             section(ui, "Library", "Click a material to edit it");
@@ -318,73 +318,73 @@ impl App {
                 }
                 changed = true;
             }
-        });
 
-        // ---- asignari
-        ui.separator();
-        section(ui, "Assignments", "Rules lower in the list win");
-        let mname = self.materials.get(self.mat_sel).map(|m| m.name.clone()).unwrap_or_default();
-        ui.horizontal_wrapped(|ui| {
-            if ui.add_enabled(!self.selected.is_empty(), egui::Button::new(format!("🎯 Selection ({})", self.selected.len()))).clicked() {
-                let v: Vec<_> = self.selected.iter().copied().collect();
-                self.assign_material(MatTarget::Items(v), &mname);
-            }
-            ui.menu_button("Set ⏷", |ui| {
-                for s in self.sets.clone() {
-                    if ui.button(&s.name).clicked() {
-                        self.assign_material(MatTarget::Set(s.name.clone()), &mname);
-                        ui.close_menu();
-                    }
+            // ---- asignari (coloana din dreapta)
+            let ui = &mut cols[2];
+            section(ui, "Assignments", "Rules lower in the list win");
+            let mname = self.materials.get(self.mat_sel).map(|m| m.name.clone()).unwrap_or_default();
+            ui.horizontal_wrapped(|ui| {
+                if ui.add_enabled(!self.selected.is_empty(), egui::Button::new(format!("🎯 Selection ({})", self.selected.len()))).clicked() {
+                    let v: Vec<_> = self.selected.iter().copied().collect();
+                    self.assign_material(MatTarget::Items(v), &mname);
                 }
-            });
-            ui.menu_button("IFC type ⏷", |ui| {
-                egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
-                    for t in self.cache_types.clone() {
-                        if ui.button(&t).clicked() {
-                            self.assign_material(MatTarget::Type(t.clone()), &mname);
+                ui.menu_button("Set ⏷", |ui| {
+                    for s in self.sets.clone() {
+                        if ui.button(&s.name).clicked() {
+                            self.assign_material(MatTarget::Set(s.name.clone()), &mname);
                             ui.close_menu();
                         }
                     }
                 });
+                ui.menu_button("IFC type ⏷", |ui| {
+                    egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+                        for t in self.cache_types.clone() {
+                            if ui.button(&t).clicked() {
+                                self.assign_material(MatTarget::Type(t.clone()), &mname);
+                                ui.close_menu();
+                            }
+                        }
+                    });
+                });
+                if ui.button("⚡ Auto by IFC type").clicked() {
+                    self.auto_materials();
+                }
+                if ui.add_enabled(!self.mat_assign.is_empty(), egui::Button::new("Clear all")).clicked() {
+                    self.mat_assign.clear();
+                    changed = true;
+                }
             });
-            if ui.button("⚡ Auto by IFC type").clicked() {
-                self.auto_materials();
+            let mut del = None;
+            let mut up = None;
+            egui::ScrollArea::vertical().id_salt("matassign").max_height(ui.available_height().max(80.0)).show(ui, |ui| {
+                for (k, a) in self.mat_assign.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        changed |= ui.checkbox(&mut a.enabled, "").changed();
+                        ui.add_sized([130.0, 18.0], egui::Label::new(a.target.label()).truncate());
+                        let names: Vec<String> = self.materials.iter().map(|m| m.name.clone()).collect();
+                        egui::ComboBox::from_id_salt(("am", k)).width(120.0).selected_text(a.material.clone()).show_ui(ui, |ui| {
+                            for n in &names {
+                                changed |= ui.selectable_value(&mut a.material, n.clone(), n).changed();
+                            }
+                        });
+                        if ui.small_button("▲").clicked() && k > 0 {
+                            up = Some(k);
+                        }
+                        if ui.small_button("✖").clicked() {
+                            del = Some(k);
+                        }
+                    });
+                }
+            });
+            if let Some(k) = del {
+                self.mat_assign.remove(k);
+                changed = true;
             }
-            if ui.add_enabled(!self.mat_assign.is_empty(), egui::Button::new("Clear all")).clicked() {
-                self.mat_assign.clear();
+            if let Some(k) = up {
+                self.mat_assign.swap(k, k - 1);
                 changed = true;
             }
         });
-        let mut del = None;
-        let mut up = None;
-        egui::ScrollArea::vertical().id_salt("matassign").max_height(90.0).show(ui, |ui| {
-            for (k, a) in self.mat_assign.iter_mut().enumerate() {
-                ui.horizontal(|ui| {
-                    changed |= ui.checkbox(&mut a.enabled, "").changed();
-                    ui.add_sized([160.0, 18.0], egui::Label::new(a.target.label()).truncate());
-                    let names: Vec<String> = self.materials.iter().map(|m| m.name.clone()).collect();
-                    egui::ComboBox::from_id_salt(("am", k)).width(140.0).selected_text(a.material.clone()).show_ui(ui, |ui| {
-                        for n in &names {
-                            changed |= ui.selectable_value(&mut a.material, n.clone(), n).changed();
-                        }
-                    });
-                    if ui.small_button("▲").clicked() && k > 0 {
-                        up = Some(k);
-                    }
-                    if ui.small_button("✖").clicked() {
-                        del = Some(k);
-                    }
-                });
-            }
-        });
-        if let Some(k) = del {
-            self.mat_assign.remove(k);
-            changed = true;
-        }
-        if let Some(k) = up {
-            self.mat_assign.swap(k, k - 1);
-            changed = true;
-        }
 
         if let Some(p) = pick_tex {
             self.request_path(p);

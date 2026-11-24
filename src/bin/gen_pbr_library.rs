@@ -88,46 +88,95 @@ fn fbm(x: f32, y: f32, s: u32) -> f32 {
     noise(x, y, s) * 0.55 + noise(x * 2.7, y * 2.7, s + 1) * 0.28 + noise(x * 6.3, y * 6.3, s + 2) * 0.17
 }
 
-/// (factor de culoare 0..1, inaltime 0..1, rugozitate 0..1)
+/// (factor de culoare 0..1, inaltime 0..1, rugozitate 0..1) - texturi bogate, ca in randarile de prezentare
 fn surface(kind: Kind, u: f32, v: f32, s: u32, base_rough: f32) -> (f32, f32, f32) {
-    let n = fbm(u * 8.0, v * 8.0, s);
-    let fine = fbm(u * 40.0, v * 40.0, s + 3);
+    let big = fbm(u * 2.2, v * 2.2, s + 41);
+    let n1 = fbm(u * 6.0, v * 6.0, s);
+    let n2 = fbm(u * 22.0, v * 22.0, s + 11);
+    let n3 = fbm(u * 78.0, v * 78.0, s + 23);
+    let pore = hash((u * 512.0) as u32, (v * 512.0) as u32, s + 31);
+    let c = |x: f32| x.clamp(0.0, 1.0);
     match kind {
-        Kind::Concrete | Kind::Plaster | Kind::Paint => (0.86 + 0.20 * n + 0.06 * fine, n, (base_rough + (fine - 0.5) * 0.18).clamp(0.03, 1.0)),
+        Kind::Concrete | Kind::Plaster | Kind::Paint => {
+            // pori, pete de umezeala si agregate fine
+            let holes = if pore > 0.93 { -0.22 } else if pore < 0.04 { 0.08 } else { 0.0 };
+            let stain = (big - 0.5) * 0.22;
+            let col = c(0.80 + 0.18 * n1 + 0.10 * n2 + 0.05 * n3 + stain + holes);
+            let h = c(0.30 + 0.30 * n2 + 0.26 * n3 + holes * 1.6);
+            let rough = c(base_rough + (n2 - 0.5) * 0.28 + holes * 0.4);
+            (col, h, rough)
+        }
         Kind::Stone => {
-            let veins = (fbm(u * 3.0 + fine * 0.6, v * 3.0, s + 7) * 3.0).fract();
-            (0.82 + 0.24 * veins + 0.08 * n, n * 0.6 + veins * 0.3, (base_rough + (fine - 0.5) * 0.2).clamp(0.03, 1.0))
+            // vene de marmura + granule de granit
+            let warp = fbm(u * 1.6 + n2 * 0.5, v * 1.6, s + 7);
+            let veins = ((warp * 5.0).fract() - 0.5).abs();
+            let dark_vein = if veins < 0.07 { -0.28 } else { 0.0 };
+            let speck = if pore > 0.90 { 0.18 } else if pore < 0.08 { -0.12 } else { 0.0 };
+            let col = c(0.82 + 0.16 * n1 + 0.08 * n2 + dark_vein + speck);
+            let h = c(0.38 + 0.24 * n2 + 0.22 * n3 + dark_vein * 0.8);
+            (col, h, c(base_rough + (n2 - 0.5) * 0.25 + dark_vein.abs() * 0.5))
         }
         Kind::Brick => {
-            let row = (v * 10.0).floor();
+            // caramizi cu margini neregulate, ciment texturat si patina
+            let rows = 9.0;
+            let row = (v * rows).floor();
             let ox = if row as i32 % 2 == 0 { 0.0 } else { 0.5 };
             let bx = (u * 5.0 + ox).fract();
-            let by = (v * 10.0).fract();
-            let mortar = (bx < 0.035 || by < 0.09) as u8 as f32;
-            let tint = 0.78 + 0.34 * hash((u * 5.0).floor() as u32, row as u32, s);
-            (1.0 - mortar * 0.42 + (tint - 1.0) * (1.0 - mortar), (1.0 - mortar) * (0.7 + 0.3 * fine), (base_rough + mortar * 0.2).clamp(0.03, 1.0))
+            let by = (v * rows).fract();
+            let jitter = (fbm(u * 60.0, v * 60.0, s + 51) - 0.5) * 0.02;
+            let mortar = if bx < 0.028 + jitter || by < 0.065 + jitter { 1.0 } else { 0.0 };
+            let tint = 0.72 + 0.42 * hash((u * 5.0 + ox).floor() as u32, row as u32, s);
+            let wear = (fbm(u * 12.0, v * 12.0, s + 61) - 0.5) * 0.18;
+            let col = c((tint + wear) * (1.0 - mortar * 0.55) + mortar * 0.10 * n2);
+            let h = c((1.0 - mortar) * (0.55 + 0.25 * n2 + 0.14 * n3));
+            (col, h, c(base_rough + mortar * 0.30 + (n2 - 0.5) * 0.18))
         }
         Kind::Wood => {
-            let grain = (fbm(u * 2.0, v * 26.0 + fbm(u * 3.0, v * 2.0, s) * 3.0, s + 5) * 2.0).sin() * 0.5 + 0.5;
-            (0.72 + 0.36 * grain + 0.06 * fine, grain, (base_rough + (grain - 0.5) * 0.25).clamp(0.03, 1.0))
+            // inele de crestere deformate + noduri + fibre fine
+            let warp = fbm(u * 2.6, v * 1.4, s + 5) * 3.5;
+            let rings = (((v * 14.0 + warp) * std::f32::consts::PI * 2.0).sin() * 0.5 + 0.5).powf(0.6);
+            let knot = ((fbm(u * 3.0, v * 3.0, s + 17) - 0.62) * 6.0).clamp(0.0, 1.0);
+            let fibers = fbm(u * 130.0, v * 5.0, s + 19);
+            let col = c(0.62 + 0.30 * rings + 0.12 * fibers - 0.30 * knot + 0.05 * n1);
+            let h = c(0.35 + 0.32 * rings + 0.18 * fibers - 0.22 * knot);
+            (col, h, c(base_rough + (rings - 0.5) * 0.25 + knot * 0.20))
         }
         Kind::Tile | Kind::Roof => {
-            let tx = (u * 8.0).fract();
-            let ty = (v * 8.0).fract();
-            let g = (tx < 0.04 || ty < 0.04) as u8 as f32;
-            let tint = 0.86 + 0.2 * hash((u * 8.0).floor() as u32, (v * 8.0).floor() as u32, s);
-            (tint * (1.0 - g * 0.45), (1.0 - g) * (0.75 + 0.25 * fine), (base_rough + g * 0.15).clamp(0.03, 1.0))
+            // placi cu chit, luciu variat si mici imperfectiuni
+            let gx = (u * 7.0).fract();
+            let gy = (v * 7.0).fract();
+            let grout = if gx < 0.035 || gy < 0.045 { 1.0 } else { 0.0 };
+            let tint = 0.80 + 0.28 * hash((u * 7.0).floor() as u32, (v * 7.0).floor() as u32, s);
+            let glaze = fbm(u * 16.0, v * 16.0, s + 29);
+            let col = c(tint * (0.90 + 0.16 * glaze) * (1.0 - grout * 0.55));
+            let h = c((1.0 - grout) * (0.60 + 0.20 * n2 + 0.12 * n3));
+            (col, h, c(base_rough + grout * 0.35 + (glaze - 0.5) * 0.22))
         }
         Kind::Metal => {
-            let brush = fbm(u * 4.0, v * 120.0, s + 9);
-            (0.88 + 0.16 * brush, 0.5 + (brush - 0.5) * 0.3, (base_rough + (brush - 0.5) * 0.28).clamp(0.03, 1.0))
+            // periat cu zgarieturi fine si variatii de luciu
+            let brush = fbm(u * 3.0, v * 180.0, s + 9);
+            let scratch = if pore > 0.985 { -0.30 } else { 0.0 };
+            let col = c(0.84 + 0.18 * brush + scratch + 0.05 * big);
+            let h = c(0.45 + (brush - 0.5) * 0.30 + scratch);
+            (col, h, c(base_rough + (brush - 0.5) * 0.30 + scratch.abs() * 1.5))
         }
-        Kind::Grass => (0.6 + 0.55 * n + 0.2 * fine, n, (base_rough + (fine - 0.5) * 0.2).clamp(0.03, 1.0)),
+        Kind::Grass => {
+            // fire scurte, cu variatii de verde
+            let blades = (fbm(u * 95.0, v * 22.0, s + 33) * 1.6).fract();
+            let col = c(0.55 + 0.45 * n1 + 0.22 * blades + 0.12 * n3);
+            (col, c(0.35 + 0.35 * blades + 0.20 * n3), c(base_rough + (n2 - 0.5) * 0.20))
+        }
         Kind::Fabric => {
-            let weave = (((u * 90.0).sin() * (v * 90.0).sin()) * 0.5 + 0.5) * 0.25;
-            (0.85 + 0.2 * n + weave, 0.6 + weave, (base_rough + (n - 0.5) * 0.12).clamp(0.03, 1.0))
+            // tesatura: fire perpendiculare + scame
+            let warp = (u * 110.0).sin() * 0.5 + 0.5;
+            let weft = (v * 110.0).sin() * 0.5 + 0.5;
+            let weave = warp * weft;
+            let lint = if pore > 0.96 { 0.20 } else { 0.0 };
+            let col = c(0.76 + 0.20 * weave + 0.10 * n2 + lint);
+            let h = c(0.40 + 0.34 * weave + 0.16 * n3 + lint);
+            (col, h, c(base_rough + (weave - 0.5) * 0.16))
         }
-        Kind::Glass => (0.97 + 0.03 * fine, 0.5, (base_rough + (fine - 0.5) * 0.04).clamp(0.02, 1.0)),
+        Kind::Glass => (c(0.96 + 0.04 * n3), 0.5, c(base_rough + (n3 - 0.5) * 0.03)),
     }
 }
 
@@ -171,12 +220,13 @@ fn main() {
         for y in 0..N {
             for x in 0..N {
                 let h = |xx: usize, yy: usize| height[yy * N + xx];
-                let dx = (h((x + 1) % N, y) - h((x + N - 1) % N, y)) * 2.5;
-                let dy = (h(x, (y + 1) % N) - h(x, (y + N - 1) % N)) * 2.5;
+                let dx = (h((x + 1) % N, y) - h((x + N - 1) % N, y)) * 4.5;
+                let dy = (h(x, (y + 1) % N) - h(x, (y + N - 1) % N)) * 4.5;
                 let n = glam::Vec3::new(-dx, -dy, 1.0).normalize();
                 let b = |v: f32| -> u8 { ((v + 1.0) * 127.5).clamp(0.0, 255.0).round() as u8 };
                 normal.extend_from_slice(&[b(n.x), b(n.y), b(n.z), 255]);
-                let av = 235 + (fbm(x as f32 / 24.0, y as f32 / 24.0, 77) * 20.0) as u8;
+                let occ = height[y * N + x];
+                let av = (205.0 + 45.0 * occ + fbm(x as f32 / 24.0, y as f32 / 24.0, 77) * 8.0).clamp(150.0, 255.0) as u8;
                 ao.extend_from_slice(&[av; 4]);
             }
         }

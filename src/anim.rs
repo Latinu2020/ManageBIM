@@ -256,6 +256,9 @@ pub struct RenderSettings {
     /// rotirea mediului in grade
     #[serde(default)]
     pub env_rotation: f32,
+    /// fisier HDRI (.hdr) sau imagine (.png/.jpg) folosit ca mediu; gol = cer procedural
+    #[serde(default)]
+    pub hdri_path: String,
     /// umbrire de contact (SSAO), 0 = oprita
     #[serde(default = "ao_default")]
     pub ao: f32,
@@ -348,7 +351,7 @@ impl RenderSettings {
 
 impl Default for RenderSettings {
     fn default() -> Self {
-        RenderSettings { width: 1920, height: 1080, fps: 30, quality: 92, supersample: true, background: Background::Theme, format: VideoFormat::Mp4, sun_az: sun_az(), sun_el: sun_el(), exposure: 1.0, ambient: 1.0, sun_power: 1.0, env_mode: 0, env_intensity: 1.0, env_rotation: 0.0, ao: ao_default(), edges: edges_default(), show_frame: false, overlay_4d: true, with_materials: false, legend_on_images: true, shadows: true, sun_from_time: false, lat: lat_default(), lon: lon_default(), tz: tz_default(), sun_date: date_default(), sun_hour: hour_default(), north_deg: 0.0 }
+        RenderSettings { width: 1920, height: 1080, fps: 30, quality: 92, supersample: true, background: Background::Theme, format: VideoFormat::Mp4, sun_az: sun_az(), sun_el: sun_el(), exposure: 1.0, ambient: 1.0, sun_power: 1.0, env_mode: 0, env_intensity: 1.0, env_rotation: 0.0, hdri_path: String::new(), ao: ao_default(), edges: edges_default(), show_frame: false, overlay_4d: true, with_materials: false, legend_on_images: true, shadows: true, sun_from_time: false, lat: lat_default(), lon: lon_default(), tz: tz_default(), sun_date: date_default(), sun_hour: hour_default(), north_deg: 0.0 }
     }
 }
 

@@ -93,6 +93,12 @@ impl App {
                         }
                         ui.label(RichText::new(format!("(max {} layers)", crate::materials::max_textures())).small().weak());
                     });
+                    if ui.checkbox(&mut self.settings.no_lod, "Full detail in 3D view (disable adaptive LOD)")
+                        .on_hover_text("Normally small elements are skipped while the camera moves to keep the view smooth; the PNG / path trace render always uses the full model. Turn this on to see every element even while moving.")
+                        .changed()
+                    {
+                        self.settings.save();
+                    }
                     ui.add_space(6.0);
                     section_title(ui, "Selection");
                     let mut sel_changed = false;

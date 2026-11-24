@@ -2972,6 +2972,18 @@ impl App {
                         }
                     });
                     ui.horizontal(|ui| {
+                        if ui.button("🗺 Load HDRI / photo…").on_hover_text("Radiance .hdr or an equirectangular PNG/JPG photo. This replaces the procedural sky and gives real reflections and light.").clicked() {
+                            self.request_path(Purpose::LoadHdri);
+                        }
+                        if !self.render.hdri_path.is_empty() {
+                            ui.label(RichText::new(crate::file_name(&self.render.hdri_path)).small().color(accent()))
+                                .on_hover_text(&self.render.hdri_path);
+                            if ui.small_button("✖").on_hover_text("Back to the procedural sky").clicked() {
+                                self.render.hdri_path.clear();
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
                         ui.label("Environment ×").on_hover_text("How strong the image-based light is");
                         ui.add(egui::Slider::new(&mut self.render.env_intensity, 0.0..=3.0).step_by(0.05));
                         ui.label("rotate");
@@ -2987,6 +2999,65 @@ impl App {
                         ui.label("Exposure").on_hover_text("Overall brightness (ACES tonemap keeps the highlights)");
                         ui.add(egui::Slider::new(&mut self.render.exposure, 0.1..=3.0).step_by(0.05));
                     });
+                    // ---- lampi in model
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("LAMPS IN MODEL").small().strong().color(accent()))
+                            .on_hover_text("Point lights placed in the scene. They are saved in the project and used by the path trace render.");
+                        if ui.small_button("➕ Add").on_hover_text("Add a lamp at the scene origin").clicked() {
+                            let mut l = crate::lights::SceneLight::default();
+                            l.name = format!("Lamp {}", self.lights.len() + 1);
+                            l.pos = self.cam.eye().to_array();
+                            self.lights.push(l);
+                        }
+                        if ui.add_enabled(!self.selected.is_empty(), egui::Button::new("🎯 At selection").small())
+                            .on_hover_text("Place a lamp at the centre of the selected elements").clicked()
+                        {
+                            let bb = self.ids_aabb(&self.selected.iter().copied().collect::<Vec<_>>());
+                            let c = bb.center();
+                            let mut l = crate::lights::SceneLight::default();
+                            l.name = format!("Lamp {}", self.lights.len() + 1);
+                            l.pos = [c.x, c.y, c.z + 0.5];
+                            self.lights.push(l);
+                        }
+                    });
+                    if self.lights.is_empty() {
+                        ui.label(RichText::new("No lamps yet - add one above, then drag its position with the number fields.").small().weak());
+                    }
+                    let mut del = None;
+                    for (li, lamp) in self.lights.iter_mut().enumerate() {
+                        egui::Frame::none().fill(ui.visuals().faint_bg_color).rounding(crate::theme::RADIUS_SM).inner_margin(egui::Margin::symmetric(6.0, 4.0)).show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.checkbox(&mut lamp.enabled, "");
+                                ui.add(egui::TextEdit::singleline(&mut lamp.name).desired_width(90.0));
+                                let mut col = Color32::from_rgb(lamp.color[0], lamp.color[1], lamp.color[2]);
+                                if ui.color_edit_button_srgba(&mut col).changed() {
+                                    lamp.color = [col.r(), col.g(), col.b()];
+                                }
+                                if ui.small_button("🗑").on_hover_text("Remove lamp").clicked() {
+                                    del = Some(li);
+                                }
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("x").small());
+                                ui.add(egui::DragValue::new(&mut lamp.pos[0]).speed(0.05).suffix(" m"));
+                                ui.label(RichText::new("y").small());
+                                ui.add(egui::DragValue::new(&mut lamp.pos[1]).speed(0.05).suffix(" m"));
+                                ui.label(RichText::new("z").small());
+                                ui.add(egui::DragValue::new(&mut lamp.pos[2]).speed(0.05).suffix(" m"));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("Power").small());
+                                ui.add(egui::Slider::new(&mut lamp.power, 0.0..=10.0).step_by(0.1));
+                                ui.label(RichText::new("Radius").small());
+                                ui.add(egui::DragValue::new(&mut lamp.radius).range(0.0..=200.0).speed(0.5).suffix(" m"));
+                            });
+                        });
+                        ui.add_space(2.0);
+                    }
+                    if let Some(i) = del {
+                        self.lights.remove(i);
+                    }
                     ui.horizontal(|ui| {
                         let avail = crate::oidn::available();
                         let r = ui.add_enabled(avail.is_ok(), egui::Checkbox::new(&mut self.settings.render_denoise, "Denoise (Intel Open Image Denoise)"));
@@ -4503,6 +4574,7 @@ impl App {
                 Purpose::MaterialHeight => "Height map",
                 Purpose::ExportMaterialX => "Export MaterialX",
                 Purpose::ImportMaterialX => "Import MaterialX",
+                Purpose::LoadHdri => "Environment map",
                 Purpose::ExportMaterials => "Export material library",
                 Purpose::ImportMaterials => "Import material library",
                 Purpose::ExportVideo => "Export Animation",

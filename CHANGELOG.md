@@ -3,6 +3,13 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.23 - 2026-11-24
+- **Photorealistic renders**: the offline renderer now supports a real environment map - load a Radiance `.hdr` or an equirectangular PNG/JPG photo and the sky is replaced with real light and reflections. Added with intensity, rotation, sun direction, exposure and a choice of Outdoor / Studio / Sunset when no image is loaded.
+- **Point lights in the model**: add lamps at the scene origin or at the centre of the current selection, then edit position (X/Y/Z), colour, power and radius. They are saved in the project and used by the path trace render with shadows and GGX highlights.
+- **Richer PBR textures**: the local library was regenerated with multi-octave detail - pores and stains in concrete, veins in stone, irregular mortar and wear in brick, growth rings and knots in wood, grout and glaze variations in tiles, brushing and scratches in metal, woven threads in fabric. Stronger normal maps and AO. The old user library is replaced (a `.old` backup is kept).
+- **Materials window**: the editor is now beside the list and assignments are in a third column, so everything is visible at once.
+- **Full detail in 3D**: new option in Settings › Appearance disables the adaptive LOD while the camera moves. The PNG / path trace render always used the full model.
+
 ## 0.27.22 - 2026-11-24
 - **OpenPBR / MaterialX (subset)**: materials now store `coat` (clearcoat), `coat roughness`, `sheen` and IOR. The Materials window was rebuilt with clear sections (Surface, OpenPBR Surface, Texture maps, Assignments, Library) and a bigger albedo preview. Import / export `.mtlx` MaterialX reads and writes OpenPBR Surface nodes, their parameters and image paths (simple materials - no full graph evaluation, no C++ dependency).
 - **Professional path tracing**: image-based lighting with three environments (Outdoor / Studio / Sunset), adjustable intensity and rotation; GGX microfacet BRDF with Fresnel and IOR instead of Blinn-Phong; clearcoat and sheen layers; importance-sampled reflections and 4 bounces; ACES filmic tonemapping (the PNG export and the preview now look the same).

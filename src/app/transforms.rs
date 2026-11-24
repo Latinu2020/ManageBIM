@@ -306,6 +306,15 @@ impl App {
                 Ok(n) => self.toast(format!("MaterialX exported: {n} materials → {}", crate::file_name(&path))),
                 Err(e) => self.error(e),
             },
+            Purpose::LoadHdri => {
+                match crate::hdri::load(&path) {
+                    Ok(h) => {
+                        self.render.hdri_path = path.clone();
+                        self.toast(format!("Environment loaded: {} ({}×{})", crate::file_name(&path), h.width, h.height));
+                    }
+                    Err(e) => self.error(e),
+                }
+            }
             Purpose::ImportMaterialX => match crate::materialx::read(&path) {
                 Ok(v) => {
                     let mut n = 0;
@@ -619,6 +628,7 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::ImportMaterials => d.set_title("Import material library").add_filter("Materials / Excel / CSV", &["bimmat", "json", "xlsx", "csv"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportMaterialX => d.set_title("Export MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx"]).set_file_name("materials.mtlx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportMaterialX => d.set_title("Import MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx", "xml"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::LoadHdri => d.set_title("Environment map (.hdr or photo)").add_filter("HDR image", &["hdr"]).add_filter("Photo (equirectangular)", &["png", "jpg", "jpeg"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpHtml => d.set_title("Viewpoints report (HTML)").add_filter("HTML report", &["html"]).set_file_name("viewpoints_report.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpXlsx => d.set_title("Viewpoints report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("viewpoints_report.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpPdf => d.set_title("Sheets (PDF)").add_filter("PDF", &["pdf"]).set_file_name("sheets.pdf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),

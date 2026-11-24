@@ -33,6 +33,8 @@ pub struct Scene {
     pub textures: Vec<Vec<u8>>,
     /// planurile sectiunii active (n, w): se pastreaza punctele cu n·p <= w
     pub planes: Vec<glam::Vec4>,
+    /// lampi punctuale in model
+    pub lights: Vec<crate::lights::SceneLight>,
     pub bvh: Bvh,
 }
 
@@ -82,8 +84,9 @@ impl Scene {
         }
         let textures = app.tex_layers.iter().map(|t| t.1.clone()).collect();
         let planes = app.section.gpu_planes();
+        let lights: Vec<_> = app.lights.iter().filter(|l| l.enabled).cloned().collect();
         let bvh = Bvh::build(&tris);
-        Scene { tris, colors, mats, extra, textures, planes, bvh }
+        Scene { tris, colors, mats, extra, textures, planes, lights, bvh }
     }
 
     /// punctul ramane dupa sectiune (ca in shader)
@@ -228,6 +231,8 @@ pub struct PathTraceJob {
     pub light: f32,
     /// mediu: (mod, intensitate, rotatie grade)
     pub env: (u8, f32, f32),
+    /// HDRI / fotografie folosita ca mediu (None = cer procedural)
+    pub hdri: Option<std::sync::Arc<crate::hdri::Hdri>>,
     /// albedo (RGB) + normala (XYZ) ale primei intersectii, acumulate ca `buf` (6 valori / pixel)
     pub aux: Mutex<Vec<f32>>,
     /// curata zgomotul cu Intel Open Image Denoise la final
@@ -241,7 +246,7 @@ pub struct PathTraceJob {
 
 // We'll use Arc<PathTraceJob> everywhere instead.
 #[allow(clippy::too_many_arguments)]
-pub fn start_arc(params: (u32, u32, u32, f32), scene: Arc<Scene>, cam_eye: Vec3, cam_fwd: Vec3, cam_up: Vec3, cam_right: Vec3, fov_deg: f32, sun: Vec3, light: f32, env: (u8, f32, f32), denoise: bool) -> Arc<PathTraceJob> {
+pub fn start_arc(params: (u32, u32, u32, f32), scene: Arc<Scene>, cam_eye: Vec3, cam_fwd: Vec3, cam_up: Vec3, cam_right: Vec3, fov_deg: f32, sun: Vec3, light: f32, env: (u8, f32, f32), hdri: Option<std::sync::Arc<crate::hdri::Hdri>>, denoise: bool) -> Arc<PathTraceJob> {
     let (w, h, samples, tlimit) = params;
     let job = Arc::new(PathTraceJob {
         width: w, height: h, samples_target: samples, time_limit_secs: tlimit,
@@ -250,7 +255,7 @@ pub fn start_arc(params: (u32, u32, u32, f32), scene: Arc<Scene>, cam_eye: Vec3,
         count: AtomicU32::new(0),
         done: AtomicBool::new(false),
         started: Instant::now(),
-        scene, cam_eye, cam_fwd, cam_up, cam_right, fov_deg, sun, light, env,
+        scene, cam_eye, cam_fwd, cam_up, cam_right, fov_deg, sun, light, env, hdri,
         aux: Mutex::new(vec![0.0; (w * h * 6) as usize]),
         denoise,
         denoise_state: AtomicU8::new(DN_OFF),
@@ -369,10 +374,19 @@ fn denoise_job(job: &PathTraceJob) -> Result<Vec<f32>, String> {
 /// Mediul (IBL) pe directia d: cer, orizont, soare si nori slabi.
 /// E procedural, deci functioneaza offline; inlocuieste gradientul albastru din randarea veche.
 fn env(job: &PathTraceJob, d: Vec3) -> [f32; 3] {
-    env_cols(job.env, job.sun, d)
+    env_cols(job.env, job.sun, d, job.hdri.as_deref())
 }
 
-fn env_cols(env: (u8, f32, f32), sun: Vec3, d: Vec3) -> [f32; 3] {
+fn env_cols(env: (u8, f32, f32), sun: Vec3, d: Vec3, hdri: Option<&crate::hdri::Hdri>) -> [f32; 3] {
+    // HDRI-ul (fisier .hdr sau fotografie) inlocuieste cerul procedural
+    if let Some(h) = hdri {
+        let a = env.2.to_radians();
+        let (ca, sa) = (a.cos(), a.sin());
+        let rd = Vec3::new(d.x * ca - d.y * sa, d.x * sa + d.y * ca, d.z);
+        let c = crate::hdri::sample(h, rd);
+        let k = env.1.max(0.0);
+        return [c[0] * k, c[1] * k, c[2] * k];
+    }
     // rotirea mediului in jurul axei Z
     let a = env.2.to_radians();
     let (ca, sa) = (a.cos(), a.sin());
@@ -529,6 +543,27 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
         }
     }
 
+    // lampi punctuale plasate in model: lumina difuza + reflexie GGX, cu umbra
+    for lamp in sc.lights.iter() {
+        let lv = Vec3::from(lamp.pos) - p;
+        let d = lv.length();
+        if d < 1e-3 || (lamp.radius > 0.0 && d > lamp.radius) {
+            continue;
+        }
+        let l = lv / d;
+        let nl = n.dot(l).max(0.0);
+        if nl <= 0.0 {
+            continue;
+        }
+        let shadow = if sc.hit(p, l, d - 1e-2).is_some() { 0.12 } else { 1.0 };
+        let atten = lamp.power.max(0.0) / (1.0 + (d / lamp.radius.max(1.0)).powi(2)) * shadow;
+        let lc = lamp.linear();
+        let g = ggx(n, vd, l, gloss.max(0.05), f0);
+        for (k, v) in col.iter_mut().enumerate() {
+            *v += (base[k] * (1.0 - metal) * DIFFUSE + g[k]) * nl * atten * lc[k];
+        }
+    }
+
     // OpenPBR: stratul de luciu (clearcoat) - F0 = 4% pentru orice IOR
     if coat > 0.01 {
         let cg = ggx(n, vd, sun_dir, coat_rough.max(0.03), [0.04; 3]);
@@ -610,7 +645,7 @@ mod tests {
         let mats = vec![[0u8; 4]; tris.len() / 3];
         let bvh = Bvh::build(&tris);
         let extra = vec![[0.0f32, 0.05, 0.0, crate::materials::default_ior()]; mats.len()];
-        Arc::new(Scene { tris, colors, mats, extra, textures: Vec::new(), planes: Vec::new(), bvh })
+        Arc::new(Scene { tris, colors, mats, extra, textures: Vec::new(), planes: Vec::new(), lights: Vec::new(), bvh })
     }
 
     /// aceeasi scena cu materiale: podeaua din caramida + cubul de sticla + o sectiune care taie cubul
@@ -624,7 +659,7 @@ mod tests {
             c[3] = cube_alpha;
         }
         let extra = vec![[0.0f32, 0.05, 0.0, crate::materials::default_ior()]; mats.len()];
-        Arc::new(Scene { tris: s.tris.clone(), colors, mats, extra, textures: Vec::new(), planes, bvh: Bvh::build(&s.tris) })
+        Arc::new(Scene { tris: s.tris.clone(), colors, mats, extra, textures: Vec::new(), planes, lights: Vec::new(), bvh: Bvh::build(&s.tris) })
     }
 
     fn run_scene(sc: Arc<Scene>) -> Arc<PathTraceJob> {
@@ -632,7 +667,7 @@ mod tests {
         let fwd = (Vec3::new(0.0, 0.0, 0.5) - eye).normalize();
         let right = fwd.cross(Vec3::Z).normalize();
         let up = right.cross(fwd);
-        let job = start_arc((48, 48, 16, 0.0), sc, eye, fwd, up, right, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, (0, 1.0, 0.0), false);
+        let job = start_arc((48, 48, 16, 0.0), sc, eye, fwd, up, right, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, (0, 1.0, 0.0), None, false);
         while !job.done.load(Ordering::Relaxed) {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
@@ -695,7 +730,7 @@ mod tests {
         let fwd = (Vec3::new(0.0, 0.0, 0.5) - eye).normalize();
         let right = fwd.cross(Vec3::Z).normalize();
         let up = right.cross(fwd);
-        let job = start_arc((size, size, samples, 0.0), scene(), eye, fwd, up, right, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, (0, 1.0, 0.0), denoise);
+        let job = start_arc((size, size, samples, 0.0), scene(), eye, fwd, up, right, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, (0, 1.0, 0.0), None, denoise);
         let t = Instant::now();
         while !job.done.load(Ordering::Relaxed) {
             assert!(t.elapsed().as_secs() < 60, "render too slow");
@@ -754,18 +789,41 @@ mod tests {
     fn environment_modes_change_the_ibl() {
         let dir = Vec3::new(0.3, 0.4, 0.8).normalize();
         let sun = Vec3::new(0.6, 0.0, 0.8).normalize();
-        let outdoor = super::env_cols((0, 1.0, 0.0), sun, dir);
-        let studio = super::env_cols((1, 1.0, 0.0), sun, dir);
-        let sunset = super::env_cols((2, 1.0, 0.0), sun, dir);
-        let dark = super::env_cols((0, 0.0, 0.0), sun, dir);
+        let outdoor = super::env_cols((0, 1.0, 0.0), sun, dir, None);
+        let studio = super::env_cols((1, 1.0, 0.0), sun, dir, None);
+        let sunset = super::env_cols((2, 1.0, 0.0), sun, dir, None);
+        let dark = super::env_cols((0, 0.0, 0.0), sun, dir, None);
         let dist = |a: [f32; 3], b: [f32; 3]| ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt();
         assert!(outdoor.iter().all(|v| v.is_finite()));
         assert!(dist(outdoor, studio) > 0.05, "outdoor vs studio: {outdoor:?} {studio:?}");
         assert!(dist(studio, sunset) > 0.05, "studio vs sunset: {studio:?} {sunset:?}");
         assert!(dark.iter().all(|v| *v == 0.0));
-        let a = super::env_cols((0, 1.0, 0.0), sun, dir);
-        let b = super::env_cols((0, 1.0, 90.0), sun, dir);
+        let a = super::env_cols((0, 1.0, 0.0), sun, dir, None);
+        let b = super::env_cols((0, 1.0, 90.0), sun, dir, None);
         assert!((a[0] - b[0]).abs() > 0.01, "rotatia mediului nu are efect");
+    }
+
+    /// o lampa punctuala trebuie sa lumineze scena (si sa fie respectata raza / enable-ul)
+    #[test]
+    fn point_lights_affect_the_render() {
+        let sc = scene_with(255, [0; 4], Vec::new());
+        // camera deasupra, privind spre cub (la origine)
+        let eye = Vec3::new(0.0, -12.0, 9.0);
+        let fwd = (Vec3::new(0.0, 0.0, 1.5) - eye).normalize();
+        let right = fwd.cross(Vec3::Z).normalize();
+        let up = right.cross(fwd);
+        let j0 = start_arc((48, 48, 12, 0.0), sc.clone(), eye, fwd, up, right, 50.0, Vec3::ZERO, 0.0, (1, 0.05, 0.0), None, false);
+        while !j0.done.load(Ordering::Relaxed) { std::thread::sleep(std::time::Duration::from_millis(5)); }
+        let dark = lum(&j0, 24, 24);
+        let lamp = crate::lights::SceneLight { name: "L".into(), pos: [0.0, 0.0, 5.0], color: [255, 255, 255], power: 8.0, radius: 20.0, enabled: true };
+        let sc2 = std::sync::Arc::new(Scene {
+            tris: sc.tris.clone(), colors: sc.colors.clone(), mats: sc.mats.clone(), extra: sc.extra.clone(),
+            textures: sc.textures.clone(), planes: sc.planes.clone(), lights: vec![lamp],
+            bvh: crate::model::Bvh::build(&sc.tris),
+        });
+        let j1 = start_arc((48, 48, 12, 0.0), sc2, eye, fwd, up, right, 50.0, Vec3::ZERO, 0.0, (1, 0.05, 0.0), None, false);
+        while !j1.done.load(Ordering::Relaxed) { std::thread::sleep(std::time::Duration::from_millis(5)); }
+        assert!(lum(&j1, 24, 24) > dark + 0.05, "lampa nu lumineaza: {} vs {}", lum(&j1, 24, 24), dark);
     }
 
     #[test]

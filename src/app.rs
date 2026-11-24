@@ -864,6 +864,9 @@ pub struct ProjectFile {
     pub models: Vec<String>,
     pub origin: Option<[f64; 3]>,
     pub camera: Camera,
+    /// lumini punctuale (lampi) in model
+    #[serde(default)]
+    pub lights: Vec<crate::lights::SceneLight>,
     pub viewpoints: Vec<Viewpoint>,
     pub sets: Vec<SelSet>,
     pub clash_tests: Vec<ClashTest>,
@@ -1124,6 +1127,7 @@ pub enum Purpose {
     MaterialHeight,
     ExportMaterialX,
     ImportMaterialX,
+    LoadHdri,
     ExportProfile,
     ImportProfile,
     ExportCompare,
@@ -1201,6 +1205,8 @@ pub struct App {
     pub origin: Arc<Mutex<Option<DVec3>>>,
     pub renderer: Arc<Mutex<Renderer>>,
     pub cam: Camera,
+    /// lumini punctuale plasate in model (lampi)
+    pub lights: Vec<crate::lights::SceneLight>,
     pub selected: BTreeSet<ElemId>,
     pub primary: Option<ElemId>,
     pub hidden: HashSet<ElemId>,
@@ -1589,6 +1595,7 @@ impl App {
             origin: Arc::new(Mutex::new(None)),
             renderer: Arc::new(Mutex::new(Renderer::new())),
             cam: Camera::default(),
+            lights: Vec::new(),
             selected: BTreeSet::new(),
             primary: None,
             hidden: HashSet::new(),
