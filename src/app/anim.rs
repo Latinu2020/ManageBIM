@@ -407,7 +407,10 @@ impl App {
         self.pathtrace_notified = false;
         self.pathtrace_done_at = None;
         let denoise = self.settings.render_denoise && crate::oidn::available().is_ok();
-        self.pathtrace = Some(crate::pathtrace::start_arc((w, h, samples, tlimit), scene, cam.eye(), cam.fwd(), cam.up(), cam.right(), cam.fov_deg, sun, self.render.sun_power.clamp(0.1, 3.0), denoise));
+        // luminile: soare, mediu (IBL) si expunerea generala
+        let env = (self.render.env_mode, self.render.env_intensity.clamp(0.0, 3.0), self.render.env_rotation);
+        let light = self.render.sun_power.clamp(0.1, 3.0) * self.render.exposure.clamp(0.1, 3.0);
+        self.pathtrace = Some(crate::pathtrace::start_arc((w, h, samples, tlimit), scene, cam.eye(), cam.fwd(), cam.up(), cam.right(), cam.fov_deg, sun, light, env, denoise));
         self.toast(format!("Path tracing {}×{} · {} samples · {} s max{}", w, h, samples, tlimit, if denoise { " · denoise" } else { "" }));
     }
 
@@ -434,12 +437,13 @@ impl App {
         let w = job.width as usize;
         let h = job.height as usize;
         let mut pixels = Vec::with_capacity(w * h * 4);
-        let to8 = |x: f32| (x.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0 + 0.5) as u8;
+        // tonemap ACES identic cu exportul PNG (ce vezi = ce salvezi)
         // imaginea curatata de OIDN, daca exista; altfel media esantioanelor
         let den = if done { job.denoised.lock().ok().and_then(|d| d.clone()) } else { None };
         if let Some(img) = den {
             for p in img.chunks_exact(3) {
-                pixels.extend_from_slice(&[to8(p[0]), to8(p[1]), to8(p[2]), 255]);
+                let c = crate::pathtrace::to_srgb([p[0], p[1], p[2]]);
+                pixels.extend_from_slice(&[c[0], c[1], c[2], 255]);
             }
         } else {
             let Ok(buf) = job.buf.try_lock() else {
@@ -448,7 +452,8 @@ impl App {
             };
             let n = count as f32;
             for p in buf.chunks_exact(3) {
-                pixels.extend_from_slice(&[to8(p[0] / n), to8(p[1] / n), to8(p[2] / n), 255]);
+                let c = crate::pathtrace::to_srgb([p[0] / n, p[1] / n, p[2] / n]);
+                pixels.extend_from_slice(&[c[0], c[1], c[2], 255]);
             }
         }
         let img = eframe::egui::ColorImage::from_rgba_unmultiplied([w, h], &pixels);

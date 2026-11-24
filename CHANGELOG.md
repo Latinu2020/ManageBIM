@@ -3,6 +3,11 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.27.22 - 2026-11-24
+- **OpenPBR / MaterialX (subset)**: materials now store `coat` (clearcoat), `coat roughness`, `sheen` and IOR. The Materials window was rebuilt with clear sections (Surface, OpenPBR Surface, Texture maps, Assignments, Library) and a bigger albedo preview. Import / export `.mtlx` MaterialX reads and writes OpenPBR Surface nodes, their parameters and image paths (simple materials - no full graph evaluation, no C++ dependency).
+- **Professional path tracing**: image-based lighting with three environments (Outdoor / Studio / Sunset), adjustable intensity and rotation; GGX microfacet BRDF with Fresnel and IOR instead of Blinn-Phong; clearcoat and sheen layers; importance-sampled reflections and 4 bounces; ACES filmic tonemapping (the PNG export and the preview now look the same).
+- **Lights**: the Path trace window has controls for environment type, intensity, rotation, sun azimuth / elevation / power and exposure. The sun direction, intensity and exposure from Render settings are now actually used by the offline render.
+
 ## 0.27.21 - 2026-11-23
 - **Fixed PBR zip import**: packs from freepbr.com / Poliigon with names like `Metal063_2K-PNG_Color.png` were rejected with "no colour map found" because "Metal" in the material name was detected as a metallic map. Roles are now read from the **last words** of the filename; the OpenGL normal map is preferred over DirectX; `_Color`, `_Albedo`, `_BaseColor`, `_Metalness`, `_NormalGL`, `_Roughness`, `_Displacement` are all recognised.
 - **Fixed "Not enough GPU texture layers"**: only materials actually used in Assignments load their textures (before, the whole library did). Layer limits raised to 192 at 512 px, 64 at 1024 px, 16 at 2048 px; the error message now explains what to do. The PBR layer index moved into the second material byte, so 127 material pairs can be addressed.

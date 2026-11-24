@@ -9,7 +9,7 @@ use std::io::Cursor;
 
 const N: usize = 512;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum Kind { Concrete, Brick, Wood, Tile, Metal, Roof, Grass, Plaster, Glass, Paint, Stone, Fabric }
 
 struct Def {
@@ -53,6 +53,19 @@ fn defs() -> Vec<Def> {
         Def { name: "Water", color: [68, 120, 160], gloss: 98, metal: 0, scale: 2.0, kind: Glass, transparency: 38 },
         Def { name: "Fabric upholstery", color: [110, 100, 110], gloss: 4, metal: 0, scale: 0.6, kind: Fabric, transparency: 0 },
         Def { name: "Marble white", color: [226, 224, 218], gloss: 70, metal: 0, scale: 1.4, kind: Stone, transparency: 0 },
+        Def { name: "Granite grey", color: [128, 128, 130], gloss: 42, metal: 0, scale: 0.9, kind: Stone, transparency: 0 },
+        Def { name: "Sandstone", color: [196, 172, 132], gloss: 10, metal: 0, scale: 1.1, kind: Stone, transparency: 0 },
+        Def { name: "Terracotta", color: [176, 96, 66], gloss: 12, metal: 0, scale: 0.7, kind: Brick, transparency: 0 },
+        Def { name: "Gypsum board", color: [238, 236, 230], gloss: 5, metal: 0, scale: 1.6, kind: Plaster, transparency: 0 },
+        Def { name: "Insulation wool", color: [222, 208, 150], gloss: 2, metal: 0, scale: 0.4, kind: Fabric, transparency: 0 },
+        Def { name: "Plastic white", color: [236, 238, 240], gloss: 58, metal: 0, scale: 1.0, kind: Paint, transparency: 0 },
+        Def { name: "Rubber black", color: [44, 46, 48], gloss: 10, metal: 0, scale: 0.8, kind: Concrete, transparency: 0 },
+        Def { name: "Oak light", color: [204, 168, 120], gloss: 30, metal: 0, scale: 1.1, kind: Wood, transparency: 0 },
+        Def { name: "Wood painted white", color: [230, 230, 226], gloss: 48, metal: 0, scale: 1.0, kind: Wood, transparency: 0 },
+        Def { name: "Metal brushed dark", color: [86, 90, 96], gloss: 74, metal: 95, scale: 1.0, kind: Metal, transparency: 0 },
+        Def { name: "Solar panel", color: [32, 48, 82], gloss: 92, metal: 30, scale: 0.4, kind: Tile, transparency: 0 },
+        Def { name: "Concrete block", color: [172, 172, 166], gloss: 7, metal: 0, scale: 0.6, kind: Concrete, transparency: 0 },
+        Def { name: "Carpet grey", color: [120, 122, 124], gloss: 3, metal: 0, scale: 0.5, kind: Fabric, transparency: 0 },
     ]
 }
 
@@ -132,7 +145,8 @@ fn main() {
         .expect("APPDATA nu e setat");
     let root = lib.join("PBR Library");
     std::fs::create_dir_all(&root).expect("nu pot crea folderul librariei");
-    let mut mats: Vec<bimrust::materials::Material> = bimrust::materials::user_library();
+    // pornim de la zero: vechile materiale importate se elimina, raman doar cele generate aici
+    let mut mats: Vec<bimrust::materials::Material> = Vec::new();
     let all = defs();
 
     for (di, d) in all.iter().enumerate() {
@@ -181,6 +195,9 @@ fn main() {
             ao_map: save("ao.png", &ao),
             height_map: String::new(),
             normal_strength: 0.65, rough_mult: 1.0, metal_mult: 1.0,
+            coat: if d.kind == Kind::Glass { 0 } else { 0 }, coat_roughness: 5,
+            sheen: if matches!(d.kind, Kind::Fabric) { 60 } else { 0 },
+            ior: match d.kind { Kind::Glass => 1.45, _ => 1.5 },
         };
         match mats.iter_mut().find(|x| x.name == m.name) {
             Some(x) => *x = m,
@@ -190,6 +207,10 @@ fn main() {
     }
 
     let f = lib.join("library.bimmat");
+    // backup de siguranta: vechiul fisier ramane ca .old, dar nu mai e folosit de aplicatie
+    if f.exists() {
+        let _ = std::fs::copy(&f, lib.join("library.bimmat.old"));
+    }
     let tmp = lib.join("library.bimmat.tmp");
     std::fs::write(&tmp, serde_json::to_string_pretty(&mats).unwrap()).unwrap();
     std::fs::rename(&tmp, &f).unwrap();

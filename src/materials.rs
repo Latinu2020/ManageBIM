@@ -109,7 +109,20 @@ pub struct Material {
     pub rough_mult: f32,
     #[serde(default = "one")]
     pub metal_mult: f32,
+    /// OpenPBR Surface: strat de luciu (clearcoat) 0..100 si rugozitatea lui 0..100
+    #[serde(default)]
+    pub coat: u8,
+    #[serde(default)]
+    pub coat_roughness: u8,
+    /// OpenPBR Surface: efect de tesatura (sheen) 0..100
+    #[serde(default)]
+    pub sheen: u8,
+    /// indicent de refractie (1.0..2.5); 1.5 = sticla
+    #[serde(default = "default_ior")]
+    pub ior: f32,
 }
+
+pub fn default_ior() -> f32 { 1.5 }
 
 impl Material {
     fn new(name: &str, color: [u8; 3], transparency: u8, gloss: u8, metal: u8, pattern: Pattern, scale: f32) -> Material {
@@ -118,6 +131,7 @@ impl Material {
             normal_map: String::new(), roughness_map: String::new(), metallic_map: String::new(),
             ao_map: String::new(), height_map: String::new(),
             normal_strength: 1.0, rough_mult: 1.0, metal_mult: 1.0,
+            coat: 0, coat_roughness: 5, sheen: 0, ior: default_ior(),
         }
     }
 
@@ -531,5 +545,6 @@ pub fn import_pbr(path: &str, dest_root: &std::path::Path) -> Result<Material, S
         ao_map: get("ao"),
         height_map: get("height"),
         normal_strength: 1.0, rough_mult: 1.0, metal_mult: 1.0,
+        coat: 0, coat_roughness: 5, sheen: 0, ior: default_ior(),
     })
 }

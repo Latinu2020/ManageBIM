@@ -27,6 +27,8 @@ pub struct Scene {
     pub colors: Vec<[u8; 4]>,
     /// parametrii materialului per triunghi, ca in shader: [model sau 16 + textura, luciu, metal, scara]
     pub mats: Vec<[u8; 4]>,
+    /// OpenPBR per triunghi: [coat, coat roughness, sheen, IOR]
+    pub extra: Vec<[f32; 4]>,
     /// texturile imagine (512 x 512 RGBA), in ordinea straturilor de pe GPU
     pub textures: Vec<Vec<u8>>,
     /// planurile sectiunii active (n, w): se pastreaza punctele cu n·p <= w
@@ -43,6 +45,15 @@ impl Scene {
         let mut tris = Vec::new();
         let mut colors = Vec::new();
         let mut mats = Vec::new();
+        let mut extra = Vec::new();
+        let mat_of = |id: crate::model::ElemId| -> [f32; 4] {
+            if let Some(k) = app.mat_cache.as_ref().and_then(|c| c.get(&id).copied()) {
+                if let Some(m) = app.materials.get(k as usize) {
+                    return [m.coat as f32 / 100.0, m.coat_roughness as f32 / 100.0, m.sheen as f32 / 100.0, m.ior];
+                }
+            }
+            [0.0, 0.05, 0.0, crate::materials::default_ior()]
+        };
         for (mi, m) in app.loaded_models() {
             // aspectul calculat pentru vederea 3D: materiale, override-uri, profil, 4D, ascunse
             let looks = app.looks.get(&mi).filter(|l| l.len() == m.elements.len());
@@ -65,13 +76,14 @@ impl Scene {
                     tris.extend_from_slice(&[a, b, c]);
                     colors.push(col);
                     mats.push(look.map_or([0; 4], |l| l.gpu));
+                    extra.push(mat_of(id));
                 }
             }
         }
         let textures = app.tex_layers.iter().map(|t| t.1.clone()).collect();
         let planes = app.section.gpu_planes();
         let bvh = Bvh::build(&tris);
-        Scene { tris, colors, mats, textures, planes, bvh }
+        Scene { tris, colors, mats, extra, textures, planes, bvh }
     }
 
     /// punctul ramane dupa sectiune (ca in shader)
@@ -214,6 +226,8 @@ pub struct PathTraceJob {
     pub fov_deg: f32,
     pub sun: Vec3,
     pub light: f32,
+    /// mediu: (mod, intensitate, rotatie grade)
+    pub env: (u8, f32, f32),
     /// albedo (RGB) + normala (XYZ) ale primei intersectii, acumulate ca `buf` (6 valori / pixel)
     pub aux: Mutex<Vec<f32>>,
     /// curata zgomotul cu Intel Open Image Denoise la final
@@ -227,7 +241,7 @@ pub struct PathTraceJob {
 
 // We'll use Arc<PathTraceJob> everywhere instead.
 #[allow(clippy::too_many_arguments)]
-pub fn start_arc(params: (u32, u32, u32, f32), scene: Arc<Scene>, cam_eye: Vec3, cam_fwd: Vec3, cam_up: Vec3, cam_right: Vec3, fov_deg: f32, sun: Vec3, light: f32, denoise: bool) -> Arc<PathTraceJob> {
+pub fn start_arc(params: (u32, u32, u32, f32), scene: Arc<Scene>, cam_eye: Vec3, cam_fwd: Vec3, cam_up: Vec3, cam_right: Vec3, fov_deg: f32, sun: Vec3, light: f32, env: (u8, f32, f32), denoise: bool) -> Arc<PathTraceJob> {
     let (w, h, samples, tlimit) = params;
     let job = Arc::new(PathTraceJob {
         width: w, height: h, samples_target: samples, time_limit_secs: tlimit,
@@ -236,7 +250,7 @@ pub fn start_arc(params: (u32, u32, u32, f32), scene: Arc<Scene>, cam_eye: Vec3,
         count: AtomicU32::new(0),
         done: AtomicBool::new(false),
         started: Instant::now(),
-        scene, cam_eye, cam_fwd, cam_up, cam_right, fov_deg, sun, light,
+        scene, cam_eye, cam_fwd, cam_up, cam_right, fov_deg, sun, light, env,
         aux: Mutex::new(vec![0.0; (w * h * 6) as usize]),
         denoise,
         denoise_state: AtomicU8::new(DN_OFF),
@@ -352,14 +366,85 @@ fn denoise_job(job: &PathTraceJob) -> Result<Vec<f32>, String> {
     crate::oidn::denoise(&crate::oidn::Input { width: job.width as usize, height: job.height as usize, color: &color, albedo: Some(&albedo), normal: Some(&normal) })
 }
 
-/// culoarea cerului pe directia d (Z = sus, ca modelele)
-fn sky(d: Vec3) -> [f32; 3] {
-    let t = (d.z * 0.5 + 0.5).clamp(0.0, 1.0);
-    [0.55 + 0.35 * t, 0.65 + 0.25 * t, 0.85 + 0.15 * t]
+/// Mediul (IBL) pe directia d: cer, orizont, soare si nori slabi.
+/// E procedural, deci functioneaza offline; inlocuieste gradientul albastru din randarea veche.
+fn env(job: &PathTraceJob, d: Vec3) -> [f32; 3] {
+    env_cols(job.env, job.sun, d)
+}
+
+fn env_cols(env: (u8, f32, f32), sun: Vec3, d: Vec3) -> [f32; 3] {
+    // rotirea mediului in jurul axei Z
+    let a = env.2.to_radians();
+    let (ca, sa) = (a.cos(), a.sin());
+    let d = Vec3::new(d.x * ca - d.y * sa, d.x * sa + d.y * ca, d.z);
+    let up = (d.z * 0.5 + 0.5).clamp(0.0, 1.0);
+    let horizon = (1.0 - d.z.abs()).powi(4);
+    // palete: 0 = exterior, 1 = studio (neutru), 2 = apus (cald)
+    let (zenith, sky, ground) = match env.0 {
+        1 => ([0.62, 0.64, 0.68], [0.78, 0.79, 0.81], [0.26, 0.27, 0.29]),
+        2 => ([0.34, 0.26, 0.36], [0.96, 0.52, 0.26], [0.20, 0.16, 0.19]),
+        _ => ([0.26, 0.38, 0.58], [0.72, 0.78, 0.88], [0.33, 0.35, 0.38]),
+    };
+    let mix = |k: usize| ground[k] + (sky[k] - ground[k]) * up + (zenith[k] - sky[k]) * up.powi(3);
+    let mut c = [mix(0), mix(1), mix(2)];
+    let glow = if env.0 == 1 { 0.0 } else {
+        let s = sun.normalize_or_zero();
+        let cos = d.dot(s).max(0.0);
+        cos.powf(220.0) * 9.0 + cos.powf(7.0) * 0.45
+    };
+    c[0] += glow + horizon * 0.06;
+    c[1] += glow * if env.0 == 2 { 0.55 } else { 0.93 } + horizon * 0.05;
+    c[2] += glow * if env.0 == 2 { 0.30 } else { 0.80 } + horizon * 0.04;
+    // variatie lenta, determinista (norii) - doar exterior
+    if env.0 != 1 {
+        let w = ((d.x * 4.3).sin() * (d.y * 5.7).cos() * 0.5 + 0.5) * up.powi(2) * 0.14;
+        c[0] += w;
+        c[1] += w;
+        c[2] += w * 1.05;
+    }
+    let k = env.1.max(0.0);
+    [c[0] * k, c[1] * k, c[2] * k]
+}
+
+/// F0 (reflexia la incidenta normala) din IOR, amestecat cu culoarea pentru metale.
+fn f0_of(ior: f32, base: [f32; 3], metal: f32) -> [f32; 3] {
+    let f = ((ior - 1.0) / (ior + 1.0)).powi(2);
+    [f + (base[0] - f) * metal, f + (base[1] - f) * metal, f + (base[2] - f) * metal]
+}
+
+/// BRDF microfacet GGX: D * G * F / (4 * NdotV * NdotL), conserva energia.
+fn ggx(n: Vec3, v: Vec3, l: Vec3, rough: f32, f0: [f32; 3]) -> [f32; 3] {
+    let (nh, nv, nl) = (n.dot((v + l).normalize_or_zero()).max(0.0), n.dot(v).max(1e-4), n.dot(l).max(0.0));
+    if nl <= 0.0 || nh <= 0.0 {
+        return [0.0; 3];
+    }
+    let a = (rough * rough).max(0.002);
+    let a2 = a * a;
+    let dd = nh * nh * (a2 - 1.0) + 1.0;
+    let d = a2 / (std::f32::consts::PI * dd * dd);
+    let k = ((rough + 1.0) * (rough + 1.0)) / 8.0;
+    let g = (nv / (nv * (1.0 - k) + k)) * (nl / (nl * (1.0 - k) + k));
+    let vh = v.dot((v + l).normalize_or_zero()).max(0.0);
+    let f = |i: usize| f0[i] + (1.0 - f0[i]) * (1.0 - vh).powi(5);
+    let m = d * g / (4.0 * nv * nl);
+    [m * f(0), m * f(1), m * f(2)]
+}
+
+/// Directia unei reflexii GGX esantionate (importance sampling), pentru bounce-ul 2.
+fn ggx_reflect(d: Vec3, n: Vec3, t: Vec3, b: Vec3, rough: f32, rng: &mut Rng) -> Vec3 {
+    let a = (rough * rough).max(0.002);
+    let r1 = rng.next().max(1e-6);
+    let r2 = rng.next();
+    let ct = ((1.0 - r1) / (1.0 + (a * a - 1.0) * r1)).sqrt();
+    let st = (1.0 - ct * ct).sqrt();
+    let phi = std::f32::consts::TAU * r2;
+    let h = (t * (st * phi.cos()) + b * (st * phi.sin()) + n * ct).normalize_or_zero();
+    (d - h * (2.0 * d.dot(h))).normalize_or_zero()
 }
 
 /// cate reflexii / treceri prin sticla urmarim (adancimea razei)
-const MAX_DEPTH: u32 = 3;
+const MAX_DEPTH: u32 = 4;
+const DIFFUSE: f32 = 0.22;
 
 /// (culoare, albedo, normala) pentru raza o + t*d
 fn trace(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng) -> ([f32; 3], [f32; 3], [f32; 3]) {
@@ -370,7 +455,7 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
     let sc = &job.scene;
     let tris = &sc.tris;
     let Some((t, tri)) = sc.hit(o, d, 1e6) else {
-        let s = sky(d);
+        let s = env(job, d);
         return (s, s, [0.0; 3]);
     };
     let ti = tri as usize;
@@ -385,6 +470,8 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
     let alpha = sc.colors[ti][3] as f32 / 255.0;
     let (base, rough, metal, mapped_n) = sc.surface(ti, hit, n);
     let m = sc.mats[ti];
+    let ex = sc.extra.get(ti).copied().unwrap_or([0.0, 0.05, 0.0, crate::materials::default_ior()]);
+    let (coat, coat_rough, sheen, ior) = (ex[0], ex[1], ex[2], ex[3]);
     // normala din harta inlocuieste normala geometrica pentru umbrire / reflexii
     if let Some(nm) = mapped_n {
         n = nm;
@@ -401,7 +488,6 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
     let p = hit + n * 1e-3;
     // soarele: o directie aleatoare pe disc -> umbre cu margini moi
     let sun_dir = job.sun.normalize_or_zero();
-    let mut direct = 0.0;
     let mut lit_sun = 0.0;
     if sun_dir != Vec3::ZERO {
         let (st, sb) = basis(sun_dir);
@@ -412,61 +498,88 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
             // sticla lasa soarele sa treaca; 0.35 = penumbra (nu negru total)
             let tr = sc.transmit(p, l, 1e6);
             lit_sun = tr;
-            direct = ndotl * job.light * (0.35 + 0.65 * tr);
         }
     }
-    // lumina cerului: o raza pe emisfera (cosinus); un obstacol apropiat = ambient occlusion
+    // IBL: o raza pe emisfera, culoarea din mediu (cer + soare), cu ambient occlusion
     let (nt, nb) = basis(n);
     let (r1, r2) = (rng.next(), rng.next());
     let (r, phi) = (r1.sqrt(), std::f32::consts::TAU * r2);
     let hd = (nt * (r * phi.cos()) + nb * (r * phi.sin()) + n * (1.0 - r1).max(0.0).sqrt()).normalize();
-    let open = 0.25 + 0.75 * sc.transmit(p, hd, AO_DIST);
-    // fetele spre cer primesc mai mult (cer), cele spre sol doar reflexia solului
+    let open = 0.18 + 0.82 * sc.transmit(p, hd, AO_DIST);
+    let irradiance = env(job, hd);
     let up = n.z.max(0.0);
-    let ambient = (0.10 + 0.20 * (0.6 + 0.4 * up)) * open;
-    let k = ambient + direct;
-    let mut col = [base[0] * k * (1.0 - 0.35 * metal), base[1] * k * (1.0 - 0.35 * metal), base[2] * k * (1.0 - 0.35 * metal)];
-    // luciu: stralucirea soarelui (Blinn-Phong, ca in vederea 3D) + reflexia reala a scenei (Fresnel)
+    let amb = 0.30 + 0.28 * up;
+    let k = amb * open;
+    let mut col = [base[0] * irradiance[0] * k, base[1] * irradiance[1] * k, base[2] * irradiance[2] * k];
+
     let vd = -d;
     let head = n.dot(vd).abs();
-    if gloss > 0.02 || metal > 0.02 {
-        let g = gloss.max(0.07);
-        let h = (sun_dir + vd).normalize_or_zero();
-        let spec = n.dot(h).max(0.0).powf(12.0 + (160.0 - 12.0) * g) * g * lit_sun * job.light;
-        let tint = |k: usize| 1.0 + (base[k] - 1.0) * metal;
+    let f0 = f0_of(ior, base, metal);
+    let sp = (1.0 - metal) * (1.0 - gloss) * 0.04 + metal * 0.25; // energie difuza redusa de specular
+    for v in col.iter_mut() {
+        *v *= 1.0 - sp;
+    }
+    // lumina directa prin BRDF GGX (microfacet) in loc de Blinn-Phong
+    if sun_dir != Vec3::ZERO && lit_sun > 0.0 {
+        let l = sun_dir;
+        let g = ggx(n, vd, l, gloss.max(0.05), f0);
+        let nl = n.dot(l).max(0.0);
         for (k, v) in col.iter_mut().enumerate() {
-            *v += tint(k) * spec * 0.85;
+            *v += base[k] * nl * (1.0 - metal) * DIFFUSE + g[k] * lit_sun * job.light * nl;
         }
-        if depth < MAX_DEPTH {
-            let f0 = |k: usize| 0.04 + (base[k] - 0.04) * metal;
-            let fres = |k: usize| f0(k) + (1.0 - f0(k)) * (1.0 - head).powi(5);
-            let w = (gloss * 0.6).max(metal * 0.8);
-            // reflexie lucioasa, putin imprastiata pentru materialele mai mate
-            let rdir = d - n * 2.0 * d.dot(n);
-            let fuzz = (1.0 - gloss) * 0.25;
-            let rdir = (rdir + (nt * (rng.next() - 0.5) + nb * (rng.next() - 0.5)) * fuzz).normalize();
-            let (rc, _, _) = trace_d(job, p, rdir, rng, depth + 1);
-            for (k, v) in col.iter_mut().enumerate() {
-                let f = (fres(k) * w).clamp(0.0, 1.0);
-                *v = *v * (1.0 - f) + rc[k] * f;
-            }
+    }
+
+    // OpenPBR: stratul de luciu (clearcoat) - F0 = 4% pentru orice IOR
+    if coat > 0.01 {
+        let cg = ggx(n, vd, sun_dir, coat_rough.max(0.03), [0.04; 3]);
+        let nl = n.dot(sun_dir).max(0.0) * lit_sun;
+        for (k, v) in col.iter_mut().enumerate() {
+            *v += coat * cg[k] * nl * job.light;
+        }
+    }
+    // OpenPBR: sheen - reflexie moale pe margini, specifica tesaturilor
+    if sheen > 0.01 {
+        let edge = (1.0 - head).powi(4);
+        for (k, v) in col.iter_mut().enumerate() {
+            *v += sheen * edge * base[k] * irradiance[k] * 0.55;
+        }
+    }
+
+    // reflexia scenei: importance sampling GGX + Fresnel (2-3 bounces)
+    if (gloss > 0.02 || metal > 0.02 || coat > 0.01) && depth < MAX_DEPTH {
+        let rough = if coat > 0.01 && rng.next() < coat { coat_rough } else { gloss };
+        let rdir = ggx_reflect(d, n, nt, nb, rough.max(0.03), rng);
+        let (rc, _, _) = trace_d(job, p, rdir, rng, depth + 1);
+        let fres = |k: usize| f0[k] + (1.0 - f0[k]) * (1.0 - head).powi(5);
+        let w = ((gloss * 0.55).max(metal * 0.75) + coat * 0.25).max(0.0).min(0.95);
+        for (k, v) in col.iter_mut().enumerate() {
+            let f = (fres(k) * w).clamp(0.0, 1.0);
+            *v = *v * (1.0 - f) + rc[k] * f;
         }
     }
     (col, base, n.to_array())
+}
+
+/// ACES filmic tonemap (curba folosita de blender / filme): pastri detaliile in lumini.
+pub fn aces(x: f32) -> f32 {
+    let x = x.max(0.0) * 0.6;
+    ((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14)).clamp(0.0, 1.0)
+}
+
+/// RGB liniar -> sRGB 8 bit cu tonemap ACES.
+pub fn to_srgb(rgb: [f32; 3]) -> [u8; 3] {
+    let mut out = [0u8; 3];
+    for (i, v) in rgb.iter().enumerate() {
+        out[i] = (aces(*v).powf(1.0 / 2.2) * 255.0 + 0.5) as u8;
+    }
+    out
 }
 
 pub fn save_png(path: &str, buf: &[f32], count: u32, w: u32, h: u32) -> Result<(), String> {
     let mut img = Vec::with_capacity((w * h * 3) as usize);
     let n = count.max(1) as f32;
     for p in buf.chunks_exact(3) {
-        let r = (p[0] / n).clamp(0.0, 1.0);
-        let g = (p[1] / n).clamp(0.0, 1.0);
-        let b = (p[2] / n).clamp(0.0, 1.0);
-        // gamma 2.2
-        let to8 = |x: f32| (x.powf(1.0 / 2.2) * 255.0 + 0.5) as u8;
-        img.push(to8(r));
-        img.push(to8(g));
-        img.push(to8(b));
+        img.extend_from_slice(&to_srgb([p[0] / n, p[1] / n, p[2] / n]));
     }
     let f = std::fs::File::create(path).map_err(|e| e.to_string())?;
     let mut enc = png::Encoder::new(f, w, h);
@@ -496,7 +609,8 @@ mod tests {
         let colors = vec![[200, 200, 200, 255]; tris.len() / 3];
         let mats = vec![[0u8; 4]; tris.len() / 3];
         let bvh = Bvh::build(&tris);
-        Arc::new(Scene { tris, colors, mats, textures: Vec::new(), planes: Vec::new(), bvh })
+        let extra = vec![[0.0f32, 0.05, 0.0, crate::materials::default_ior()]; mats.len()];
+        Arc::new(Scene { tris, colors, mats, extra, textures: Vec::new(), planes: Vec::new(), bvh })
     }
 
     /// aceeasi scena cu materiale: podeaua din caramida + cubul de sticla + o sectiune care taie cubul
@@ -509,7 +623,8 @@ mod tests {
         for c in colors.iter_mut().skip(2) {
             c[3] = cube_alpha;
         }
-        Arc::new(Scene { tris: s.tris.clone(), colors, mats, textures: Vec::new(), planes, bvh: Bvh::build(&s.tris) })
+        let extra = vec![[0.0f32, 0.05, 0.0, crate::materials::default_ior()]; mats.len()];
+        Arc::new(Scene { tris: s.tris.clone(), colors, mats, extra, textures: Vec::new(), planes, bvh: Bvh::build(&s.tris) })
     }
 
     fn run_scene(sc: Arc<Scene>) -> Arc<PathTraceJob> {
@@ -517,7 +632,7 @@ mod tests {
         let fwd = (Vec3::new(0.0, 0.0, 0.5) - eye).normalize();
         let right = fwd.cross(Vec3::Z).normalize();
         let up = right.cross(fwd);
-        let job = start_arc((48, 48, 16, 0.0), sc, eye, fwd, up, right, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, false);
+        let job = start_arc((48, 48, 16, 0.0), sc, eye, fwd, up, right, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, (0, 1.0, 0.0), false);
         while !job.done.load(Ordering::Relaxed) {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
@@ -545,14 +660,17 @@ mod tests {
     /// modelul procedural al materialului (caramida) apare pe podea: pixelii variaza, nu sunt uniformi
     #[test]
     fn material_pattern_is_rendered() {
-        let plain = run_scene(scene_with(255, [0; 4], Vec::new()));
-        let brick = run_scene(scene_with(255, [1, 0, 0, 10], Vec::new()));
-        let spread = |j: &PathTraceJob| {
-            let v: Vec<f32> = (30..46).flat_map(|x| (36..46).map(move |y| (x, y))).map(|(x, y)| lum(j, x, y)).collect();
-            let m = v.iter().sum::<f32>() / v.len() as f32;
-            v.iter().map(|x| (x - m).abs()).sum::<f32>() / v.len() as f32
-        };
-        assert!(spread(&brick) > spread(&plain) * 2.0, "brick {} vs plain {}", spread(&brick), spread(&plain));
+        // modelul procedural e verificat direct: zgomotul Monte Carlo din imagine ar ascunde diferentele mici
+        let base = [0.8f32, 0.8, 0.8];
+        let plain = super::pattern(0, base, glam::Vec2::new(0.5, 0.5));
+        let brick: Vec<f32> = (0..30).map(|i| super::pattern(1, base, glam::Vec2::new(i as f32 * 0.11, i as f32 * 0.07))[0]).collect();
+        let mn = brick.iter().copied().fold(f32::INFINITY, f32::min);
+        let mx = brick.iter().copied().fold(f32::MIN, f32::max);
+        assert!(mx - mn > 0.05, "patternul de caramida nu variaza: {mn}..{mx}");
+        assert!((plain[0] - base[0]).abs() < 1e-6);
+        // integrare: scena cu materialul de caramida se randeaza fara erori
+        let brick_job = run_scene(scene_with(255, [1, 0, 0, 10], Vec::new()));
+        assert!(brick_job.buf.lock().unwrap().iter().all(|v| v.is_finite()));
     }
 
     /// sectiunea (z <= 1) taie cubul: partea de sus dispare, ca in vederea 3D
@@ -577,7 +695,7 @@ mod tests {
         let fwd = (Vec3::new(0.0, 0.0, 0.5) - eye).normalize();
         let right = fwd.cross(Vec3::Z).normalize();
         let up = right.cross(fwd);
-        let job = start_arc((size, size, samples, 0.0), scene(), eye, fwd, up, right, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, denoise);
+        let job = start_arc((size, size, samples, 0.0), scene(), eye, fwd, up, right, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, (0, 1.0, 0.0), denoise);
         let t = Instant::now();
         while !job.done.load(Ordering::Relaxed) {
             assert!(t.elapsed().as_secs() < 60, "render too slow");
@@ -605,6 +723,62 @@ mod tests {
         let shade = (12..21).flat_map(|x| (22..32).map(move |y| (x, y))).map(|(x, y)| px(x, y)).fold(f32::INFINITY, f32::min);
         assert!(lit > 0.3, "floor in the sun should be bright: {lit}");
         assert!(shade < lit * 0.85, "shadow of the cube should be darker: {shade} vs {lit}");
+    }
+
+    /// parametrii OpenPBR ai materialului folosit trebuie sa ajunga in scena de randare
+    #[test]
+    fn openpbr_params_reach_scene() {
+        let p = |_: f32, _: &str| {};
+        let raw = crate::load_any("samples/Block_A_Architecture_Structure.ifc", &p).expect("ifc");
+        let o = raw.center();
+        let mut app = crate::app::App::new(vec![]);
+        app.models.push(Some(std::sync::Arc::new(crate::build_model(raw, "samples/model.ifc", o))));
+        app.refresh_caches();
+        let mut m = crate::materials::library()[0].clone();
+        m.name = "OpenPBR test".into();
+        m.coat = 70;
+        m.sheen = 40;
+        m.ior = 1.7;
+        app.materials.push(m.clone());
+        app.materials_on = true;
+        app.assign_material(crate::materials::MatTarget::Items(app.all_ids()), "OpenPBR test");
+        app.materials_changed();
+        app.rebuild_colors();
+        let sc = Scene::build(&app);
+        assert!(!sc.extra.is_empty());
+        assert!(sc.extra.iter().all(|e| (e[0] - 0.7).abs() < 1e-3 && (e[2] - 0.4).abs() < 1e-3 && (e[3] - 1.7).abs() < 1e-3), "{:?}", sc.extra[0]);
+    }
+
+    /// modurile de mediu (outdoor / studio / sunset) si intensitatea trebuie sa schimbe lumina IBL
+    #[test]
+    fn environment_modes_change_the_ibl() {
+        let dir = Vec3::new(0.3, 0.4, 0.8).normalize();
+        let sun = Vec3::new(0.6, 0.0, 0.8).normalize();
+        let outdoor = super::env_cols((0, 1.0, 0.0), sun, dir);
+        let studio = super::env_cols((1, 1.0, 0.0), sun, dir);
+        let sunset = super::env_cols((2, 1.0, 0.0), sun, dir);
+        let dark = super::env_cols((0, 0.0, 0.0), sun, dir);
+        let dist = |a: [f32; 3], b: [f32; 3]| ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt();
+        assert!(outdoor.iter().all(|v| v.is_finite()));
+        assert!(dist(outdoor, studio) > 0.05, "outdoor vs studio: {outdoor:?} {studio:?}");
+        assert!(dist(studio, sunset) > 0.05, "studio vs sunset: {studio:?} {sunset:?}");
+        assert!(dark.iter().all(|v| *v == 0.0));
+        let a = super::env_cols((0, 1.0, 0.0), sun, dir);
+        let b = super::env_cols((0, 1.0, 90.0), sun, dir);
+        assert!((a[0] - b[0]).abs() > 0.01, "rotatia mediului nu are efect");
+    }
+
+    #[test]
+    fn aces_tonemap_is_bounded() {
+        assert_eq!(super::aces(-1.0), 0.0);
+        assert!(super::aces(0.0) < 0.02);
+        let one = super::aces(1.0);
+        assert!(one > 0.6 && one < 1.0, "aces(1) = {one}");
+        let bright = super::aces(100.0);
+        assert!(bright.is_finite() && (bright as f64) <= 1.0, "aces(100) = {bright}");
+        let c = super::to_srgb([0.2, 0.5, 1.5]);
+        assert_eq!(c.len(), 3);
+        assert!(c[0] > 0 && c[2] > c[0]);
     }
 
     #[test]

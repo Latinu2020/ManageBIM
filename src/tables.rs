@@ -300,6 +300,7 @@ pub fn materials_from_rows(rows: &[Vec<String>]) -> Result<Vec<Material>, String
             normal_map: String::new(), roughness_map: String::new(), metallic_map: String::new(),
             ao_map: String::new(), height_map: String::new(),
             normal_strength: 1.0, rough_mult: 1.0, metal_mult: 1.0,
+            coat: 0, coat_roughness: 5, sheen: 0, ior: crate::materials::default_ior(),
         });
     }
     if out.is_empty() {

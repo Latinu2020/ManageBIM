@@ -27,6 +27,7 @@ mod script;
 mod settings;
 mod script_catalog;
 mod script_builder_ui;
+mod materials_panel;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
 fn accent() -> Color32 {
@@ -2959,6 +2960,33 @@ impl App {
                     });
                     ui.checkbox(&mut self.render.with_materials, "🎨 Render with materials")
                         .on_hover_text("Uses the assigned materials (colours, image textures, brick / tile / wood patterns, gloss, metal, glass). With no materials assigned yet, they are added automatically by IFC type. Hidden elements and the section are respected.");
+                    // ---- lumini
+                    ui.separator();
+                    ui.label(RichText::new("LIGHTS").small().strong().color(accent()));
+                    ui.horizontal(|ui| {
+                        ui.label("Environment");
+                        for (m, label, tip) in [(0u8, "Outdoor", "Sky with clouds and the sun - natural light"), (1, "Studio", "Neutral softbox light - good for product shots"), (2, "Sunset", "Warm orange horizon")] {
+                            if ui.selectable_label(self.render.env_mode == m, label).on_hover_text(tip).clicked() {
+                                self.render.env_mode = m;
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Environment ×").on_hover_text("How strong the image-based light is");
+                        ui.add(egui::Slider::new(&mut self.render.env_intensity, 0.0..=3.0).step_by(0.05));
+                        ui.label("rotate");
+                        ui.add(egui::DragValue::new(&mut self.render.env_rotation).range(-360.0..=360.0).speed(1.0).suffix("°"));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Sun").on_hover_text("Direction and strength of the sun");
+                        ui.add(egui::DragValue::new(&mut self.render.sun_az).range(-180.0..=180.0).speed(1.0).suffix("°"));
+                        ui.add(egui::DragValue::new(&mut self.render.sun_el).range(1.0..=90.0).speed(1.0).suffix("°"));
+                        ui.add(egui::Slider::new(&mut self.render.sun_power, 0.0..=3.0).step_by(0.05));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Exposure").on_hover_text("Overall brightness (ACES tonemap keeps the highlights)");
+                        ui.add(egui::Slider::new(&mut self.render.exposure, 0.1..=3.0).step_by(0.05));
+                    });
                     ui.horizontal(|ui| {
                         let avail = crate::oidn::available();
                         let r = ui.add_enabled(avail.is_ok(), egui::Checkbox::new(&mut self.settings.render_denoise, "Denoise (Intel Open Image Denoise)"));
@@ -4473,6 +4501,8 @@ impl App {
                 Purpose::MaterialMetallic => "Metallic map",
                 Purpose::MaterialAo => "Ambient occlusion map",
                 Purpose::MaterialHeight => "Height map",
+                Purpose::ExportMaterialX => "Export MaterialX",
+                Purpose::ImportMaterialX => "Import MaterialX",
                 Purpose::ExportMaterials => "Export material library",
                 Purpose::ImportMaterials => "Import material library",
                 Purpose::ExportVideo => "Export Animation",

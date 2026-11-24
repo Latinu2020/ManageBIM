@@ -16,6 +16,7 @@ pub mod keybind;
 pub mod script_builder;
 pub mod script_guide;
 pub mod materials;
+pub mod materialx;
 pub mod pdf;
 pub mod markup;
 pub mod gltf_export;

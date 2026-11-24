@@ -1122,6 +1122,8 @@ pub enum Purpose {
     MaterialMetallic,
     MaterialAo,
     MaterialHeight,
+    ExportMaterialX,
+    ImportMaterialX,
     ExportProfile,
     ImportProfile,
     ExportCompare,

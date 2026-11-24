@@ -302,6 +302,27 @@ impl App {
                 }
                 Err(e) => self.error(format!("Material table: {e}")),
             },
+            Purpose::ExportMaterialX => match crate::materialx::write(self.materials.clone(), self.selected.iter().copied().collect(), &path) {
+                Ok(n) => self.toast(format!("MaterialX exported: {n} materials → {}", crate::file_name(&path))),
+                Err(e) => self.error(e),
+            },
+            Purpose::ImportMaterialX => match crate::materialx::read(&path) {
+                Ok(v) => {
+                    let mut n = 0;
+                    for m in v {
+                        if let Some(x) = self.materials.iter_mut().find(|x| x.name == m.name) {
+                            *x = m;
+                        } else {
+                            self.materials.push(m);
+                            n += 1;
+                        }
+                    }
+                    self.pending_mat_assign.clear();
+                    self.materials_changed();
+                    self.toast(format!("MaterialX: {} materials imported ({} new).", crate::file_name(&path), n));
+                }
+                Err(e) => self.error(e),
+            },
             Purpose::ExportMaterials => {
                 let mut p = path.clone();
                 if !p.to_lowercase().ends_with(".bimmat") {
@@ -596,6 +617,8 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::MaterialTexture | Purpose::MaterialNormal | Purpose::MaterialRoughness | Purpose::MaterialMetallic | Purpose::MaterialAo | Purpose::MaterialHeight => d.set_title("Choose texture image").add_filter("Images", &["png", "jpg", "jpeg"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportMaterials => d.set_title("Export material library").add_filter("ManageBIM materials", &["bimmat"]).add_filter("Excel workbook", &["xlsx"]).add_filter("CSV (Excel)", &["csv"]).set_file_name("materials.bimmat").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportMaterials => d.set_title("Import material library").add_filter("Materials / Excel / CSV", &["bimmat", "json", "xlsx", "csv"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportMaterialX => d.set_title("Export MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx"]).set_file_name("materials.mtlx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ImportMaterialX => d.set_title("Import MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx", "xml"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpHtml => d.set_title("Viewpoints report (HTML)").add_filter("HTML report", &["html"]).set_file_name("viewpoints_report.html").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpXlsx => d.set_title("Viewpoints report (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("viewpoints_report.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportVpPdf => d.set_title("Sheets (PDF)").add_filter("PDF", &["pdf"]).set_file_name("sheets.pdf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -682,6 +705,8 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::ExportTasksCsv => "schedule.csv".into(),
                 Purpose::ExportSets => "sets.bimsets".into(),
                 Purpose::ExportMaterials => "materials.bimmat".into(),
+                Purpose::ExportMaterialX => "materials.mtlx".into(),
+                Purpose::ImportMaterialX => "materials.mtlx".into(),
                 Purpose::ExportVpHtml => "viewpoints_report.html".into(),
                 Purpose::ExportVpXlsx => "viewpoints_report.xlsx".into(),
                 Purpose::ExportVpPdf => "sheets.pdf".into(),
