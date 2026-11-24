@@ -143,7 +143,9 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 - **Point clouds** — E57 and LAS, density and point size control, one item per scan.
 - **Selection Tree** (group by any property, category colours, counts), **Property Tree**, **Find Items** with condition chips, selection and search **sets**, **Select Same Type / Category**.
 - **Navigation** like Navisworks — orbit, pan, walk with gravity and collision, ViewCube, walk paths, viewpoints, animations; adaptive LOD on large models.
-- **Visual styles** — Realistic, Shaded, Concept, Wireframe and **Hidden line**; fine edges, soft contact shadows, **sun shadows by date, time and location**, PBR material library (`.zip` packs from freepbr.com, ambientCG…).
+- **Visual styles** — Realistic, Shaded, Concept, Wireframe and **Hidden line**; fine edges, soft contact shadows, **sun shadows by date, time and location**.
+- **Professional PBR materials included** — 28 scanned materials from ambientCG (CC0): concrete, exposed concrete, brick, plaster, steel, aluminium, zinc, copper, oak, parquet, tiles, clay roof tiles, asphalt, grass, marble, granite, paving… with colour, normal, roughness, metallic, AO and height maps, applied automatically by IFC type. Optional 2K download; import your own `.zip` packs (freepbr.com, Poly Haven, Poliigon) and **OpenPBR / MaterialX** `.mtlx`.
+- **Lighting like Navisworks** — Point, Spot and Distant lights lit in **real time** in the 3D view, with a **Move / Rotate gizmo** (drag the arrows to move, drag the circles to aim), unlimited power and range, and **Sun & sky** (brightness, ambient, sun position by date / time / location, shadows) plus a **Night** mode — all in one Lighting panel.
 - **Command palette** (Ctrl+K) — every command and every element name, in one search box.
 - **Arrangeable panels** — dock left / right / bottom or float, auto-hide, and a **Blender-style Properties bar**: add any panel as a tab there; **Model focus** hides the ribbon and panels but keeps Properties floating. UI settings (clash filter, groups, visual style, 4D) are saved between sessions.
 - **Interface in English or Romanian** (View › Language).
@@ -155,6 +157,7 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 
 - **Clash Detective** like Navisworks — test list with New / Active / Reviewed / Approved / Resolved columns and test status (New / Done / Old), **Add Test, Reset All, Compact All, Delete All, Update All** (with a summary of what changed), Rules / Select / Results / Report tabs; hard and clearance tests with **severity levels** (Critical / Major / Minor) and **ready-made templates** by discipline, **smart rules** (normal connections ignored, responsible discipline assigned automatically, grouping by system), grouping by level / grid location / type / model / assignee / status; **Filter by Selection** (inclusive / exclusive); Approved / Resolved keep **who and when**; **SwitchBack** sends a clash to Revit / Navisworks with the camera and the two elements; **Scan vs Model** turns as-built discrepancies into clashes; **import / export of clash tests** as Navisworks XML (with the selection sets) or CSV / Excel; **clash matrix by test** (Selection A × Selection B, a sheet per status) and tests created from a **sets matrix**; HTML, CSV, BCF and Navisworks reports.
 - **Model Checker** — rules or **buildingSMART IDS 1.0** files (import **and export**): properties, attributes, classifications, materials; exact values, lists, patterns, ranges, optional / prohibited, **unique values** (duplicate marks, GUIDs). Excel and BCF reports. **Quick checks without IDS**: no level, name, classification, material or geometry, duplicates, duplicate GUIDs.
+- **Classification & bSDD** — search the **buildingSMART Data Dictionary** online (IFC 4.3, Uniclass, ETIM, NL-SfB… with a dictionary filter) or a local Uniclass / OmniClass catalogue, and assign codes to the selection; exported to IFC as `IfcClassificationReference` with the bSDD URI.
 - **Live Link** — the selection follows **Revit** and **Navisworks** both ways (matched by UniqueId / IFC GUID).
 - **As-built check** — the model against the point cloud: built, partial, missing, not scanned; colours on the model and an Excel report.
 - **Sections & Annotation** — boxes with stretch arrows (like Revit), planes, **sections by level** from the status bar, filled cuts (solid cap hatched on the cut plane). The **Annotation** tab exports the cut to **DWG / DXF / PDF** with hatching, element tags, grid bubbles and **dimension chains**; separate **Dimensions** / **Levels** toggles let you drop what you don't need. A small **2D Section Preview** window (proportional, white sheet) shows the drawing before export. **Hidden line** style renders white paper with only the outer contour.
@@ -183,7 +186,7 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 - **Web viewer** — one offline `.html` file with the model.
 - **Reference models** for Revit and AutoCAD / Plant 3D (`.mbref`) with Load / Reload / Unload.
 - **Animations window** — Record your navigation, Orbit 360°, walkthrough of viewpoints, walk path, **Import 4D** (the TimeLiner sequence); ▶ Play each one with a full player (loop, ping-pong), animate objects (colour, transparency, visibility).
-- **Images and path tracing** — quick PNG of the current view, or **progressive CPU path tracing** in a separate window (resolution, samples, time limit, Cancel, export the current image at any time).
+- **Images and path tracing** — quick PNG of the current view, or **progressive CPU path tracing** (GGX, HDRI environment, lamps with soft shadows, Intel Open Image Denoise) in a separate window (resolution, samples, time limit, Cancel, export the current image at any time).
 - Images and **videos** (MP4, AVI, GIF, PNG frames), optionally **rendered with materials** (Realistic style, textures, sun shadows).
 </details>
 
@@ -239,6 +242,9 @@ The icon is compiled with `x86_64-w64-mingw32-windres` when `rc.exe` (Windows SD
 ```powershell
 # OpenCascade runtime (STEP / IGES / BREP / ACIS solids), once
 powershell -ExecutionPolicy Bypass -File tools\build-occt.ps1
+
+# default PBR material library (28 ambientCG CC0 materials, ~84 MB -> third_party\pbr-library), once
+cargo run --release --bin fetch_pro_library
 
 # add-ins (the Autodesk API reference assemblies are restored by the scripts)
 powershell -ExecutionPolicy Bypass -File revit-addin\build.ps1
