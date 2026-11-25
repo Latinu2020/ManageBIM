@@ -146,7 +146,7 @@ void main() {
     gl_Position = u_vp * vec4(a_pos, 1.0);
     // aproape de nor punctele cresc (umplu golurile, aspect continuu), departe raman la u_size
     float ws = u_world.x * u_world.y / max(gl_Position.w, 1e-3);
-    gl_PointSize = clamp(max(u_size, ws), 1.0, 28.0);
+    gl_PointSize = clamp(max(u_size, ws), 1.0, 14.0);
 }
 "#;
 

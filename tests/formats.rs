@@ -309,3 +309,28 @@ fn profile_load() {
 fn raw_center() -> glam::DVec3 {
     glam::DVec3::ZERO
 }
+
+/// Arhiva ambientCG (ex. Asphalt033_1K-JPG.zip, comprimata deflate) -> material PBR cu toate hartile.
+#[test]
+fn ambientcg_zip_import() {
+    let src = std::path::Path::new("third_party/pbr-library/Pro Library/Asphalt033");
+    if !src.exists() {
+        eprintln!("bundled ambientCG textures not present, skipped");
+        return;
+    }
+    let mut z = markup::Zip::default();
+    for e in std::fs::read_dir(src).unwrap().flatten() {
+        z.add(&e.file_name().to_string_lossy(), &std::fs::read(e.path()).unwrap());
+    }
+    z.add("Asphalt033.mtlx", b"<materialx/>");
+    let d = std::env::temp_dir().join(format!("mb_acg_{}", std::process::id()));
+    std::fs::create_dir_all(&d).unwrap();
+    let zp = d.join("Asphalt033_1K-JPG.zip");
+    std::fs::write(&zp, z.finish()).unwrap();
+    let m = materials::import_pbr(&zp.to_string_lossy(), &d.join("lib")).unwrap();
+    assert_eq!(m.name, "Asphalt033");
+    assert!(m.texture.ends_with("_Color.jpg"), "{}", m.texture);
+    assert!(m.normal_map.ends_with("_NormalGL.jpg") && m.roughness_map.ends_with("_Roughness.jpg") && m.ao_map.ends_with("_AmbientOcclusion.jpg") && m.height_map.ends_with("_Displacement.jpg"), "{m:?}");
+    assert!(std::path::Path::new(&m.texture).exists());
+    let _ = std::fs::remove_dir_all(&d);
+}

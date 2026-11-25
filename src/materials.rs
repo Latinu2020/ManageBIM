@@ -526,12 +526,20 @@ pub fn import_pbr(path: &str, dest_root: &std::path::Path) -> Result<Material, S
             }
         }
     } else {
-        let zip = crate::fcstd::Zip::parse(std::fs::read(path).map_err(|e| format!("Cannot read {path}: {e}"))?).map_err(|_| format!("{} is not a ZIP archive.", crate::file_name(path)))?;
+        let zip = crate::fcstd::Zip::parse(std::fs::read(path).map_err(|e| format!("Cannot read {path}: {e}"))?).map_err(|_| format!("{} is not a ZIP archive (or it is damaged).", crate::file_name(path)))?;
         let names: Vec<String> = zip.names().filter(|n| is_image(n) && !n.starts_with("__MACOSX")).cloned().collect();
+        let mut unsupported = 0;
         for n in names {
-            if let Some(b) = zip.read(&n) {
-                files.push((n.rsplit(['/', '\\']).next().unwrap_or(&n).to_string(), b));
+            match zip.read(&n) {
+                Some(b) => files.push((n.rsplit(['/', '\\']).next().unwrap_or(&n).to_string(), b)),
+                None => unsupported += 1,
             }
+        }
+        if files.is_empty() && unsupported > 0 {
+            return Err(format!(
+                "{}: the images are compressed with a method ManageBIM cannot unpack (Deflate64 / LZMA / BZIP2). Unzip the archive and use Library › Import PBR folder… on the folder.",
+                crate::file_name(path)
+            ));
         }
     }
     if files.is_empty() {

@@ -248,13 +248,18 @@ pub fn write(mats: Vec<Material>, sel: Vec<crate::model::ElemId>, path: &str) ->
 mod tests {
     #[test]
     fn roundtrip_materialx() {
+        // o cale absoluta pe fiecare sistem (pe Linux / FreeBSD "C:/..." e relativa si e rezolvata fata de fisier)
+        #[cfg(windows)]
+        const ROOT: &str = "C:/";
+        #[cfg(not(windows))]
+        const ROOT: &str = "/";
         let dir = std::env::temp_dir().join("mb_mtlx_test");
         let _ = std::fs::create_dir_all(&dir);
         let p = dir.join("lib.mtlx");
         let m = crate::materials::Material {
             name: "Clear coat red".into(), color: [200, 40, 30], transparency: 0,
             gloss: 70, metal: 10, pattern: crate::materials::Pattern::None, scale: 1.0,
-            texture: "C:/tex/albedo.png".into(), normal_map: "C:/tex/normal.png".into(),
+            texture: format!("{ROOT}tex/albedo.png"), normal_map: format!("{ROOT}tex/normal.png"),
             roughness_map: String::new(), metallic_map: String::new(), ao_map: String::new(), height_map: String::new(),
             normal_strength: 1.0, rough_mult: 1.0, metal_mult: 1.0,
             coat: 80, coat_roughness: 10, sheen: 30, ior: 1.6,
@@ -267,8 +272,8 @@ mod tests {
         assert_eq!(r.coat, 80);
         assert_eq!(r.sheen, 30);
         assert!((r.ior - 1.6).abs() < 1e-3);
-        assert_eq!(r.texture, "C:/tex/albedo.png");
-        assert_eq!(r.normal_map, "C:/tex/normal.png");
+        assert_eq!(r.texture, format!("{ROOT}tex/albedo.png"));
+        assert_eq!(r.normal_map, format!("{ROOT}tex/normal.png"));
         assert!((r.gloss as i32 - 70).abs() <= 1);
         let _ = std::fs::remove_dir_all(&dir);
     }

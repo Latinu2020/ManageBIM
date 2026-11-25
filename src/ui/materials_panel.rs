@@ -117,7 +117,7 @@ impl App {
                     io = Some(Purpose::ImportPbrFolder);
                     ui.close_menu();
                 }
-                if ui.button("⭐ Save selected to my library").clicked() {
+                if ui.button("★ Save selected to my library").clicked() {
                     let i = self.mat_sel;
                     self.save_material_to_library(i);
                     ui.close_menu();
@@ -166,11 +166,15 @@ impl App {
             // ---- lista
             let ui = &mut cols[0];
             section(ui, "Library", "Click a material to edit it");
+            let mine = self.user_library_names();
             egui::ScrollArea::vertical().id_salt("matlib").max_height(ui.available_height() * 0.55).show(ui, |ui| {
                 for i in 0..self.materials.len() {
                     ui.horizontal(|ui| {
                         swatch(ui, &self.materials[i]);
                         let m = &self.materials[i];
+                        if mine.contains(&m.name) {
+                            ui.label(RichText::new("★").small().color(accent())).on_hover_text("In your material library - available in every project; changes are saved there too");
+                        }
                         let used = self.mat_assign.iter().any(|a| a.material == m.name);
                         let mut t = RichText::new(&m.name);
                         if used {
@@ -396,6 +400,29 @@ impl App {
         }
         if changed {
             self.materials_changed();
+        }
+        // modificarile unui material din biblioteca ta se salveaza si acolo (la ~1 s dupa ultima schimbare,
+        // ca sa nu scriem fisierul la fiecare pas al unui slider)
+        let key = egui::Id::new("mat_lib_autosave");
+        let now = ui.input(|i| i.time);
+        if changed {
+            if let Some(m) = self.materials.get(self.mat_sel) {
+                let name = m.name.clone();
+                if self.user_library_names().contains(&name) {
+                    ui.data_mut(|d| d.insert_temp(key, (name, now)));
+                }
+            }
+        }
+        if let Some((name, t)) = ui.data(|d| d.get_temp::<(String, f64)>(key)) {
+            if now - t > 1.0 {
+                ui.data_mut(|d| d.remove::<(String, f64)>(key));
+                if let Some(m) = self.materials.iter().find(|m| m.name == name).cloned() {
+                    let _ = crate::materials::save_to_user_library(std::slice::from_ref(&m));
+                    self.user_lib_cache = None;
+                }
+            } else {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
+            }
         }
     }
 }

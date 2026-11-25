@@ -288,9 +288,12 @@ impl App {
                     Err(e) => self.error(format!("Cannot write the file: {e}")),
                 }
             }
+            // un pachet PBR (.zip de pe ambientCG, freepbr, Poly Haven...) ales din Import Lib
+            Purpose::ImportMaterials if path.to_lowercase().ends_with(".zip") => self.import_pbr_packs(&[path.clone()]),
             Purpose::ImportMaterials if path.to_lowercase().ends_with(".csv") || path.to_lowercase().ends_with(".xlsx") => match crate::tables::read_rows(&path).and_then(|r| crate::tables::materials_from_rows(&r)) {
                 Ok(v) => {
                     let n = v.len();
+                    self.keep_in_library(&v);
                     for m in v {
                         if let Some(x) = self.materials.iter_mut().find(|x| x.name == m.name) {
                             *x = m;
@@ -357,6 +360,7 @@ impl App {
             Purpose::ImportMaterialX => match crate::materialx::read(&path) {
                 Ok(v) => {
                     let mut n = 0;
+                    self.keep_in_library(&v);
                     for m in v {
                         if let Some(x) = self.materials.iter_mut().find(|x| x.name == m.name) {
                             *x = m;
@@ -384,6 +388,7 @@ impl App {
             Purpose::ImportMaterials => match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| serde_json::from_str::<Vec<Material>>(&t).map_err(|e| e.to_string())) {
                 Ok(v) => {
                     let n = v.len();
+                    self.keep_in_library(&v);
                     for m in v {
                         if let Some(x) = self.materials.iter_mut().find(|x| x.name == m.name) {
                             *x = m;
@@ -392,7 +397,7 @@ impl App {
                         }
                     }
                     self.materials_changed();
-                    self.toast(format!("Imported {n} materials."));
+                    self.toast(format!("Imported {n} materials (saved to your library too)."));
                 }
                 Err(e) => self.error(format!("Invalid material library: {e}")),
             },
@@ -666,7 +671,7 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::ImportPbrFolder => d.set_title("Folder with the PBR images (albedo, normal, roughness...)").pick_folder().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::MaterialTexture | Purpose::MaterialNormal | Purpose::MaterialRoughness | Purpose::MaterialMetallic | Purpose::MaterialAo | Purpose::MaterialHeight => d.set_title("Choose texture image").add_filter("Images", &["png", "jpg", "jpeg"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportMaterials => d.set_title("Export material library").add_filter("ManageBIM materials", &["bimmat"]).add_filter("Excel workbook", &["xlsx"]).add_filter("CSV (Excel)", &["csv"]).set_file_name("materials.bimmat").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
-                Purpose::ImportMaterials => d.set_title("Import material library").add_filter("Materials / Excel / CSV", &["bimmat", "json", "xlsx", "csv"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ImportMaterials => d.set_title("Import material library").add_filter("Materials, PBR packs (ambientCG / freepbr .zip), Excel / CSV", &["bimmat", "json", "zip", "xlsx", "csv"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportMaterialX => d.set_title("Export MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx"]).set_file_name("materials.mtlx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportMaterialX => d.set_title("Import MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx", "xml"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::LoadHdri => d.set_title("Environment map (.hdr or photo)").add_filter("HDR image", &["hdr"]).add_filter("Photo (equirectangular)", &["png", "jpg", "jpeg"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),

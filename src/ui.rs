@@ -685,14 +685,28 @@ impl App {
                 ui.add_space(8.0);
                 // Tab-urile au acum toata latimea: bara de sus e separata.
                 // Scroll-ul ramane doar pentru ferestre foarte inguste.
+                // fereastra ingusta: tab-urile se strang (latime minima mai mica, text putin mai mic) ca sa
+                // se vada toate 14, fara derulare
+                let tabs_w = ui.available_width();
+                let (tab_min, tab_font, tab_pad) = if tabs_w >= 14.0 * 81.0 {
+                    (78.0, None, 6.0)
+                } else if tabs_w >= 14.0 * 66.0 {
+                    (0.0, None, 5.0)
+                } else {
+                    (0.0, Some(12.0), 3.0)
+                };
                 egui::ScrollArea::horizontal().id_salt("ribbon_tabs").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.style_mut().spacing.item_spacing.x = 3.0;
+                        ui.style_mut().spacing.item_spacing.x = if tab_min > 0.0 { 3.0 } else { 1.0 };
+                        ui.style_mut().spacing.button_padding.x = tab_pad;
                         for (i, t) in TABS.iter().enumerate() {
                     let on = self.ribbon_tab == i && mode != RibbonMode::Mini;
                     let t = crate::i18n::tr(t);
-                    let txt = if on { RichText::new(t).color(accent()).strong() } else { RichText::new(t) };
-                    let b = egui::Button::new(txt).fill(if on { accent().gamma_multiply(0.16) } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(crate::theme::RADIUS_LG).min_size(EV::new(78.0, 24.0));
+                    let mut txt = if on { RichText::new(t).color(accent()).strong() } else { RichText::new(t) };
+                    if let Some(sz) = tab_font {
+                        txt = txt.size(sz);
+                    }
+                    let b = egui::Button::new(txt).fill(if on { accent().gamma_multiply(0.16) } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(crate::theme::RADIUS_LG).min_size(EV::new(tab_min, 24.0));
                     let r = ui.add(b);
                     if on {
                         // subliniere subtila a tab-ului activ (ca in Office / Navisworks 2024)
@@ -723,7 +737,26 @@ impl App {
             ui.add_space(4.0);
             // inaltime FIXA pe toate tab-urile (nu mai "sare" cand schimbi tab-ul)
             let h = mode.height();
-            egui::ScrollArea::horizontal().id_salt("ribbon_scroll").max_height(h).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded).show(ui, |ui| {
+            // ribbon-ul se potriveste in fereastra: latimea butoanelor (62 px) scade automat pe tab-ul
+            // curent cat sa incapa tot (minim 38 px), si creste la loc cand e spatiu - fara bara de scroll
+            let avail_w = ui.available_width();
+            let wid = egui::Id::new(("ribbon_btn_w", self.ribbon_tab));
+            let w_now: f32 = ui.data(|d| d.get_temp(wid)).unwrap_or(62.0);
+            crate::theme::set_ribbon_btn_w(w_now);
+            // daca nici cu butoanele cele mai inguste nu incape: tab-ul trece pe iconite (numele in tooltip)
+            // pana cand fereastra e iar destul de lata (latimea necesara e tinuta minte)
+            let cid = egui::Id::new(("ribbon_auto_compact", self.ribbon_tab));
+            let auto_compact: Option<f32> = ui.data(|d| d.get_temp(cid));
+            if let Some(need) = auto_compact {
+                if avail_w > need + 10.0 {
+                    ui.data_mut(|d| d.remove::<f32>(cid));
+                    ui.ctx().request_repaint();
+                } else if mode != RibbonMode::Compact {
+                    crate::theme::RIBBON_COMPACT.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+            let forced_compact = auto_compact.is_some() && mode != RibbonMode::Compact;
+            let out = egui::ScrollArea::horizontal().id_salt("ribbon_scroll").max_height(h).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.set_height(h);
                     ui.set_max_height(h);
@@ -805,6 +838,27 @@ impl App {
                     }
                 });
             });
+            // potrivirea latimii pentru cadrul urmator (doar in modul cu etichete)
+            if mode != RibbonMode::Compact && !forced_compact && w_now <= 38.5 && out.content_size.x > avail_w + 1.0 {
+                ui.data_mut(|d| d.insert_temp(cid, out.content_size.x));
+                ui.ctx().request_repaint();
+            }
+            crate::theme::RIBBON_COMPACT.store(mode == RibbonMode::Compact, std::sync::atomic::Ordering::Relaxed);
+            if mode != RibbonMode::Compact && !forced_compact {
+                let content = out.content_size.x.max(1.0);
+                let target = if content > avail_w + 1.0 {
+                    (w_now * (avail_w - 4.0) / content).floor().max(38.0)
+                } else if content < avail_w - 40.0 && w_now < 62.0 {
+                    (w_now + 2.0).min(62.0)
+                } else {
+                    w_now
+                };
+                if (target - w_now).abs() >= 1.0 {
+                    ui.data_mut(|d| d.insert_temp(wid, target));
+                    ui.ctx().request_repaint();
+                }
+            }
+            crate::theme::set_ribbon_btn_w(62.0);
         });
     }
 
@@ -1345,6 +1399,9 @@ impl App {
         });
         rgroup(ui, "Scan", |ui| {
             let has_cloud = self.loaded_models().any(|(_, m)| m.cloud.is_some());
+            if rbtn(ui, "☁", "Point Cloud", "Point cloud display: density, point size, real size, colour (scan RGB / elevation / grey), round points", self.show_cloud, has_cloud).clicked() {
+                self.show_cloud = !self.show_cloud;
+            }
             if rbtn(ui, "☁", "Scan vs Model", "As-built check: compare the model with the point cloud (E57 / LAS) - built, partial, missing, not scanned; colours and Excel report", self.asbuilt_open, has_cloud).clicked() {
                 self.asbuilt_open = !self.asbuilt_open;
             }
@@ -1382,7 +1439,7 @@ impl App {
                 self.open_panel(Panel::Render);
                 self.request_path(Purpose::ImportTextures);
             }
-            if rbtn(ui, "📥", "Import Lib", "Import a material library (.bimmat)", false, true).clicked() {
+            if rbtn(ui, "📥", "Import Lib", "Import materials into your library: a PBR pack .zip (ambientCG, freepbr, Poly Haven...), a .bimmat library or an Excel / CSV list - saved for every project", false, true).clicked() {
                 self.request_path(Purpose::ImportMaterials);
             }
             if rbtn(ui, "📤", "Export Lib", "Export the material library (.bimmat)", false, true).clicked() {
@@ -1720,10 +1777,16 @@ impl App {
             }
         });
         rgroup(ui, "Interface", |ui| {
+            // fereastra ingusta: doar valoarea (glisare), fara eticheta si slider lat
+            let narrow = crate::theme::ribbon_btn_w() < 55.0 || crate::theme::RIBBON_COMPACT.load(std::sync::atomic::Ordering::Relaxed);
             ui.horizontal(|ui| {
-                ui.label("Font / UI size");
                 let mut pct = (self.settings.ui_scale * 100.0).round() as i32;
-                let r = ui.add_sized([110.0, ui.spacing().interact_size.y], egui::Slider::new(&mut pct, 75..=200).step_by(5.0).suffix("%"));
+                let r = if narrow {
+                    ui.add(egui::DragValue::new(&mut pct).range(75..=200).speed(1.0).prefix("UI ").suffix("%"))
+                } else {
+                    ui.label("Font / UI size");
+                    ui.add_sized([110.0, ui.spacing().interact_size.y], egui::Slider::new(&mut pct, 75..=200).step_by(5.0).suffix("%"))
+                };
                 if r.changed() && (!r.dragged() || r.drag_stopped()) {
                     self.settings.ui_scale = pct as f32 / 100.0;
                     self.settings.save();
@@ -3073,6 +3136,20 @@ impl App {
                     }
                     ui.label(format!("{} {} · {} elements", nm, if nm == 1 { "model" } else { "models" }, thousands(ne))).on_hover_text(format!("{} triangles", thousands(nt)));
                 }
+                // nor de puncte incarcat: densitatea direct in bara de stare (glisare = schimbare, clic = fereastra)
+                if self.loaded_models().any(|(_, m)| m.cloud.is_some()) {
+                    ui.separator();
+                    let mut pct = (self.cloud_density * 100.0).round();
+                    let r = ui
+                        .add(egui::DragValue::new(&mut pct).range(1.0..=100.0).speed(0.5).prefix("☁ Points ").suffix(" %"))
+                        .on_hover_text("Point cloud density - drag left / right to change it; double-click to type a value. Point size, colour and shape: View › Point Cloud (or click the cloud button in Analyze › Scan).");
+                    if r.changed() {
+                        self.cloud_density = pct / 100.0;
+                    }
+                    if ui.small_button("⚙").on_hover_text("Point cloud settings (density, point size, real size, colour by elevation, shape)").clicked() {
+                        self.show_cloud = !self.show_cloud;
+                    }
+                }
                 if !self.selected.is_empty() {
                     ui.separator();
                     ui.label(RichText::new(format!("{} selected", thousands(self.selected.len()))).color(accent()));
@@ -3875,7 +3952,8 @@ impl App {
                 let bb = self.scene_aabb();
                 let ms = if bb.is_valid() { bb.size().length() * 0.002 } else { 0.01 };
                 self.cam_anim = None;
-                self.cam.zoom(scroll / 50.0, d, ms);
+                // ~20% pe treapta de rotita (inainte ~32%: pe norii densi parea ca vederea "sare")
+                self.cam.zoom(scroll / 85.0, d, ms);
             }
         }
         // alegerea originii / directiei axelor are prioritate fata de unealta curenta
@@ -5621,9 +5699,9 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     let font = FontId::proportional(10.5);
     // Dimensiune FIXA pentru toate butoanele din ribbon; etichetele se scurteaza ca sa nu se suprapuna.
     let size = if compact {
-        egui::vec2(30.0, 30.0)
+        egui::vec2(28.0, 30.0)
     } else {
-        egui::vec2(62.0, 48.0)
+        egui::vec2(crate::theme::ribbon_btn_w(), 48.0)
     };
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let p = ui.painter();
@@ -5719,13 +5797,13 @@ fn rgroup(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui)) {
     let compact = crate::theme::RIBBON_COMPACT.load(std::sync::atomic::Ordering::Relaxed);
     let fill = card_fill(ui.visuals());
     let avail_h = ui.available_height();
-    egui::Frame::none().fill(fill).rounding(crate::theme::RADIUS_LG).stroke(egui::Stroke::new(1.0_f32, crate::theme::border())).inner_margin(egui::Margin { left: 7.0, right: 7.0, top: 4.0, bottom: 3.0 }).show(ui, |ui| {
+    egui::Frame::none().fill(fill).rounding(crate::theme::RADIUS_LG).stroke(egui::Stroke::new(1.0_f32, crate::theme::border())).inner_margin(egui::Margin { left: if compact { 4.0 } else { 7.0 }, right: if compact { 4.0 } else { 7.0 }, top: 4.0, bottom: 3.0 }).show(ui, |ui| {
         ui.set_min_height(avail_h - 5.0);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             let r = ui
                 .horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.spacing_mut().item_spacing.x = if compact { 2.0 } else { 4.0 };
                     if compact {
                         ui.set_min_height(avail_h - 8.0);
                         ui.set_max_height(avail_h - 6.0);

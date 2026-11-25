@@ -24,18 +24,52 @@ impl Zip {
         // End Of Central Directory: ultimii 22 + comentariu (max 64 KB)
         let min = data.len().saturating_sub(22 + 65535);
         let eocd = (min..data.len().saturating_sub(21)).rev().find(|&i| data[i..i + 4] == [0x50, 0x4b, 0x05, 0x06]).ok_or_else(bad)?;
-        let count = u16_at(&data, eocd + 10).ok_or_else(bad)?;
+        let mut count = u16_at(&data, eocd + 10).ok_or_else(bad)?;
         let mut p = u32_at(&data, eocd + 16).ok_or_else(bad)?;
+        let u64_at = |b: &[u8], o: usize| b.get(o..o + 8).map(|s| u64::from_le_bytes(s.try_into().unwrap()) as usize);
+        // ZIP64 (arhive mari sau scrise de unele programe chiar si cand sunt mici): EOCD64 prin locator
+        if (count == 0xFFFF || p == 0xFFFF_FFFF) && eocd >= 20 && u32_at(&data, eocd - 20) == Some(0x0706_4b50) {
+            if let Some(e64) = u64_at(&data, eocd - 20 + 8) {
+                if u32_at(&data, e64) == Some(0x0606_4b50) {
+                    count = u64_at(&data, e64 + 32).ok_or_else(bad)?;
+                    p = u64_at(&data, e64 + 48).ok_or_else(bad)?;
+                }
+            }
+        }
         let mut entries = HashMap::new();
         for _ in 0..count {
             if u32_at(&data, p) != Some(0x0201_4b50) {
                 return Err(bad());
             }
             let method = u16_at(&data, p + 10).ok_or_else(bad)? as u16;
-            let csize = u32_at(&data, p + 20).ok_or_else(bad)?;
+            let mut csize = u32_at(&data, p + 20).ok_or_else(bad)?;
+            let usize32 = u32_at(&data, p + 24).ok_or_else(bad)?;
             let (nl, el, cl) = (u16_at(&data, p + 28).ok_or_else(bad)?, u16_at(&data, p + 30).ok_or_else(bad)?, u16_at(&data, p + 32).ok_or_else(bad)?);
-            let local = u32_at(&data, p + 42).ok_or_else(bad)?;
+            let mut local = u32_at(&data, p + 42).ok_or_else(bad)?;
             let name = String::from_utf8_lossy(data.get(p + 46..p + 46 + nl).ok_or_else(bad)?).to_string();
+            // campul extra ZIP64 (0x0001): marimile / offset-ul de 8 octeti, doar cele marcate 0xFFFFFFFF
+            if csize == 0xFFFF_FFFF || local == 0xFFFF_FFFF || usize32 == 0xFFFF_FFFF {
+                let mut x = p + 46 + nl;
+                let end = x + el;
+                while x + 4 <= end {
+                    let (id, len) = (u16_at(&data, x).unwrap_or(0), u16_at(&data, x + 2).unwrap_or(0));
+                    if id == 1 {
+                        let mut q = x + 4;
+                        if usize32 == 0xFFFF_FFFF {
+                            q += 8;
+                        }
+                        if csize == 0xFFFF_FFFF {
+                            csize = u64_at(&data, q).ok_or_else(bad)?;
+                            q += 8;
+                        }
+                        if local == 0xFFFF_FFFF {
+                            local = u64_at(&data, q).ok_or_else(bad)?;
+                        }
+                        break;
+                    }
+                    x += 4 + len;
+                }
+            }
             if u32_at(&data, local) == Some(0x0403_4b50) {
                 let (lnl, lel) = (u16_at(&data, local + 26).ok_or_else(bad)?, u16_at(&data, local + 28).ok_or_else(bad)?);
                 entries.insert(name, (method, local + 30 + lnl + lel, csize));

@@ -125,27 +125,63 @@ impl App {
         Some(first)
     }
 
-    /// One material per image file (named after the file).
+    /// One material per image file (named after the file). The image is copied into your material
+    /// library folder and the material is saved there too - available in every project.
     pub fn import_texture_materials(&mut self, paths: &[String]) {
-        let mut n = 0;
+        let lib = crate::materials::user_library_dir().map(|d| d.join("textures"));
+        let mut added = Vec::new();
         for p in paths {
             if crate::materials::load_texture(p).is_err() {
                 self.error(format!("Not a PNG / JPG image: {}", crate::file_name(p)));
                 continue;
             }
             let name = std::path::Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Texture".into());
+            // copia imaginii in biblioteca (originalul poate fi mutat / sters mai tarziu)
+            let tex = lib
+                .as_ref()
+                .and_then(|d| {
+                    std::fs::create_dir_all(d).ok()?;
+                    let dst = d.join(crate::file_name(p));
+                    std::fs::copy(p, &dst).ok()?;
+                    Some(dst.to_string_lossy().to_string())
+                })
+                .unwrap_or_else(|| p.clone());
             let mut m = crate::materials::library()[4].clone();
             m.name = name;
             m.color = [255, 255, 255];
-            m.texture = p.clone();
+            m.texture = tex;
             m.scale = 1.0;
-            self.materials.push(m);
-            n += 1;
+            match self.materials.iter_mut().find(|x| x.name == m.name) {
+                Some(x) => *x = m.clone(),
+                None => self.materials.push(m.clone()),
+            }
+            added.push(m);
         }
-        if n > 0 {
-            self.mat_sel = self.materials.len() - 1;
-            self.toast(format!("{n} texture materials added - set the real size of the image in \"Texture size\"."));
+        if !added.is_empty() {
+            let last = added.last().map(|m| m.name.clone()).unwrap_or_default();
+            self.mat_sel = self.materials.iter().position(|m| m.name == last).unwrap_or(0);
+            self.keep_in_library(&added);
+            self.toast(format!("{} texture materials added and saved to your library - set the real size of the image in \"Texture size\".", added.len()));
         }
+    }
+
+    /// Materialele importate raman in biblioteca ta (disponibile in orice proiect, dupa repornire).
+    pub fn keep_in_library(&mut self, mats: &[crate::materials::Material]) {
+        if mats.is_empty() {
+            return;
+        }
+        if let Err(e) = crate::materials::save_to_user_library(mats) {
+            self.error(format!("The materials are in the project but could not be saved to your library: {e}"));
+        }
+        self.user_lib_cache = None;
+    }
+
+    /// Numele materialelor din biblioteca ta (marcate cu ★ in lista).
+    pub fn user_library_names(&mut self) -> std::collections::HashSet<String> {
+        if self.user_lib_cache.is_none() {
+            self.user_lib_cache = Some(crate::materials::user_library().into_iter().map(|m| m.name).collect());
+        }
+        self.user_lib_cache.clone().unwrap_or_default()
     }
 
     /// Pachete PBR (.zip descarcate de pe freepbr.com, ambientCG, Poly Haven... sau foldere dezarhivate) ->
@@ -162,6 +198,7 @@ impl App {
         if added.is_empty() {
             return;
         }
+        self.user_lib_cache = None;
         if let Err(e) = crate::materials::save_to_user_library(&added) {
             self.error(format!("The materials were added to the project but not saved to the library: {e}"));
         }
@@ -181,6 +218,7 @@ impl App {
     /// Salveaza materialul ales in biblioteca ta (disponibil in orice proiect).
     pub fn save_material_to_library(&mut self, i: usize) {
         let Some(m) = self.materials.get(i).cloned() else { return };
+        self.user_lib_cache = None;
         match crate::materials::save_to_user_library(std::slice::from_ref(&m)) {
             Ok(_) => self.toast(format!("\"{}\" saved to your material library.", m.name)),
             Err(e) => self.error(format!("Cannot save the material library: {e}")),
@@ -612,7 +650,15 @@ impl App {
             // nor de puncte: scanarile vizibile, primele N% puncte (amestecate la citire); in miscare mai putine
             let mut points = Vec::new();
             if let Some(cl) = &model.cloud {
-                let dens = self.cloud_density.clamp(0.01, 1.0) * if moving { 0.35 } else { 1.0 };
+                // in miscare se reduce doar cand norul e foarte mare (peste ~8 milioane de puncte afisate) si
+                // proportional - inainte scadea mereu la 35%, iar la fiecare zoom punctele dispareau si
+                // reveneau (ecranul "clipea")
+                let base = self.cloud_density.clamp(0.01, 1.0);
+                let shown = cl.pos.len() as f32 * base;
+                let budget = 8_000_000.0f32;
+                // ...si doar cand placa video chiar nu face fata (sub ~30 FPS); altfel norul ramane la fel in miscare
+                let slow = self.fps > 0.0 && self.fps < 30.0;
+                let dens = if moving && slow && shown > budget { base * (budget / shown).max(0.35) } else { base };
                 for &(ei, start, n) in &cl.scans {
                     if looks.and_then(|l| l.get(ei as usize)).map(|l| l.hidden).unwrap_or(false) {
                         continue;

@@ -4,6 +4,10 @@ Versiunea apare în **View › Help › About** și în proprietățile fișieru
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
 ## 0.28.3 - 2026-11-25
+- **Point clouds**: no more flicker or jumps while zooming (points are no longer dropped during camera moves unless the GPU is slow; gentler wheel zoom, capped point size); **density in the status bar** (☁ Points %) and a Point Cloud button in Analyze › Scan; **automatic classification** (ground / low, medium, high vegetation / buildings) for LAS / LAZ without classes and for E57 - each E57 scan split by class.
+- **Materials**: ambientCG / freepbr ZIPs import reliably (ZIP64 archives, clear message for unsupported compression) and *Import Lib* accepts ZIPs; every import (ZIP, folder, images, .bimmat, MaterialX, Excel) is saved to **your library** (★ in the list) and edits to library materials are saved there too.
+- **Ribbon fits the window**: no horizontal scrollbar; buttons narrow automatically, tabs shrink, and a tab that still does not fit switches to icons (names in tooltips).
+- **Linux / FreeBSD builds**: the only failing test (a Windows-only path in the MaterialX test) is fixed; failures are now reported as annotations.
 - **New open formats, with the properties of every object**
   - **3MF**: units, build items, components (also in other model parts), base materials / colour groups, model and object metadata; supports hidden by default.
   - **CityJSON / CityJSONSeq** (`.json`, `.city.json`, `.jsonl`): every city object with its attributes (nested ones flattened), highest LoD only, semantic surface colours (roof, wall, window…), parts under their building, geometry templates, appearance materials.

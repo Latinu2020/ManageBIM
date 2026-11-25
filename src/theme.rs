@@ -814,6 +814,14 @@ impl RibbonMode {
 
 /// modul curent al ribbon-ului, citit de butoanele ribbon-ului (functii libere)
 pub static RIBBON_COMPACT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// latimea butoanelor de ribbon (px): 62 normal, mai mica automat cand tab-ul nu incape in fereastra
+pub static RIBBON_BTN_W: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x4278_0000); // 62.0f32
+pub fn ribbon_btn_w() -> f32 {
+    f32::from_bits(RIBBON_BTN_W.load(std::sync::atomic::Ordering::Relaxed))
+}
+pub fn set_ribbon_btn_w(w: f32) {
+    RIBBON_BTN_W.store(w.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
 /// iconitele din ribbon colorate pe categorii (Settings › Appearance › Coloured icons)
 pub static COLOR_ICONS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 

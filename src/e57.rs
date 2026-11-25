@@ -465,8 +465,64 @@ pub fn parse(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, R
     if let Some(v) = root.kid("e57LibraryVersion").map(|n| n.text.trim().to_string()).filter(|v| !v.is_empty()) {
         raw.info.push(("Written by".into(), v));
     }
+    // E57 nu are clasificare: clasificare automata, fiecare scanare impartita pe clase
+    if cloud.pos.len() > 1000 && std::env::var_os("MB_NOAUTOCLASS").is_none() {
+        progress(0.9, "Classifying points (ground / vegetation / buildings)");
+        let has_rgb = raw.elements.iter().any(|e| e.props.iter().any(|p| p.name == "Colour" && p.value == "RGB"));
+        classify_scans(&mut raw, &mut cloud, has_rgb);
+    }
     progress(0.95, "Point cloud read");
     Ok((raw, cloud))
+}
+
+/// Clasificarea automata a unui nor cu scanari (E57): fiecare scanare devine un grup (nivelul din arbore)
+/// cu cate un element pe clasa; punctele raman amestecate in interiorul fiecarei clase.
+fn classify_scans(raw: &mut RawModel, cloud: &mut RawCloud, has_rgb: bool) {
+    let classes = auto_classify(&cloud.pos, &cloud.col, has_rgb);
+    let old_elems = std::mem::take(&mut raw.elements);
+    let old_scans = std::mem::take(&mut cloud.scans);
+    let mut counts: std::collections::BTreeMap<u8, usize> = std::collections::BTreeMap::new();
+    for (elem, first, n) in old_scans {
+        let (a, b) = (first as usize, (first + n) as usize);
+        // sortare stabila dupa clasa: ordinea aleatoare din fiecare clasa se pastreaza
+        let mut idx: Vec<usize> = (a..b).collect();
+        idx.sort_by_key(|&k| classes[k]);
+        let pos: Vec<[f32; 3]> = idx.iter().map(|&k| cloud.pos[k]).collect();
+        let col: Vec<[u8; 4]> = idx.iter().map(|&k| cloud.col[k]).collect();
+        let cls: Vec<u8> = idx.iter().map(|&k| classes[k]).collect();
+        cloud.pos[a..b].copy_from_slice(&pos);
+        cloud.col[a..b].copy_from_slice(&col);
+        let scan = old_elems.get(elem as usize);
+        let scan_name = scan.map(|e| e.name.clone()).unwrap_or_else(|| "Scan".into());
+        let mut s = 0;
+        while s < cls.len() {
+            let c = cls[s];
+            let mut e = s;
+            while e < cls.len() && cls[e] == c {
+                e += 1;
+            }
+            *counts.entry(c).or_default() += e - s;
+            let mut props = scan.map(|x| x.props.clone()).unwrap_or_default();
+            props.retain(|p| p.name != "Points");
+            props.insert(0, Prop { group: "Point cloud".into(), name: "Points".into(), value: (e - s).to_string() });
+            props.insert(0, Prop { group: "Point cloud".into(), name: "Classification".into(), value: format!("{c} - {}", asprs_class(c)) });
+            props.push(Prop { group: "Point cloud".into(), name: "Classification source".into(), value: "automatic (ManageBIM: ground surface + height + colour)".into() });
+            props.push(Prop { group: "Point cloud".into(), name: "Scan".into(), value: scan_name.clone() });
+            cloud.scans.push((raw.elements.len() as u32, (a + s) as u32, (e - s) as u32));
+            raw.elements.push(RawElement {
+                name: asprs_class(c).to_string(),
+                ifc_type: "PointCloudScan".into(),
+                guid: scan.map(|x| if x.guid.is_empty() { String::new() } else { format!("{}#{c}", x.guid) }).unwrap_or_default(),
+                storey: scan_name.clone(),
+                props,
+                tris: Vec::new(),
+                colors: Vec::new(),
+                default_hidden: false,
+            });
+            s = e;
+        }
+    }
+    raw.info.push(("Classes (automatic)".into(), counts.iter().map(|(c, n)| format!("{n} {}", asprs_class(*c))).collect::<Vec<_>>().join(", ")));
 }
 
 #[cfg(test)]
@@ -677,6 +733,17 @@ pub fn parse_las(b: &[u8], progress: &dyn Fn(f32, &str)) -> Result<(RawModel, Ra
         i += stride;
     }
     let n = cloud.pos.len();
+    // nor neclasificat (toate punctele 0 / 1): clasificare automata - teren, vegetatie, cladiri
+    // MB_AUTOCLASS=1: ignora clasele din fisier (pentru comparatie cu clasificarea automata)
+    let auto = n > 1000 && (classes.iter().all(|c| *c <= 1) || std::env::var_os("MB_AUTOCLASS").is_some());
+    if auto {
+        progress(0.9, "Classifying points (ground / vegetation / buildings)");
+        classes = auto_classify(&cloud.pos, &cloud.col, rgb_at.is_some());
+        stats.clear();
+        for (p, c) in cloud.pos.iter().zip(&classes) {
+            stats.entry(*c).or_default().add(0, 1, 1, None, p[2] as f64 + base.z);
+        }
+    }
     // punctele grupate pe clasificare (un element in arbore pe clasa: Ground, Building, Vegetation...),
     // amestecate in interiorul fiecarei clase (densitatea = primele N% din fiecare)
     let mut order: Vec<usize> = (0..n).collect();
@@ -711,7 +778,9 @@ pub fn parse_las(b: &[u8], progress: &dyn Fn(f32, &str)) -> Result<(RawModel, Ra
             pc("Colour", if rgb_at.is_some() { "RGB".into() } else { "Intensity".into() }),
             pc("Elevation min / max", format!("{:.2} / {:.2} m", st.zmin, st.zmax)),
         ];
-        if st.n > 0 {
+        if auto {
+            props.push(pc("Classification source", "automatic (ManageBIM: ground surface + height + colour)".into()));
+        } else if st.n > 0 {
             props.push(pc("Intensity min / mean / max", format!("{} / {:.0} / {}", st.imin, st.isum as f64 / st.n as f64, st.imax)));
             props.push(pc("Single returns", format!("{:.1} %", 100.0 * st.single as f64 / st.n as f64)));
             props.push(pc("First / last returns", format!("{} / {}", st.first, st.last)));
@@ -738,6 +807,167 @@ pub fn parse_las(b: &[u8], progress: &dyn Fn(f32, &str)) -> Result<(RawModel, Ra
     }
     progress(0.95, "Point cloud read");
     Ok((raw, cloud))
+}
+
+/// Clasificare automata a unui nor fara clase (clase ASPRS): 2 teren, 3/4/5 vegetatie joasa / medie /
+/// inalta, 6 cladiri, 1 rest.
+/// 1. suprafata terenului: cel mai jos punct pe celula de grila, apoi o "deschidere" morfologica
+///    (minim apoi maxim pe o fereastra de ~16 m, ca filtrul PMF) care scoate acoperisurile si copacii;
+/// 2. inaltimea fiecarui punct peste teren;
+/// 3. teren sub 0.3 m; deasupra: vegetatie daca e verzuie (2G - R - B), cladire daca e mai sus de 2.5 m
+///    si nu e verde, altfel neclasificat. Fara culori (doar intensitate): teren / neclasificat.
+pub fn auto_classify(pos: &[[f32; 3]], col: &[[u8; 4]], has_rgb: bool) -> Vec<u8> {
+    let n = pos.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for p in pos {
+        x0 = x0.min(p[0]);
+        y0 = y0.min(p[1]);
+        x1 = x1.max(p[0]);
+        y1 = y1.max(p[1]);
+    }
+    // celula de 1 m (mai mare pe zone foarte intinse, max ~4000 x 4000 celule)
+    let cell = (((x1 - x0).max(y1 - y0)) / 4000.0).max(1.0);
+    let (nx, ny) = ((((x1 - x0) / cell) as usize + 1).max(1), (((y1 - y0) / cell) as usize + 1).max(1));
+    let idx = |p: &[f32; 3]| -> usize {
+        let i = (((p[0] - x0) / cell) as usize).min(nx - 1);
+        let j = (((p[1] - y0) / cell) as usize).min(ny - 1);
+        j * nx + i
+    };
+    let mut g = vec![f32::INFINITY; nx * ny];
+    for p in pos {
+        let k = idx(p);
+        if p[2] < g[k] {
+            g[k] = p[2];
+        }
+    }
+    // celulele goale: completate din vecini (cateva treceri), restul cu minimul global
+    let gmin = g.iter().copied().filter(|v| v.is_finite()).fold(f32::INFINITY, f32::min);
+    for _ in 0..40 {
+        let mut any = false;
+        let src = g.clone();
+        for j in 0..ny {
+            for i in 0..nx {
+                if src[j * nx + i].is_finite() {
+                    continue;
+                }
+                let mut best = f32::INFINITY;
+                for (di, dj) in [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                    let (a, b) = (i as i32 + di, j as i32 + dj);
+                    if a >= 0 && b >= 0 && (a as usize) < nx && (b as usize) < ny {
+                        best = best.min(src[b as usize * nx + a as usize]);
+                    }
+                }
+                if best.is_finite() {
+                    g[j * nx + i] = best;
+                    any = true;
+                }
+            }
+        }
+        if !any {
+            break;
+        }
+    }
+    for v in g.iter_mut() {
+        if !v.is_finite() {
+            *v = gmin;
+        }
+    }
+    // deschidere morfologica separabila: eroziune (min) apoi dilatare (max) pe fereastra 2r+1
+    let r = ((8.0 / cell).ceil() as usize).max(1);
+    let filt = |src: &[f32], take_min: bool| -> Vec<f32> {
+        let pick = |a: f32, b: f32| if take_min { a.min(b) } else { a.max(b) };
+        let mut tmp = src.to_vec();
+        for j in 0..ny {
+            for i in 0..nx {
+                let (a, b) = (i.saturating_sub(r), (i + r).min(nx - 1));
+                tmp[j * nx + i] = (a..=b).map(|k| src[j * nx + k]).fold(if take_min { f32::INFINITY } else { f32::NEG_INFINITY }, pick);
+            }
+        }
+        let mut out = tmp.clone();
+        for j in 0..ny {
+            for i in 0..nx {
+                let (a, b) = (j.saturating_sub(r), (j + r).min(ny - 1));
+                out[j * nx + i] = (a..=b).map(|k| tmp[k * nx + i]).fold(if take_min { f32::INFINITY } else { f32::NEG_INFINITY }, pick);
+            }
+        }
+        out
+    };
+    let opened = filt(&filt(&g, true), false);
+    // ca in PMF: o celula e teren daca punctul ei cel mai jos e aproape de suprafata "deschisa" - toleranta
+    // creste cu panta locala (deschiderea coboara terenul in pante cu panta * raza)
+    let span = r as f32 * cell;
+    let mut ground = opened.clone();
+    for j in 0..ny {
+        for i in 0..nx {
+            let k = j * nx + i;
+            let at = |a: usize, b: usize| opened[b * nx + a];
+            let sx = (at((i + 1).min(nx - 1), j) - at(i.saturating_sub(1), j)).abs() / (2.0 * cell);
+            let sy = (at(i, (j + 1).min(ny - 1)) - at(i, j.saturating_sub(1))).abs() / (2.0 * cell);
+            let slope = sx.max(sy);
+            if g[k] - opened[k] < 0.5 + slope * span {
+                ground[k] = g[k];
+            } else {
+                ground[k] = opened[k] + slope * span * 0.5;
+            }
+        }
+    }
+    // rugozitatea pe celula a punctelor inalte (peste 2.5 m): acoperisurile sunt plane (variatie mica pe
+    // o celula), coroanele copacilor sunt "aspre" (puncte la multe inaltimi in aceeasi celula)
+    let mut lo = vec![f32::INFINITY; nx * ny];
+    let mut hi = vec![f32::NEG_INFINITY; nx * ny];
+    for p in pos {
+        let k = idx(p);
+        if p[2] - ground[k] > 2.5 {
+            lo[k] = lo[k].min(p[2]);
+            hi[k] = hi[k].max(p[2]);
+        }
+    }
+    // verde relativ la luminozitate (si frunzele din umbra, intunecate)
+    let greenish = |c: &[u8; 4]| -> bool {
+        let (r, g, b) = (c[0] as f32, c[1] as f32, c[2] as f32);
+        let s = (r + g + b).max(1.0);
+        (2.0 * g - r - b) / s > 0.06 && g >= r * 0.95
+    };
+    // acoperis tipic: rosu / caramiziu sau gri / alb (neutru, luminos)
+    let roofish = |c: &[u8; 4]| -> bool {
+        let (r, g, b) = (c[0] as f32, c[1] as f32, c[2] as f32);
+        let reddish = r > g * 1.15 && r > b * 1.15;
+        let neutral = (r - g).abs() < 18.0 && (g - b).abs() < 22.0 && r + g + b > 300.0;
+        reddish || neutral
+    };
+    pos.iter()
+        .zip(col)
+        .map(|(p, c)| {
+            let k = idx(p);
+            let h = p[2] - ground[k];
+            if h < 0.3 {
+                return 2;
+            }
+            let green = has_rgb && greenish(c);
+            if h > 2.5 {
+                let rough = hi[k] - lo[k] > 1.2;
+                if (green || rough) && !(has_rgb && roofish(c) && !rough) {
+                    return 5;
+                }
+                if has_rgb || !rough {
+                    return 6;
+                }
+                return 1;
+            }
+            if green {
+                if h < 0.5 {
+                    3
+                } else {
+                    4
+                }
+            } else {
+                1
+            }
+        })
+        .collect()
 }
 
 /// Statistica atributelor LAS pe o clasa.
@@ -881,6 +1111,82 @@ mod las_tests {
         assert_eq!(m.elements[2].name, "Ground");
         assert!(m.elements[2].props.iter().any(|p| p.name == "Intensity min / mean / max"));
         assert_eq!(c.scans.iter().map(|s| s.2).sum::<u32>(), n);
+    }
+
+    /// Teren (pe panta usoara) + cladire de 6 m (gri) + copac verde -> teren / cladire / vegetatie inalta.
+    #[test]
+    fn auto_classification_ground_building_tree() {
+        let mut pos = Vec::new();
+        let mut col = Vec::new();
+        for i in 0..60 {
+            for j in 0..60 {
+                let (x, y) = (i as f32, j as f32);
+                let z = 0.05 * x; // panta 5%
+                pos.push([x, y, z]);
+                col.push([120, 110, 90, 255]);
+            }
+        }
+        // cladire 10 x 10 m, acoperis la 6 m peste teren
+        for i in 0..20 {
+            for j in 0..20 {
+                let (x, y) = (20.0 + i as f32 * 0.5, 20.0 + j as f32 * 0.5);
+                pos.push([x, y, 0.05 * x + 6.0]);
+                col.push([150, 150, 155, 255]);
+            }
+        }
+        // coroana unui copac (verde) la 4-5 m
+        for k in 0..200 {
+            let a = k as f32 * 0.7;
+            pos.push([45.0 + a.cos() * 1.5, 45.0 + a.sin() * 1.5, 0.05 * 45.0 + 4.0 + (k % 10) as f32 * 0.1]);
+            col.push([60, 140, 50, 255]);
+        }
+        let c = auto_classify(&pos, &col, true);
+        let count = |k: u8, r: std::ops::Range<usize>| c[r].iter().filter(|x| **x == k).count();
+        assert!(count(2, 0..3600) > 3500, "ground on the slope");
+        assert_eq!(count(6, 3600..4000), 400, "building roof");
+        assert_eq!(count(5, 4000..4200), 200, "tree = high vegetation");
+    }
+
+    /// E57: doua scanari -> fiecare devine un grup (nivel) cu elementele pe clase; punctele raman in scanarea lor.
+    #[test]
+    fn e57_scans_split_by_class() {
+        let mut pos = Vec::new();
+        let mut col = Vec::new();
+        // scanarea 1: teren 40 x 40; scanarea 2: teren + o cladire 8 x 8 la 5 m
+        for i in 0..40 {
+            for j in 0..40 {
+                pos.push([i as f32, j as f32, 0.0]);
+                col.push([120, 110, 90, 255]);
+            }
+        }
+        let n1 = pos.len();
+        for i in 0..40 {
+            for j in 0..40 {
+                pos.push([i as f32 + 0.5, j as f32 + 0.5, 0.0]);
+                col.push([120, 110, 90, 255]);
+            }
+        }
+        for i in 0..16 {
+            for j in 0..16 {
+                pos.push([10.0 + i as f32 * 0.5, 10.0 + j as f32 * 0.5, 5.0]);
+                col.push([200, 70, 50, 255]);
+            }
+        }
+        let n2 = pos.len() - n1;
+        let mut cloud = RawCloud { base: DVec3::ZERO, pos, col, scans: vec![(0, 0, n1 as u32), (1, n1 as u32, n2 as u32)] };
+        let el = |n: &str| RawElement { name: n.into(), ifc_type: "PointCloudScan".into(), guid: String::new(), storey: String::new(), props: vec![Prop { group: "Point cloud".into(), name: "Points".into(), value: "0".into() }], tris: Vec::new(), colors: Vec::new(), default_hidden: false };
+        let mut raw = RawModel { elements: vec![el("Scan A"), el("Scan B")], info: Vec::new(), warnings: Vec::new() };
+        classify_scans(&mut raw, &mut cloud, true);
+        let names: Vec<(String, String)> = raw.elements.iter().map(|e| (e.storey.clone(), e.name.clone())).collect();
+        assert!(names.contains(&("Scan A".into(), "Ground".into())), "{names:?}");
+        assert!(names.contains(&("Scan B".into(), "Building".into())), "{names:?}");
+        assert!(!names.contains(&("Scan A".into(), "Building".into())));
+        assert_eq!(cloud.scans.iter().map(|s| s.2 as usize).sum::<usize>(), n1 + n2);
+        // fiecare interval ramane in scanarea lui
+        for (e, first, n) in &cloud.scans {
+            let scan = &raw.elements[*e as usize].storey;
+            assert!(if scan == "Scan A" { (*first + *n) as usize <= n1 } else { *first as usize >= n1 });
+        }
     }
 
     #[test]
