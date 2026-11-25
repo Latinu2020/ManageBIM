@@ -6,15 +6,15 @@
 
 ### Federated BIM review, coordination and presentation — fast, light, free
 
-Open **IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP and point clouds** together, run clash detection and model checks,<br>
+Open **IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP, CityJSON, 3D Tiles, USD and point clouds** together, run clash detection and model checks,<br>
 plan voids and clearance zones, produce **Inventor-style 2D drawings**, render with **scanned PBR materials** — and stay in sync with Revit and Navisworks.
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.28.2-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.2/ManageBIM-Setup-0.28.2.exe)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.28.3-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.3/ManageBIM-Setup-0.28.3.exe)
 &nbsp;
 [![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Build%20from%20source-334155?style=for-the-badge&logo=linux&logoColor=white)](#building-from-source)
 
 [![Build](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml/badge.svg)](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-0.28.2-blue)
+![Version](https://img.shields.io/badge/version-0.28.3-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20FreeBSD-0078d4)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-b7410e)
 ![No admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a)
@@ -22,7 +22,7 @@ plan voids and clearance zones, produce **Inventor-style 2D drawings**, render w
 
 <img src="docs/images/main-window.png" alt="ManageBIM main window" width="920">
 
-**[Download](#download) · [What's new](#whats-new) · [Highlights](#highlights) · [Features](#features) · [Add-ins](#add-ins-windows) · [Build from source](#building-from-source)**
+**[Download](#download) · [In action](#see-it-in-action) · [What's new](#whats-new) · [Highlights](#highlights) · [Features](#features) · [Add-ins](#add-ins-windows) · [Build from source](#building-from-source)**
 
 </div>
 
@@ -37,8 +37,23 @@ plan voids and clearance zones, produce **Inventor-style 2D drawings**, render w
 | 🧭 **Familiar** | Ribbon, Selection Tree, Find Items, Clash Detective, TimeLiner, viewpoints — the workflow you know from Navisworks. |
 | 🧱 **Coordination, not just viewing** | Clearance zones, provisions for void (found automatically where services cross walls and slabs) and placeholder volumes take part in clash detection. |
 | 📐 **Drawings and presentation** | Pick a face of the section box and get a 2D view with visible and hidden lines (PDF / DWG); photoreal renders with 28 scanned PBR materials, lights and sun. |
-| 🌐 **Open standards** | IFC 2x3 / IFC4 in and out (MVD), **BCF 2.1 / 3.0**, **buildingSMART IDS 1.0**, **bSDD**, DWG / DXF, E57 / LAS, glTF, MaterialX. |
+| 🌐 **Open standards** | IFC 2x3 / IFC4 in and out (MVD), **ifcJSON / ifcXML**, **BCF 2.1 / 3.0**, **buildingSMART IDS 1.0**, **bSDD**, **CityJSON**, **3D Tiles**, **USD**, **3MF**, DWG / DXF, E57 / LAS / LAZ, glTF (with structural metadata), MaterialX. |
 | 🆓 **Free and open** | MIT licence, no account, no subscription, no administrator rights to install. |
+
+---
+
+## See it in action
+
+<table>
+<tr>
+<td width="50%"><img src="docs/gifs/compare-heatmap.gif" alt="Compare with deviation heatmap"><br><sub><b>Geometric diff between revisions</b> — Compare measures how far every surface moved and paints a <b>deviation heatmap</b> per triangle (green in place → red at the scale): a building moved 600 mm, a roof raised 2.5 m, one removed, one added.</sub></td>
+<td width="50%"><img src="docs/gifs/multiview.gif" alt="Multi-view drawing"><br><sub><b>Multi-view drawing</b> — all faces of the section box on one sheet like Inventor: choose the views and the spacing, see the live preview, export PDF or DWG at 1:1.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/gifs/walk-path-scan.gif" alt="Walk path on a point cloud"><br><sub><b>Walk path on a scan</b> — click on the floor of a point cloud (snaps onto scan points), drag points, insert on the line; segment lengths, direction arrows and a live preview.</sub></td>
+<td width="50%"><img src="docs/gifs/viewcube.gif" alt="ViewCube"><br><sub><b>ViewCube</b> — 26 directions with chamfered edges and corners, a compass ring, and arrows to the neighbouring faces when you look straight at one.</sub></td>
+</tr>
+</table>
 
 ---
 
@@ -100,22 +115,22 @@ plan voids and clearance zones, produce **Inventor-style 2D drawings**, render w
 
 | Platform | Package | Notes |
 |---|---|---|
-| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.28.2.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.2/ManageBIM-Setup-0.28.2.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime, Intel Open Image Denoise and the scanned PBR material library. Per-user, **no administrator rights**, folder of your choice. |
+| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.28.3.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.3/ManageBIM-Setup-0.28.3.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime, Intel Open Image Denoise and the scanned PBR material library. Per-user, **no administrator rights**, folder of your choice. |
 | **Linux** (x86-64) | [Build from source](#building-from-source) | Prebuilt AppImage packages are paused while the Linux build is being fixed; `cargo build --release` and `packaging/linux/build-appimage.sh` make the same single-file AppImage. |
 | **FreeBSD** (x86-64) | [Build from source](#building-from-source) | Prebuilt packages are paused while the FreeBSD build is being fixed; see *Linux and FreeBSD packages* below. Needs `pkg install mesa-libs libxkbcommon`. |
 
 ## What's new
 
+> **0.28.3** — **new open formats with per-object properties**: 3MF, CityJSON / CityJSONSeq, ifcJSON and ifcXML (converted with the official IFC schemas), 3D Tiles 1.1 / 1.0, USD (.usda) and LAZ. Richer DXF (block attributes, XDATA), LAS (one item per classification), PLY (segments) and glTF (EXT_structural_metadata). **Geometric diff between revisions** with a per-triangle **deviation heatmap**.
+>
 > **0.28.2** — a **Property editor** for standard IFC property sets (typed in the IFC export) and custom data, with original values never lost; a new **ViewCube** with compass; viewpoints that keep their own look next to View Templates; a **Multi-view** window with chosen views, spacing and live preview; nicer **point clouds** (relief, real size, elevation colours, snapping); easier **walk path** editing; Plant 3D / Civil 3D object properties from the AutoCAD add-in; self-contained **.bimd**.
 >
 > **0.28.1** — **move and rotate** clearance zones, voids and placeholders with a gizmo; show them in **Revit and Navisworks** (display only, with a preview window); compact add-in ribbons with a **ManageBIM** window for every command; **all Plant 3D properties** after Send (empty fields, line data, completed from Piping.dcf).
->
-> **0.28.0 (stable)** — a cleaner, more professional interface: full ribbon labels and vector icons, one notification at a time, level labels clear of the navigation bar. **Edit coordination objects in 3D** with face arrows, send approved **voids to Revit** (new *ManageBIM Voids* command), **multi-view drawings** (all faces of the section box, DWG at 1:1 in model space), DWG overlays back **exactly** on their cut plane, **light bounced from lamps** in the path trace and fixed spot lights, a large **Path trace window with live preview**, redesigned **View Templates** (update, order, choose what each applies) and an **update check** with one-click install.
 
 Older versions: see the full **[CHANGELOG](CHANGELOG.md)**.
 
 > **Windows:** the installer is not digitally signed yet — if SmartScreen asks, choose *More info › Run anyway*.
-> Silent install: `ManageBIM-Setup-0.28.2.exe /S` (add `/NoAddins` for the application only).
+> Silent install: `ManageBIM-Setup-0.28.3.exe /S` (add `/NoAddins` for the application only).
 >
 > **Linux / FreeBSD:** the add-ins (Revit, Navisworks, AutoCAD) and the native STEP / IGES reader exist only on Windows; everything else is the same.
 
@@ -128,8 +143,9 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 <details open>
 <summary><b>Model review</b></summary>
 
-- **Federated models** — IFC 2x3 / IFC4 (`.ifczip` too) with openings cut, systems, classifications and georeference, Revit and Navisworks (through the add-ins), AutoCAD / Plant 3D DWG with Plant 3D properties, DXF, STEP / IGES / BREP / FCStd, FBX, glTF / GLB, OBJ, STL, PLY.
-- **Point clouds** — E57 and LAS, density and point size control, one item per scan.
+- **Federated models** — IFC 2x3 / IFC4 (`.ifczip`, **ifcXML**, **ifcJSON** too) with openings cut, systems, classifications and georeference, Revit and Navisworks (through the add-ins), AutoCAD / Plant 3D DWG with Plant 3D properties, DXF (with block attributes and XDATA), STEP / IGES / BREP / FCStd, FBX, glTF / GLB (with EXT_structural_metadata), OBJ, STL, PLY (with segments and properties).
+- **Open city and web formats** — **CityJSON / CityJSONSeq** (attributes, LoD, semantic surfaces), **3D Tiles 1.1 / 1.0** (tilesets, b3dm batch tables, shown upright from ECEF), **USD** text (.usda: prims, transforms, customData), **3MF** (objects, materials, metadata).
+- **Point clouds** — E57, LAS and **LAZ**; one item per scan, LAS split **by classification** (Ground, Building, Vegetation…) with intensity / returns / GPS time; round points with relief, real point size, colour by **elevation**; Measure snaps onto scan points.
 - **Selection Tree** (group by any property, category colours, counts), **Property Tree**, **Find Items** with condition chips, selection and search **sets**, **Select Same Type / Category**.
 - **Navigation** like Navisworks — orbit, pan, walk with gravity and collision, ViewCube, walk paths, viewpoints, animations; adaptive LOD on large models.
 - **Visual styles** — Realistic, Shaded, Concept, Wireframe and **Hidden line** (technical-drawing look, every edge in black); fine edges, soft contact shadows, **sun shadows by date, time and location**.
@@ -152,7 +168,7 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 - **As-built check** — the model against the point cloud: built, partial, missing, not scanned; colours on the model and an Excel report.
 - **Sections & Annotation** — boxes with stretch arrows (like Revit), planes, **sections by level** from the status bar, filled cuts (solid cap hatched on the cut plane). The **Annotation** tab exports the cut to **DWG / DXF / PDF** with hatching, element tags, grid bubbles and **dimension chains**; separate **Dimensions** / **Levels** toggles let you drop what you don't need. **Pick face**: click a face of the section box (it turns light green) to draw the view from it, **like an Inventor drawing view** — thick cut outline, visible edges beyond the cut and dashed **hidden lines**, with technical line weights. The **2D Drawing Preview** (cream sheet, title block, zoom / pan) shows exactly what is exported, in real coordinates.
 - **Grids and levels** — from IFC, from DWG / DXF, or created in the app; clash locations like **“C-4 / Level 2”**.
-- **Measure** with snapping, **relocate** models (point to point, rotate, align to a face), **compare** model versions (geometry and **parameter by parameter**, old → new), **TimeLiner** 4D (CSV, **MS Project** and **Primavera P6** XML; videos with date and legend) and **quantities**.
+- **Measure** with snapping, **relocate** models (point to point, rotate, align to a face), **compare** model versions (geometry and **parameter by parameter**, old → new, with a per-triangle **deviation heatmap**), **TimeLiner** 4D (CSV, **MS Project** and **Primavera P6** XML; videos with date and legend) and **quantities**.
 - **Colour by parameter** with a legend in the view and on images / videos.
 - **User data like Navisworks** — Properties › Custom › Add User Data Tab / Insert New Property: your own properties and values on any element (also on geometry without data: STEP, DWG, OBJ), saved with the project, used by Find, Profiler, Model Checker and IFC export. **Import properties from Excel / CSV** (matched by GlobalId, Name or any property) and export an Excel template.
 </details>

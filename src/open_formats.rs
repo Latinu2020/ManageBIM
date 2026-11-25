@@ -513,7 +513,12 @@ fn city_objects(objs: &serde_json::Map<String, serde_json::Value>, ctx: &CityCtx
             props.push(prop("Attributes", &k, v));
         }
         let (t, c): (Vec<[DVec3; 3]>, Vec<[u8; 4]>) = tris.into_iter().unzip();
-        out.push(RawElement { name, ifc_type: ty.to_string(), guid: id.clone(), storey: root_of(id), props, tris: t, colors: c, default_hidden: false });
+        // radacina (cladirea unei parti) ca proprietate, nu ca nivel: altfel fiecare cladire devine un "nivel"
+        let root = root_of(id);
+        if root != *id {
+            props.push(prop("CityJSON", "Root object", root));
+        }
+        out.push(RawElement { name, ifc_type: ty.to_string(), guid: id.clone(), storey: String::new(), props, tris: t, colors: c, default_hidden: false });
     }
 }
 

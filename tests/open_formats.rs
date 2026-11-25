@@ -45,7 +45,7 @@ fn cityjson_building_with_attributes_semantics_and_parts() {
     assert!(b.colors.contains(&[178, 84, 64, 255]), "roof colour");
     assert!((b.tris.iter().flat_map(|t| t.iter()).map(|p| p.x).fold(0.0, f64::max) - 100001.0).abs() < 1e-6, "transform");
     let part = m.elements.iter().find(|e| e.guid == "B1-p").unwrap();
-    assert_eq!(part.storey, "B1", "parts grouped under their building");
+    assert!(part.props.iter().any(|p| p.name == "Root object" && p.value == "B1"), "parts linked to their building");
 }
 
 #[test]
