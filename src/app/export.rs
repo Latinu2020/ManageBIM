@@ -339,6 +339,7 @@ impl App {
                 template: String::new(),
                 measures: Vec::new(),
                 folder: "BCF".into(),
+                look: None,
             });
             n += 1;
         }
@@ -425,7 +426,7 @@ impl App {
                 issue.guid = v.guid.clone();
             }
             nred += v.redlines.len();
-            self.viewpoints.push(Viewpoint { name: v.name, cam, section, cad_view: crate::app::CadView::Current, cad_view_pos: 0.0, hidden: Vec::new(), comment, redlines: v.redlines, issue, comments, selected: Vec::new(), template: String::new(), measures: Vec::new(), folder: v.folder });
+            self.viewpoints.push(Viewpoint { name: v.name, cam, section, cad_view: crate::app::CadView::Current, cad_view_pos: 0.0, hidden: Vec::new(), comment, redlines: v.redlines, issue, comments, selected: Vec::new(), template: String::new(), measures: Vec::new(), folder: v.folder, look: None });
             n += 1;
         }
         self.open_panel(crate::layout::Panel::Viewpoints);

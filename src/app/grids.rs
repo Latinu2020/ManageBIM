@@ -583,30 +583,58 @@ impl App {
         out
     }
 
-    /// Desenul cu mai multe vederi din cubul de sectiune, ca o plansa Inventor: fatadele Front, Right,
-    /// Back, Left pe un rand si vederea Top deasupra lui Front. In DWG / DXF totul e la scara 1:1 in model
-    /// space (metri): vederea Front ramane in coordonatele ei REALE (se poate atasa ca overlay),
-    /// celelalte sunt asezate langa ea, la dimensiunea lor reala. In PDF: pe plansa cu cartus.
-    pub fn export_multiview(&mut self, path: &str) {
+    /// Plansa cu mai multe vederi din cubul de sectiune, ca in Inventor: fatadele (Front, Right, Back,
+    /// Left) pe un rand, Top deasupra lui Front, Bottom sub el. Doar vederile bifate (`mv_views`), cu
+    /// distanta `mv_gap` intre ele (0 = automat). Front ramane in coordonatele lui REALE (1:1, metri),
+    /// celelalte sunt asezate langa el la dimensiunea lor reala. Rezultatul e in cache (preview fluid).
+    pub fn multiview_layout(&mut self) -> Result<Arc<crate::app::MultiViewSheet>, String> {
         use crate::app::CadView;
         if !(self.section.enabled && self.section.mode == crate::app::SectionMode::Box) {
-            return self.error("Turn on the section box first (Sections › Model box): the views are made from its faces.");
+            return Err("Turn on the section box first (Sections › Model box): the views are made from its faces.".into());
         }
+        let key = format!(
+            "{:?}|{:.3}|{:?}|{:?}|{}|{}|{}|{}|{}|{}|{}",
+            self.mv_views,
+            self.mv_gap,
+            self.section.bmin,
+            self.section.bmax,
+            self.hidden.len(),
+            self.cad_visible_edges,
+            self.cad_hidden_edges,
+            self.cad_hatch,
+            self.cad_dims,
+            self.loaded_models().count(),
+            self.mv_titles
+        );
+        if let Some((k, v)) = &self.mv_cache {
+            if *k == key {
+                return Ok(v.clone());
+            }
+        }
+        let order = [CadView::Front, CadView::Right, CadView::Back, CadView::Left, CadView::Top, CadView::Bottom];
         let (old_view, old_pos) = (self.settings.cad_view, self.settings.cad_view_pos);
         let mut views: Vec<(CadView, Vec<(String, [f64; 4])>, Vec<CadText>)> = Vec::new();
-        for v in [CadView::Front, CadView::Right, CadView::Back, CadView::Left, CadView::Top] {
-            self.settings.cad_view = v;
+        for (k, v) in order.iter().enumerate() {
+            if !self.mv_views[k] {
+                continue;
+            }
+            self.settings.cad_view = *v;
             self.settings.cad_view_pos = 0.0;
             if let Some((segs, texts, _, _)) = self.section_drawing() {
-                views.push((v, segs, texts));
+                if !segs.is_empty() {
+                    views.push((*v, segs, texts));
+                }
             }
         }
         self.settings.cad_view = old_view;
         self.settings.cad_view_pos = old_pos;
         if views.is_empty() {
-            return self.error("Nothing to draw: move the section box over the model.");
+            return Err(if self.mv_views.iter().any(|b| *b) { "Nothing to draw: move the section box over the model.".into() } else { "Tick at least one view.".into() });
         }
-        let bbox = |segs: &[(String, [f64; 4])]| {
+        // limitele unei vederi: liniile SI textele ei (etichetele de nivel ies in afara desenului;
+        // distanta dintre vederi se masoara de la ele, ca sa nu intre in vederea vecina)
+        let u = 0.1f64;
+        let bbox_full = |segs: &[(String, [f64; 4])], texts: &[CadText]| {
             let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
             for (_, s) in segs {
                 x0 = x0.min(s[0]).min(s[2]);
@@ -614,55 +642,89 @@ impl App {
                 x1 = x1.max(s[0]).max(s[2]);
                 y1 = y1.max(s[1]).max(s[3]);
             }
+            for t in texts {
+                let w = text_w(&t.s, t.mm, u);
+                let h = t.mm * u;
+                let (ex, ey) = if (t.rot - 90.0).abs() < 1.0 { (h, w) } else { (w, h) };
+                x0 = x0.min(t.x - if (t.rot - 90.0).abs() < 1.0 { h } else { 0.0 });
+                y0 = y0.min(t.y);
+                x1 = x1.max(t.x + ex);
+                y1 = y1.max(t.y + ey);
+            }
             [x0, y0, x1, y1]
         };
-        // spatiul dintre vederi: 15% din cea mai mare latime (minim 2 m)
-        let maxw = views.iter().map(|v| { let b = bbox(&v.1); (b[2] - b[0]).max(b[3] - b[1]) }).fold(0.0, f64::max);
-        let gap = (maxw * 0.15).max(2.0);
-        let front = views.iter().find(|v| v.0 == CadView::Front).map(|v| bbox(&v.1)).unwrap_or_else(|| bbox(&views[0].1));
-        let mut all: Vec<(String, [f64; 4])> = Vec::new();
-        let mut texts: Vec<CadText> = Vec::new();
-        let mut x_cursor = front[0];
-        let elev_top = views.iter().filter(|v| v.0 != CadView::Top).map(|v| { let b = bbox(&v.1); b[3] - b[1] }).fold(0.0, f64::max);
-        for (v, segs, tx) in &views {
-            let b = bbox(segs);
-            // translatia vederii: Front pe loc; fatadele pe acelasi rand (aceeasi baza); Top deasupra lui Front
-            let (dx, dy) = match v {
-                CadView::Front => (0.0, 0.0),
-                CadView::Top => (front[0] - b[0], front[1] + elev_top + gap - b[1]),
-                _ => (x_cursor - b[0], front[1] - b[1]),
+        let views: Vec<(CadView, Vec<(String, [f64; 4])>, Vec<CadText>, [f64; 4])> = views.into_iter().map(|(v, s, t)| { let b = bbox_full(&s, &t); (v, s, t, b) }).collect();
+        // spatiul dintre vederi: ales de utilizator, sau 15% din cea mai mare latime (minim 2 m)
+        let maxw = views.iter().map(|v| { let b = v.3; (b[2] - b[0]).max(b[3] - b[1]) }).fold(0.0, f64::max);
+        let gap = if self.mv_gap > 0.0 { self.mv_gap as f64 } else { (maxw * 0.15).max(2.0) };
+        // vederea de referinta (ramane pe loc): Front, altfel prima fatada, altfel prima vedere
+        let is_plan = |v: &CadView| matches!(v, CadView::Top | CadView::Bottom);
+        let anchor = views.iter().position(|v| v.0 == CadView::Front).or_else(|| views.iter().position(|v| !is_plan(&v.0))).unwrap_or(0);
+        let front = views[anchor].3;
+        let elev_h = views.iter().filter(|v| !is_plan(&v.0)).map(|v| v.3[3] - v.3[1]).fold(0.0, f64::max);
+        let has_elev = views.iter().any(|v| !is_plan(&v.0));
+        let title_h = if self.mv_titles { (gap * 0.35).max(0.5) } else { 0.0 };
+        let mut sheet = crate::app::MultiViewSheet::default();
+        // fatadele: incepem cu vederea de referinta, apoi celelalte la dreapta ei
+        let mut x_cursor = front[2] + gap;
+        for (i, (v, segs, tx, b)) in views.iter().enumerate() {
+            let b = *b;
+            let (dx, dy) = if i == anchor {
+                (0.0, 0.0)
+            } else if has_elev && *v == CadView::Top {
+                // Top deasupra randului de fatade, aliniat cu Front
+                (front[0] - b[0], front[1] + elev_h + gap - b[1])
+            } else if has_elev && *v == CadView::Bottom {
+                // Bottom sub Front (sub titlul lui)
+                (front[0] - b[0], front[1] - gap - title_h - b[3])
+            } else {
+                let d = (x_cursor - b[0], front[1] - b[1]);
+                x_cursor = b[2] + d.0 + gap;
+                d
             };
-            if *v != CadView::Top {
-                x_cursor = b[2] + dx + gap;
-            }
             for (l, s) in segs {
-                all.push((l.clone(), [s[0] + dx, s[1] + dy, s[2] + dx, s[3] + dy]));
+                sheet.segs.push((l.clone(), [s[0] + dx, s[1] + dy, s[2] + dx, s[3] + dy]));
             }
             for t in tx {
                 let mut t = t.clone();
                 t.x += dx;
                 t.y += dy;
-                texts.push(t);
+                sheet.texts.push(t);
             }
+            let fr = [b[0] + dx, b[1] + dy, b[2] + dx, b[3] + dy];
             // titlul vederii sub ea, ca in Inventor
-            let name = format!("{} VIEW", v.label().to_uppercase());
-            texts.push(CadText::new("VIEW_TITLES", b[0] + dx, b[1] + dy - gap * 0.35, 5.0, 0.0, name));
+            if self.mv_titles {
+                sheet.texts.push(CadText::new("VIEW_TITLES", fr[0], fr[1] - title_h, 5.0, 0.0, format!("{} VIEW", v.label().to_uppercase())));
+            }
+            sheet.frames.push((v.label().to_string(), fr));
         }
+        sheet.gap = gap;
+        let sheet = Arc::new(sheet);
+        self.mv_cache = Some((key, sheet.clone()));
+        Ok(sheet)
+    }
+
+    /// Exportul plansei cu mai multe vederi: DWG / DXF 1:1 in model space sau PDF cu cartus.
+    pub fn export_multiview(&mut self, path: &str) {
+        let sheet = match self.multiview_layout() {
+            Ok(s) => s,
+            Err(e) => return self.error(e),
+        };
+        let n = sheet.frames.len();
         if path.to_lowercase().ends_with(".pdf") {
             let project = self.project_path.as_ref().map(|p| model_label(&crate::file_name(p))).unwrap_or_else(|| "ManageBIM".into());
-            let bytes = crate::pdf::section_sheet(&all, &texts, &self.title_block, &project, "Views from the section box", &now_string());
+            let bytes = crate::pdf::section_sheet(&sheet.segs, &sheet.texts, &self.title_block, &project, "Views from the section box", &now_string());
             return match std::fs::write(path, bytes) {
-                Ok(()) => self.toast(format!("{} views exported as PDF: {}", views.len(), crate::file_name(path))),
+                Ok(()) => self.toast(format!("{n} views exported as PDF: {}", crate::file_name(path))),
                 Err(e) => self.error(format!("Cannot write {path}: {e}")),
             };
         }
         let dwg = path.to_lowercase().ends_with(".dwg");
         let dxf_path = if dwg { std::path::Path::new(path).with_extension("dxf").to_string_lossy().to_string() } else { with_ext(path, "dxf") };
-        let content = cut_dxf_annot(&all, &texts, 0.1);
+        let content = cut_dxf_annot(&sheet.segs, &sheet.texts, 0.1);
         if let Err(e) = std::fs::write(&dxf_path, content) {
             return self.error(format!("Cannot write {dxf_path}: {e}"));
         }
-        let n = views.len();
         if !dwg {
             return self.toast(format!("{n} views exported at 1:1 in model space (Front in real coordinates): {}", crate::file_name(&dxf_path)));
         }

@@ -858,8 +858,32 @@ pub struct Viewpoint {
     /// folderul (si subfolderele, "Nivel 2/Instalatii"); gol = radacina
     #[serde(default)]
     pub folder: String,
+    /// aspectul vederii la salvare (stil vizual, axe, niveluri, capace, culori) - viewpoint-ul revine
+    /// exact cum a fost salvat, indiferent ce View Template e aplicat intre timp
+    #[serde(default)]
+    pub look: Option<VpLook>,
 }
 
+
+/// Plansa Multi view calculata: segmente (layer, x0 y0 x1 y1 in m), texte, cadrul fiecarei vederi.
+#[derive(Clone, Default)]
+pub struct MultiViewSheet {
+    pub segs: Vec<(String, [f64; 4])>,
+    pub texts: Vec<CadText>,
+    pub frames: Vec<(String, [f64; 4])>,
+    pub gap: f64,
+}
+
+/// Aspectul salvat cu un viewpoint (independent de View Templates).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct VpLook {
+    pub visual_style: crate::render::VisualStyle,
+    pub show_grids: bool,
+    pub show_levels: bool,
+    pub section_caps: bool,
+    #[serde(default)]
+    pub overrides: Vec<(ElemId, [u8; 4])>,
+}
 #[derive(Serialize, Deserialize)]
 pub struct ProjectFile {
     pub app: String,
@@ -1241,6 +1265,8 @@ pub struct App {
     pub coord_slot: Option<usize>,
     pub coord_sel: Option<usize>,
     pub coord_open: bool,
+    /// tipul ales din ribbon, asteapta confirmarea utilizatorului in fereastra (nu se creeaza automat)
+    pub coord_pending: Option<crate::coord_objects::CoordKind>,
     /// fata obiectului de coordonare tras cu mouse-ul (0..5 = -X +X -Y +Y -Z +Z, 6 = mutare in plan)
     pub coord_drag: Option<usize>,
     /// gizmo-ul obiectelor de coordonare: 0 = Resize (fete), 1 = Move (X/Y/Z), 2 = Rotate (verticala)
@@ -1327,6 +1353,14 @@ pub struct App {
     pub show_light: bool,
     /// nori de puncte: densitatea afisata (0..1), marimea punctelor (px), fereastra de control
     pub cloud_density: f32,
+    /// norii de puncte: 0 = culorile scanarii, 1 = dupa cota, 2 = gri
+    pub cloud_mode: u8,
+    /// puncte rotunde cu relief (altfel patrate, ca inainte)
+    pub cloud_round: bool,
+    /// marimea reala a punctului (mm) - aproape de nor punctele cresc si umplu golurile; 0 = doar pixeli
+    pub cloud_world_mm: f32,
+    /// pixeli fizici pe punct logic (pentru marimea punctelor)
+    pub ppp: f32,
     pub point_size: f32,
     pub show_cloud: bool,
     /// axe si niveluri pe model (calculate o data per model)
@@ -1415,6 +1449,8 @@ pub struct App {
     pub view_templates_open: bool,
     /// indexul template-ului curent (pentru navigare ◀ ▶ lângă cub)
     pub vt_current: usize,
+    /// un View Template a fost aplicat explicit (altfel viewpoint-urile noi nu se leaga de niciunul)
+    pub vt_applied: bool,
 
     pub hist_pos: usize,
     pub hist_sig: u64,
@@ -1428,6 +1464,12 @@ pub struct App {
     pub overlay_open: bool,
     /// fereastra mica de preview 2D a sectiunii (inainte de export), inchizabila
     pub section_preview_open: bool,
+    /// fereastra Multi view: vederile bifate (Front, Right, Back, Left, Top, Bottom), distanta (m, 0 = auto), titluri
+    pub mv_open: bool,
+    pub mv_views: [bool; 6],
+    pub mv_gap: f32,
+    pub mv_titles: bool,
+    pub mv_cache: Option<(String, Arc<MultiViewSheet>)>,
     /// previewul 2D: zoom (1 = incape in fereastra) si deplasare (pixeli)
     pub prev_zoom: f32,
     pub prev_pan: [f32; 2],
@@ -1590,6 +1632,8 @@ pub struct App {
     pub walk_turn: f32,
     /// traseul de mers desenat (puncte pe podea)
     pub walk_path: Vec<Vec3>,
+    /// punctul traseului tras cu mouse-ul (unealta Draw)
+    pub wp_drag: Option<usize>,
     /// mersul automat pe traseu, cand ruleaza
     pub path_run: Option<walk::PathRun>,
     /// fisierele din Inbox deja deschise in aceasta sesiune (Send to ManageBIM)
@@ -1629,8 +1673,10 @@ pub struct App {
     pub user_params: Vec<UserParam>,
     pub up_name: String,
     pub prop_import: Option<PropImport>,
-    /// (tab, proprietate) scrise vreodata in aceasta sesiune - se sterg corect dupa redenumire / stergere
-    pub user_applied: HashSet<(String, String)>,
+    /// proprietatile utilizatorului: ce e al lui pe fiecare element + valorile originale inlocuite
+    pub user_shadow: Mutex<UserShadow>,
+    /// fereastra Property editor (proprietati libere sau seturi standard IFC pe selectie)
+    pub pe: crate::ui::PropEditor,
     /// tab-ul de date utilizator afisat / editat in Properties
     pub user_tab: String,
     /// tab-uri goale create cu Add User Data Tab (inca fara proprietati)
@@ -1680,6 +1726,7 @@ impl App {
             coord_slot: None,
             coord_sel: None,
             coord_open: false,
+            coord_pending: None,
             coord_drag: None,
             coord_mode: 0,
             coord_rot_last: None,
@@ -1751,6 +1798,10 @@ impl App {
             show_about: false,
             show_light: false,
             cloud_density: 0.5,
+            cloud_mode: 0,
+            cloud_round: true,
+            cloud_world_mm: 12.0,
+            ppp: 1.0,
             point_size: 2.0,
             show_cloud: false,
             grid_cache: Default::default(),
@@ -1808,6 +1859,7 @@ impl App {
             view_templates: Vec::new(),
             view_templates_open: false,
             vt_current: 0,
+            vt_applied: false,
             hist_pos: 0,
             hist_sig: 0,
             vp_folder_cur: String::new(),
@@ -1817,6 +1869,11 @@ impl App {
             overlays: Vec::new(),
             overlay_open: false,
             section_preview_open: false,
+            mv_open: false,
+            mv_views: [true, true, true, true, true, false],
+            mv_gap: 0.0,
+            mv_titles: true,
+            mv_cache: None,
             prev_zoom: 1.0,
             prev_pan: [0.0, 0.0],
             title_block: Default::default(),
@@ -1934,6 +1991,7 @@ impl App {
             walk_vel: Vec3::ZERO,
             walk_turn: 0.0,
             walk_path: Vec::new(),
+            wp_drag: None,
             path_run: None,
             inbox_seen: HashSet::new(),
             section_follow: false,
@@ -1957,7 +2015,8 @@ impl App {
             user_params: Vec::new(),
             up_name: String::new(),
             prop_import: None,
-            user_applied: HashSet::new(),
+            user_shadow: Mutex::new(UserShadow::default()),
+            pe: Default::default(),
             user_tab: String::new(),
             user_tabs_new: Vec::new(),
             user_tab_rename: None,
@@ -3159,31 +3218,80 @@ pub fn user_key(e: &Element, idx: usize) -> String {
     if e.guid.trim().is_empty() { format!("#{idx}") } else { e.guid.clone() }
 }
 
-/// Scrie parametrii utilizatorului in proprietatile modelului (tab-urile utilizatorului se refac de la zero).
-pub fn apply_user_params(m: &mut Model, params: &[UserParam]) {
-    apply_user_params_ext(m, params, &HashSet::new());
+/// Ce a scris utilizatorul peste model: (model, cheie element, tab, proprietate cu litere mici).
+pub type UserPropKey = (String, String, String, String);
+
+/// Starea proprietatilor utilizatorului: ce valori sunt ale lui pe fiecare element si valorile
+/// ORIGINALE pe care le-a inlocuit (ca sa revina daca suprascrierea e stearsa - nu se pierde nimic).
+#[derive(Default)]
+pub struct UserShadow {
+    pub applied: HashSet<UserPropKey>,
+    /// valoarea originala (numele exact + valoarea) inainte de prima suprascriere
+    pub orig: HashMap<UserPropKey, (String, String)>,
 }
 
-/// ca `apply_user_params`; `stale` = perechi (tab, proprietate) aplicate anterior (redenumite / sterse) care trebuie scoase.
-pub fn apply_user_params_ext(m: &mut Model, params: &[UserParam], stale: &HashSet<(String, String)>) {
-    let mine: Vec<&UserParam> = params.iter().filter(|p| p.model == m.name).collect();
-    let mut strip: HashSet<(String, String)> = params.iter().map(|p| (p.group.clone(), p.name.to_lowercase())).collect();
-    strip.extend(stale.iter().map(|(g, n)| (g.clone(), n.to_lowercase())));
-    let is_user = |p: &crate::model::Prop| p.group == USER_GROUP || strip.contains(&(p.group.clone(), p.name.to_lowercase()));
-    let had = m.elements.iter().any(|e| e.props.iter().any(|p| is_user(p)));
-    if mine.is_empty() && !had {
+/// Scrie parametrii utilizatorului in proprietatile modelului (tab-urile utilizatorului se refac de la zero).
+pub fn apply_user_params(m: &mut Model, params: &[UserParam]) {
+    let mut sh = UserShadow::default();
+    let prev = HashSet::new();
+    apply_user_params_shadow(m, params, &prev, &mut sh);
+}
+
+/// Aplica parametrii utilizatorului pe un model, element cu element:
+/// 1. scoate valorile puse anterior de utilizator (`prev` = (cheie, tab, proprietate) ale modelului) si
+///    tab-ul "User", repunand valorile originale pe care le inlocuisera;
+/// 2. scrie parametrii curenti; daca elementul avea deja proprietatea (din IFC / Revit), valoarea originala
+///    e pastrata in `sh.orig` si revine cand suprascrierea e stearsa.
+/// Doar elementele cu parametri sunt atinse - proprietatile celorlalte raman neschimbate.
+pub fn apply_user_params_shadow(m: &mut Model, params: &[UserParam], prev: &HashSet<(String, String, String)>, sh: &mut UserShadow) {
+    let model = m.name.clone();
+    let mine: Vec<&UserParam> = params.iter().filter(|p| p.model == model).collect();
+    let had_user_tab = m.elements.iter().any(|e| e.props.iter().any(|p| p.group == USER_GROUP));
+    if mine.is_empty() && prev.is_empty() && !had_user_tab {
         return;
     }
     let mut by_key: HashMap<&str, Vec<&UserParam>> = HashMap::new();
     for p in &mine {
         by_key.entry(p.key.as_str()).or_default().push(p);
     }
+    let prev_keys: HashSet<&str> = prev.iter().map(|k| k.0.as_str()).collect();
     for (i, e) in m.elements.iter_mut().enumerate() {
-        e.props.retain(|p| !is_user(p));
         let k = user_key(e, i);
-        if let Some(v) = by_key.get(k.as_str()) {
+        let here = by_key.get(k.as_str());
+        if here.is_none() && !prev_keys.contains(k.as_str()) && !e.props.iter().any(|p| p.group == USER_GROUP) {
+            continue;
+        }
+        // 1. valorile vechi ale utilizatorului afara, originalele inapoi
+        let mut restored: Vec<crate::model::Prop> = Vec::new();
+        e.props.retain(|p| {
+            let nl = p.name.to_lowercase();
+            let mine_before = prev.contains(&(k.clone(), p.group.clone(), nl.clone()));
+            if p.group == USER_GROUP || mine_before {
+                if mine_before {
+                    if let Some((n, v)) = sh.orig.get(&(model.clone(), k.clone(), p.group.clone(), nl)) {
+                        if !restored.iter().any(|r| r.group == p.group && r.name.eq_ignore_ascii_case(n)) {
+                            restored.push(crate::model::Prop { group: p.group.clone(), name: n.clone(), value: v.clone() });
+                        }
+                    }
+                }
+                false
+            } else {
+                true
+            }
+        });
+        e.props.extend(restored);
+        // 2. valorile curente
+        if let Some(v) = here {
             for p in v {
+                let nl = p.name.to_lowercase();
+                let key = (model.clone(), k.clone(), p.group.clone(), nl.clone());
+                if let Some(pos) = e.props.iter().position(|q| q.group == p.group && q.name.to_lowercase() == nl) {
+                    let q = e.props.remove(pos);
+                    sh.orig.entry(key.clone()).or_insert((q.name, q.value));
+                    e.props.retain(|q| !(q.group == p.group && q.name.to_lowercase() == nl));
+                }
                 e.props.push(crate::model::Prop { group: p.group.clone(), name: p.name.clone(), value: p.value.clone() });
+                sh.applied.insert(key);
             }
         }
     }

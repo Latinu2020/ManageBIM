@@ -740,6 +740,46 @@ fn user_params_apply_replace_and_remove() {
     assert!(m.elements[0].props.iter().all(|q| q.group != "User"));
 }
 
+/// Suprascrierea unei proprietati IFC existente (ex. Pset_WallCommon.FireRating) atinge doar
+/// elementul ales, iar la stergerea suprascrierii valoarea originala revine - nu se pierde nimic.
+#[test]
+fn user_override_keeps_and_restores_originals() {
+    use bimrust::app::{apply_user_params_shadow, user_key, UserParam, UserShadow};
+    use bimrust::model::Prop;
+    let raw = bimrust::load_any("tests/data/wall_opening.ifc", &|_, _| {}).expect("ifc");
+    let mut m = bimrust::model::Model::from_raw(raw, "wall.ifc".into(), "tests/data/wall_opening.ifc".into(), glam::DVec3::ZERO);
+    // un al doilea perete (copie, alt GUID) ca sa vedem ca nu e atins
+    let mut e1 = m.elements[0].clone();
+    e1.guid = "second-wall".into();
+    m.elements.truncate(1);
+    m.elements.push(e1);
+    for (i, e) in m.elements.iter_mut().enumerate().take(2) {
+        e.props.push(Prop { group: "Pset_WallCommon".into(), name: "FireRating".into(), value: format!("REI {}", 60 + 30 * i) });
+    }
+    let k0 = user_key(&m.elements[0], 0);
+    let fr = |m: &bimrust::model::Model, i: usize| m.elements[i].props.iter().filter(|p| p.group == "Pset_WallCommon" && p.name == "FireRating").map(|p| p.value.clone()).collect::<Vec<_>>();
+    let mut sh = UserShadow::default();
+    let prev_of = |sh: &UserShadow| sh.applied.iter().map(|k| (k.1.clone(), k.2.clone(), k.3.clone())).collect::<std::collections::HashSet<_>>();
+    let over = vec![UserParam { model: "wall.ifc".into(), key: k0.clone(), name: "FireRating".into(), value: "REI 120".into(), group: "Pset_WallCommon".into() }];
+    let prev = prev_of(&sh);
+    sh.applied.clear();
+    apply_user_params_shadow(&mut m, &over, &prev, &mut sh);
+    assert_eq!(fr(&m, 0), vec!["REI 120".to_string()]);
+    assert_eq!(fr(&m, 1), vec!["REI 90".to_string()], "other elements keep their own value");
+    // a doua aplicare (aceeasi stare) nu dubleaza si nu schimba celelalte elemente
+    let prev = prev_of(&sh);
+    sh.applied.clear();
+    apply_user_params_shadow(&mut m, &over, &prev, &mut sh);
+    assert_eq!(fr(&m, 0), vec!["REI 120".to_string()]);
+    assert_eq!(fr(&m, 1), vec!["REI 90".to_string()]);
+    // suprascrierea stearsa: originalul revine
+    let prev = prev_of(&sh);
+    sh.applied.clear();
+    apply_user_params_shadow(&mut m, &[], &prev, &mut sh);
+    assert_eq!(fr(&m, 0), vec!["REI 60".to_string()]);
+    assert_eq!(fr(&m, 1), vec!["REI 90".to_string()]);
+}
+
 /// Gravitatea clash-urilor si sabloanele de teste.
 #[test]
 fn clash_severity_and_templates() {

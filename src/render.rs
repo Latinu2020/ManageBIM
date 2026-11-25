@@ -104,6 +104,9 @@ pub struct FrameParams {
     pub light: Vec3,
     /// marimea punctelor norilor (pixeli)
     pub point_size: f32,
+    /// norii de puncte: (mod culoare, cota min, cota max, rotunde) si (marime reala m, pixeli pe metru)
+    pub cloud: Vec4,
+    pub cloud_world: [f32; 2],
     /// fetele taiate de sectiune desenate pline (capace)
     pub caps: bool,
     /// umbrire de contact: 0 = oprita; altfel taria (0..1)
@@ -133,13 +136,17 @@ layout(location=0) in vec3 a_pos;
 layout(location=1) in vec4 a_col;
 uniform mat4 u_vp;
 uniform float u_size;
+// x = marimea reala a punctului (m, 0 = doar pixeli), y = pixeli pe metru la distanta 1
+uniform vec2 u_world;
 out vec3 v_pos;
 out vec4 v_col;
 void main() {
     v_pos = a_pos;
     v_col = a_col;
     gl_Position = u_vp * vec4(a_pos, 1.0);
-    gl_PointSize = u_size;
+    // aproape de nor punctele cresc (umplu golurile, aspect continuu), departe raman la u_size
+    float ws = u_world.x * u_world.y / max(gl_Position.w, 1e-3);
+    gl_PointSize = clamp(max(u_size, ws), 1.0, 28.0);
 }
 "#;
 
@@ -149,13 +156,40 @@ in vec4 v_col;
 uniform vec4 u_planes[6];
 uniform int u_nplanes;
 uniform float u_exposure;
+uniform vec4 u_cloud;
 out vec4 o_col;
 void main() {
     for (int i = 0; i < 6; i++) {
         if (i >= u_nplanes) break;
         if (dot(u_planes[i].xyz, v_pos) > u_planes[i].w) discard;
     }
-    o_col = vec4(min(v_col.rgb * u_exposure, vec3(1.0)), 1.0);
+    // x = mod culoare (0 RGB scanare, 1 cota, 2 gri), y/z = cota min/max, w = puncte rotunde cu relief
+    vec3 c = v_col.rgb;
+    if (u_cloud.x > 0.5 && u_cloud.x < 1.5) {
+        float t = clamp((v_pos.z - u_cloud.y) / max(u_cloud.z - u_cloud.y, 1e-3), 0.0, 1.0);
+        // albastru - cyan - verde - galben - rosu (ca in Recap / CloudCompare)
+        c = t < 0.25 ? mix(vec3(0.15, 0.25, 0.85), vec3(0.1, 0.75, 0.9), t / 0.25)
+          : t < 0.5 ? mix(vec3(0.1, 0.75, 0.9), vec3(0.2, 0.8, 0.3), (t - 0.25) / 0.25)
+          : t < 0.75 ? mix(vec3(0.2, 0.8, 0.3), vec3(0.95, 0.85, 0.2), (t - 0.5) / 0.25)
+          : mix(vec3(0.95, 0.85, 0.2), vec3(0.9, 0.25, 0.15), (t - 0.75) / 0.25);
+    } else if (u_cloud.x > 1.5) {
+        c = vec3(dot(c, vec3(0.299, 0.587, 0.114)));
+    }
+    float shade = 1.0;
+    if (u_cloud.w > 0.5) {
+        vec2 q = gl_PointCoord * 2.0 - 1.0;
+        float r2 = dot(q, q);
+        if (r2 > 1.0) discard;
+        // fiecare punct ca o mica sfera luminata din stanga-sus: relief, fara „zgomot patrat"
+        vec3 n = vec3(q.x, -q.y, sqrt(1.0 - r2));
+        shade = 0.62 + 0.38 * max(dot(n, normalize(vec3(-0.4, 0.5, 0.75))), 0.0);
+        // adancime pe sfera: punctele se suprapun curat
+        gl_FragDepth = gl_FragCoord.z - (1.0 - r2) * 2e-6;
+    } else {
+        gl_FragDepth = gl_FragCoord.z;
+    }
+    // alfa 0.98 = marcaj "nor de puncte": pasul SSAO / margini nu-l atinge (altfel fiecare punct devine o muchie neagra)
+    o_col = vec4(min(c * u_exposure * shade, vec3(1.0)), 0.98);
 }
 "#;
 
@@ -725,6 +759,8 @@ impl Renderer {
             gl.uniform_matrix_4_f32_slice(gl.get_uniform_location(pp, "u_vp").as_ref(), false, &p.view_proj.to_cols_array());
             gl.uniform_1_f32(gl.get_uniform_location(pp, "u_size").as_ref(), p.point_size.clamp(1.0, 16.0));
             gl.uniform_1_f32(gl.get_uniform_location(pp, "u_exposure").as_ref(), p.light.x);
+            gl.uniform_4_f32(gl.get_uniform_location(pp, "u_cloud").as_ref(), p.cloud.x, p.cloud.y, p.cloud.z, p.cloud.w);
+            gl.uniform_2_f32(gl.get_uniform_location(pp, "u_world").as_ref(), p.cloud_world[0], p.cloud_world[1]);
             gl.uniform_4_f32_slice(gl.get_uniform_location(pp, "u_planes").as_ref(), &pl);
             gl.uniform_1_i32(gl.get_uniform_location(pp, "u_nplanes").as_ref(), p.nplanes);
             for (slot, g) in &self.points {
@@ -874,6 +910,8 @@ void main() {
     vec4 c = texture(u_col, v_uv);
     float d0 = texture(u_dep, v_uv).r;
     if (d0 >= 0.99999 || c.a <= 0.0) { o_col = c; return; }
+    // punctele norilor (alfa 0.98, amestecat MSAA la margini 0.97..1): fara umbrire de contact si fara margini
+    if (c.a > 0.97 && c.a < 0.9995) { o_col = vec4(c.rgb, 1.0); return; }
     float z0 = lin(d0);
     // raza ~0.45 m in lume, proiectata pe ecran (limitata 3..48 px)
     float rw = 0.45;

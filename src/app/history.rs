@@ -45,10 +45,12 @@ impl App {
             issue: Default::default(),
             comments: Vec::new(),
             selected,
-            template: self.view_templates.get(self.vt_current).map(|t| t.name.clone()).unwrap_or_default(),
+            // legat de un sablon doar daca unul a fost aplicat explicit (inainte: mereu sablonul #1)
+            template: if self.vt_applied { self.view_templates.get(self.vt_current).map(|t| t.name.clone()).unwrap_or_default() } else { String::new() },
             measures: self.measures.clone(),
             // viewpoint-urile noi intra in folderul ales in panou
             folder: self.vp_folder_cur.clone(),
+            look: Some(self.current_look()),
         });
         self.active_vp = Some(self.viewpoints.len() - 1);
         self.vp_sel = self.viewpoints.len() - 1;
@@ -207,17 +209,29 @@ impl App {
             if !v.measures.is_empty() {
                 self.measures = v.measures;
             }
-            // aplică stilul View Template salvat cu viewpoint-ul, dacă există
-            if !v.template.is_empty() {
-                if let Some(t) = self.view_templates.iter().find(|t| t.name == v.template).cloned() {
-                    self.settings.visual_style = t.visual_style;
+            // aspectul: viewpoint-urile noi il au salvat (exact cum erau); cele vechi folosesc sablonul
+            // legat, dar doar partile bifate la „Applies" (inainte se forta stilul + culorile sablonului)
+            let tpl = (!v.template.is_empty()).then(|| self.view_templates.iter().position(|t| t.name == v.template)).flatten();
+            if let Some(l) = v.look {
+                self.apply_look(&l);
+            } else if let Some(ti) = tpl {
+                let t = self.view_templates[ti].clone();
+                let [_, _, _, style, col] = t.include;
+                if style {
+                    self.apply_style_only(t.visual_style);
                     self.show_grids = t.show_grids;
                     self.show_levels = t.show_levels;
                     self.section_caps = t.section_caps;
+                }
+                if col {
                     self.overrides = t.overrides.into_iter().collect();
-                    self.vt_current = self.view_templates.iter().position(|x| x.name == v.template).unwrap_or(0);
                 }
             }
+            // pastila de sub cub arata sablonul legat (fara sa-l mai aplice)
+            if let Some(ti) = tpl {
+                self.vt_current = ti;
+            }
+            self.vt_applied = tpl.is_some();
             self.clash_focus = None;
             self.colors_dirty = true;
         }
@@ -306,6 +320,34 @@ impl App {
     }
 
     /// Shaded / Realistic / Concept / Wireframe (pastrat in setari).
+    /// aspectul curent al vederii (pentru viewpoint-uri)
+    pub fn current_look(&self) -> crate::app::VpLook {
+        let mut overrides: Vec<(ElemId, [u8; 4])> = self.overrides.iter().map(|(k, v)| (*k, *v)).collect();
+        overrides.sort_by_key(|(k, _)| *k);
+        crate::app::VpLook { visual_style: self.settings.visual_style, show_grids: self.show_grids, show_levels: self.show_levels, section_caps: self.section_caps, overrides }
+    }
+
+    pub fn apply_look(&mut self, l: &crate::app::VpLook) {
+        self.apply_style_only(l.visual_style);
+        self.show_grids = l.show_grids;
+        self.show_levels = l.show_levels;
+        self.section_caps = l.section_caps;
+        self.overrides = l.overrides.iter().copied().collect();
+        self.colors_dirty = true;
+    }
+
+    /// stilul vizual fara toast / salvarea setarilor (viewpoint-uri, sabloane); Realistic aprinde materialele
+    pub fn apply_style_only(&mut self, s: crate::render::VisualStyle) {
+        if self.settings.visual_style == s {
+            return;
+        }
+        self.settings.visual_style = s;
+        if s == crate::render::VisualStyle::Realistic && !self.materials_on && !self.mat_assign.is_empty() {
+            self.materials_on = true;
+            self.materials_changed();
+        }
+    }
+
     pub fn set_visual_style(&mut self, s: crate::render::VisualStyle) {
         self.settings.visual_style = s;
         self.settings.save();

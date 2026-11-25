@@ -817,6 +817,7 @@ impl App {
                 self.measures = t.measures;
                 self.vp_filter = t.vp_filter;
                 self.vt_current = i;
+                self.vt_applied = true;
             }
         }
         self.colors_dirty = true;
@@ -924,6 +925,40 @@ impl App {
             n += 1;
         }
         let _ = std::fs::remove_dir_all(&tmp);
+        // tot ce proiectul citeste din alte fisiere intra in pachet: desenele 2D (overlay) si texturile
+        // materialelor folosite - pe alt PC calea originala nu exista
+        let mut embedded: HashMap<String, String> = HashMap::new();
+        let mut embed = |zip: &mut crate::markup::Zip, total: &mut u64, dir: &str, src: &str| -> Option<String> {
+            if src.trim().is_empty() {
+                return None;
+            }
+            if let Some(n) = embedded.get(src) {
+                return Some(n.clone());
+            }
+            let data = std::fs::read(src).ok()?;
+            *total += data.len() as u64;
+            let fname: String = crate::file_name(src).chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
+            let name = format!("{dir}/{}_{fname}", embedded.len());
+            zip.add(&name, &data);
+            embedded.insert(src.to_string(), name.clone());
+            Some(name)
+        };
+        for ov in pf.overlays.iter_mut() {
+            if let Some(n) = embed(&mut zip, &mut total, "overlays", &ov.path) {
+                ov.path = n;
+            }
+        }
+        let used: std::collections::HashSet<String> = pf.mat_assign.iter().map(|a| a.material.clone()).collect();
+        for m in pf.materials.iter_mut().filter(|m| used.contains(&m.name)) {
+            for f in [&mut m.texture, &mut m.normal_map, &mut m.roughness_map, &mut m.metallic_map, &mut m.ao_map, &mut m.height_map] {
+                if let Some(n) = embed(&mut zip, &mut total, "textures", f) {
+                    *f = n;
+                }
+            }
+        }
+        if total > 3_900_000_000 {
+            return Err("The project is larger than 4 GB with its models and drawings - .bimd cannot hold it (save a .bimr project instead).".into());
+        }
         let json = serde_json::to_string_pretty(&pf).map_err(|e| e.to_string())?;
         zip.add("project.bimr", json.as_bytes());
         let bytes = zip.finish();
@@ -957,6 +992,33 @@ impl App {
                     std::fs::write(&out, data).map_err(|e| e.to_string())?;
                 }
                 *m = out.to_string_lossy().to_string();
+            }
+            // desenele 2D si texturile impachetate: despachetate langa modele, caile refacute
+            let extract = |p: &mut String| -> Result<(), String> {
+                if !(p.starts_with("overlays/") || p.starts_with("textures/")) {
+                    return Ok(());
+                }
+                if p.contains("..") {
+                    return Err(format!("invalid path in the .bimd file: {p}"));
+                }
+                let out = dir.join(p.replace('/', "\\"));
+                if !out.is_file() {
+                    if let Some(parent) = out.parent() {
+                        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                    }
+                    let data = zip.read(p).ok_or_else(|| format!("{p} missing in the .bimd file"))?;
+                    std::fs::write(&out, data).map_err(|e| e.to_string())?;
+                }
+                *p = out.to_string_lossy().to_string();
+                Ok(())
+            };
+            for ov in pf.overlays.iter_mut() {
+                extract(&mut ov.path)?;
+            }
+            for m in pf.materials.iter_mut() {
+                for f in [&mut m.texture, &mut m.normal_map, &mut m.roughness_map, &mut m.metallic_map, &mut m.ao_map, &mut m.height_map] {
+                    extract(f)?;
+                }
             }
             let bimr = dir.join("project.bimr");
             std::fs::write(&bimr, serde_json::to_string_pretty(&pf).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;

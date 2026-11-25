@@ -305,6 +305,21 @@ namespace ManageBIM.Acad
                     }
                 }
             }
+            // obiectele aplicatiilor (Plant 3D structuri / echipamente, Civil 3D, Architecture, MEP): proprietatile
+            // din paleta Properties (marime profil, material, lungime, cota, stil, descriere...) - nu sunt in DataLinks
+            if (IsCustom(ent))
+            {
+                try
+                {
+                    object com = ent.AcadObject;
+                    string grp = dxf.StartsWith("AECC", StringComparison.Ordinal) ? "Civil 3D"
+                        : dxf.StartsWith("ACPP", StringComparison.Ordinal) ? "Plant 3D object"
+                        : dxf.StartsWith("AEC", StringComparison.Ordinal) ? "Architecture"
+                        : "Object";
+                    ComProps.Read(com, el, grp, Scale);
+                }
+                catch { }
+            }
             // XDATA application names (e.g. data attached by other plug-ins)
             try
             {
@@ -566,18 +581,23 @@ namespace ManageBIM.Acad
             error = null;
             try
             {
-                double dev = 0.01 / Scale; // 1 cm chord deviation
+                // abaterea coardei: 2 mm .. 5 cm, ~1/1000 din diagonala - conducte, rezervoare si coturi raman
+                // rotunde (inainte: diagonala/400 si 30° - fatete vizibile pe echipamentele mari)
+                double dev = 0.002 / Scale;
                 try
                 {
                     Extents3d e = ent.GeometricExtents;
-                    dev = Math.Max(dev, e.MinPoint.DistanceTo(e.MaxPoint) / 400.0);
+                    dev = Math.Min(Math.Max(dev, e.MinPoint.DistanceTo(e.MaxPoint) / 1000.0), 0.05 / Scale);
+                    // terenuri / suprafete foarte mari (Civil 3D): pana la 1/2000 din diagonala, ca sa nu explodeze numarul de triunghiuri
+                    double diag = e.MinPoint.DistanceTo(e.MaxPoint) * Scale;
+                    if (diag > 200) dev = Math.Max(dev, e.MinPoint.DistanceTo(e.MaxPoint) / 2000.0);
                 }
                 catch { }
                 var fd = new MeshFaceterData
                 {
                     FaceterMeshType = 2, // triangles
                     FaceterDevSurface = dev,
-                    FaceterDevNormal = 30,
+                    FaceterDevNormal = 15,
                     FaceterGridRatio = 0,
                     FaceterMaxEdgeLength = 0,
                     FaceterMaxGrid = 256,

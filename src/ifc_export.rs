@@ -386,7 +386,8 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
                 if !seen.insert(n) {
                     continue;
                 }
-                let val = if v.chars().count() <= 255 { format!("IFCLABEL({})", step_str(v)) } else { format!("IFCTEXT({})", step_str(v)) };
+                // seturile standard (Pset_WallCommon...) cu tipul corect; restul text
+                let val = crate::ifc_psets::step_value(g, n, v, &step_str).unwrap_or_else(|| if v.chars().count() <= 255 { format!("IFCLABEL({})", step_str(v)) } else { format!("IFCTEXT({})", step_str(v)) });
                 ids.push(w.add(&format!("IFCPROPERTYSINGLEVALUE({},$,{val},$)", step_str(n))));
                 st.properties += 1;
             }

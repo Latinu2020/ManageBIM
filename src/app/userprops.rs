@@ -7,15 +7,24 @@ impl App {
         if !self.user_params.iter().any(|p| p.model == m.name) {
             return m;
         }
+        let mut sh = self.user_shadow.lock().unwrap_or_else(|e| e.into_inner());
+        // model proaspat (din fisier): valorile lui sunt originale; ce era al utilizatorului se rescrie
+        let prev = Self::prev_user_keys(&sh, &m.name);
+        sh.applied.retain(|k| k.0 != m.name);
         match Arc::get_mut(&mut m) {
-            Some(mm) => apply_user_params(mm, &self.user_params),
+            Some(mm) => apply_user_params_shadow(mm, &self.user_params, &prev, &mut sh),
             None => {
                 let mut c = m.clone_model();
-                apply_user_params(&mut c, &self.user_params);
+                apply_user_params_shadow(&mut c, &self.user_params, &prev, &mut sh);
                 m = Arc::new(c);
             }
         }
         m
+    }
+
+    /// (cheie, tab, proprietate) puse de utilizator pe un model la aplicarea anterioara
+    fn prev_user_keys(sh: &UserShadow, model: &str) -> HashSet<(String, String, String)> {
+        sh.applied.iter().filter(|k| k.0 == model).map(|k| (k.1.clone(), k.2.clone(), k.3.clone())).collect()
     }
 
     /// Reaplica parametrii pe modelul din slot (fara reincarcare si fara a retrimite geometria).
@@ -23,17 +32,23 @@ impl App {
         let base = self.base_models.get_mut(slot).and_then(|b| b.take());
         let cur = self.models.get_mut(slot).and_then(|c| c.take());
         let same = matches!((&base, &cur), (Some(a), Some(b)) if Arc::ptr_eq(a, b));
-        for p in &self.user_params {
-            self.user_applied.insert((p.group.clone(), p.name.clone()));
-        }
-        let stale = self.user_applied.clone();
+        let name = base.as_ref().or(cur.as_ref()).map(|m| m.name.clone()).unwrap_or_default();
+        let shadow = &self.user_shadow;
+        // aceeasi stare "anterioara" pentru ambele copii (baza si cea afisata)
+        let prev = {
+            let mut sh = shadow.lock().unwrap_or_else(|e| e.into_inner());
+            let p = Self::prev_user_keys(&sh, &name);
+            sh.applied.retain(|k| k.0 != name);
+            p
+        };
         let patch = |m: Option<Arc<Model>>, params: &[UserParam]| -> Option<Arc<Model>> {
             let mut m = m?;
+            let mut sh = shadow.lock().unwrap_or_else(|e| e.into_inner());
             match Arc::get_mut(&mut m) {
-                Some(mm) => apply_user_params_ext(mm, params, &stale),
+                Some(mm) => apply_user_params_shadow(mm, params, &prev, &mut sh),
                 None => {
                     let mut c = m.clone_model();
-                    apply_user_params_ext(&mut c, params, &stale);
+                    apply_user_params_shadow(&mut c, params, &prev, &mut sh);
                     m = Arc::new(c);
                 }
             }

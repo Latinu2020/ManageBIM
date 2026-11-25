@@ -18,6 +18,7 @@ pub mod script_guide;
 pub mod materials;
 pub mod lights;
 pub mod ifc_mvd;
+pub mod ifc_psets;
 pub mod ifc_map;
 pub mod classification;
 pub mod bsdd;

@@ -15,8 +15,15 @@ impl App {
                     CoordKind::ProvisionForVoid => "Void",
                     CoordKind::Placeholder => "Placeholder",
                 };
-                if rbtn(ui, k.icon(), short, &format!("{} - {} Made around the selection, or at the centre of the view.", k.label(), k.tip()), false, has).clicked() {
-                    self.add_coord_object(k);
+                // deschide fereastra cu tipul pregatit; obiectul se creeaza doar cand apesi Create
+                let on = self.coord_open && self.coord_pending == Some(k);
+                if rbtn(ui, k.icon(), short, &format!("{} - {} Opens the Coordination objects window; press Create there to add one around the selection, or at the centre of the view.", k.label(), k.tip()), on, has).clicked() {
+                    if on {
+                        self.coord_pending = None;
+                    } else {
+                        self.coord_pending = Some(k);
+                        self.coord_open = true;
+                    }
                 }
             }
             if rbtn(ui, "⚡", "Auto voids", "Propose a provision for void wherever a pipe, duct or cable tray crosses a wall or slab (only the selected services, when something is selected)", false, has).clicked() {
@@ -71,6 +78,37 @@ impl App {
                     ui.add(egui::DragValue::new(&mut self.void_margin).range(0.0..=1.0).speed(0.005).max_decimals(3).suffix(" m")).on_hover_text("Auto voids: gap around the service on each side");
                 });
                 ui.separator();
+                // tip ales din ribbon: bara de confirmare (nimic nu se creeaza pana nu apesi Create)
+                if let Some(k) = self.coord_pending {
+                    let nsel = self.selected.iter().filter(|id| Some(id.m as usize) != self.coord_slot).count();
+                    let where_ = if nsel > 0 {
+                        format!("around the {nsel} selected item(s){}", if k == CoordKind::Clearance { format!(" + {:.2} m margin", self.coord_margin) } else { String::new() })
+                    } else {
+                        "at the centre of the view (select elements first to wrap them)".to_string()
+                    };
+                    let c = k.color();
+                    egui::Frame::none()
+                        .fill(Color32::from_rgba_unmultiplied(c[0], c[1], c[2], 34))
+                        .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(c[0], c[1], c[2])))
+                        .rounding(4.0)
+                        .inner_margin(6.0)
+                        .show(ui, |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(RichText::new(format!("{} New {}", k.icon(), k.label())).strong());
+                                ui.label(RichText::new(where_).small().weak());
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.button("Cancel").clicked() {
+                                        self.coord_pending = None;
+                                    }
+                                    if ui.button(RichText::new("➕ Create").strong()).clicked() {
+                                        self.coord_pending = None;
+                                        self.add_coord_object(k);
+                                    }
+                                });
+                            });
+                        });
+                    ui.add_space(4.0);
+                }
                 if self.coord_objects.is_empty() {
                     ui.add_space(8.0);
                     ui.label(RichText::new("No coordination objects yet.").strong());
@@ -217,6 +255,9 @@ impl App {
                 }
             });
         self.coord_open = open;
+        if !open {
+            self.coord_pending = None;
+        }
         if let Some(i) = remove {
             self.remove_coord_object(i);
         } else if rebuild {

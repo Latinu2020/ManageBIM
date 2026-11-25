@@ -400,7 +400,82 @@ impl App {
                 }
             }
         }
+        // norii de puncte: cel mai apropiat punct (in fata) dintr-un con ingust in jurul razei -
+        // masuratorile se agata exact de punctele scanate (triunghiul intors e degenerat: [p, p, p])
+        if let Some(hit) = self.pick_cloud(o, d, best.as_ref().map_or(f32::INFINITY, |b| b.1), &accept) {
+            best = Some(hit);
+        }
         best
+    }
+
+    /// (mod culoare, cota min, cota max, rotunde) pentru shaderul norilor de puncte
+    pub fn cloud_uniform(&self) -> Vec4 {
+        let (mut z0, mut z1) = (f32::MAX, f32::MIN);
+        for (_, m) in self.loaded_models() {
+            if m.cloud.is_some() && m.aabb.is_valid() {
+                z0 = z0.min(m.aabb.min.z);
+                z1 = z1.max(m.aabb.max.z);
+            }
+        }
+        if z0 > z1 {
+            (z0, z1) = (0.0, 1.0);
+        }
+        Vec4::new(self.cloud_mode as f32, z0, z1, if self.cloud_round { 1.0 } else { 0.0 })
+    }
+
+    /// Punctul de nor nimerit de raza (doar punctele afisate - densitatea curenta - si scanarile vizibile).
+    fn pick_cloud(&self, o: Vec3, d: Vec3, tmax: f32, accept: &(dyn Fn(Vec3) -> bool + Sync)) -> Option<(ElemId, f32, Vec3, [Vec3; 3])> {
+        use rayon::prelude::*;
+        let len = d.length();
+        if len < 1e-9 {
+            return None;
+        }
+        let dn = d / len;
+        let tmax_w = if tmax.is_finite() { tmax * len } else { f32::INFINITY };
+        // toleranta: ~5 px pe ecran (unghiulara in perspectiva, constanta in ortografic)
+        let vp_h = self.vp_rect[3].max(100.0);
+        let px = (self.cam.fov() * 0.5).tan() * 2.0 / vp_h;
+        let tol = 5.0 * px;
+        let inv = Vec3::new(1.0 / dn.x, 1.0 / dn.y, 1.0 / dn.z);
+        let mut best: Option<(ElemId, f32, Vec3)> = None;
+        for (mi, m) in self.loaded_models() {
+            let Some(c) = m.cloud.as_ref() else { continue };
+            for &(ei, first, n) in &c.scans {
+                let id = ElemId { m: mi as u32, e: ei };
+                let Some(e) = m.elements.get(ei as usize) else { continue };
+                let lim = best.as_ref().map_or(tmax_w, |b| b.1);
+                let bb = Aabb { min: e.aabb.min - Vec3::splat(0.05), max: e.aabb.max + Vec3::splat(0.05) };
+                if !self.is_visible(id) || !bb.ray(o, inv, lim) {
+                    continue;
+                }
+                let shown = ((n as f64) * self.cloud_density.clamp(0.01, 1.0) as f64).ceil() as usize;
+                let (a, b) = (first as usize, (first as usize + shown).min(c.pos.len()));
+                if a >= b {
+                    continue;
+                }
+                let ortho = self.cam.ortho;
+                let focus = self.cam.focus;
+                let hit = c.pos[a..b]
+                    .par_iter()
+                    .filter_map(|p| {
+                        let v = *p - o;
+                        let t = v.dot(dn);
+                        if t <= 0.0 || t >= lim {
+                            return None;
+                        }
+                        let r = tol * if ortho { focus } else { t };
+                        let perp2 = v.length_squared() - t * t;
+                        (perp2 <= r * r && accept(*p)).then_some((t, *p))
+                    })
+                    .min_by(|x, y| x.0.total_cmp(&y.0));
+                if let Some((t, p)) = hit {
+                    if best.as_ref().map_or(true, |b| t < b.1) {
+                        best = Some((id, t, p));
+                    }
+                }
+            }
+        }
+        best.map(|(id, t, p)| (id, t / len, p, [p, p, p]))
     }
 
     /// Ce se deseneaza in cadrul curent, pe model: elementele din campul vizual, neascunse, in section box;
@@ -585,6 +660,6 @@ impl App {
             lamp_dir[k] = Vec4::new(d.x, d.y, d.z, w);
         }
         FrameParams { view_proj: vp, eye: self.cam.eye(), planes, nplanes: pl.len().min(6) as i32, sun: self.render.sun_dir(), light: self.render.light(),
-            lamps, lamp_data, lamp_dir, night: self.render.night, nlamps: self.lights.iter().filter(|l| l.enabled).count().min(8) as i32, point_size: self.point_size, caps: self.section_caps, ao: if self.settings.visual_style == crate::render::VisualStyle::Wireframe || self.settings.visual_style == crate::render::VisualStyle::Hidden { 0.0 } else { self.render.ao }, edges: if self.settings.visual_style == crate::render::VisualStyle::Concept || self.settings.visual_style == crate::render::VisualStyle::Hidden { self.render.edges.max(0.9) } else { self.render.edges }, style: self.settings.visual_style, depth_k: [proj.z_axis.z, proj.w_axis.z, if self.cam.ortho { 1.0 } else { 0.0 }, proj.y_axis.y], shadows: self.render.shadows && self.settings.visual_style != crate::render::VisualStyle::Wireframe && self.settings.visual_style != crate::render::VisualStyle::Hidden && !(self.lod_moving() && self.scene_tris() > 2_000_000), scene: self.shadow_sphere() }
+            lamps, lamp_data, lamp_dir, night: self.render.night, nlamps: self.lights.iter().filter(|l| l.enabled).count().min(8) as i32, point_size: self.point_size, cloud: self.cloud_uniform(), cloud_world: [self.cloud_world_mm / 1000.0, proj.y_axis.y * self.vp_rect[3].max(100.0) * self.ppp * 0.5], caps: self.section_caps, ao: if self.settings.visual_style == crate::render::VisualStyle::Wireframe || self.settings.visual_style == crate::render::VisualStyle::Hidden { 0.0 } else { self.render.ao }, edges: if self.settings.visual_style == crate::render::VisualStyle::Concept || self.settings.visual_style == crate::render::VisualStyle::Hidden { self.render.edges.max(0.9) } else { self.render.edges }, style: self.settings.visual_style, depth_k: [proj.z_axis.z, proj.w_axis.z, if self.cam.ortho { 1.0 } else { 0.0 }, proj.y_axis.y], shadows: self.render.shadows && self.settings.visual_style != crate::render::VisualStyle::Wireframe && self.settings.visual_style != crate::render::VisualStyle::Hidden && !(self.lod_moving() && self.scene_tris() > 2_000_000), scene: self.shadow_sphere() }
     }
 }

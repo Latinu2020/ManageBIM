@@ -204,7 +204,10 @@ fn read_conn(c: &Connection, db: &Path, dwg: &Path) -> Result<Option<HashMap<Str
     };
     let mut cols: HashMap<String, Vec<String>> = HashMap::new();
 
-    let mut st = c.prepare("select DwgHandleHigh, DwgHandleLow, DwgSubIndex, RowClassName, RowId from PnPDataLinks where DwgId = ?1 order by DwgHandleHigh, DwgHandleLow, DwgSubIndex").map_err(e)?;
+    // proiect nou / desen fara obiecte Plant: tabelul legaturilor poate lipsi - nu e o eroare
+    let Ok(mut st) = c.prepare("select DwgHandleHigh, DwgHandleLow, DwgSubIndex, RowClassName, RowId from PnPDataLinks where DwgId = ?1 order by DwgHandleHigh, DwgHandleLow, DwgSubIndex") else {
+        return Ok(Some(HashMap::new()));
+    };
     let links: Vec<(i64, i64, i64, String, i64)> = st
         .query_map([dwg_id], |r| Ok((r.get::<_, Option<i64>>(0)?.unwrap_or(0), r.get(1)?, r.get::<_, Option<i64>>(2)?.unwrap_or(0), r.get::<_, Option<String>>(3)?.unwrap_or_default(), r.get(4)?)))
         .map_err(e)?

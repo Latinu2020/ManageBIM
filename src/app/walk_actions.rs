@@ -103,6 +103,22 @@ impl App {
         }
     }
 
+    /// Punctul de pe podea de sub cursor (pentru traseul de mers): pe o suprafata orizontala / rampa
+    /// direct; pe un perete sau tavan coboara cu o raza verticala pe podeaua de sub el.
+    pub fn walk_floor_hit(&self, uv: glam::Vec2, aspect: f32) -> Option<Vec3> {
+        let (o, d) = self.cam.ray(uv, aspect);
+        let (_, _, hit, tri) = self.pick(o, d)?;
+        let n = (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalize_or_zero();
+        // triunghi degenerat (punct de nor) sau suprafata de calcat (panta < ~60°)
+        if n == Vec3::ZERO || n.z.abs() > 0.5 {
+            return Some(hit);
+        }
+        // perete: putin inapoi spre camera, apoi in jos pana la podea
+        let back = hit - d.normalize_or_zero() * 0.15;
+        let (_, t, _, _) = self.pick(back + Vec3::Z * 0.05, Vec3::NEG_Z)?;
+        Some(back + Vec3::Z * 0.05 - Vec3::Z * t)
+    }
+
     /// Porneste / opreste (pauza) mersul pe traseu.
     pub fn walk_path_play(&mut self) {
         if let Some(r) = self.path_run.as_mut() {

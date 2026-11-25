@@ -55,6 +55,7 @@ impl App {
             template: String::new(),
             measures: self.measures.clone(),
             folder: self.vp_folder_cur.clone(),
+            look: Some(self.current_look()),
         });
         let n = self.viewpoints.len() - 1;
         self.active_vp = Some(n);

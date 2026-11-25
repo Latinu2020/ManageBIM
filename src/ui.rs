@@ -34,6 +34,8 @@ mod coord_panel;
 mod update_panel;
 mod script_window;
 mod pathtrace_window;
+mod prop_editor;
+pub use prop_editor::PropEditor;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
 fn accent() -> Color32 {
@@ -59,6 +61,12 @@ fn label_bg(p: &egui::Painter, pos: Pos2, text: &str, col: Color32) {
     p.rect_filled(r, 4.0, Color32::from_black_alpha(190));
     p.rect_stroke(r, 4.0, Stroke::new(1.0_f32, col));
     p.galley(r.min + EV::splat(4.0), g, Color32::WHITE);
+}
+
+/// ca `label_bg`, centrat orizontal pe `pos` (textul deasupra punctului)
+fn label_bg_center(p: &egui::Painter, pos: Pos2, text: &str, col: Color32) {
+    let w = p.layout_no_wrap(text.to_string(), FontId::proportional(13.0), Color32::WHITE).size().x;
+    label_bg(p, pos - EV::new(w * 0.5 + 8.0, 0.0), text, col);
 }
 
 fn date_edit(ui: &mut egui::Ui, id: egui::Id, d: &mut i32) -> bool {
@@ -1190,8 +1198,8 @@ impl App {
                 self.section_preview_open = !self.section_preview_open;
             }
             let box_on = self.section.enabled && self.section.mode == SectionMode::Box;
-            if rbtn(ui, "◫", "Multi view", "All views of the section box on one drawing, like an Inventor sheet: Front, Right, Back, Left elevations and the Top view. DWG / DXF at 1:1 in model space (Front stays in real coordinates), or PDF on a sheet.", false, box_on).clicked() {
-                self.request_path(Purpose::ExportMultiView);
+            if rbtn(ui, "◫", "Multi view", "Several views of the section box on one drawing, like an Inventor sheet: choose the views (Front, Right, Back, Left, Top, Bottom) and the spacing, see the preview, then export DWG / DXF at 1:1 in model space (Front stays in real coordinates) or a PDF sheet.", self.mv_open, box_on).clicked() {
+                self.mv_open = !self.mv_open;
             }
         });
         rgroup(ui, "Cut View", |ui| {
@@ -1252,11 +1260,11 @@ impl App {
                     }
                 });
             });
-            if rbtn(ui, "🏗", "Export IFC", "Export all visible items to IFC4 (geometry, colours, levels, GUIDs, properties). The MVD above selects which properties are written.", false, has).clicked() {
+            if rbtn(ui, "fmt:IFC", "Export IFC", "Export all visible items to IFC4 (geometry, colours, levels, GUIDs, properties). The MVD above selects which properties are written.", false, has).clicked() {
                 self.ifc_selection = false;
                 self.request_path(Purpose::ExportIfc);
             }
-            if rbtn(ui, "🎯", "Selection IFC", "Export only the selected items to IFC4", false, !self.selected.is_empty()).clicked() {
+            if rbtn(ui, "fmt:IFC", "Selection IFC", "Export only the selected items to IFC4", false, !self.selected.is_empty()).clicked() {
                 self.ifc_selection = true;
                 self.request_path(Purpose::ExportIfc);
             }
@@ -1276,6 +1284,13 @@ impl App {
             }
         });
         rgroup(ui, "Data / COBie", |ui| {
+            if rbtn(ui, "🏷", "Properties", "Property editor: pick elements and add your own properties, or fill the standard IFC property sets (Pset_WallCommon, Pset_DoorCommon, manufacturer, warranty...) - all exported to IFC with the correct data types", self.pe.open, has).clicked() {
+                if self.pe.open {
+                    self.pe.open = false;
+                } else {
+                    self.open_prop_editor();
+                }
+            }
             if rbtn(ui, "📥", "Import Props", "Write properties onto elements from Excel / CSV, matched by GlobalId / Name", false, has).clicked() {
                 self.request_path(Purpose::ImportUserProps);
             }
@@ -1290,11 +1305,11 @@ impl App {
             }
         });
         rgroup(ui, "Open standards", |ui| {
-            if rbtn(ui, "📦", "Export GLB", "Export to glTF binary for Blender / Rhino / Twinmotion: colours, materials, hierarchy and BIM properties", false, has).clicked() {
+            if rbtn(ui, "fmt:GLB", "Export GLB", "Export to glTF binary for Blender / Rhino / Twinmotion: colours, materials, hierarchy and BIM properties", false, has).clicked() {
                 self.ifc_selection = !self.selected.is_empty();
                 self.request_path(Purpose::ExportGlb);
             }
-            if rbtn(ui, "📥", "Import BCF", "Import BCF 2.1 / 3.0 issues (Revit, ACC, Solibri, BIMcollab)", false, true).clicked() {
+            if rbtn(ui, "fmt:BCF", "Import BCF", "Import BCF 2.1 / 3.0 issues (Revit, ACC, Solibri, BIMcollab)", false, true).clicked() {
                 self.request_path(Purpose::ImportBcf);
             }
             if rbtn(ui, "📷", "Import VP", "Import viewpoints exported from Navisworks", false, true).clicked() {
@@ -1412,7 +1427,21 @@ impl App {
                 self.request_path(Purpose::ExportNavisClash);
             }
         });
-        ui.label(RichText::new("IFC, glTF, BCF, properties and COBie are in the BIM tab.").small().weak());
+        // formatele deschise si aici (nu doar in tab-ul BIM), cu iconite de format de fisier
+        let has = self.loaded_models().next().is_some();
+        rgroup(ui, "Open standards", |ui| {
+            if rbtn(ui, "fmt:IFC", "IFC", "Export all visible items to IFC4 (MVD from the BIM tab). With a selection: only the selected items.", false, has).clicked() {
+                self.ifc_selection = !self.selected.is_empty();
+                self.request_path(Purpose::ExportIfc);
+            }
+            if rbtn(ui, "fmt:GLB", "GLB", "glTF binary for Blender / Rhino / Twinmotion / Unreal: colours, materials, hierarchy and BIM properties", false, has).clicked() {
+                self.ifc_selection = !self.selected.is_empty();
+                self.request_path(Purpose::ExportGlb);
+            }
+            if rbtn(ui, "fmt:BCF", "BCF", "Viewpoints and issues as BCF 2.1 (Revit, Navisworks, Solibri, BIMcollab, ACC...)", false, !self.viewpoints.is_empty()).clicked() {
+                self.request_path(Purpose::ExportBcf);
+            }
+        });
     }
 
     fn ribbon_share(&mut self, ui: &mut egui::Ui) {
@@ -1434,15 +1463,13 @@ impl App {
     fn ribbon_output2(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Data", |ui| {
             let has_sel = !self.selected.is_empty();
-            if rbtn(ui, "🏷", "Add Property", "Add a property with a value to the selected items (Properties › Custom, like Navisworks User Data)", false, has_sel).clicked() {
-                if self.user_tab.is_empty() && !self.user_tabs_new.contains(&"User Data".to_string()) {
-                    self.user_tabs_new.push("User Data".into());
+            let _ = has_sel;
+            if rbtn(ui, "🏷", "Properties", "Property editor: pick elements and add your own properties, or fill the standard IFC property sets (Pset_WallCommon, Pset_DoorCommon, manufacturer, warranty...) - all exported to IFC", self.pe.open, self.loaded_models().next().is_some()).clicked() {
+                if self.pe.open {
+                    self.pe.open = false;
+                } else {
+                    self.open_prop_editor();
                 }
-                let tab = if self.user_tab.is_empty() { "User Data".to_string() } else { self.user_tab.clone() };
-                let sel: Vec<ElemId> = self.selected.iter().copied().collect();
-                self.set_user_prop(&sel, &tab, "New Property", "");
-                self.user_tab = tab;
-                self.open_panel(crate::layout::Panel::Properties);
             }
             if rbtn(ui, "📥", "Import Properties", "Write properties onto elements from Excel / CSV: one row per element (matched by GlobalId, Name or any property), every other column = a property", false, self.loaded_models().next().is_some()).clicked() {
                 self.request_path(Purpose::ImportUserProps);
@@ -1537,6 +1564,7 @@ impl App {
         let t = self.view_template_snapshot(format!("View {}", self.view_templates.len() + 1));
         self.view_templates.push(t);
         self.vt_current = self.view_templates.len() - 1;
+        self.vt_applied = true;
         self.toast("View template saved (in project)");
     }
 
@@ -1568,7 +1596,7 @@ impl App {
             self.fly_to(t.cam);
         }
         if style {
-            self.settings.visual_style = t.visual_style;
+            self.apply_style_only(t.visual_style);
             self.show_grids = t.show_grids;
             self.show_levels = t.show_levels;
             self.section_caps = t.section_caps;
@@ -1577,6 +1605,11 @@ impl App {
             self.overrides = t.overrides.into_iter().collect();
         }
         self.vt_current = i;
+        self.vt_applied = true;
+        // vederea nu mai este cea a viewpoint-ului activ: nu-l mai aratam ca activ (si nici redline-urile lui)
+        if cam || vis || sec {
+            self.active_vp = None;
+        }
         self.colors_dirty = true;
         self.toast(format!("Applied '{}'", t.name));
     }
@@ -1968,7 +2001,7 @@ impl App {
             if rbtn(ui, "✏", "Title Block", "Edit the title block and the sheet format (A3 - A0) used by the PDF sheets", self.title_block_open, true).clicked() {
                 self.title_block_open = !self.title_block_open;
             }
-            if rbtn(ui, "📤", "BCF", "BCF 2.1 issues (Revit, Navisworks, Solibri, BIMcollab, ACC...)", false, can).clicked() {
+            if rbtn(ui, "fmt:BCF", "BCF", "BCF 2.1 issues (Revit, Navisworks, Solibri, BIMcollab, ACC...)", false, can).clicked() {
                 self.request_path(Purpose::ExportBcf);
             }
             if rbtn(ui, "🧭", "Navisworks", "Viewpoints with markups, comments and section box as Navisworks XML\n(in Navisworks: Saved Viewpoints > right-click > Import Viewpoints)", false, can).clicked() {
@@ -2282,8 +2315,8 @@ impl App {
     fn view_cube(&mut self, ui: &mut egui::Ui, rect: Rect) {
         let pal = self.pal();
         // cub compact: mai mult loc pentru model
-        let size = 22.0f32;
-        let c = Pos2::new(rect.right() - 52.0, rect.top() + 60.0);
+        let size = 24.0f32;
+        let c = Pos2::new(rect.right() - 68.0, rect.top() + 66.0);
         let area = Rect::from_center_size(c, EV::splat(size * 3.4));
         let resp = ui.interact(area, ui.id().with("viewcube"), Sense::click());
         let (r, u, f) = (self.cam.right(), self.cam.up(), self.cam.fwd());
@@ -2299,70 +2332,135 @@ impl App {
         ];
         let mut vis: Vec<(f32, usize)> = faces.iter().enumerate().filter(|(_, fc)| fc.0.dot(f) < -0.02).map(|(i, fc)| (fc.0.dot(f), i)).collect();
         vis.sort_by(|a, b| b.0.total_cmp(&a.0)); // departe -> aproape (total_cmp: fara panic la NaN)
-        let edge = 0.62f32;
+        // zonele de muchie / colt (tesituri, ca ViewCube-ul Autodesk): 26 de directii precise
+        let edge = 0.64f32;
         let bands = [(-1.0f32, -edge), (-edge, edge), (edge, 1.0)];
         let hover = resp.hover_pos();
         let mut hit: Option<Vec3> = None;
-        let mut cells: Vec<(Vec<Pos2>, Vec3, f32)> = Vec::new();
-        for &(dot, fi) in &vis {
+        // (poligon, directie, fata, este centrul fetei)
+        let mut cells: Vec<(Vec<Pos2>, Vec3, usize, bool)> = Vec::new();
+        for &(_, fi) in &vis {
             let (n, fu, fv, _) = faces[fi];
             for (iu, bu) in bands.iter().enumerate() {
                 for (iv, bv) in bands.iter().enumerate() {
                     let poly: Vec<Pos2> = [(bu.0, bv.0), (bu.1, bv.0), (bu.1, bv.1), (bu.0, bv.1)].iter().map(|(a, b)| proj(n + fu * *a + fv * *b)).collect();
                     let dir = n + fu * (iu as f32 - 1.0) + fv * (iv as f32 - 1.0);
-                    cells.push((poly, dir, -dot));
+                    cells.push((poly, dir, fi, iu == 1 && iv == 1));
                 }
             }
         }
+        // privire exact pe o fata: sageti spre cele 4 fete vecine (ca la Autodesk)
+        let facing = faces.iter().position(|fc| fc.0.dot(f) < -0.9995);
+        let mut arrows: Vec<(Vec<Pos2>, Vec3)> = Vec::new();
+        if let Some(fi) = facing {
+            let (n, fu, fv, _) = faces[fi];
+            for d in [fu, -fu, fv, -fv] {
+                let tip = proj(n + d * 1.62);
+                let b0 = proj(n + d * 1.22 + (if d.dot(fu).abs() > 0.5 { fv } else { fu }) * 0.34);
+                let b1 = proj(n + d * 1.22 - (if d.dot(fu).abs() > 0.5 { fv } else { fu }) * 0.34);
+                arrows.push((vec![tip, b0, b1], d));
+            }
+        }
         if let Some(hp) = hover {
+            for (tri, d) in &arrows {
+                if inside(tri, hp) || tri[0].distance(hp) < 7.0 {
+                    hit = Some(*d);
+                }
+            }
             // cea mai apropiata fata e ultima
-            for (poly, dir, _) in cells.iter().rev() {
-                if inside(poly, hp) {
-                    hit = Some(*dir);
-                    break;
+            if hit.is_none() {
+                for (poly, dir, _, _) in cells.iter().rev() {
+                    if inside(poly, hp) {
+                        hit = Some(*dir);
+                        break;
+                    }
                 }
             }
         }
         let p = ui.painter();
         let dark = self.settings.theme.is_dark();
-        let base = if dark { Color32::from_rgb(150, 160, 178) } else { Color32::from_rgb(236, 240, 246) };
-        let edge_col = if dark { Color32::from_rgb(140, 150, 165) } else { Color32::from_rgb(120, 130, 145) };
-        for (poly, dir, light) in &cells {
-            let k = 0.55 + 0.45 * light;
+        let base = if dark { Color32::from_rgb(232, 236, 242) } else { Color32::from_rgb(248, 249, 252) };
+        let edge_col = if dark { Color32::from_rgb(98, 106, 120) } else { Color32::from_rgb(128, 136, 150) };
+        let ring_col = if dark { Color32::from_rgb(120, 130, 146) } else { Color32::from_rgb(150, 158, 172) };
+        // ---- busola sub cub (desenata inainte, cubul o acopera): inel cu gradatii si N / E / S / W
+        let ring_pt = |a: f32, rad: f32| proj(Vec3::new(a.cos() * rad, a.sin() * rad, -1.08));
+        let outer: Vec<Pos2> = (0..64).map(|i| ring_pt(i as f32 / 64.0 * std::f32::consts::TAU, 1.78)).collect();
+        let inner: Vec<Pos2> = (0..64).map(|i| ring_pt(i as f32 / 64.0 * std::f32::consts::TAU, 1.52)).collect();
+        for i in 0..64 {
+            let j = (i + 1) % 64;
+            p.add(egui::Shape::convex_polygon(vec![outer[i], outer[j], inner[j], inner[i]], ring_col.gamma_multiply(0.22), Stroke::NONE));
+        }
+        p.add(egui::Shape::closed_line(outer, Stroke::new(1.0_f32, ring_col.gamma_multiply(0.8))));
+        p.add(egui::Shape::closed_line(inner, Stroke::new(0.8_f32, ring_col.gamma_multiply(0.5))));
+        for k in 0..16 {
+            let a = k as f32 / 16.0 * std::f32::consts::TAU;
+            let r0 = if k % 4 == 0 { 1.52 } else { 1.6 };
+            p.line_segment([ring_pt(a, r0), ring_pt(a, 1.70)], Stroke::new(0.8_f32, ring_col.gamma_multiply(0.8)));
+        }
+        // ---- fetele cubului: umbrire dupa o lumina fixa (sus-stanga), tesituri usor mai inchise
+        let light = (u * 0.75 - r * 0.35 - f * 0.55).normalize();
+        for (poly, dir, fi, center) in &cells {
+            let n = faces[*fi].0;
+            let k = 0.80 + 0.20 * n.dot(light).max(0.0);
+            let k = if *center { k } else { k * 0.95 };
             let mut col = Color32::from_rgb((base.r() as f32 * k) as u8, (base.g() as f32 * k) as u8, (base.b() as f32 * k) as u8);
             if hit.map(|h| (h - *dir).length() < 1e-4).unwrap_or(false) {
-                col = accent().gamma_multiply(0.85);
+                col = accent().gamma_multiply(0.9);
             }
             p.add(egui::Shape::convex_polygon(poly.clone(), col, Stroke::NONE));
         }
         for &(_, fi) in &vis {
             let (n, fu, fv, label) = faces[fi];
+            // liniile fine ale tesiturilor
+            for e in [-edge, edge] {
+                p.line_segment([proj(n + fu * e - fv), proj(n + fu * e + fv)], Stroke::new(0.5_f32, edge_col.gamma_multiply(0.35)));
+                p.line_segment([proj(n - fu + fv * e), proj(n + fu + fv * e)], Stroke::new(0.5_f32, edge_col.gamma_multiply(0.35)));
+            }
             let pts: Vec<Pos2> = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)].iter().map(|(a, b): &(f32, f32)| proj(n + fu * *a + fv * *b)).collect();
-            p.add(egui::Shape::closed_line(pts.clone(), Stroke::new(1.0_f32, edge_col)));
-            // eticheta doar daca fata e destul de vizibila
-            if n.dot(f) < -0.35 {
-                let fs = 8.0 * (-n.dot(f)).sqrt().max(0.7);
-                p.text(proj(n), Align2::CENTER_CENTER, label, FontId::proportional(fs), Color32::from_gray(30));
+            p.add(egui::Shape::closed_line(pts, Stroke::new(1.2_f32, edge_col)));
+            // eticheta rotita odata cu fata (dupa axa U proiectata), niciodata cu capul in jos
+            let vis_k = -n.dot(f);
+            if vis_k > 0.30 {
+                let su = proj(n + fu) - proj(n);
+                let mut ang = su.y.atan2(su.x);
+                if ang.cos() < 0.0 {
+                    ang += std::f32::consts::PI;
+                }
+                let fs = (7.2 + 2.6 * vis_k).min(9.6);
+                let tcol = if hit.map(|h| (h - n).length() < 1e-4).unwrap_or(false) { Color32::WHITE } else { Color32::from_rgb(52, 58, 70).gamma_multiply(0.45 + 0.55 * vis_k) };
+                let galley = p.layout_no_wrap(label.to_string(), FontId::proportional(fs), tcol);
+                let half = galley.size() * 0.5;
+                let (s, co) = ang.sin_cos();
+                let off = EV::new(half.x * co - half.y * s, half.x * s + half.y * co);
+                p.add(egui::Shape::Text(egui::epaint::TextShape::new(proj(n) - off, galley, tcol).with_angle(ang)));
             }
         }
-        // busola sub cub
-        let ring_c = c + EV::new(0.0, size * 1.25);
-        let ring: Vec<Pos2> = (0..48).map(|i| {
-            let a = i as f32 / 48.0 * std::f32::consts::TAU;
-            proj(Vec3::new(a.cos() * 1.6, a.sin() * 1.6, -1.05))
-        }).collect();
-        let _ = ring_c;
-        p.add(egui::Shape::closed_line(ring, Stroke::new(1.0_f32, edge_col.gamma_multiply(0.7))));
-        p.text(proj(Vec3::new(0.0, 1.85, -1.05)), Align2::CENTER_CENTER, "N", FontId::proportional(8.5), Color32::from_rgb(230, 80, 70));
+        for (tri, d) in &arrows {
+            let on = hit.map(|h| (h - *d).length() < 1e-4).unwrap_or(false);
+            p.add(egui::Shape::convex_polygon(tri.clone(), if on { accent() } else { edge_col }, Stroke::NONE));
+        }
+        for (txt, a, col) in [
+            ("N", std::f32::consts::FRAC_PI_2, Color32::from_rgb(232, 76, 64)),
+            ("E", 0.0, edge_col),
+            ("S", -std::f32::consts::FRAC_PI_2, edge_col),
+            ("W", std::f32::consts::PI, edge_col),
+        ] {
+            let q = ring_pt(a, 1.98);
+            // literele se estompeaza cand inelul e vazut aproape din profil
+            let fade = (f.z.abs() * 1.6).clamp(0.35, 1.0);
+            p.text(q, Align2::CENTER_CENTER, txt, FontId::proportional(if txt == "N" { 10.0 } else { 8.5 }), col.gamma_multiply(fade));
+        }
         // buton Home si meniu
-        let hr = Rect::from_center_size(c + EV::new(-size * 1.7, -size * 1.6), EV::splat(16.0));
+        let hr = Rect::from_center_size(c + EV::new(-size * 1.7, -size * 1.6), EV::splat(20.0));
         let hres = ui.interact(hr, ui.id().with("vc_home"), Sense::click()).on_hover_text("Home (right-click the cube for more)");
-        p.text(hr.center(), Align2::CENTER_CENTER, "🏠", FontId::proportional(12.0), if hres.hovered() { accent() } else { pal.overlay_text });
+        p.rect_filled(hr, 10.0, pal.overlay_btn);
+        p.text(hr.center(), Align2::CENTER_CENTER, egui_phosphor::regular::HOUSE, crate::theme::icon_font(14.0), if hres.hovered() { accent() } else { pal.overlay_text });
         if hres.clicked() {
             self.go_home();
         }
-        let pr = Rect::from_center_size(c + EV::new(size * 1.7, -size * 1.6), EV::new(28.0, 14.0));
+        let pr = Rect::from_center_size(c + EV::new(size * 1.75, -size * 1.6), EV::new(38.0, 16.0));
         let pres = ui.interact(pr, ui.id().with("vc_proj"), Sense::click()).on_hover_text("Switch perspective / orthographic");
+        p.rect_filled(pr, 8.0, pal.overlay_btn);
         p.text(pr.center(), Align2::CENTER_CENTER, if self.cam.ortho { "ORTHO" } else { "PERSP" }, FontId::proportional(8.0), if pres.hovered() { accent() } else { pal.overlay_text });
         if pres.clicked() {
             self.cam.ortho = !self.cam.ortho;
@@ -2383,7 +2481,7 @@ impl App {
         let name_w = p.layout_no_wrap(cur_name.clone(), font.clone(), Color32::WHITE).size().x;
         let (aw, ph) = (18.0, 20.0);
         let total = name_w + 16.0 + aw * 2.0;
-        let mut pill = Rect::from_center_size(c + EV::new(0.0, size * 2.55), EV::new(total, ph));
+        let mut pill = Rect::from_center_size(c + EV::new(0.0, size * 2.95), EV::new(total, ph));
         // cubul e langa marginea din dreapta: pastila nu iese din vederea 3D
         let over = pill.right() - (rect.right() - 6.0);
         if over > 0.0 {
@@ -3177,6 +3275,7 @@ impl App {
             }
         }
         self.vp_rect = [rect.left(), rect.top(), rect.width(), rect.height()];
+        self.ppp = ui.ctx().pixels_per_point();
         if let Some(i) = self.active_vp {
             if !self.vp_matches(i) && self.report_job.is_none() {
                 self.active_vp = None;
@@ -3624,8 +3723,54 @@ impl App {
             self.light_axis = None;
             self.light_rot = None;
         }
+        // ---- traseul de mers (unealta Draw): punctele se trag pe podea, click dreapta pe punct = sterge
+        if self.tool == Tool::WalkPath {
+            let vpm = params.view_proj;
+            let mut wp_hover: Option<usize> = None;
+            if let Some(hp) = hover {
+                let mut bd = 10.0f32;
+                for (i, q) in self.walk_path.iter().enumerate() {
+                    if let Some(s) = to_screen(&vpm, rect, *q + Vec3::Z * 0.05) {
+                        let d = s.distance(hp);
+                        if d < bd {
+                            bd = d;
+                            wp_hover = Some(i);
+                        }
+                    }
+                }
+            }
+            if wp_hover.is_some() || self.wp_drag.is_some() {
+                ui.ctx().set_cursor_icon(if self.wp_drag.is_some() { egui::CursorIcon::Grabbing } else { egui::CursorIcon::Grab });
+            }
+            if resp.drag_started_by(egui::PointerButton::Primary) && wp_hover.is_some() {
+                self.wp_drag = wp_hover;
+            }
+            if let Some(i) = self.wp_drag {
+                if resp.dragged_by(egui::PointerButton::Primary) {
+                    if let Some(hp) = resp.interact_pointer_pos() {
+                        if let Some(hit) = self.walk_floor_hit(uv(hp), aspect) {
+                            if i < self.walk_path.len() {
+                                self.walk_path[i] = hit;
+                                self.path_run = None;
+                            }
+                        }
+                    }
+                }
+                if !resp.dragged() {
+                    self.wp_drag = None;
+                }
+            }
+            if resp.secondary_clicked() {
+                if let Some(i) = wp_hover {
+                    self.walk_path.remove(i);
+                    self.path_run = None;
+                }
+            }
+        } else {
+            self.wp_drag = None;
+        }
         // gizmo-ul de lumina are prioritate: nu lasam orbitul / panul sa miste camera in acelasi timp
-        let light_handle = self.light_axis.is_some() || self.light_rot.is_some() || self.tool == Tool::PlaceLight;
+        let light_handle = self.wp_drag.is_some() ||self.light_axis.is_some() || self.light_rot.is_some() || self.tool == Tool::PlaceLight;
         let handle_drag = self.box_drag.is_some() || light_handle || self.coord_drag.is_some() || (handle_hover.is_some() && resp.drag_started_by(egui::PointerButton::Primary));
         // selectie cu fereastra (unealta Window): tragerea cu butonul stang deseneaza dreptunghiul
         let box_tool = self.tool == Tool::Window && !handle_drag;
@@ -3994,11 +4139,39 @@ impl App {
                     }
                     Tool::Redline(_) => {}
                     Tool::WalkPath => {
-                        // punct pe podea: unde loveste raza (podea, scara, rampa)
-                        let (o, d) = self.cam.ray(uv(p), aspect);
-                        if let Some((_, _, hit, _)) = self.pick(o, d) {
-                            self.path_run = None;
-                            self.walk_path.push(hit);
+                        // punct pe podea (podea, scara, rampa; un click pe perete coboara pe podeaua de sub el)
+                        let vpm = params.view_proj;
+                        let lift = Vec3::Z * 0.05;
+                        let on_point = self.walk_path.iter().any(|q| to_screen(&vpm, rect, *q + lift).map_or(false, |s| s.distance(p) < 10.0));
+                        if !on_point {
+                            if let Some(mut hit) = self.walk_floor_hit(uv(p), aspect) {
+                                // click pe un segment existent: punctul se insereaza acolo
+                                let mut insert: Option<usize> = None;
+                                for k in 1..self.walk_path.len() {
+                                    if let (Some(a), Some(b)) = (to_screen(&vpm, rect, self.walk_path[k - 1] + lift), to_screen(&vpm, rect, self.walk_path[k] + lift)) {
+                                        if seg_dist_px(a, b, p) < 6.0 {
+                                            insert = Some(k);
+                                            break;
+                                        }
+                                    }
+                                }
+                                // Shift: directia de la ultimul punct in pasi de 45° (in plan)
+                                if insert.is_none() && ui.input(|i| i.modifiers.shift) {
+                                    if let Some(last) = self.walk_path.last() {
+                                        let v = hit - *last;
+                                        let l = v.truncate().length();
+                                        if l > 1e-3 {
+                                            let a = (v.y.atan2(v.x) / std::f32::consts::FRAC_PI_4).round() * std::f32::consts::FRAC_PI_4;
+                                            hit = Vec3::new(last.x + a.cos() * l, last.y + a.sin() * l, hit.z);
+                                        }
+                                    }
+                                }
+                                self.path_run = None;
+                                match insert {
+                                    Some(k) => self.walk_path.insert(k, hit),
+                                    None => self.walk_path.push(hit),
+                                }
+                            }
                         }
                     }
                     Tool::PlaceLight => {
@@ -4469,20 +4642,75 @@ impl App {
             let pc = Color32::from_rgb(60, 200, 255);
             let lift = Vec3::Z * 0.05;
             let dense = crate::app::walk::densify(&self.walk_path, 0.25);
+            // umbra discreta sub linie (se citeste pe orice fundal), apoi linia
+            for w in dense.windows(2) {
+                line(w[0] + lift, w[1] + lift, Color32::from_black_alpha(90), 6.0);
+            }
             for w in dense.windows(2) {
                 line(w[0] + lift, w[1] + lift, pc, 3.0);
             }
-            if self.tool == Tool::WalkPath {
-                if let (Some(last), Some(hp)) = (self.walk_path.last(), hover) {
-                    if let Some(a) = to_screen(&vp, rect, *last + lift) {
-                        painter.line_segment([a, hp], Stroke::new(1.5_f32, pc.gamma_multiply(0.5)));
+            // sageti de directie la ~1.5 m
+            let mut acc = 0.0f32;
+            for w in dense.windows(2) {
+                let seg = (w[1] - w[0]).length();
+                acc += seg;
+                if acc >= 1.5 && seg > 1e-4 {
+                    acc = 0.0;
+                    let m = (w[0] + w[1]) * 0.5 + lift;
+                    if let (Some(a), Some(b)) = (to_screen(&vp, rect, m), to_screen(&vp, rect, m + (w[1] - w[0]) / seg * 0.3)) {
+                        let dir = (b - a).normalized();
+                        if dir.length() > 0.5 {
+                            let nrm = EV::new(-dir.y, dir.x);
+                            let tip = a + dir * 5.0;
+                            painter.add(egui::Shape::line(vec![tip - dir * 8.0 + nrm * 5.0, tip, tip - dir * 8.0 - nrm * 5.0], Stroke::new(2.0_f32, Color32::WHITE)));
+                        }
                     }
                 }
             }
+            // lungimea fiecarui segment
+            if self.tool == Tool::WalkPath {
+                for k in 1..self.walk_path.len() {
+                    let (a, b) = (self.walk_path[k - 1], self.walk_path[k]);
+                    if let Some(s) = to_screen(&vp, rect, (a + b) * 0.5 + lift) {
+                        label_bg_center(&painter, s + EV::new(0.0, -6.0), &format!("{:.2} m", (b - a).length()), pc);
+                    }
+                }
+                // previzualizare 3D a urmatorului segment, pe podea, cu lungimea lui
+                if let (Some(last), Some(hp)) = (self.walk_path.last().copied(), hover) {
+                    if self.wp_drag.is_none() && rect.contains(hp) {
+                        if let Some(mut q) = self.walk_floor_hit(uv(hp), aspect) {
+                            if ui.input(|i| i.modifiers.shift) {
+                                let v = q - last;
+                                let l = v.truncate().length();
+                                if l > 1e-3 {
+                                    let a = (v.y.atan2(v.x) / std::f32::consts::FRAC_PI_4).round() * std::f32::consts::FRAC_PI_4;
+                                    q = Vec3::new(last.x + a.cos() * l, last.y + a.sin() * l, q.z);
+                                }
+                            }
+                            if let (Some(a), Some(b)) = (to_screen(&vp, rect, last + lift), to_screen(&vp, rect, q + lift)) {
+                                painter.extend(egui::Shape::dashed_line(&[a, b], Stroke::new(2.0_f32, pc.gamma_multiply(0.8)), 8.0, 5.0));
+                                painter.circle_stroke(b, 6.0, Stroke::new(2.0_f32, pc));
+                                label_bg_center(&painter, b + EV::new(0.0, -12.0), &format!("{:.2} m", (q - last).length()), pc);
+                            }
+                        }
+                    }
+                }
+            }
+            let n_pts = self.walk_path.len();
             for (i, p) in self.walk_path.iter().enumerate() {
                 if let Some(sp) = to_screen(&vp, rect, *p + lift) {
-                    painter.circle_filled(sp, 7.0, pc);
-                    painter.text(sp, Align2::CENTER_CENTER, (i + 1).to_string(), FontId::proportional(10.0), Color32::BLACK);
+                    // start verde, final rosu, intermediare albastre (cu contur, se vad pe orice fundal)
+                    let (col, txt) = if i == 0 {
+                        (Color32::from_rgb(70, 200, 110), "S".to_string())
+                    } else if i + 1 == n_pts && n_pts > 1 {
+                        (Color32::from_rgb(235, 90, 80), "E".to_string())
+                    } else {
+                        (pc, (i + 1).to_string())
+                    };
+                    let r = if self.wp_drag == Some(i) { 9.0 } else { 7.5 };
+                    painter.circle_filled(sp, r + 1.5, Color32::WHITE);
+                    painter.circle_filled(sp, r, col);
+                    painter.text(sp, Align2::CENTER_CENTER, txt, FontId::proportional(10.0), Color32::BLACK);
                 }
             }
             if let Some(r) = &self.path_run {
@@ -4494,13 +4722,7 @@ impl App {
         if self.tool == Tool::WalkPath {
             let n = self.walk_path.len();
             let len = crate::app::walk::PathRun::new(&self.walk_path).map(|r| r.length()).unwrap_or(0.0);
-            painter.text(
-                rect.center_top() + EV::new(0.0, 14.0),
-                Align2::CENTER_TOP,
-                format!("Walk path: click on the floor to add points ({n} points, {len:.0} m) · Backspace: undo · double-click / Enter: done"),
-                FontId::proportional(14.0),
-                pal.overlay_text,
-            );
+            label_bg_center(&painter, rect.center_top() + EV::new(0.0, 30.0), &format!("Walk path · {n} points · {len:.1} m  —  click the floor: add · drag a point: move · click the line: insert · right-click a point: delete · Shift: 45° · Enter: done"), Color32::from_rgb(60, 200, 255));
         }
         if let Some(f) = self.clash_focus_active() {
             let big = f.points.len() == 1;
@@ -4810,10 +5032,12 @@ impl App {
         self.manual_window(ctx);
         self.view_templates_window(ctx);
         self.section_preview_window(ctx);
+        self.multiview_window(ctx);
         self.overlay_window(ctx);
         self.title_block_window(ctx);
         self.classification_window(ctx);
         self.coord_objects_window(ctx);
+        self.prop_editor_window(ctx);
         self.poll_updates(ctx);
         self.update_window(ctx);
         self.command_palette(ctx);
@@ -5245,9 +5469,23 @@ impl App {
                     }
                     ui.end_row();
                     ui.label("Point size");
-                    ui.add(egui::Slider::new(&mut self.point_size, 1.0..=8.0).suffix(" px").fixed_decimals(0).step_by(1.0));
+                    ui.add(egui::Slider::new(&mut self.point_size, 1.0..=8.0).suffix(" px").fixed_decimals(0).step_by(1.0)).on_hover_text("Smallest size on screen (far away)");
+                    ui.end_row();
+                    ui.label("Real size");
+                    ui.add(egui::Slider::new(&mut self.cloud_world_mm, 0.0..=50.0).suffix(" mm").fixed_decimals(0)).on_hover_text("Size of a point in the model: close up the points grow and close the gaps (continuous surface). 0 = always the pixel size above.");
+                    ui.end_row();
+                    ui.label("Colour");
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.cloud_mode, 0, "Scan RGB");
+                        ui.selectable_value(&mut self.cloud_mode, 1, "Elevation").on_hover_text("Blue (low) → red (high): read heights at a glance");
+                        ui.selectable_value(&mut self.cloud_mode, 2, "Grey");
+                    });
+                    ui.end_row();
+                    ui.label("Shape");
+                    ui.checkbox(&mut self.cloud_round, "Round points with relief").on_hover_text("Each point drawn as a small lit sphere - smoother, more realistic surfaces");
                     ui.end_row();
                 });
+                ui.label(RichText::new("Measure snaps exactly onto scan points (the tool picks the nearest visible point under the cursor).").weak().small());
                 let shown = (total as f64 * self.cloud_density as f64) as usize;
                 ui.label(RichText::new(format!("{} of {} points shown. While the camera moves only about a third of them are drawn.", fmt_count(shown), fmt_count(total))).weak().small());
                 ui.label(RichText::new("Each scan is an item in the Selection Tree: hide it, isolate it or cut it with the section box.").weak().small());
@@ -5409,10 +5647,16 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     } else {
         col
     };
-    if compact {
+    let icon_c = if compact { rect.center() } else { rect.center_top() + egui::vec2(0.0, 12.0) };
+    if let Some(fmt) = icon.strip_prefix("fmt:") {
+        // iconita de format de fisier (IFC / GLB / BCF ...): foaie cu colt indoit + eticheta colorata
+        file_format_icon(p, icon_c, fmt, enabled && !on, col);
+    } else if compact {
         p.text(rect.center(), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), icol);
     } else {
-        p.text(rect.center_top() + egui::vec2(0.0, 12.0), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), icol);
+        p.text(icon_c, Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), icol);
+    }
+    if !compact {
         // eticheta intreaga (0.28): pe un rand daca incape, altfel pe doua (impartita la spatiul cel mai
         // echilibrat); un cuvant prea lung primeste un font putin mai mic - nu mai taiem textul cu „…"
         let lines = ribbon_label_lines(ui, &label, rect.width() - 4.0);
@@ -5429,6 +5673,43 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     } else {
         resp.on_hover_text(format!("{tip}  {}", crate::i18n::tr("(not available now)")))
     }
+}
+
+/// Iconita de format de fisier: o foaie cu coltul indoit si o eticheta colorata cu extensia
+/// (IFC albastru buildingSMART, GLB verde Khronos, BCF portocaliu...) - ca in Revit / Navisworks.
+fn file_format_icon(p: &egui::Painter, c: egui::Pos2, fmt: &str, colored: bool, base: Color32) {
+    let tag_col = if !colored {
+        base
+    } else {
+        match fmt {
+            "IFC" => Color32::from_rgb(38, 132, 230),
+            "GLB" | "GLTF" => Color32::from_rgb(76, 175, 80),
+            "BCF" => Color32::from_rgb(240, 140, 40),
+            "PDF" => Color32::from_rgb(220, 60, 50),
+            "DWG" | "DXF" => Color32::from_rgb(200, 60, 60),
+            "XLS" | "CSV" => Color32::from_rgb(30, 140, 80),
+            _ => Color32::from_rgb(120, 120, 200),
+        }
+    };
+    let w = 14.0;
+    let h = 17.0;
+    let fold = 4.5;
+    let l = c.x - w * 0.5 + 2.0;
+    let t = c.y - h * 0.5;
+    let r = l + w;
+    let b = t + h;
+    let stroke = egui::Stroke::new(1.3_f32, base.gamma_multiply(0.9));
+    // conturul foii cu coltul dreapta-sus taiat
+    let pts = vec![egui::pos2(l, t), egui::pos2(r - fold, t), egui::pos2(r, t + fold), egui::pos2(r, b), egui::pos2(l, b), egui::pos2(l, t)];
+    p.add(egui::Shape::line(pts, stroke));
+    p.add(egui::Shape::line(vec![egui::pos2(r - fold, t), egui::pos2(r - fold, t + fold), egui::pos2(r, t + fold)], stroke));
+    // eticheta cu extensia, iesita spre stanga peste foaie
+    let font = FontId::new(7.5, egui::FontFamily::Proportional);
+    let galley = p.layout_no_wrap(fmt.to_string(), font, Color32::WHITE);
+    let tw = galley.size().x + 5.0;
+    let tag = egui::Rect::from_min_size(egui::pos2(l - 5.0, c.y + 0.5), egui::vec2(tw.max(18.0), 9.0));
+    p.rect_filled(tag, 2.0, tag_col);
+    p.galley(egui::pos2(tag.center().x - galley.size().x * 0.5, tag.center().y - galley.size().y * 0.5), galley, Color32::WHITE);
 }
 
 /// grupa de ribbon = card ridicat (fara chenar, fara separator); titlul sub butoane doar in modul Full.
@@ -6114,4 +6395,11 @@ impl App {
 
 impl App {
 
+}
+
+/// distanta (px) de la punctul `p` la segmentul `a`-`b` de pe ecran
+fn seg_dist_px(a: Pos2, b: Pos2, p: Pos2) -> f32 {
+    let ab = b - a;
+    let t = ((p - a).dot(ab) / ab.length_sq().max(1e-6)).clamp(0.0, 1.0);
+    (a + ab * t).distance(p)
 }

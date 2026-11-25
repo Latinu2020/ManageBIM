@@ -447,6 +447,7 @@ impl App {
         let mut update: Option<usize> = None;
         let mut del: Option<usize> = None;
         let mut dup: Option<usize> = None;
+        let mut renamed: Option<(String, String)> = None;
         let mut set_default: Option<usize> = None;
         let mut swap: Option<(usize, usize)> = None;
         let mut save = false;
@@ -491,7 +492,10 @@ impl App {
                                     if t.is_default {
                                         ui.label(RichText::new("★").color(accent())).on_hover_text("Default: applied when the project opens");
                                     }
-                                    ui.add(egui::TextEdit::singleline(&mut t.name).desired_width(170.0).font(egui::TextStyle::Body));
+                                    let old_name = t.name.clone();
+                                    if ui.add(egui::TextEdit::singleline(&mut t.name).desired_width(170.0).font(egui::TextStyle::Body)).changed() {
+                                        renamed = Some((old_name, t.name.clone()));
+                                    }
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         if ui.small_button("🗑").on_hover_text("Delete").clicked() { del = Some(i); }
                                         if ui.small_button("⧉").on_hover_text("Duplicate").clicked() { dup = Some(i); }
@@ -552,7 +556,24 @@ impl App {
                 self.view_templates.insert(i + 1, c);
             }
         }
-        if let Some(i) = del { if i < self.view_templates.len() { self.view_templates.remove(i); } }
+        // redenumire: viewpoint-urile legate de sablon il urmeaza
+        if let Some((old, new)) = renamed {
+            for v in self.viewpoints.iter_mut().filter(|v| v.template == old) {
+                v.template = new.clone();
+            }
+        }
+        if let Some(i) = del {
+            if i < self.view_templates.len() {
+                let gone = self.view_templates.remove(i).name;
+                // legaturile catre sablonul sters dispar (viewpoint-ul isi pastreaza aspectul propriu)
+                for v in self.viewpoints.iter_mut().filter(|v| v.template == gone) {
+                    v.template.clear();
+                }
+                if self.vt_current >= i && self.vt_current > 0 {
+                    self.vt_current -= 1;
+                }
+            }
+        }
         self.view_templates_open = open;
     }
 
@@ -723,6 +744,192 @@ impl App {
         self.section_preview_open = open;
         if let Some(p) = export {
             self.request_path(p);
+        }
+    }
+
+    /// Fereastra Multi view: alegi vederile cubului de sectiune si distanta dintre ele, vezi plansa
+    /// (exact cea exportata) si exporti PDF / DWG. Zoom cu rotita, deplasare cu mouse-ul.
+    pub(super) fn multiview_window(&mut self, ctx: &egui::Context) {
+        if !self.mv_open {
+            return;
+        }
+        let mut open = true;
+        let screen = ctx.screen_rect();
+        let size = egui::vec2(980.0f32.min(screen.width() * 0.66), 640.0f32.min(screen.height() * 0.66));
+        let mut export = false;
+        egui::Window::new(crate::theme::icon_job("◫", "Multi-view drawing", 13.0, ctx.style().visuals.text_color()))
+            .id(egui::Id::new("mv_win"))
+            .open(&mut open)
+            .default_size(size)
+            .min_width(520.0)
+            .min_height(340.0)
+            .resizable(true)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                // ---- vederile si distanta
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("Views").strong());
+                    for (k, name) in ["Front", "Right", "Back", "Left", "Top", "Bottom"].iter().enumerate() {
+                        ui.toggle_value(&mut self.mv_views[k], *name);
+                    }
+                    ui.separator();
+                    ui.label(RichText::new("Spacing").strong()).on_hover_text("Distance between the views on the sheet (real metres, 1:1 in DWG)");
+                    let mut auto = self.mv_gap <= 0.0;
+                    if ui.checkbox(&mut auto, "Auto").on_hover_text("15% of the largest view, at least 2 m").changed() {
+                        self.mv_gap = if auto { 0.0 } else { self.mv_cache.as_ref().map(|c| c.1.gap as f32).unwrap_or(3.0).max(0.5) };
+                    }
+                    if !auto {
+                        ui.add(egui::DragValue::new(&mut self.mv_gap).range(0.1..=500.0).speed(0.1).max_decimals(2).suffix(" m"));
+                    }
+                    ui.separator();
+                    ui.checkbox(&mut self.mv_titles, "Titles").on_hover_text("FRONT VIEW, TOP VIEW... under each view");
+                });
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("Lines").strong());
+                    let mut changed = false;
+                    changed |= ui.toggle_value(&mut self.cad_visible_edges, "▭ Visible edges").changed();
+                    changed |= ui.toggle_value(&mut self.cad_hidden_edges, "┄ Hidden lines").changed();
+                    changed |= ui.toggle_value(&mut self.cad_hatch, "▨ Hatch").changed();
+                    changed |= ui.toggle_value(&mut self.cad_dims, "↔ Dimensions").changed();
+                    if changed {
+                        self.settings.save();
+                    }
+                    ui.separator();
+                    if ui.button("⛶ Fit").clicked() {
+                        ui.data_mut(|d| d.insert_temp(egui::Id::new("mv_view"), (1.0f32, egui::Vec2::ZERO)));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button(RichText::new("⬇ Export PDF / DWG…").strong()).on_hover_text("DWG / DXF: 1:1 in model space, Front in real coordinates (attach it back as an overlay and it lands in place).\nPDF: the same sheet with title block.").clicked() {
+                            export = true;
+                        }
+                    });
+                });
+                let sheet = self.multiview_layout();
+                let (area, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
+                let painter = ui.painter_at(area);
+                let paper = Color32::from_rgb(246, 243, 232);
+                let ink = Color32::from_rgb(20, 22, 26);
+                painter.rect_filled(area, 4.0, Color32::from_rgb(120, 124, 132));
+                let sheet_r = area.shrink(10.0);
+                painter.rect_filled(sheet_r, 0.0, paper);
+                let frame = sheet_r.shrink(12.0);
+                painter.rect_stroke(frame, 0.0, Stroke::new(1.4_f32, ink));
+                let sheet = match sheet {
+                    Ok(s) => s,
+                    Err(e) => {
+                        painter.text(frame.center(), Align2::CENTER_CENTER, e, FontId::proportional(13.0), Color32::from_rgb(90, 90, 90));
+                        return;
+                    }
+                };
+                let draw_area = frame.shrink(18.0);
+                let vid = egui::Id::new("mv_view");
+                let (mut zoom, mut pan): (f32, egui::Vec2) = ui.data(|d| d.get_temp(vid)).unwrap_or((1.0, egui::Vec2::ZERO));
+                if resp.hovered() {
+                    let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+                    if scroll.abs() > 0.1 {
+                        let z = (zoom * (1.0 + scroll * 0.0025)).clamp(0.2, 60.0);
+                        if let Some(h) = resp.hover_pos() {
+                            let d = h - (draw_area.center() + pan);
+                            pan -= d * (z / zoom - 1.0);
+                        }
+                        zoom = z;
+                    }
+                }
+                if resp.dragged() {
+                    pan += resp.drag_delta();
+                }
+                if resp.double_clicked() {
+                    zoom = 1.0;
+                    pan = egui::Vec2::ZERO;
+                }
+                ui.data_mut(|d| d.insert_temp(vid, (zoom, pan)));
+                // limitele: segmente + titluri
+                let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+                for (_, f) in &sheet.frames {
+                    x0 = x0.min(f[0]);
+                    y0 = y0.min(f[1]);
+                    x1 = x1.max(f[2]);
+                    y1 = y1.max(f[3]);
+                }
+                if self.mv_titles {
+                    y0 -= sheet.gap * 0.5;
+                }
+                let (w, h) = ((x1 - x0).max(1e-3), (y1 - y0).max(1e-3));
+                let fit = ((draw_area.width() as f64 / w).min(draw_area.height() as f64 / h)) as f32;
+                let sc = fit * zoom;
+                let c = draw_area.center() + pan;
+                let (cx, cy) = ((x0 + x1) * 0.5, (y0 + y1) * 0.5);
+                let pt = |x: f64, y: f64| egui::pos2(c.x + ((x - cx) as f32) * sc, c.y - ((y - cy) as f32) * sc);
+                let clip = painter.with_clip_rect(frame.shrink(2.0));
+                // cadrul fiecarei vederi (doar in preview) + distanta dintre vederi
+                let blue = Color32::from_rgb(70, 120, 200);
+                for (name, f) in &sheet.frames {
+                    let r = egui::Rect::from_two_pos(pt(f[0], f[1]), pt(f[2], f[3])).expand(4.0);
+                    for e in [[r.left_top(), r.right_top()], [r.right_top(), r.right_bottom()], [r.right_bottom(), r.left_bottom()], [r.left_bottom(), r.left_top()]] {
+                        clip.extend(egui::Shape::dashed_line(&e, Stroke::new(0.8_f32, blue.gamma_multiply(0.6)), 4.0, 3.0));
+                    }
+                    if !self.mv_titles {
+                        clip.text(r.left_top() + egui::vec2(2.0, -2.0), Align2::LEFT_BOTTOM, name, FontId::proportional(10.0), blue);
+                    }
+                }
+                // cota distantei intre primele doua vederi alaturate pe acelasi rand
+                if sheet.frames.len() > 1 {
+                    let a = sheet.frames[0].1;
+                    if let Some((_, b)) = sheet.frames.iter().skip(1).find(|(_, b)| (b[1] - a[1]).abs() < 1e-6 && b[0] > a[2]) {
+                        let y = (a[1] + a[3]) * 0.5;
+                        let (p, q) = (pt(a[2], y), pt(b[0], y));
+                        clip.arrow(p, (q - p) * 0.5, Stroke::new(1.0_f32, blue));
+                        clip.arrow(q, (p - q) * 0.5, Stroke::new(1.0_f32, blue));
+                        clip.text(egui::pos2((p.x + q.x) * 0.5, p.y - 3.0), Align2::CENTER_BOTTOM, format!("{:.2} m", b[0] - a[2]), FontId::proportional(11.0), blue);
+                    }
+                }
+                let rank = |l: &str| match l.to_ascii_uppercase().as_str() {
+                    "HATCH" | "GRIDS" | "LEVELS" | "DIMS" => 0,
+                    "HIDDEN" | "BEHIND" => 1,
+                    "VISIBLE" => 2,
+                    _ => 3,
+                };
+                let mut order: Vec<usize> = (0..sheet.segs.len()).collect();
+                order.sort_by_key(|&i| rank(&sheet.segs[i].0));
+                let thick = (1.5 * zoom.sqrt()).clamp(1.1, 3.0);
+                for i in order {
+                    let (layer, s) = &sheet.segs[i];
+                    let (a, b) = (pt(s[0], s[1]), pt(s[2], s[3]));
+                    if !frame.expand(40.0).intersects(egui::Rect::from_two_pos(a, b)) {
+                        continue;
+                    }
+                    match rank(layer) {
+                        0 => {
+                            let col = if layer.eq_ignore_ascii_case("HATCH") { Color32::from_rgb(150, 150, 145) } else { Color32::from_rgb(70, 95, 140) };
+                            clip.line_segment([a, b], Stroke::new(0.5_f32, col));
+                        }
+                        1 => {
+                            clip.extend(egui::Shape::dashed_line(&[a, b], Stroke::new(0.7_f32, Color32::from_rgb(95, 98, 105)), 4.0, 3.0));
+                        }
+                        2 => {
+                            clip.line_segment([a, b], Stroke::new(0.9_f32, ink));
+                        }
+                        _ => {
+                            clip.line_segment([a, b], Stroke::new(thick, Color32::BLACK));
+                        }
+                    }
+                }
+                for t in &sheet.texts {
+                    let big = t.layer == "VIEW_TITLES";
+                    let size = if big { (11.0 * zoom.sqrt()).clamp(9.0, 20.0) } else { (t.mm as f32 * 2.0 * zoom.sqrt()).clamp(6.5, 16.0) };
+                    clip.text(pt(t.x, t.y), Align2::LEFT_BOTTOM, &t.s, FontId::proportional(size), if big { ink } else { Color32::from_rgb(25, 30, 40) });
+                }
+                painter.text(
+                    egui::pos2(frame.left() + 6.0, frame.bottom() - 6.0),
+                    Align2::LEFT_BOTTOM,
+                    format!("{} views · spacing {:.2} m · DWG 1:1 in model space · {:.0}%  ·  wheel: zoom  ·  drag: pan  ·  double-click: fit", sheet.frames.len(), sheet.gap, zoom * 100.0),
+                    FontId::proportional(10.0),
+                    Color32::from_rgb(110, 110, 110),
+                );
+            });
+        self.mv_open = open;
+        if export {
+            self.request_path(Purpose::ExportMultiView);
         }
     }
 
