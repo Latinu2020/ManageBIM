@@ -1,0 +1,25 @@
+ply
+format ascii 1.0
+comment author ManageBIM test
+comment scan of two objects
+element vertex 6
+property float x
+property float y
+property float z
+property float quality
+element face 2
+property list uchar int vertex_indices
+property int segment
+property float confidence
+property uchar red
+property uchar green
+property uchar blue
+end_header
+0 0 0 0.5
+1 0 0 0.7
+0 1 0 0.9
+5 0 0 0.2
+6 0 0 0.4
+5 1 0 0.6
+3 0 1 2 7 0.95 255 0 0
+3 3 4 5 9 0.40 0 0 255

@@ -597,10 +597,11 @@ impl App {
             let r = match purpose {
                 Purpose::OpenModel { .. } => d.set_title("Open Model").add_filter("All supported models", &crate::SUPPORTED[..crate::SUPPORTED_MODELS])
                     .add_filter("Navisworks / Revit (through Navisworks)", &crate::formats::NAVIS_EXT)
-                    .add_filter("IFC / ManageBIM", &["ifc", "ifczip", "bimc"])
+                    .add_filter("IFC / ManageBIM (IFC, ifcZIP, ifcXML, ifcJSON, BIMC)", &["ifc", "ifczip", "ifcxml", "json", "bimc"])
+                    .add_filter("Open formats (3MF, CityJSON / CityJSONSeq, 3D Tiles, USD)", &["3mf", "json", "jsonl", "b3dm", "cmpt", "usda", "usd"])
                     .add_filter("CAD (DWG, DXF, STEP, IGES, BREP, FCStd)", &["dwg", "dxf", "step", "stp", "iges", "igs", "brep", "brp", "fcstd"])
                     .add_filter("3D meshes - Blender / Rhino / SketchUp exports (glTF, FBX, OBJ, STL, PLY)", &["glb", "gltf", "fbx", "obj", "stl", "ply"])
-                    .add_filter("Point clouds (E57, LAS)", &["e57", "las"])
+                    .add_filter("Point clouds (E57, LAS, LAZ)", &["e57", "las", "laz"])
                     .add_filter("All files", &["*"]).pick_files().map(|v| v.into_iter().map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>()),
                 Purpose::PublishBimd => d.set_title("Publish project + models (.bimd)").add_filter("ManageBIM published project", &["bimd"]).set_file_name(self.project_path.as_ref().map(|p| format!("{}.bimd", std::path::Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default())).unwrap_or_else(|| "project.bimd".into())).save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::OpenProject => d.set_title("Open Project").add_filter("ManageBIM project (.bimr / .bimd)", &["bimr", "bimd"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),

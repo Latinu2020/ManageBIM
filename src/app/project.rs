@@ -55,7 +55,7 @@ impl App {
             let lower = p2.to_lowercase();
             // cache .bimc pentru tot ce nu e deja .bimc (conversiile DWG / STEP / Navisworks sunt lente)
             // norii de puncte nu au cache .bimc (punctele nu incap in formatul cache)
-            let is_e57 = lower.ends_with(".e57") || lower.ends_with(".las");
+            let is_e57 = lower.ends_with(".e57") || lower.ends_with(".las") || lower.ends_with(".laz");
             let is_ifc = !lower.ends_with(".bimc") && !is_e57;
             let mut note = None;
             let mut loaded = None;
@@ -78,7 +78,7 @@ impl App {
             let loaded = loaded.unwrap_or_else(|| {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     if is_e57 {
-                        if lower.ends_with(".las") { crate::e57::read_las(&p2, &prog) } else { crate::e57::read(&p2, &prog) }.map(|(raw, c)| {
+                        if lower.ends_with(".las") || lower.ends_with(".laz") { crate::e57::read_las(&p2, &prog) } else { crate::e57::read(&p2, &prog) }.map(|(raw, c)| {
                             cloud_raw = Some(c);
                             raw
                         })

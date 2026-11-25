@@ -7,7 +7,13 @@ use std::path::Path;
 pub fn load_gltf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     progress(0.05, "Reading file");
     let bytes = std::fs::read(path).map_err(|e| format!("Cannot read the file: {e}"))?;
-    let g = gltf::Gltf::from_slice(&bytes).map_err(|e| format!("Invalid glTF: {e}"))?;
+    load_gltf_bytes(&bytes, path, progress, None)
+}
+
+/// Ca load_gltf, din memorie (GLB-ul din .b3dm / .i3dm); path da folderul resurselor externe.
+/// atch: tabelul de lot 3D Tiles 1.0 (randurile pe _BATCHID), daca exista.
+pub fn load_gltf_bytes(bytes: &[u8], path: &str, progress: &dyn Fn(f32, &str), batch: Option<Vec<Vec<(String, String)>>>) -> Result<RawModel, String> {
+    let g = gltf::Gltf::from_slice(bytes).map_err(|e| format!("Invalid glTF: {e}"))?;
     let base = Path::new(path).parent().map(|p| p.to_path_buf()).unwrap_or_default();
     let mut buffers: Vec<Vec<u8>> = Vec::new();
     for b in g.buffers() {
@@ -26,6 +32,14 @@ pub fn load_gltf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, S
         buffers.push(data);
     }
     progress(0.3, "Generating geometry");
+    // EXT_structural_metadata / EXT_mesh_features (Cesium, 3D Tiles 1.1): un obiect = un rand din tabel
+    let raw_json = crate::gltf_meta::json_of(bytes);
+    let mut meta = raw_json.as_ref().map(|j| crate::gltf_meta::read_meta(j, &buffers)).unwrap_or_default();
+    // 3D Tiles 1.0: tabelul de lot devine ultimul tabel; _BATCHID il refera
+    let batch_table = batch.map(|rows| {
+        meta.tables.push(("Batch table".to_string(), rows));
+        meta.tables.len() - 1
+    });
     let mut elements = Vec::new();
     let mut warnings = Vec::new();
     // Y-sus (glTF) -> Z-sus (BIM)
@@ -51,6 +65,8 @@ pub fn load_gltf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, S
         let mut tris = Vec::new();
         let mut colors = Vec::new();
         let mut mats: Vec<String> = Vec::new();
+        // obiectul (tabel, id) al fiecarui triunghi, cand plasa are EXT_mesh_features
+        let mut feats: Vec<Option<(usize, u32)>> = Vec::new();
         for prim in mesh.primitives() {
             if prim.mode() != gltf::mesh::Mode::Triangles {
                 continue;
@@ -66,6 +82,7 @@ pub fn load_gltf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, S
                 Some(i) => i.into_u32().collect(),
                 None => (0..pos.len() as u32).collect(),
             };
+            let fid = raw_json.as_ref().and_then(|j| crate::gltf_meta::feature_ids(j, &buffers, mesh.index(), prim.index(), pos.len()).or_else(|| crate::gltf_meta::batch_ids(j, &buffers, mesh.index(), prim.index(), batch_table)));
             let mat = prim.material();
             let c = mat.pbr_metallic_roughness().base_color_factor();
             let col = [(c[0].powf(1.0 / 2.2) * 255.0) as u8, (c[1].powf(1.0 / 2.2) * 255.0) as u8, (c[2].powf(1.0 / 2.2) * 255.0) as u8, ((c[3].max(0.15)) * 255.0) as u8];
@@ -81,6 +98,10 @@ pub fn load_gltf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, S
                 }
                 tris.push([*a, *b, *cc]);
                 colors.push(col);
+                feats.push(fid.as_ref().and_then(|f| {
+                    let id = *f.per_vertex.get(t[0] as usize)?;
+                    (Some(id) != f.null).then_some((f.table.unwrap_or(usize::MAX), id))
+                }));
             }
         }
         if tris.is_empty() {
@@ -113,6 +134,44 @@ pub fn load_gltf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, S
             if let Some(p) = props.iter_mut().find(|p| p.group == "Element" && p.name == "Type") {
                 p.value = ifc_type.clone();
             }
+        }
+        if feats.iter().any(|f| f.is_some()) {
+            // un element pe obiect (feature), cu randul lui din tabelul de proprietati
+            let mut groups: std::collections::BTreeMap<Option<(usize, u32)>, (Vec<[DVec3; 3]>, Vec<[u8; 4]>)> = std::collections::BTreeMap::new();
+            for ((t, c), f) in tris.into_iter().zip(colors).zip(feats) {
+                let g = groups.entry(f).or_default();
+                g.0.push(t);
+                g.1.push(c);
+            }
+            for (f, (tris, colors)) in groups {
+                let mut p = props.clone();
+                let mut ename = name.clone();
+                let mut eguid = guid.clone();
+                if let Some((tbl, id)) = f {
+                    p.push(Prop { group: "Feature".into(), name: "Feature ID".into(), value: id.to_string() });
+                    eguid = format!("{guid}#{id}");
+                    if let Some((title, rows)) = meta.tables.get(tbl) {
+                        if let Some(row) = rows.get(id as usize) {
+                            for (k, v) in row {
+                                p.push(Prop { group: title.clone(), name: k.clone(), value: v.clone() });
+                            }
+                            // numele obiectului: prima proprietate de tip nume / id din rand
+                            if let Some((_, v)) = row.iter().find(|(k, _)| ["name", "Name", "NAME", "id", "ID", "gml_id", "objectid", "OBJECTID"].contains(&k.as_str())) {
+                                ename = format!("{name} · {v}");
+                            } else {
+                                ename = format!("{name} · {id}");
+                            }
+                        }
+                    } else {
+                        ename = format!("{name} · {id}");
+                    }
+                }
+                if let Some(x) = p.iter_mut().find(|x| x.group == "Element" && x.name == "Triangles") {
+                    x.value = tris.len().to_string();
+                }
+                elements.push(RawElement { name: ename, ifc_type: ifc_type.clone(), guid: eguid, storey: storey.clone(), props: p, tris, colors, default_hidden: false });
+            }
+            continue;
         }
         elements.push(RawElement { name, ifc_type, guid, storey, props, tris, colors, default_hidden: false });
     }

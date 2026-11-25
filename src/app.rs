@@ -1686,6 +1686,9 @@ pub struct App {
     pub up_value: String,
     pub compare_param_pick: Option<String>,
     pub compare_on: bool,
+    /// harta de abateri geometrice pe elementele schimbate; scara in mm (0 = automata)
+    pub compare_heat: bool,
+    pub compare_heat_max_mm: f32,
     pub compare_pick: (Option<usize>, Option<usize>),
     pub compare_tol: f32,
     /// Model Checker: regulile, ultimul rezultat, regula aleasa si avertismentele importului IDS
@@ -2023,6 +2026,8 @@ impl App {
             up_value: String::new(),
             compare_param_pick: None,
             compare_on: false,
+            compare_heat: true,
+            compare_heat_max_mm: 0.0,
             compare_pick: (None, None),
             compare_tol: 1.0,
             check_rules: Vec::new(),

@@ -682,13 +682,50 @@ impl App {
         let mut new_set: Option<(String, Vec<ElemId>)> = None;
         let mut acts2: Vec<Action> = Vec::new();
         let mut dirty = false;
-        ui.horizontal(|ui| {
+        let ndev = r.dev.len();
+        let auto_max = {
+            // scara automata: abaterea cea mai mare (95%) dintre elementele schimbate, minim 10 mm
+            let mut v: Vec<f32> = r.dev.values().map(|d| d.max).collect();
+            v.sort_by(|a, b| a.total_cmp(b));
+            v.get(((v.len() as f32 * 0.95) as usize).min(v.len().saturating_sub(1))).copied().unwrap_or(0.1).max(0.01)
+        };
+        let mut heat_changed = false;
+        ui.horizontal_wrapped(|ui| {
             dirty |= ui.checkbox(&mut self.compare_on, RichText::new("Show results in 3D").strong()).changed();
+            heat_changed |= ui
+                .add_enabled(ndev > 0, egui::Checkbox::new(&mut self.compare_heat, RichText::new("Deviation heatmap").strong()))
+                .on_hover_text("Changed elements coloured by how far each surface moved between A and B: green = in place, yellow = half the scale, red = at or beyond the scale")
+                .changed();
+            if self.compare_heat && ndev > 0 {
+                let mut auto = self.compare_heat_max_mm <= 0.0;
+                if ui.checkbox(&mut auto, "Auto scale").changed() {
+                    self.compare_heat_max_mm = if auto { 0.0 } else { (auto_max * 1000.0).round() };
+                    heat_changed = true;
+                }
+                if !auto {
+                    heat_changed |= ui.add(egui::DragValue::new(&mut self.compare_heat_max_mm).range(1.0..=100_000.0).speed(5.0).suffix(" mm")).changed();
+                }
+                // legenda
+                let scale = if auto { auto_max } else { self.compare_heat_max_mm / 1000.0 };
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(140.0, 14.0), egui::Sense::hover());
+                for k in 0..28 {
+                    let t = k as f32 / 27.0;
+                    let c = crate::compare::heat_color(t);
+                    let x0 = rect.left() + rect.width() * k as f32 / 28.0;
+                    ui.painter().rect_filled(egui::Rect::from_min_max(egui::pos2(x0, rect.top()), egui::pos2(x0 + rect.width() / 28.0 + 0.5, rect.bottom())), 0.0, Color32::from_rgb(c[0], c[1], c[2]));
+                }
+                ui.label(RichText::new(format!("0 … {:.0} mm", scale * 1000.0)).small());
+            }
             if ui.button("Clear").clicked() {
                 acts.clear();
                 self.compare_clear();
             }
         });
+        if heat_changed {
+            // re-trimite toate culorile (harta se aplica / se scoate)
+            self.looks.clear();
+            dirty = true;
+        }
         ui.columns(2, |cols| {
             let ui = &mut cols[0];
             egui::Grid::new("cmp_sum").striped(true).num_columns(4).show(ui, |ui| {

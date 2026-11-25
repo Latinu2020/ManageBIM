@@ -1,6 +1,6 @@
 [package]
 name = "bimrust"
-version = "0.28.2"
+version = "0.28.3"
 edition = "2021"
 license = "MIT"
 description = "BimRust - vizualizare si coordonare modele BIM (IFC / glTF)"
@@ -38,6 +38,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 egui-phosphor = "0.7.3"
 # motorul de scripturi pentru consola Script (Rhai, MIT/Apache-2.0)
 rhai = { version = "1.20", default-features = false, features = ["std", "no_module", "no_custom_syntax"] }
+laz = "0.9"
 
 # dialogurile de fisiere: Windows nativ; Linux / FreeBSD prin xdg-desktop-portal
 [target.'cfg(any(windows, unix))'.dependencies]

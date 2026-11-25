@@ -618,6 +618,76 @@ impl Bvh {
     }
 }
 
+impl Bvh {
+    /// Distanta de la punctul `p` la cea mai apropiata suprafata (triunghi) a elementului; cautarea
+    /// se opreste la `max_d` (intoarce `max_d` daca nimic nu e mai aproape).
+    pub fn nearest(&self, tris: &[Vec3], p: Vec3, max_d: f32) -> f32 {
+        let mut best = max_d;
+        if self.nodes.is_empty() {
+            return best;
+        }
+        let mut stack = vec![0u32];
+        while let Some(ni) = stack.pop() {
+            let nd = &self.nodes[ni as usize];
+            // distanta punct - cutie
+            let q = p.clamp(nd.bb.min, nd.bb.max);
+            if (q - p).length() >= best {
+                continue;
+            }
+            if nd.leaf {
+                for &t in &self.order[nd.a as usize..(nd.a + nd.b) as usize] {
+                    let i = t as usize * 3;
+                    let d = point_tri_dist(p, tris[i], tris[i + 1], tris[i + 2]);
+                    if d < best {
+                        best = d;
+                    }
+                }
+            } else {
+                stack.push(nd.a);
+                stack.push(nd.b);
+            }
+        }
+        best
+    }
+}
+
+/// Distanta punct - triunghi (cel mai apropiat punct, Ericson "Real-Time Collision Detection" 5.1.5).
+pub fn point_tri_dist(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> f32 {
+    let (ab, ac, ap) = (b - a, c - a, p - a);
+    let (d1, d2) = (ab.dot(ap), ac.dot(ap));
+    if d1 <= 0.0 && d2 <= 0.0 {
+        return ap.length();
+    }
+    let bp = p - b;
+    let (d3, d4) = (ab.dot(bp), ac.dot(bp));
+    if d3 >= 0.0 && d4 <= d3 {
+        return bp.length();
+    }
+    let vc = d1 * d4 - d3 * d2;
+    if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+        let v = d1 / (d1 - d3);
+        return (p - (a + ab * v)).length();
+    }
+    let cp = p - c;
+    let (d5, d6) = (ab.dot(cp), ac.dot(cp));
+    if d6 >= 0.0 && d5 <= d6 {
+        return cp.length();
+    }
+    let vb = d5 * d2 - d1 * d6;
+    if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+        let w = d2 / (d2 - d6);
+        return (p - (a + ac * w)).length();
+    }
+    let va = d3 * d6 - d5 * d4;
+    if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
+        let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return (p - (b + (c - b) * w)).length();
+    }
+    let denom = 1.0 / (va + vb + vc);
+    let (v, w) = (vb * denom, vc * denom);
+    (p - (a + ab * v + ac * w)).length()
+}
+
 pub fn ray_tri(o: Vec3, d: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Option<f32> {
     let e1 = b - a;
     let e2 = c - a;

@@ -52,6 +52,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - **SQLite** (prin rusqlite, citirea bazei de date Plant 3D) - domeniu public / MIT.
 - **acadrust** (citire DWG) - MPL-2.0.
+- **laz-rs** (crate-ul `laz`, decompresia nori LAZ / LASzip) - Apache-2.0 / MIT.
+- **Schemele IFC EXPRESS** (IFC2X3_TC1, IFC4 ADD2 TC1, IFC4X3) - © buildingSMART International Limited; fișierele oficiale, nemodificate, în `third_party/ifc-schema/` (preluate din github.com/ThatOpen/engine_web-ifc). buildingSMART permite copierea și distribuirea documentației tehnice nemodificate (vezi antetul fiecărui fișier). Folosite pentru ifcXML / ifcJSON -> IFC STEP.
 - Celelalte biblioteci Rust (egui, glam, rayon...) - MIT / Apache-2.0, lista completă în `Cargo.lock`.
 
 ## ambientCG materials (default PBR library)

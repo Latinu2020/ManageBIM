@@ -1,5 +1,6 @@
 //! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
 use super::*;
+use crate::compare::heat_color as heat;
 
 impl App {
     // ------------------------------------------------------------------ culori
@@ -360,6 +361,30 @@ impl App {
                 }
             }
             new_looks.insert(mi, looks);
+        }
+        // Compare: harta de abateri pe triunghi peste culorile de mai sus (elementele schimbate din B)
+        if let Some(c) = self.compare.as_ref().filter(|_| self.compare_on && self.compare_heat) {
+            let mut maxes: Vec<f32> = c.dev.values().map(|d| d.max).collect();
+            maxes.sort_by(|a, b| a.total_cmp(b));
+            let auto = maxes.get(((maxes.len() as f32 * 0.95) as usize).min(maxes.len().saturating_sub(1))).copied().unwrap_or(0.1).max(0.01);
+            let scale = if self.compare_heat_max_mm > 0.0 { self.compare_heat_max_mm / 1000.0 } else { auto };
+            for (id, d) in &c.dev {
+                let Some(m) = self.models.get(id.m as usize).and_then(|m| m.as_ref()) else { continue };
+                let Some(e) = m.elements.get(id.e as usize) else { continue };
+                let hidden = new_looks.get(&(id.m as usize)).and_then(|l| l.get(id.e as usize)).map(|l| l.hidden).unwrap_or(false);
+                if hidden || d.tri.len() != e.tri_count as usize {
+                    continue;
+                }
+                let mut col = vec![0u8; d.tri.len() * 12];
+                for (t, v) in d.tri.iter().enumerate() {
+                    let k = heat(*v / scale);
+                    for vtx in 0..3 {
+                        col[(t * 3 + vtx) * 4..(t * 3 + vtx) * 4 + 4].copy_from_slice(&k);
+                    }
+                }
+                let mat = vec![0u8; col.len()];
+                ups.push(Upload::ColorRange { slot: id.m, first: e.tri_start * 3, col, mat });
+            }
         }
         self.looks = new_looks;
         if !ups.is_empty() {

@@ -32,6 +32,11 @@ pub mod pdf;
 pub mod markup;
 pub mod gltf_export;
 pub mod gltf_load;
+pub mod gltf_meta;
+pub mod open_formats;
+pub mod usda;
+pub mod ifc_schema;
+pub mod ifc_convert;
 pub mod ifc;
 pub mod ifc_export;
 pub mod model;
@@ -93,17 +98,21 @@ fn load_by_ext(path: &str, ext: &str, progress: &dyn Fn(f32, &str)) -> Result<Ra
         "dwg" => formats::convert_dwg(path, progress),
         "step" | "stp" | "iges" | "igs" | "brep" | "brp" => formats::load_cad(path, progress),
         "fcstd" => fcstd::load_fcstd(path, progress),
+        "3mf" => open_formats::load_3mf(path, progress),
+        "ifcxml" => ifc_convert::load_ifcxml(path, progress),
+        "json" | "jsonl" | "cjson" | "cityjson" | "cjseq" => open_formats::load_json(path, progress),
+        "b3dm" | "cmpt" => open_formats::load_tile_file(path, progress),
         "dgn" => Err("DGN (MicroStation) is a closed Bentley format. In MicroStation / OpenRoads use File > Export > IFC (or DWG) and open that file.".into()),
         e if formats::NAVIS_EXT.contains(&e) => formats::convert_navisworks(path, progress),
         "rfa" => Err("RFA is a Revit family. Load it into a project and export IFC / .bimc (ManageBIM add-in for Revit).".into()),
         "blend" => Err("Blender files (.blend) are not read directly. In Blender use File > Export > glTF 2.0 (.glb) and tick Include > Custom Properties: object names, the collection hierarchy, colours and your Custom Properties open in ManageBIM. FBX works too (names and colours, no properties). With Bonsai (BlenderBIM) you can also save IFC.".into()),
         "3dm" => Err("Rhino files (.3dm) are not read directly. In Rhino use File > Export: STEP (.stp - names, assemblies and colours, millimetres converted) or glTF (.glb - names and colours) or FBX. For IFC use VisualARQ / Rhino.Inside.Revit.".into()),
-        "dae" | "usd" | "usda" | "usdc" | "usdz" | "abc" | "3ds" | "max" => Err("Export this model to glTF / GLB (best: keeps materials and object names) or FBX and open that file.".into()),
+        "usda" | "usd" | "usdc" | "usdz" => usda::load_usda(path, progress),
+        "dae" | "abc" | "3ds" | "max" => Err("Export this model to glTF / GLB (best: keeps materials and object names) or FBX and open that file.".into()),
         "skp" => Err("SketchUp: export to IFC (best: keeps the BIM data), FBX or OBJ and open that file.".into()),
         "ifczip" => load_ifczip(path, progress),
-        "e57" | "las" => Err("Point clouds (E57 / LAS) open directly in ManageBIM (they are not converted to .bimc).".into()),
-        "laz" => Err("LAZ is compressed LAS: convert it to .las (e.g. with CloudCompare: File > Save As > LAS) and open that.".into()),
-        "ifcxml" => Err("Convert the .ifcxml file to .ifc (STEP) before opening it (e.g. with the authoring tool's IFC export).".into()),
+        "e57" | "las" | "laz" => Err("Point clouds (E57 / LAS / LAZ) open directly in ManageBIM (they are not converted to .bimc).".into()),
+
         _ => Err(format!("Unknown format .{ext}. Supported: {}", SUPPORTED.join(", "))),
     }
 }
@@ -128,8 +137,8 @@ fn load_ifczip(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, Str
 
 /// Every extension ManageBIM can open (natively or through a converter).
 /// Modelele sunt primele `SUPPORTED_MODELS` intrari (filtrul din dialogul Open); .bimr / .csv la final.
-pub const SUPPORTED: [&str; 27] = ["ifc", "ifczip", "bimc", "glb", "gltf", "fbx", "obj", "stl", "ply", "dxf", "dwg", "fcstd", "step", "stp", "iges", "igs", "brep", "brp", "nwd", "nwc", "nwf", "rvt", "e57", "las", "laz", "bimr", "csv"];
-pub const SUPPORTED_MODELS: usize = 25;
+pub const SUPPORTED: [&str; 36] = ["ifc", "ifczip", "ifcxml", "bimc", "glb", "gltf", "fbx", "obj", "stl", "ply", "3mf", "dxf", "dwg", "fcstd", "step", "stp", "iges", "igs", "brep", "brp", "nwd", "nwc", "nwf", "rvt", "e57", "las", "laz", "json", "jsonl", "usda", "usd", "b3dm", "cmpt", "bimd", "bimr", "csv"];
+pub const SUPPORTED_MODELS: usize = 33;
 
 pub fn file_name(path: &str) -> String {
     std::path::Path::new(path).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string())

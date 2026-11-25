@@ -3,6 +3,21 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.28.3 - 2026-11-25
+- **New open formats, with the properties of every object**
+  - **3MF**: units, build items, components (also in other model parts), base materials / colour groups, model and object metadata; supports hidden by default.
+  - **CityJSON / CityJSONSeq** (`.json`, `.city.json`, `.jsonl`): every city object with its attributes (nested ones flattened), highest LoD only, semantic surface colours (roof, wall, window…), parts under their building, geometry templates, appearance materials.
+  - **ifcJSON and ifcXML** (IFC2X3 / IFC4 / IFC4.3): converted to IFC STEP with the official buildingSMART EXPRESS schemas, then read like any `.ifc` - same geometry, property sets and levels; inverse relations written inside objects (isDefinedBy…) become real relationships.
+  - **3D Tiles 1.1 / 1.0** (`tileset.json`, `.glb`, `.b3dm`, `.cmpt`): REPLACE / ADD refinement, external tilesets, tile transforms, RTC_CENTER, batch tables as properties; ECEF models shown upright in a local East-North-Up frame with the WGS84 position.
+  - **USD ASCII** (`.usda`): prims and transforms (xformOpOrder), meshes and Cube / Sphere / Cylinder / Cone, displayColor / displayOpacity, metersPerUnit and upAxis, customData / assetInfo / custom attributes as properties, `@file.usda@` references. Binary .usdc / .usdz get a clear message.
+  - **LAZ** point clouds open directly (LASzip decompression built in, no CloudCompare needed).
+- **Richer existing formats**
+  - **LAS / LAZ**: one tree item per **classification** (Ground, Building, Vegetation, Water…) with intensity, returns, GPS time and height range - hide or isolate classes.
+  - **DXF**: block **attributes** (ATTRIB) and **XDATA** become properties; a TAG / NAME attribute names the element.
+  - **PLY**: faces split into elements by object_id / segment / label / material_index, face and vertex properties (confidence, quality…) and header comments as properties; face colours.
+  - **glTF**: **EXT_structural_metadata** + **EXT_mesh_features** - one mesh with several objects becomes several elements, each with its row of properties.
+- **Geometric diff between revisions**: Compare now measures how far every surface moved (both directions) for changed elements - "Max deviation 300 mm (mean …)" - and shows a **deviation heatmap per triangle** (green in place → red at the scale, automatic or in mm) with a legend. Elements reshaped inside an unchanged bounding box are detected too.
+
 ## 0.28.2 - 2026-11-25
 - **Export ribbon**: IFC, GLB and BCF have proper file-format icons (document with a coloured IFC / GLB / BCF tag) and are now also in the Export tab (*Open standards*), not only in BIM.
 - **Coordination objects are no longer created by surprise**: Clearance / Void / Placeholder in the ribbon open the window with a *New … — Create / Cancel* bar; nothing is added until you press **Create**.

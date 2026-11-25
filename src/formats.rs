@@ -377,6 +377,10 @@ pub fn load_ply(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
     let mut verts: Vec<DVec3> = Vec::new();
     let mut vcol: Vec<[u8; 4]> = Vec::new();
     let mut faces: Vec<Vec<usize>> = Vec::new();
+    // proprietatile scalare ale fetelor (segment, label, object_id, material_index, culoare...) si ale varfurilor
+    let mut face_vals: Vec<Vec<(String, f64)>> = Vec::new();
+    let mut vstats: std::collections::BTreeMap<String, (f64, f64, f64, usize)> = std::collections::BTreeMap::new();
+    let mut other: Vec<(String, usize)> = Vec::new();
     let ascii = fmt == "ascii";
     let text = if ascii { String::from_utf8_lossy(&d[body..]).to_string() } else { String::new() };
     let mut toks = text.split_ascii_whitespace();
@@ -427,32 +431,105 @@ pub fn load_ply(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
                     (Some(r), Some(g), Some(b)) => [r as u8, g as u8, b as u8, 255],
                     _ => [190, 190, 195, 255],
                 });
+                for (k, v) in &vals {
+                    if !["x", "y", "z", "nx", "ny", "nz", "red", "green", "blue", "alpha", "r", "g", "b", "a", "s", "t", "u", "v", "texture_u", "texture_v"].contains(k) {
+                        let e = vstats.entry(k.to_string()).or_insert((f64::INFINITY, f64::NEG_INFINITY, 0.0, 0));
+                        e.0 = e.0.min(*v);
+                        e.1 = e.1.max(*v);
+                        e.2 += *v;
+                        e.3 += 1;
+                    }
+                }
             } else if name == "face" && list.len() >= 3 {
                 faces.push(list);
+                let mut fv: Vec<(String, f64)> = vals.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+                fv.sort_by(|a, b| a.0.cmp(&b.0));
+                face_vals.push(fv);
             }
         }
         if name == "vertex" {
             progress(0.4, "Reading PLY faces");
+        } else if name != "face" {
+            other.push((name.clone(), *count));
         }
     }
     let mut warnings = Vec::new();
-    let mut tris: Vec<Tri> = Vec::new();
-    for f in &faces {
-        for k in 1..f.len() - 1 {
-            let (a, b, c) = (f[0], f[k], f[k + 1]);
-            if a < verts.len() && b < verts.len() && c < verts.len() {
-                tris.push(([verts[a], verts[b], verts[c]], vcol[a]));
-            }
-        }
-    }
-    let all: Vec<[DVec3; 3]> = tris.iter().map(|t| t.0).collect();
-    let s = unit_guess(&all, &mut warnings);
-    let tris: Vec<Tri> = tris.into_iter().map(|(t, c)| (t.map(|p| p * s), c)).filter(|t| valid(&t.0)).collect();
     if faces.is_empty() && !verts.is_empty() {
         return Err("This PLY is a point cloud (no faces). Point clouds are not supported yet.".into());
     }
+    // fetele se impart in elemente dupa primul atribut de identificare gasit (ca in scanarile segmentate,
+    // modelele fotogrammetrice clasificate sau exporturile cu obiecte)
+    const IDS: [&str; 10] = ["object_id", "objectid", "instance", "instance_id", "segment", "segment_id", "label", "class", "category", "material_index"];
+    let id_key = IDS.iter().find(|k| face_vals.first().map_or(false, |fv| fv.iter().any(|(n, _)| n.eq_ignore_ascii_case(k)))).map(|s| s.to_string());
+    let fval = |fv: &[(String, f64)], k: &str| fv.iter().find(|(n, _)| n.eq_ignore_ascii_case(k)).map(|x| x.1);
+    let mut groups: std::collections::BTreeMap<i64, (Vec<Tri>, std::collections::BTreeMap<String, (f64, f64, usize)>)> = std::collections::BTreeMap::new();
+    for (fi, f) in faces.iter().enumerate() {
+        let fv = face_vals.get(fi).map(|v| v.as_slice()).unwrap_or(&[]);
+        let gid = id_key.as_deref().and_then(|k| fval(fv, k)).map(|v| v as i64).unwrap_or(i64::MIN);
+        // culoarea fetei (daca exista) are prioritate fata de a varfului
+        let fcol = match (fval(fv, "red"), fval(fv, "green"), fval(fv, "blue")) {
+            (Some(r), Some(g), Some(b)) => Some([r as u8, g as u8, b as u8, 255]),
+            _ => None,
+        };
+        let g = groups.entry(gid).or_default();
+        for k in 1..f.len() - 1 {
+            let (a, b, c) = (f[0], f[k], f[k + 1]);
+            if a < verts.len() && b < verts.len() && c < verts.len() {
+                g.0.push(([verts[a], verts[b], verts[c]], fcol.unwrap_or(vcol[a])));
+            }
+        }
+        for (n, v) in fv {
+            if ["red", "green", "blue", "alpha"].contains(&n.as_str()) || Some(n) == id_key.as_ref() {
+                continue;
+            }
+            let e = g.1.entry(n.clone()).or_insert((f64::INFINITY, f64::NEG_INFINITY, 0));
+            e.0 = e.0.min(*v);
+            e.1 = e.1.max(*v);
+            e.2 += 1;
+        }
+    }
+    let all: Vec<[DVec3; 3]> = groups.values().flat_map(|g| g.0.iter().map(|t| t.0)).collect();
+    let s = unit_guess(&all, &mut warnings);
+    let num = |v: f64| if v.fract() == 0.0 && v.abs() < 1e15 { format!("{}", v as i64) } else { format!("{v:.4}") };
     let n = stem(path);
-    finish(path, vec![elem(n.clone(), "PLY Mesh", "", vec![prop("Element", "Name", n)], tris)], vec![("Encoding".into(), fmt)], warnings, "PLY")
+    let mut els = Vec::new();
+    for (gid, (tris, st)) in groups {
+        let tris: Vec<Tri> = tris.into_iter().map(|(t, c)| (t.map(|p| p * s), c)).filter(|t| valid(&t.0)).collect();
+        if tris.is_empty() {
+            continue;
+        }
+        let name = match (&id_key, gid) {
+            (Some(k), g) if g != i64::MIN => format!("{n} {k} {g}"),
+            _ => n.clone(),
+        };
+        let mut props = vec![prop("Element", "Name", name.clone()), prop("Element", "Faces", (tris.len()).to_string())];
+        if let (Some(k), true) = (&id_key, gid != i64::MIN) {
+            props.push(prop("PLY", k, gid.to_string()));
+        }
+        for (k, (lo, hi, _)) in &st {
+            props.push(prop("PLY face", k, if lo == hi { num(*lo) } else { format!("{} … {}", num(*lo), num(*hi)) }));
+        }
+        els.push(elem(name, "PLY Mesh", "", props, tris));
+    }
+    // atributele varfurilor (quality, intensity, confidence...) si comentariile antetului - pe toate elementele
+    let mut shared: Vec<Prop> = vstats.iter().map(|(k, (lo, hi, sum, c))| prop("PLY vertex", k, format!("{} … {} (mean {})", num(*lo), num(*hi), num(sum / (*c).max(1) as f64)))).collect();
+    for l in header.lines() {
+        let l = l.trim();
+        if let Some(c) = l.strip_prefix("comment ").or_else(|| l.strip_prefix("obj_info ")) {
+            let c = c.trim();
+            match c.split_once(' ').filter(|(k, _)| k.len() <= 30 && !k.contains(':')) {
+                Some((k, v)) if ["author", "generated", "created", "software", "unit", "units", "textureFile", "date", "source"].iter().any(|x| k.eq_ignore_ascii_case(x)) => shared.push(prop("PLY header", k, v.trim().to_string())),
+                _ => shared.push(prop("PLY header", &format!("Comment {}", shared.iter().filter(|p| p.group == "PLY header").count() + 1), c.to_string())),
+            }
+        }
+    }
+    for (en, c) in &other {
+        shared.push(prop("PLY header", &format!("Element {en}"), c.to_string()));
+    }
+    for e in &mut els {
+        e.props.extend(shared.iter().cloned());
+    }
+    finish(path, els, vec![("Encoding".into(), fmt)], warnings, "PLY")
 }
 
 // ====================================================================== DXF
@@ -699,6 +776,50 @@ impl DxfCtx {
     }
 }
 
+/// XDATA (date extinse ale altor aplicatii): grupul "XData <aplicatie>", valorile in ordine; cele cu
+/// forma "Nume=Valoare" / "Nume: Valoare" devin proprietati cu nume.
+fn xdata_props(e: &Ent) -> Vec<Prop> {
+    let mut out = Vec::new();
+    let mut app: Option<String> = None;
+    let mut k = 0;
+    let mut i = 0;
+    while i < e.codes.len() {
+        let (c, v) = (e.codes[i].0, e.codes[i].1.trim());
+        match c {
+            1001 => {
+                app = Some(v.to_string());
+                k = 0;
+            }
+            _ if app.is_none() => {}
+            1002 => {} // { } liste - ignorate ca structura, valorile din ele se pastreaza
+            1000 | 1003 | 1005 | 1040 | 1041 | 1042 | 1070 | 1071 => {
+                if !v.is_empty() && out.len() < 200 {
+                    let g = format!("XData {}", app.as_deref().unwrap_or(""));
+                    if c == 1000 {
+                        if let Some((n, val)) = v.split_once('=').or_else(|| v.split_once(": ")).filter(|(n, _)| !n.trim().is_empty() && n.len() <= 40) {
+                            out.push(prop(&g, n.trim(), val.trim().to_string()));
+                            i += 1;
+                            continue;
+                        }
+                    }
+                    k += 1;
+                    out.push(prop(&g, &format!("Value {k}"), v.to_string()));
+                }
+            }
+            1010 | 1011 | 1012 | 1013 => {
+                // punct: 10xx / 10xx+10 / 10xx+20
+                let y = e.codes.get(i + 1).filter(|x| x.0 == c + 10).map(|x| x.1.trim().to_string()).unwrap_or_default();
+                let z = e.codes.get(i + 2).filter(|x| x.0 == c + 20).map(|x| x.1.trim().to_string()).unwrap_or_default();
+                k += 1;
+                out.push(prop(&format!("XData {}", app.as_deref().unwrap_or("")), &format!("Point {k}"), format!("{v}, {y}, {z}")));
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    out
+}
+
 fn dxf_entities(pairs: &[(i32, String)], start: usize) -> (Vec<Ent>, usize) {
     // reads entities until ENDSEC / ENDBLK; returns index after
     let mut out: Vec<Ent> = Vec::new();
@@ -875,7 +996,7 @@ fn load_dxf_with(path: &str, progress: &dyn Fn(f32, &str), acis: Option<crate::a
         if e.ty == "INSERT" {
             let bn = e.s(2).unwrap_or("").to_string();
             let p = e.p(10);
-            let props = vec![
+            let mut props = vec![
                 prop("Element", "Name", bn.clone()),
                 prop("Element", "Block", bn.clone()),
                 prop("Element", "Layer", layer.clone()),
@@ -883,7 +1004,22 @@ fn load_dxf_with(path: &str, progress: &dyn Fn(f32, &str), acis: Option<crate::a
                 prop("Element", "Insertion point", format!("{:.3}, {:.3}, {:.3}", p.x, p.y, p.z)),
                 prop("Element", "Rotation", format!("{}°", e.f(50).unwrap_or(0.0))),
             ];
-            let mut el = elem(bn, "Block", &layer, props, out);
+            // atributele blocului (ATTRIB dupa INSERT, pana la SEQEND): eticheta = valoare
+            let mut title: Option<String> = None;
+            for a in entities[k + 1..].iter().take_while(|a| a.ty == "ATTRIB") {
+                let (Some(tag), Some(val)) = (a.s(2), a.s(1)) else { continue };
+                let (tag, val) = (tag.trim(), val.trim());
+                if tag.is_empty() {
+                    continue;
+                }
+                if title.is_none() && !val.is_empty() && ["NAME", "TAG", "NUME", "ID", "MARK", "NUMBER"].contains(&tag.to_ascii_uppercase().as_str()) {
+                    title = Some(val.to_string());
+                }
+                props.push(prop("Attributes", tag, val.to_string()));
+            }
+            props.extend(xdata_props(e));
+            let label = title.map(|t| format!("{bn} {t}")).unwrap_or_else(|| bn.clone());
+            let mut el = elem(label, "Block", &layer, props, out);
             el.guid = e.s(5).unwrap_or("").to_string();
             elements.push(el);
         } else if crate::acis::DXF_TYPES.contains(&e.ty.as_str()) {
@@ -902,6 +1038,7 @@ fn load_dxf_with(path: &str, progress: &dyn Fn(f32, &str), acis: Option<crate::a
                 prop("Element", "Handle", h.clone()),
                 prop("Element", "Entity", e.ty.clone()),
             ];
+            props.extend(xdata_props(e));
             if let Some(m) = ctx.acis.meshes.get(&h) {
                 props.push(prop("ACIS", "Faces", m.faces.to_string()));
                 props.push(prop("ACIS", "Closed solids", m.solids.to_string()));

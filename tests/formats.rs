@@ -20,6 +20,18 @@ fn dxf_blocks_layers_units() {
     assert!((size(wall).z - 3.0).abs() < 1e-6, "extruded polyline thickness");
     assert!(m.elements.iter().any(|e| e.storey == "M-DUCT" && e.tris.len() > 30));
 }
+/// Atributele blocului (ATTRIB) si XDATA devin proprietati; TAG da numele elementului.
+#[test]
+fn dxf_block_attributes_and_xdata() {
+    let m = load("attribs.dxf");
+    let b = m.elements.iter().find(|e| e.ifc_type == "Block").expect("block");
+    assert_eq!(b.name, "PUMP P-101");
+    let has = |g: &str, n: &str, v: &str| b.props.iter().any(|p| p.group == g && p.name == n && p.value == v);
+    assert!(has("Attributes", "TAG", "P-101"), "{:?}", b.props);
+    assert!(has("Attributes", "MANUFACTURER", "Grundfos"));
+    assert!(has("XData PUMPDATA", "Flow", "12 m3/h"));
+    assert!(has("XData PUMPDATA", "Value 1", "7.5"));
+}
 #[test]
 fn obj_mtl_yup() {
     let m = load("test.obj");
@@ -37,6 +49,115 @@ fn stl_ply() {
     let p = load("test.ply");
     assert_eq!(p.elements[0].tris.len(), 2);
     assert_eq!(p.elements[0].colors[0], [200, 40, 40, 255]);
+}
+/// PLY segmentat: un element pe `segment`, proprietatile fetelor si varfurilor, comentariile antetului.
+#[test]
+fn ply_segments_and_properties() {
+    let m = load("segmented.ply");
+    assert_eq!(m.elements.len(), 2);
+    let a = &m.elements[0];
+    assert!(a.name.ends_with("segment 7"), "{}", a.name);
+    let has = |e: &model::RawElement, g: &str, n: &str, v: &str| e.props.iter().any(|p| p.group == g && p.name == n && p.value == v);
+    assert!(has(a, "PLY", "segment", "7"), "{:?}", a.props);
+    assert!(has(a, "PLY face", "confidence", "0.9500"));
+    assert!(has(a, "PLY header", "author", "ManageBIM test"));
+    assert!(a.props.iter().any(|p| p.group == "PLY vertex" && p.name == "quality"));
+    assert_eq!(a.colors[0], [255, 0, 0, 255], "face colour wins");
+    assert_eq!(m.elements[1].colors[0], [0, 0, 255, 255]);
+}
+/// glTF cu EXT_mesh_features + EXT_structural_metadata: o plasa cu 2 obiecte -> 2 elemente cu proprietati.
+#[test]
+fn gltf_mesh_features_split_objects() {
+    use base64::Engine;
+    let mut buf: Vec<u8> = Vec::new();
+    let pos: [[f32; 3]; 6] = [[0., 0., 0.], [1., 0., 0.], [0., 1., 0.], [5., 0., 0.], [6., 0., 0.], [5., 1., 0.]];
+    for p in pos {
+        for v in p {
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    buf.extend_from_slice(&[0, 0, 0, 1, 1, 1, 0, 0]); // 72..80: feature id pe varf (+ padding)
+    buf.extend_from_slice(b"WallDoor"); // 80..88
+    for o in [0u32, 4, 8] {
+        buf.extend_from_slice(&o.to_le_bytes()); // 88..100
+    }
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
+    let json = serde_json::json!({
+        "asset": {"version": "2.0"},
+        "extensionsUsed": ["EXT_mesh_features", "EXT_structural_metadata"],
+        "buffers": [{"byteLength": buf.len(), "uri": format!("data:application/octet-stream;base64,{b64}")}],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": 72},
+            {"buffer": 0, "byteOffset": 72, "byteLength": 6},
+            {"buffer": 0, "byteOffset": 80, "byteLength": 8},
+            {"buffer": 0, "byteOffset": 88, "byteLength": 12}
+        ],
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": 6, "type": "VEC3", "min": [0, 0, 0], "max": [6, 1, 0]},
+            {"bufferView": 1, "componentType": 5121, "count": 6, "type": "SCALAR"}
+        ],
+        "meshes": [{"name": "Facade", "primitives": [{
+            "attributes": {"POSITION": 0, "_FEATURE_ID_0": 1},
+            "extensions": {"EXT_mesh_features": {"featureIds": [{"featureCount": 2, "attribute": 0, "propertyTable": 0}]}}
+        }]}],
+        "nodes": [{"mesh": 0, "name": "Facade"}],
+        "scenes": [{"nodes": [0]}],
+        "scene": 0,
+        "extensions": {"EXT_structural_metadata": {
+            "schema": {"classes": {"part": {"name": "Part", "properties": {"name": {"type": "STRING"}}}}},
+            "propertyTables": [{"class": "part", "count": 2, "properties": {"name": {"values": 2, "stringOffsets": 3}}}]
+        }}
+    });
+    let dir = std::env::temp_dir().join(format!("mb_gltf_meta_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = dir.join("features.gltf");
+    std::fs::write(&p, serde_json::to_vec(&json).unwrap()).unwrap();
+    let m = load_any(&p.to_string_lossy(), &|_, _| {}).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let names: Vec<&str> = m.elements.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+    assert!(names.contains(&"Facade · Wall") && names.contains(&"Facade · Door"), "{names:?}");
+    let door = m.elements.iter().find(|e| e.name == "Facade · Door").unwrap();
+    assert!(door.props.iter().any(|p| p.group == "Part" && p.name == "name" && p.value == "Door"));
+}
+/// 3MF: unitati, culori din basematerials, componente transformate, metadate pe obiect si pe model.
+#[test]
+fn threemf_objects_materials_components() {
+    let model = r##"<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+ <metadata name="Title">Bracket set</metadata>
+ <resources>
+  <basematerials id="1"><base name="PLA red" displaycolor="#FF0000"/><base name="Steel" displaycolor="#808080FF"/></basematerials>
+  <object id="2" type="model" name="Tri" pid="1" pindex="0">
+   <metadatagroup><metadata name="Supplier">ACME</metadata></metadatagroup>
+   <mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="1000" y="0" z="0"/><vertex x="0" y="1000" z="0"/></vertices>
+   <triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh>
+  </object>
+  <object id="3" type="model" name="Assembly" partnumber="AS-1">
+   <components><component objectid="2" transform="1 0 0 0 1 0 0 0 1 5000 0 0"/></components>
+  </object>
+ </resources>
+ <build><item objectid="2"/><item objectid="3"/></build>
+</model>"##;
+    let mut z = markup::Zip::default();
+    z.add("_rels/.rels", br#"<?xml version="1.0"?><Relationships><Relationship Target="/3D/3dmodel.model" Id="r0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>"#);
+    z.add("3D/3dmodel.model", model.as_bytes());
+    let dir = std::env::temp_dir().join(format!("mb_3mf_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = dir.join("set.3mf");
+    std::fs::write(&p, z.finish()).unwrap();
+    let m = load_any(&p.to_string_lossy(), &|_, _| {}).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(m.elements.len(), 2);
+    let tri = &m.elements[0];
+    assert_eq!(tri.name, "Tri");
+    assert!((size(tri).x - 1.0).abs() < 1e-9, "mm -> m");
+    assert_eq!(tri.colors[0], [255, 0, 0, 255]);
+    assert!(tri.props.iter().any(|p| p.name == "Supplier" && p.value == "ACME"));
+    assert!(tri.props.iter().any(|p| p.name == "Title" && p.value == "Bracket set"));
+    let asm = &m.elements[1];
+    assert!(asm.props.iter().any(|p| p.name == "Part number" && p.value == "AS-1"));
+    assert!((asm.tris[0][0].x - 5.0).abs() < 1e-9, "component transform");
 }
 #[test]
 fn bimrust_obj_metadata() {

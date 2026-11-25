@@ -53,6 +53,53 @@ pub struct CompareResult {
     pub changes: BTreeMap<ElemId, Vec<String>>,
     pub counts: [usize; 5],
     pub tol_mm: f32,
+    /// abaterea geometrica a elementelor schimbate (partea B): cat s-a mutat fiecare suprafata
+    pub dev: HashMap<ElemId, ElemDev>,
+}
+
+/// Abaterea geometrica a unui element intre versiuni (metri).
+#[derive(Clone, Debug, Default)]
+pub struct ElemDev {
+    /// cea mai mare distanta intre suprafetele A si B (in ambele sensuri)
+    pub max: f32,
+    /// media pe triunghiurile din B
+    pub mean: f32,
+    /// pe fiecare triunghi din B: cea mai mare distanta a varfurilor lui pana la suprafata din A
+    pub tri: Vec<f32>,
+    /// deplasarea centrului (B - A)
+    pub moved: [f32; 3],
+}
+
+/// Culoarea hartii de abateri: 0 = verde (pe loc), 0.5 = galben, 1 = rosu (la sau peste scara).
+pub fn heat_color(t: f32) -> [u8; 4] {
+    let t = t.clamp(0.0, 1.0);
+    let (g, y, r) = ([40.0, 175.0, 90.0], [245.0, 210.0, 50.0], [225.0, 45.0, 40.0]);
+    let mix = |a: [f32; 3], b: [f32; 3], k: f32| [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+    let c = if t < 0.5 { mix(g, y, t * 2.0) } else { mix(y, r, (t - 0.5) * 2.0) };
+    [c[0] as u8, c[1] as u8, c[2] as u8, 255]
+}
+
+/// Cat de departe e fiecare triunghi din `eb` de suprafata lui `ea` (si invers, pentru partile sterse).
+pub fn deviation(ma: &Model, ea: &Element, mb: &Model, eb: &Element) -> ElemDev {
+    let (ta, tb) = (ma.tris(ea), mb.tris(eb));
+    let cap = 1000.0;
+    let mut tri = Vec::with_capacity(tb.len() / 3);
+    for t in tb.chunks_exact(3) {
+        let d = t.iter().map(|p| ea.bvh.nearest(ta, *p, cap)).fold(0.0f32, f32::max);
+        tri.push(d);
+    }
+    // sensul invers: varfurile din A care nu mai au suprafata in B (parte taiata / mutata)
+    let mut back = 0.0f32;
+    let step = (ta.len() / 3 / 20_000).max(1);
+    for t in ta.chunks_exact(3).step_by(step) {
+        for p in t {
+            back = back.max(eb.bvh.nearest(tb, *p, cap));
+        }
+    }
+    let max = tri.iter().copied().fold(back, f32::max);
+    let mean = if tri.is_empty() { 0.0 } else { tri.iter().sum::<f32>() / tri.len() as f32 };
+    let mv = eb.aabb.center() - ea.aabb.center();
+    ElemDev { max, mean, tri, moved: mv.to_array() }
 }
 
 impl CompareResult {
@@ -125,7 +172,7 @@ pub fn compare(ma: &Model, a: usize, mb: &Model, b: usize, tol_mm: f32) -> Compa
         r.map.insert(id, d);
     }
     let (ga, gb) = (by_guid(ma), by_guid(mb));
-    let mut r = CompareResult { a, b, map: HashMap::new(), matched_a: HashMap::new(), changes: BTreeMap::new(), counts: [0; 5], tol_mm };
+    let mut r = CompareResult { a, b, map: HashMap::new(), matched_a: HashMap::new(), changes: BTreeMap::new(), counts: [0; 5], tol_mm, dev: HashMap::new() };
     for (ia, ea) in ma.elements.iter().enumerate() {
         let id_a = ElemId { m: a as u32, e: ia as u32 };
         match gb.get(ea.guid.as_str()).filter(|_| !ea.guid.is_empty()) {
@@ -134,8 +181,21 @@ pub fn compare(ma: &Model, a: usize, mb: &Model, b: usize, tol_mm: f32) -> Compa
                 let eb = &mb.elements[ib];
                 let id_b = ElemId { m: b as u32, e: ib as u32 };
                 let mut why = Vec::new();
-                let d = if let Some(g) = geometry_changed(ea, eb, tol) {
+                // aceeasi cutie si acelasi numar de triunghiuri: varfurile pot fi totusi mutate (remodelat in interior)
+                let reshaped = || -> Option<String> {
+                    if ea.tri_count != eb.tri_count {
+                        return None;
+                    }
+                    let (pa, pb) = (ma.tris(ea), mb.tris(eb));
+                    let d = pa.iter().zip(pb).map(|(x, y)| (*x - *y).length()).fold(0.0f32, f32::max);
+                    (d > tol).then(|| format!("Reshaped: vertices moved up to {:.0} mm", d * 1000.0))
+                };
+                let d = if let Some(g) = geometry_changed(ea, eb, tol).or_else(reshaped) {
                     why.push(g);
+                    // cat s-a mutat fiecare suprafata (pentru harta de abateri)
+                    let dv = deviation(ma, ea, mb, eb);
+                    why.push(format!("Max deviation {:.0} mm (mean {:.0} mm)", dv.max * 1000.0, dv.mean * 1000.0));
+                    r.dev.insert(id_b, dv);
                     why.extend(prop_changes(ea, eb));
                     Diff::Geometry
                 } else {
@@ -239,7 +299,7 @@ impl CompareFile {
             m.elements.iter().enumerate().filter(|(_, e)| !e.guid.is_empty()).map(|(i, e)| (e.guid.as_str(), i as u32)).collect()
         }
         let (ga, gb) = (by_guid(ma), by_guid(mb));
-        let mut r = CompareResult { a, b, map: HashMap::new(), matched_a: HashMap::new(), changes: BTreeMap::new(), counts: [0; 5], tol_mm: self.tol_mm };
+        let mut r = CompareResult { a, b, map: HashMap::new(), matched_a: HashMap::new(), changes: BTreeMap::new(), counts: [0; 5], tol_mm: self.tol_mm, dev: HashMap::new() };
         let mut missing = 0;
         for it in &self.items {
             let (side, slot, g) = if it.side == "A" { ("A", a, &ga) } else { ("B", b, &gb) };
@@ -262,6 +322,15 @@ impl CompareFile {
                     let id_a = ElemId { m: a as u32, e: ea };
                     r.map.insert(id_a, d);
                     r.matched_a.insert(id_a, id_b);
+                }
+            }
+        }
+        // harta de abateri si pentru o comparatie incarcata din fisier
+        let pairs: Vec<(ElemId, ElemId)> = r.matched_a.iter().map(|(a, b)| (*a, *b)).collect();
+        for (ia, ib) in pairs {
+            if r.map.get(&ib) == Some(&Diff::Geometry) {
+                if let (Some(ea), Some(eb)) = (ma.elements.get(ia.e as usize), mb.elements.get(ib.e as usize)) {
+                    r.dev.insert(ib, deviation(ma, ea, mb, eb));
                 }
             }
         }

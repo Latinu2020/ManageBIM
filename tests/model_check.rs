@@ -873,3 +873,40 @@ fn compare_lists_changed_parameters() {
     let csv = bimrust::compare::param_csv(&ch, &b);
     assert!(csv.contains("CHANGED") && csv.lines().count() == 3);
 }
+
+/// Diff geometric: perete mutat 300 mm pe X, placa coborata 100 mm -> abaterile exacte, pe triunghi.
+#[test]
+fn compare_geometric_deviation_heatmap() {
+    use bimrust::model::{Model, RawElement, RawModel};
+    use glam::DVec3;
+    let boxed = |o: DVec3, s: DVec3| -> Vec<[DVec3; 3]> {
+        let v = |x: f64, y: f64, z: f64| o + DVec3::new(x * s.x, y * s.y, z * s.z);
+        let p = [v(0., 0., 0.), v(1., 0., 0.), v(1., 1., 0.), v(0., 1., 0.), v(0., 0., 1.), v(1., 0., 1.), v(1., 1., 1.), v(0., 1., 1.)];
+        [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]].iter().map(|t| [p[t[0]], p[t[1]], p[t[2]]]).collect()
+    };
+    let el = |g: &str, tris: Vec<[DVec3; 3]>| {
+        let n = tris.len();
+        RawElement { name: g.into(), ifc_type: "IfcWall".into(), guid: g.into(), storey: "L1".into(), props: Vec::new(), tris, colors: vec![[200, 200, 200, 255]; n], default_hidden: false }
+    };
+    let a = RawModel { elements: vec![el("wall", boxed(DVec3::ZERO, DVec3::new(4.0, 0.2, 3.0))), el("slab", boxed(DVec3::new(0.0, 2.0, 3.0), DVec3::new(5.0, 5.0, 0.25)))], info: Vec::new(), warnings: Vec::new() };
+    let b = RawModel { elements: vec![el("wall", boxed(DVec3::new(0.3, 0.0, 0.0), DVec3::new(4.0, 0.2, 3.0))), el("slab", boxed(DVec3::new(0.0, 2.0, 2.9), DVec3::new(5.0, 5.0, 0.25)))], info: Vec::new(), warnings: Vec::new() };
+    let ma = Model::from_raw(a, "A".into(), String::new(), DVec3::ZERO);
+    let mb = Model::from_raw(b, "B".into(), String::new(), DVec3::ZERO);
+    let r = bimrust::compare::compare(&ma, 0, &mb, 1, 5.0);
+    assert_eq!(r.dev.len(), 2);
+    let dev = |g: &str| {
+        let i = mb.elements.iter().position(|e| e.guid == g).unwrap();
+        r.dev[&bimrust::model::ElemId { m: 1, e: i as u32 }].clone()
+    };
+    let w = dev("wall");
+    assert!((w.max - 0.3).abs() < 1e-4, "wall moved 300 mm: {}", w.max);
+    assert_eq!(w.tri.len(), 12);
+    // fetele laterale ale peretelui alunecate in planul lor raman pe loc (0), capatul mutat = 300 mm
+    assert!(w.tri.iter().any(|d| *d < 1e-4) && w.tri.iter().any(|d| (*d - 0.3).abs() < 1e-4));
+    let s = dev("slab");
+    assert!((s.max - 0.1).abs() < 1e-4, "slab lowered 100 mm: {}", s.max);
+    assert!((s.moved[2] + 0.1).abs() < 1e-4);
+    assert!(r.changes.values().any(|c| c.iter().any(|x| x.starts_with("Max deviation 300 mm"))));
+    assert_eq!(bimrust::compare::heat_color(0.0)[1], 175);
+    assert_eq!(bimrust::compare::heat_color(1.0)[0], 225);
+}
