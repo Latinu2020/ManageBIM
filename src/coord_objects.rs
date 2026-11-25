@@ -90,6 +90,9 @@ pub struct CoordObject {
     pub note: String,
     #[serde(default = "yes")]
     pub visible: bool,
+    /// rotatia in jurul axei verticale prin centru (grade); `min` / `max` sunt cutia NEROTITA
+    #[serde(default)]
+    pub rot_deg: f32,
 }
 
 fn proposed() -> String {
@@ -115,6 +118,7 @@ impl CoordObject {
             host: String::new(),
             note: String::new(),
             visible: true,
+            rot_deg: 0.0,
         }
     }
     pub fn size(&self) -> Vec3 {
@@ -160,7 +164,14 @@ pub fn to_raw(objs: &[CoordObject], origin: DVec3) -> RawModel {
     for o in objs {
         let a = Vec3::from(o.min).as_dvec3() + origin;
         let b = Vec3::from(o.max).as_dvec3() + origin;
-        let tris = box_tris(a, b);
+        // rotatia in jurul verticalei prin centru
+        let c = (a + b) * 0.5;
+        let (s, co) = (o.rot_deg as f64).to_radians().sin_cos();
+        let rot = |p: DVec3| {
+            let (x, y) = (p.x - c.x, p.y - c.y);
+            DVec3::new(c.x + x * co - y * s, c.y + x * s + y * co, p.z)
+        };
+        let tris: Vec<[DVec3; 3]> = box_tris(a, b).into_iter().map(|t| t.map(rot)).collect();
         let col = o.kind.color();
         let s = o.size();
         let p = |g: &str, n: &str, v: String| Prop { group: g.into(), name: n.into(), value: v };
@@ -173,6 +184,7 @@ pub fn to_raw(objs: &[CoordObject], origin: DVec3) -> RawModel {
             p("Coordination", "Height (Z)", format!("{:.3} m", s.z)),
             p("Coordination", "Bottom elevation", format!("{:.3} m", a.z)),
             p("Coordination", "Volume", format!("{:.3} m³", s.x * s.y * s.z)),
+            p("Coordination", "Rotation", format!("{:.1}°", o.rot_deg)),
         ];
         if !o.discipline.is_empty() {
             props.push(p("Coordination", "Discipline", o.discipline.clone()));

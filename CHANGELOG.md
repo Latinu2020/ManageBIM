@@ -3,6 +3,13 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.28.1 - 2026-11-25
+- **Move and rotate coordination objects with a gizmo**: in the Coordination objects window choose **Resize** (arrows on the faces), **Move** (X / Y / Z arrows) or **Rotate** (blue circle around the vertical axis, angle shown; Shift snaps to 15°). Objects now have a **Rotation** (also as a number, with 0° / +90° buttons); clash detection, the IFC export and Revit / Navisworks use the rotated box.
+- **Coordination objects in Revit and Navisworks - display only**: *Send to Revit / Navisworks* writes the visible clearance zones, voids and placeholders; in Revit (**ManageBIM › Coordination**) and Navisworks (**ManageBIM** window › Coordination objects) a **preview window** lists them with a top view and checkboxes, then shows them as transparent boxes coloured by type. Nothing in the model is cut or changed; a new send replaces (Revit) or hides (Navisworks) the previous objects. The 0.28.0 command that cut voids into walls is removed.
+- **Compact add-in ribbons**: Revit shows two large buttons (*Send to ManageBIM* and *ManageBIM*) and the rest as small stacked buttons; Navisworks keeps only *Send to ManageBIM* and *ManageBIM* in Tool add-ins. The **ManageBIM** button opens a window with every command, grouped, each with a short description.
+- **All Plant 3D properties after Send**: empty Plant 3D fields are kept (they were dropped), the **line** data (Line Number, Service…) is read from the related Line Group, and the equipment of a nozzle is added. ManageBIM also completes the sent model from the project database **Piping.dcf** (the same properties as opening the DWG directly), without duplicates.
+- View templates pill under the ViewCube stays inside the 3D view (the right arrow was cut off); the Coordination objects window opens away from the centre of the view.
+
 ## 0.28.0 - 2026-11-24 (stable)
 - **Professional interface**
   - Ribbon buttons show their **full name** on one or two lines (no more "Clearan…", "Pick fa…"); slightly larger buttons.

@@ -1243,6 +1243,10 @@ pub struct App {
     pub coord_open: bool,
     /// fata obiectului de coordonare tras cu mouse-ul (0..5 = -X +X -Y +Y -Z +Z, 6 = mutare in plan)
     pub coord_drag: Option<usize>,
+    /// gizmo-ul obiectelor de coordonare: 0 = Resize (fete), 1 = Move (X/Y/Z), 2 = Rotate (verticala)
+    pub coord_mode: u8,
+    /// unghiul cursorului la pasul anterior al rotirii
+    pub coord_rot_last: Option<f32>,
     /// marja zonelor de mentenanta in jurul selectiei si a golurilor automate (m)
     pub coord_margin: f32,
     pub void_margin: f32,
@@ -1677,6 +1681,8 @@ impl App {
             coord_sel: None,
             coord_open: false,
             coord_drag: None,
+            coord_mode: 0,
+            coord_rot_last: None,
             coord_margin: 0.6,
             void_margin: 0.05,
             class_open: false,

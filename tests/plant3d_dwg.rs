@@ -412,5 +412,25 @@ fn plant3d_project_database_properties() {
     assert_eq!(g(p, "Plant 3D", "Service").as_deref(), Some("FO"));
     let o = el(&m, &h_other);
     assert!(!o.props.iter().any(|p| p.group.starts_with("Plant 3D") && p.name == "Class"), "rows of another drawing are not used");
+
+    // acelasi desen trimis din Plant 3D prin add-in (.bimc): guid "acad:<handle>", info "Drawing" = calea
+    // DWG-ului; add-in-ul a trimis deja Class, aplicatia completeaza restul din Piping.dcf, fara dubluri
+    let mk = |handle: &str, props: Vec<bimrust::model::Prop>| RawElement {
+        name: "x".into(), ifc_type: "Valve".into(), guid: format!("acad:{handle}"), storey: String::new(),
+        props, tris: Vec::new(), colors: Vec::new(), default_hidden: false,
+    };
+    let prop = |g: &str, n: &str, v: &str| bimrust::model::Prop { group: g.into(), name: n.into(), value: v.into() };
+    let mut sent = bimrust::model::RawModel {
+        elements: vec![mk(&h_valve, vec![prop("Plant 3D", "Class", "Valve")]), mk(&h_pipe, vec![])],
+        info: vec![("Source application".into(), "Autodesk AutoCAD 25.0".into()), ("Drawing".into(), dwg.to_string_lossy().to_string())],
+        warnings: Vec::new(),
+    };
+    let r = bimrust::plant3d_db::attach_sent(&mut sent).unwrap().expect("project database found");
+    assert_eq!(r.1, 2, "both sent elements completed");
+    let sv = &sent.elements[0];
+    assert_eq!(g(sv, "Plant 3D", "Spec").as_deref(), Some("CS150"));
+    assert_eq!(g(sv, "Plant 3D", "Line Number").as_deref(), Some("1002"));
+    assert_eq!(sv.props.iter().filter(|p| p.name == "Class").count(), 1, "Class sent by the add-in is not duplicated");
+    assert_eq!(g(&sent.elements[1], "Plant 3D", "Service").as_deref(), Some("FO"));
     let _ = std::fs::remove_dir_all(&root);
 }

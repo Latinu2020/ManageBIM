@@ -13,7 +13,7 @@ namespace ManageBIM.Navis
     /// camera, section box si comentariile (descriere, stare, comentarii). Fara fisier XML intermediar.
     /// </summary>
     [Plugin("ManageBIMIssues", "MBIM", DisplayName = "ManageBIM Issues", ToolTip = "Bring the ManageBIM viewpoints / issues in as Saved Viewpoints (camera, section box, comments)")]
-    [AddInPlugin(AddInLocation.AddIn)]
+    [AddInPlugin(AddInLocation.None)]
     public class IssuesPlugin : AddInPlugin
     {
         public override int Execute(params string[] parameters)

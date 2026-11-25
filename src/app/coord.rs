@@ -191,33 +191,43 @@ impl App {
         self.toast("Clash test created: Coordination objects vs all models - press Run Test.");
     }
 
-    /// Trimite golurile APROBATE catre add-in-ul Revit: %LOCALAPPDATA%\ManageBIM\Outbox\voids.txt,
-    /// text simplu, coordonate WORLD in metri. In Revit, comanda "ManageBIM Voids" creeaza golurile reale
-    /// in peretii si placile gazda. Intoarce numarul de goluri scrise.
-    pub fn send_voids_to_revit(&mut self) {
+    /// Trimite obiectele de coordonare VIZIBILE (clearance, voids, placeholders) catre add-in-ul Revit,
+    /// doar pentru afisare: %LOCALAPPDATA%\ManageBIM\Outbox\coordination.txt, coordonate WORLD in metri.
+    /// In Revit, comanda "ManageBIM Coordination" le arata ca forme transparente (Generic Models),
+    /// fara sa taie sau sa modifice elementele modelului.
+    pub fn send_coord_to_revit(&mut self) {
         let o = self.origin_f64();
-        let voids: Vec<&CoordObject> = self.coord_objects.iter().filter(|c| c.kind == CoordKind::ProvisionForVoid && c.status == "Approved").collect();
-        if voids.is_empty() {
-            return self.error("No approved voids. Set the status of the voids to Approved in the Coordination objects window, then send them.");
+        let objs: Vec<&CoordObject> = self.coord_objects.iter().filter(|c| c.visible).collect();
+        if objs.is_empty() {
+            return self.error("No visible coordination objects to send.");
         }
-        let mut s = String::from("# ManageBIM voids for Revit - world coordinates in metres\n");
-        for v in &voids {
-            let (a, b) = (Vec3::from(v.min).as_dvec3() + o, Vec3::from(v.max).as_dvec3() + o);
-            // gazda: GUID-ul IFC dintre paranteze (daca exista), altfel numele
-            let host_guid = v.host.rsplit_once('(').map(|(_, g)| g.trim_end_matches(')').trim().to_string()).unwrap_or_default();
+        let mut s = String::from("# ManageBIM coordination objects for Revit (display only) - world coordinates in metres\n");
+        s.push_str("# kind\tname\tcentre x y z\tsize x y z\trotation deg\tr g b a\tguid\tstatus\n");
+        for c in &objs {
+            let ctr = c.center().as_dvec3() + o;
+            let sz = c.size();
+            let col = c.kind.color();
+            let kind = match c.kind {
+                CoordKind::Clearance => "clearance",
+                CoordKind::ProvisionForVoid => "void",
+                CoordKind::Placeholder => "placeholder",
+            };
             s.push_str(&format!(
-                "void\t{}\t{:.4} {:.4} {:.4}\t{:.4} {:.4} {:.4}\t{}\t{}\n",
-                v.name.replace(['\t', '\n'], " "),
-                a.x, a.y, a.z, b.x, b.y, b.z,
-                host_guid,
-                crate::ifc_export::guid_from(&v.guid_seed()),
+                "{kind}\t{}\t{:.4} {:.4} {:.4}\t{:.4} {:.4} {:.4}\t{:.3}\t{} {} {} {}\t{}\t{}\n",
+                c.name.replace(['\t', '\n'], " "),
+                ctr.x, ctr.y, ctr.z,
+                sz.x, sz.y, sz.z,
+                c.rot_deg,
+                col[0], col[1], col[2], col[3],
+                crate::ifc_export::guid_from(&c.guid_seed()),
+                c.status,
             ));
         }
         let Some(dir) = crate::formats::data_root().map(|d| d.join("ManageBIM").join("Outbox")) else { return self.error("LOCALAPPDATA is not set") };
         let _ = std::fs::create_dir_all(&dir);
-        match std::fs::write(dir.join("voids.txt"), s) {
-            Ok(()) => self.toast(format!("{} approved void(s) sent to Revit - in Revit press ManageBIM › Voids to create them.", voids.len())),
-            Err(e) => self.error(format!("Cannot write the voids for Revit: {e}")),
+        match std::fs::write(dir.join("coordination.txt"), s) {
+            Ok(()) => self.toast(format!("{} coordination object(s) sent to Revit - in Revit press ManageBIM › Coordination to show them.", objs.len())),
+            Err(e) => self.error(format!("Cannot write the coordination objects for Revit: {e}")),
         }
     }
 

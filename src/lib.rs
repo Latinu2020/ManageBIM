@@ -73,7 +73,15 @@ pub fn load_any(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
 
 fn load_by_ext(path: &str, ext: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     match ext {
-        "bimc" => bimc::read(path),
+        "bimc" => bimc::read(path).map(|mut m| {
+            // trimis din AutoCAD / Plant 3D: proprietatile complete din baza proiectului (Piping.dcf)
+            match plant3d_db::attach_sent(&mut m) {
+                Ok(Some((db, n))) => m.info.push(("Plant 3D project".into(), format!("{}: properties completed for {n} objects", db.display()))),
+                Ok(None) => {}
+                Err(e) => m.warnings.push(format!("Plant 3D project database could not be read ({e}).")),
+            }
+            m
+        }),
         "ifc" => ifc::load_ifc(path, progress),
         "gltf" | "glb" => gltf_load::load_gltf(path, progress),
         "fbx" => fbx::load_fbx(path, progress),

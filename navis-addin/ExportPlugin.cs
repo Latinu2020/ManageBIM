@@ -58,7 +58,7 @@ namespace ManageBIM.Navis
     /// Din Automation (nwd2bimc.exe): parameters[0] = calea .bimc, fara dialoguri.
     /// </summary>
     [Plugin("ExportBimc", "MBIM", DisplayName = "Export to ManageBIM (.bimc)", ToolTip = "Export the open model (geometry, colours, all properties) to a ManageBIM .bimc file")]
-    [AddInPlugin(AddInLocation.AddIn)]
+    [AddInPlugin(AddInLocation.None)]
     public class ExportPlugin : AddInPlugin
     {
         public override int Execute(params string[] parameters)

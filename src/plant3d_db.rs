@@ -278,6 +278,44 @@ fn read_conn(c: &Connection, db: &Path, dwg: &Path) -> Result<Option<HashMap<Str
     Ok(Some(out))
 }
 
+/// Modelele trimise din AutoCAD / Plant 3D prin add-in (`.bimc`, guid = "acad:<handle>", info "Drawing" =
+/// calea DWG-ului): completeaza proprietatile din baza proiectului `Piping.dcf` - aceleasi ca la deschiderea
+/// directa a DWG-ului. Doar proprietatile care lipsesc (add-in-ul poate trimite deja o parte), ca grup
+/// "Plant 3D" etc. Intoarce (baza, elemente completate), `Ok(None)` daca nu e un model Plant 3D cu baza gasita.
+pub fn attach_sent(model: &mut crate::model::RawModel) -> Result<Option<(PathBuf, usize)>, String> {
+    let is_acad = model.info.iter().any(|(k, v)| k == "Source application" && v.contains("AutoCAD"));
+    let Some(dwg) = model.info.iter().find(|(k, _)| k == "Drawing").map(|(_, v)| PathBuf::from(v)) else { return Ok(None) };
+    if !is_acad || !model.elements.iter().any(|e| e.guid.starts_with("acad:")) {
+        return Ok(None);
+    }
+    let Some(db) = find_project_db(&dwg) else { return Ok(None) };
+    let Some(map) = read_for_drawing(&db, &dwg)? else { return Ok(None) };
+    let mut hit = 0;
+    for el in model.elements.iter_mut() {
+        let Some(h) = el.guid.strip_prefix("acad:") else { continue };
+        let Some(d) = map.get(&h.to_ascii_uppercase()) else { continue };
+        let before = el.props.len();
+        for (g, vals) in &d.groups {
+            for (n, v) in vals {
+                // add-in-ul scrie grupul "Plant 3D" cu numele interne; baza da numele afisate - nu dublam
+                let dup = el.props.iter().any(|p| p.name.eq_ignore_ascii_case(n) && (p.group == *g || p.group.starts_with("Plant 3D")));
+                if !dup {
+                    el.props.push(crate::model::Prop { group: g.clone(), name: n.clone(), value: v.clone() });
+                }
+            }
+        }
+        if let Some(l) = &d.line {
+            if !el.props.iter().any(|p| p.name.eq_ignore_ascii_case("Line Number")) {
+                el.props.push(crate::model::Prop { group: "Plant 3D".into(), name: "Line Number".into(), value: l.clone() });
+            }
+        }
+        if el.props.len() > before {
+            hit += 1;
+        }
+    }
+    Ok(Some((db, hit)))
+}
+
 /// Ataseaza proprietatile din baza proiectului elementelor Plant 3D ale modelului (cheie = guid = handle).
 /// Tubulatura (Pipe, armaturi, conectori, suporturi) e grupata pe linii (storey = Line Number); numele
 /// folosesc Tag-ul, respectiv linia. Intoarce (baza, elemente cu proprietati, elemente Plant 3D), sau

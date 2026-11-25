@@ -15,7 +15,7 @@ namespace ManageBIM.Navis
     /// %LOCALAPPDATA%\ManageBIM\Sync. Butonul porneste / opreste legatura pentru sesiunea curenta.
     /// </summary>
     [Plugin("ManageBIMSync", "MBIM", DisplayName = "Sync Selection", ToolTip = "Live Link: the selection follows ManageBIM and Revit, both ways (click again to stop)")]
-    [AddInPlugin(AddInLocation.AddIn)]
+    [AddInPlugin(AddInLocation.None)]
     public class SyncPlugin : AddInPlugin
     {
         public override int Execute(params string[] parameters)

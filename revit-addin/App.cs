@@ -6,95 +6,43 @@ using Autodesk.Revit.UI;
 
 namespace ManageBIM.Revit
 {
-    /// <summary>Adds a "ManageBIM" ribbon tab with the export button.</summary>
+    /// <summary>
+    /// Tab-ul "ManageBIM", compact (0.28): doua butoane mari - "Send" (cel mai folosit) si "ManageBIM"
+    /// (fereastra cu toate comenzile) - si restul ca butoane mici, stivuite cate trei.
+    /// </summary>
     public class App : IExternalApplication
     {
         public Result OnStartup(UIControlledApplication app)
         {
             const string tab = "ManageBIM";
             try { app.CreateRibbonTab(tab); } catch { /* tab already exists */ }
-            RibbonPanel panel = app.CreateRibbonPanel(tab, "Export");
-
+            RibbonPanel panel = app.CreateRibbonPanel(tab, "ManageBIM");
             string asm = Assembly.GetExecutingAssembly().Location;
-            var data = new PushButtonData("ManageBIMExportBimc", "Export\nBIMC", asm, typeof(ExportCommand).FullName)
-            {
-                ToolTip = "Export the 3D view to a ManageBIM model cache (.bimc)",
-                LongDescription = "Writes every visible element of the active 3D view (or the default {3D} view) " +
-                                  "with geometry, material colours, level and all instance and type parameters " +
-                                  "into a compact .bimc file that opens directly in ManageBIM - similar to a Navisworks NWC export.",
-            };
             string dir = Path.GetDirectoryName(asm);
-            if (panel.AddItem(data) is PushButton button)
-            {
-                button.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
-                button.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
-            }
-            var send = new PushButtonData("ManageBIMSend", "Send to\nManageBIM", asm, typeof(SendCommand).FullName)
-            {
-                ToolTip = "Send the 3D view straight into ManageBIM (opens it if needed). Send again to update the model live.",
-                LongDescription = "Exports the active 3D view (or {3D}) without any dialog and opens it in ManageBIM. " +
-                                  "If ManageBIM is already open with this project, the model is replaced in place, keeping the selection, hidden elements and the camera.",
-            };
-            if (panel.AddItem(send) is PushButton sb)
-            {
-                sb.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
-                sb.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
-            }
-            var sendSel = new PushButtonData("ManageBIMSendSelection", "Send\nselection", asm, typeof(SendSelectionCommand).FullName)
-            {
-                ToolTip = "Send only the selected Revit elements to ManageBIM (no model change)",
-                LongDescription = "Exports the elements currently selected in Revit to ManageBIM without modifying the source model. " +
-                                  "Ideal for a quick clash check on a single area or for design alternatives.",
-            };
-            if (panel.AddItem(sendSel) is PushButton ssb)
-            {
-                ssb.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
-                ssb.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
-            }
-            var issues = new PushButtonData("ManageBIMIssues", "ManageBIM\nIssues", asm, typeof(IssuesCommand).FullName)
-            {
-                ToolTip = "Open a ManageBIM issue / viewpoint: 3D view with the same camera and section box, its elements selected",
-                LongDescription = "Reads the viewpoints saved in ManageBIM (they are shared automatically) and creates a 3D view 'ManageBIM - <issue>' with the camera, the section box and the issue's elements selected.",
-            };
-            if (panel.AddItem(issues) is PushButton ib)
-            {
-                ib.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
-                ib.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
-            }
-            var voids = new PushButtonData("ManageBIMVoids", "ManageBIM\nVoids", asm, typeof(VoidsCommand).FullName)
-            {
-                ToolTip = "Create the voids approved in ManageBIM: openings in walls, shaft openings in floors and roofs",
-                LongDescription = "In ManageBIM: Coordination › Objects, set the provisions for void to Approved and press 'Send voids to Revit'. " +
-                                  "This command cuts them into the host walls and slabs (found by IFC GUID, or by position), in shared coordinates. Undo with Ctrl+Z.",
-            };
-            if (panel.AddItem(voids) is PushButton vb)
-            {
-                vb.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
-                vb.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
-            }
-            var reference = new PushButtonData("ManageBIMReference", "ManageBIM\nReference", asm, typeof(ReferenceCommand).FullName)
-            {
-                ToolTip = "Bring a model from ManageBIM in as reference geometry (Generic Models, pinned group)",
-                LongDescription = "In ManageBIM: Output › Reference (Revit / CAD) saves a .mbref file (the visible or the selected items). " +
-                                  "This command reads it and creates one DirectShape per item, with its colour, in shared coordinates.",
-            };
-            if (panel.AddItem(reference) is PushButton rb)
-            {
-                rb.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
-                rb.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
-            }
-            var sync = new PushButtonData("ManageBIMSync", "Sync\nSelection", asm, typeof(SyncCommand).FullName)
-            {
-                ToolTip = "Live Link: the selection follows ManageBIM and Navisworks, both ways (click again to stop)",
-                LongDescription = "Select elements in Revit and they are selected (and zoomed to) in ManageBIM; select in ManageBIM and they are selected here. " +
-                                  "Elements are matched by UniqueId / IFC GUID, so the ManageBIM model must come from this Revit model (Export BIMC, Send, or its IFC export). " +
-                                  "In ManageBIM turn it on in Select › Live Link › Sync Selection.",
-            };
-            if (panel.AddItem(sync) is PushButton syb)
-            {
-                syb.LargeImage = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
-                syb.Image = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
-            }
+            var large = LoadImage(Path.Combine(dir, "Resources", "managebim32.png"));
+            var small = LoadImage(Path.Combine(dir, "Resources", "managebim16.png"));
+
+            PushButtonData B(string id, string text, Type cmd, string tip, string desc) =>
+                new PushButtonData(id, text, asm, cmd.FullName) { ToolTip = tip, LongDescription = desc, LargeImage = large, Image = small };
+
+            // ---- mari
+            panel.AddItem(B("ManageBIMSend", "Send to\nManageBIM", typeof(SendCommand),
+                "Send the 3D view straight into ManageBIM (opens it if needed). Send again to update the model live.",
+                "Exports the active 3D view (or {3D}) without any dialog and opens it in ManageBIM. If ManageBIM is already open with this project, the model is replaced in place, keeping the selection, hidden elements and the camera."));
+            panel.AddItem(B("ManageBIMHub", "ManageBIM", typeof(HubCommand),
+                "All ManageBIM commands in one window",
+                "Send, export, issues, coordination objects, reference models and the live selection link - each with a short description."));
+            panel.AddSeparator();
+
+            // ---- mici, stivuite: trimitere / coordonare / legaturi
+            panel.AddStackedItems(
+                B("ManageBIMSendSelection", "Send selection", typeof(SendSelectionCommand), "Send only the selected Revit elements to ManageBIM (no model change)", "Exports the elements currently selected in Revit to ManageBIM without modifying the source model."),
+                B("ManageBIMExportBimc", "Export BIMC", typeof(ExportCommand), "Export the 3D view to a ManageBIM model cache (.bimc)", "Writes every visible element of the active 3D view with geometry, colours, level and all parameters into a .bimc file - like a Navisworks NWC export."),
+                B("ManageBIMReference", "Reference", typeof(ReferenceCommand), "Bring a model from ManageBIM in as reference geometry (Generic Models, pinned group)", "In ManageBIM: Output › Reference saves a .mbref file; this command creates one DirectShape per item, with its colour, in shared coordinates."));
+            panel.AddStackedItems(
+                B("ManageBIMCoordination", "Coordination", typeof(CoordinationCommand), "Show the clearance zones, voids and placeholders sent from ManageBIM (display only)", "In ManageBIM: Coordination › Objects › Send to Revit. A preview window lists them with a top view; they are shown as transparent Generic Models and nothing in the model is cut or changed."),
+                B("ManageBIMIssues", "Issues", typeof(IssuesCommand), "Open a ManageBIM issue / viewpoint: 3D view with the same camera and section box, its elements selected", "Reads the viewpoints saved in ManageBIM and creates a 3D view 'ManageBIM - <issue>' with the camera, the section box and the issue's elements selected."),
+                B("ManageBIMSync", "Sync selection", typeof(SyncCommand), "Live Link: the selection follows ManageBIM and Navisworks, both ways (click again to stop)", "Elements are matched by UniqueId / IFC GUID, so the ManageBIM model must come from this Revit model. In ManageBIM turn it on in Select › Live Link › Sync Selection."));
             return Result.Succeeded;
         }
 

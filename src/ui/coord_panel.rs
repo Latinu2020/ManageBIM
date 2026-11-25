@@ -40,7 +40,9 @@ impl App {
         egui::Window::new(crate::theme::icon_job("🛡", "Coordination objects", 14.0, ctx.style().visuals.text_color()))
             .id(egui::Id::new("coord_win"))
             .open(&mut open)
-            .default_size([640.0, 460.0])
+            // in coltul din stanga-jos, nu peste centrul vederii unde e obiectul si gizmo-ul lui
+            .default_size([560.0, 420.0])
+            .default_pos(ctx.screen_rect().left_bottom() + EV::new(330.0, -470.0))
             .min_width(480.0)
             .resizable(true)
             .collapsible(false)
@@ -57,8 +59,8 @@ impl App {
                     if ui.button("⚡ Auto voids").on_hover_text("A void wherever a pipe / duct / cable tray crosses a wall or slab").clicked() {
                         self.auto_voids();
                     }
-                    if ui.button("➡ Send voids to Revit").on_hover_text("Write the APPROVED voids for the Revit add-in; in Revit press ManageBIM › Voids to cut them into the host walls and slabs").clicked() {
-                        self.send_voids_to_revit();
+                    if ui.button("➡ Send to Revit / Navisworks").on_hover_text("Show the visible clearance zones, voids and placeholders in Revit or Navisworks (display only, nothing is changed): press ManageBIM › Coordination there").clicked() {
+                        self.send_coord_to_revit();
                     }
                     if ui.button("⚠ Clash test").on_hover_text("New Clash Detective test: coordination objects vs all models (what enters a clearance zone, what a void hits...)").clicked() {
                         self.coord_clash_test();
@@ -76,7 +78,18 @@ impl App {
                     return;
                 }
                 let counts: Vec<usize> = CoordKind::ALL.iter().map(|k| self.coord_objects.iter().filter(|o| o.kind == *k).count()).collect();
-                ui.label(RichText::new(format!("{} clearance · {} voids · {} placeholders", counts[0], counts[1], counts[2])).small().weak());
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("{} clearance · {} voids · {} placeholders", counts[0], counts[1], counts[2])).small().weak());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // gizmo-ul din 3D pentru obiectul ales (ca la lumini)
+                        for (m, label, tip) in [(2u8, "⟳ Rotate", "Drag the blue circle to turn the object around the vertical axis (Shift: 15° steps)"), (1, "✥ Move", "Drag the X / Y / Z arrows to move the object"), (0, "⇲ Resize", "Drag the arrows on the faces to change the size")] {
+                            if ui.selectable_label(self.coord_mode == m, label).on_hover_text(tip).clicked() {
+                                self.coord_mode = m;
+                            }
+                        }
+                        ui.label(RichText::new("Gizmo").small().weak());
+                    });
+                });
                 let list_h = (ui.available_height() * 0.5).clamp(120.0, 300.0);
                 egui::ScrollArea::vertical().id_salt("coord_list").max_height(list_h).auto_shrink([false, true]).show(ui, |ui| {
                     for i in 0..self.coord_objects.len() {
@@ -161,6 +174,13 @@ impl App {
                             o.set_center(c);
                             changed = true;
                         }
+                    });
+                    ui.end_row();
+                    ui.label("Rotation");
+                    ui.horizontal(|ui| {
+                        changed |= ui.add(egui::DragValue::new(&mut o.rot_deg).range(-360.0..=360.0).speed(0.5).max_decimals(1).suffix("°")).on_hover_text("Turn around the vertical axis through the centre").changed();
+                        if ui.small_button("0°").clicked() { o.rot_deg = 0.0; changed = true; }
+                        if ui.small_button("+90°").clicked() { o.rot_deg = (o.rot_deg + 90.0) % 360.0; changed = true; }
                     });
                     ui.end_row();
                     ui.label("Discipline");

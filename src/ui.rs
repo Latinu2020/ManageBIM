@@ -2367,63 +2367,56 @@ impl App {
         if pres.clicked() {
             self.cam.ortho = !self.cam.ortho;
         }
-        // selector View Templates sub cub - alegi un template si te duci DIRECT la acea vedere
+        // View Templates sub cub (0.28): pastila cu ◀ ▶ (sablonul anterior / urmator, ca Navisworks Saved
+        // Views) si in mijloc numele sablonului curent - click deschide fereastra View Templates
         let n = self.view_templates.len();
-        let tr = Rect::from_center_size(c + EV::new(0.0, size * 2.5), EV::new(52.0, 15.0));
         let mut apply: Option<usize> = None;
-        let mut manage = false;
-        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(tr), |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(2.0, 0.0);
-                let nav = |ui: &mut egui::Ui, ic: &str, tip: &str, on: bool| ui.add_enabled(on, egui::Button::new(ic).frame(false).rounding(crate::theme::RADIUS_SM)).on_hover_text(tip).clicked();
-                // ◀ / ▶ comută între template-uri (wrap-around), ca Navisworks Saved Views
-                let mut prev = false;
-                let mut next = false;
-                if nav(ui, "◀", "Previous view template", n > 0) { prev = true; }
-                let btn = egui::Button::new(RichText::new(format!("◫ {n} ⏷")).size(9.0))
-                    .rounding(crate::theme::RADIUS_SM)
-                    .min_size(egui::vec2(34.0, 15.0));
-                let r = ui.add(btn).on_hover_text("Pick a saved view template - jumps to that view");
-                if nav(ui, "▶", "Next view template", n > 0) { next = true; }
-                let id = ui.make_persistent_id("vc_template_menu");
-                if r.clicked() { ui.memory_mut(|m| m.toggle_popup(id)); }
-                if prev && n > 0 { let i = (self.vt_current + n - 1) % n; apply = Some(i); }
-                if next && n > 0 { let i = (self.vt_current + 1) % n; apply = Some(i); }
-                egui::popup_below_widget(ui, id, &r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                    ui.set_min_width(170.0);
-                    if n == 0 { ui.label(RichText::new("No templates saved yet.").small().weak()); }
-                    let rename_id = egui::Id::new("vc_vt_rename");
-                    let renaming: Option<usize> = ui.data(|d| d.get_temp(rename_id));
-                    for (i, t) in self.view_templates.iter_mut().enumerate() {
-                        ui.horizontal(|ui| {
-                            if renaming == Some(i) {
-                                let buf_id = egui::Id::new(("vc_vt_buf", i));
-                                let mut buf: String = ui.data(|d| d.get_temp(buf_id)).unwrap_or_else(|| t.name.clone());
-                                let te = ui.add(egui::TextEdit::singleline(&mut buf).desired_width(130.0));
-                                te.request_focus();
-                                ui.data_mut(|d| d.insert_temp(buf_id, buf.clone()));
-                                if ui.input(|k| k.key_pressed(Key::Enter)) || te.lost_focus() {
-                                    if !buf.trim().is_empty() { t.name = buf.trim().to_string(); }
-                                    ui.data_mut(|d| { d.remove::<String>(buf_id); d.remove::<usize>(rename_id); });
-                                } else if ui.input(|k| k.key_pressed(Key::Escape)) {
-                                    ui.data_mut(|d| { d.remove::<String>(buf_id); d.remove::<usize>(rename_id); });
-                                }
-                            } else if ui.button(format!("▶ {}", t.name)).clicked() {
-                                apply = Some(i); ui.close_menu();
-                            }
-                            if renaming != Some(i) && ui.small_button("✏").on_hover_text("Rename").clicked() {
-                                ui.data_mut(|d| d.insert_temp(rename_id, i));
-                            }
-                        });
-                    }
-                    ui.separator();
-                    if ui.small_button("➕ Save current view").clicked() { self.save_view_template(); ui.close_menu(); }
-                    if ui.small_button("⚙ Manage templates").clicked() { manage = true; ui.close_menu(); }
-                });
-            });
-        });
+        let cur_name = if n == 0 {
+            "View templates".to_string()
+        } else {
+            let i = self.vt_current.min(n - 1);
+            let t = &self.view_templates[i].name;
+            let short: String = t.chars().take(14).collect();
+            format!("{} · {}", i + 1, if t.chars().count() > 14 { format!("{short}…") } else { short })
+        };
+        let font = FontId::proportional(11.0);
+        let name_w = p.layout_no_wrap(cur_name.clone(), font.clone(), Color32::WHITE).size().x;
+        let (aw, ph) = (18.0, 20.0);
+        let total = name_w + 16.0 + aw * 2.0;
+        let mut pill = Rect::from_center_size(c + EV::new(0.0, size * 2.55), EV::new(total, ph));
+        // cubul e langa marginea din dreapta: pastila nu iese din vederea 3D
+        let over = pill.right() - (rect.right() - 6.0);
+        if over > 0.0 {
+            pill = pill.translate(EV::new(-over, 0.0));
+        }
+        p.rect_filled(pill, ph * 0.5, pal.overlay_btn);
+        p.rect_stroke(pill, ph * 0.5, Stroke::new(1.0_f32, Color32::from_white_alpha(28)));
+        let left = Rect::from_min_size(pill.min, EV::new(aw, ph));
+        let right = Rect::from_min_size(Pos2::new(pill.max.x - aw, pill.min.y), EV::new(aw, ph));
+        let mid = Rect::from_min_max(Pos2::new(left.max.x, pill.min.y), Pos2::new(right.min.x, pill.max.y));
+        let lres = ui.interact(left, ui.id().with("vc_vt_prev"), Sense::click()).on_hover_text("Previous view template");
+        let rres = ui.interact(right, ui.id().with("vc_vt_next"), Sense::click()).on_hover_text("Next view template");
+        let mres = ui.interact(mid, ui.id().with("vc_vt_open"), Sense::click()).on_hover_text("View Templates: save, apply, update, choose what each applies");
+        let on = n > 0;
+        let arrow_col = |r: &egui::Response| if !on { pal.overlay_weak } else if r.hovered() { accent() } else { pal.overlay_text };
+        p.text(left.center(), Align2::CENTER_CENTER, egui_phosphor::regular::CARET_LEFT, crate::theme::icon_font(12.0), arrow_col(&lres));
+        p.text(right.center(), Align2::CENTER_CENTER, egui_phosphor::regular::CARET_RIGHT, crate::theme::icon_font(12.0), arrow_col(&rres));
+        if mres.hovered() {
+            p.rect_filled(mid.shrink2(EV::new(0.0, 2.0)), 6.0, accent().gamma_multiply(0.18));
+        }
+        p.text(mid.center(), Align2::CENTER_CENTER, &cur_name, font, if mres.hovered() { accent() } else { pal.overlay_text });
+        p.line_segment([Pos2::new(left.max.x, pill.min.y + 4.0), Pos2::new(left.max.x, pill.max.y - 4.0)], Stroke::new(1.0_f32, Color32::from_white_alpha(25)));
+        p.line_segment([Pos2::new(right.min.x, pill.min.y + 4.0), Pos2::new(right.min.x, pill.max.y - 4.0)], Stroke::new(1.0_f32, Color32::from_white_alpha(25)));
+        if on && lres.clicked() {
+            apply = Some((self.vt_current + n - 1) % n);
+        }
+        if on && rres.clicked() {
+            apply = Some((self.vt_current + 1) % n);
+        }
+        if mres.clicked() {
+            self.view_templates_open = !self.view_templates_open;
+        }
         if let Some(i) = apply { self.vt_current = i; self.apply_view_template(i); }
-        if manage { self.view_templates_open = true; }
         if resp.clicked() {
             if let Some(d) = hit {
                 let mut t = self.cam;
@@ -3307,107 +3300,162 @@ impl App {
                 self.box_drag = None;
             }
         }
-        // ---- obiectul de coordonare ales (fereastra Coordination objects deschisa): sageti pe fiecare
-        // fata, ca la cubul de sectiune - tragi si fata se muta pe axa ei; cercul din centru il muta in plan.
-        // Modelul virtual se reface la eliberarea mouse-ului (in timpul tragerii se vede conturul nou).
+        // ---- obiectul de coordonare ales (fereastra Coordination objects deschisa): gizmo cu trei moduri,
+        // ca la lumini - Resize (sageti pe fete, in axele obiectului rotit), Move (sageti X / Y / Z din
+        // centru), Rotate (cerc in jurul verticalei). Modelul virtual se reface la eliberarea mouse-ului.
         let mut coord_hover: Option<usize> = None;
         let coord_edit = if self.coord_open { self.coord_sel.filter(|&i| i < self.coord_objects.len()) } else { None };
         if let Some(ci) = coord_edit {
             let vpm = params.view_proj;
             let (a, b) = (Vec3::from(self.coord_objects[ci].min), Vec3::from(self.coord_objects[ci].max));
             let c = (a + b) * 0.5;
+            let h = (b - a) * 0.5;
+            let rot = self.coord_objects[ci].rot_deg.to_radians();
+            // axele locale ale obiectului (rotit in jurul verticalei)
+            let ex = Vec3::new(rot.cos(), rot.sin(), 0.0);
+            let ey = Vec3::new(-rot.sin(), rot.cos(), 0.0);
+            let ez = Vec3::Z;
+            let local = [ex, ey, ez];
             let kc = self.coord_objects[ci].kind.color();
             let base = Color32::from_rgb(kc[0], kc[1], kc[2]);
-            // conturul cutiei (vizibil si prin pereti)
-            let corner = |i: u32| Vec3::new(if i & 1 == 0 { a.x } else { b.x }, if i & 2 == 0 { a.y } else { b.y }, if i & 4 == 0 { a.z } else { b.z });
+            let mode = self.coord_mode;
+            // conturul cutiei rotite (vizibil si prin pereti)
+            let corner = |i: u32| c + ex * if i & 1 == 0 { -h.x } else { h.x } + ey * if i & 2 == 0 { -h.y } else { h.y } + ez * if i & 4 == 0 { -h.z } else { h.z };
             for (i, j) in [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)] {
                 if let (Some(p), Some(q)) = (to_screen(&vpm, rect, corner(i)), to_screen(&vpm, rect, corner(j))) {
                     painter.line_segment([p, q], Stroke::new(1.8_f32, base));
                 }
             }
-            let size = (b - a).max_element().max(0.05);
+            let dist = (c - self.cam.eye()).length().max(0.5);
             let probe_c = if resp.drag_started_by(egui::PointerButton::Primary) { ui.input(|i| i.pointer.press_origin()).or(hover) } else { hover };
-            for k in 0..7 {
-                let (p0, end, tip, d) = if k < 6 {
+            let axis_col = [Color32::from_rgb(240, 80, 70), Color32::from_rgb(80, 220, 100), Color32::from_rgb(80, 140, 255)];
+            let seg_near = |p0: Pos2, end: Pos2, hp: Pos2| {
+                let ab = end - p0;
+                let t = ((hp - p0).dot(ab) / ab.length_sq().max(1e-6)).clamp(0.0, 1.0);
+                hp.distance(p0 + ab * t)
+            };
+            // cercul de rotatie in planul orizontal al centrului
+            let ring_r = dist * 0.14;
+            let ring_pt = |t: f32| c + Vec3::new(t.cos(), t.sin(), 0.0) * ring_r;
+            if mode == 2 {
+                let mut pts = Vec::with_capacity(97);
+                let mut best = f32::MAX;
+                for k in 0..=96 {
+                    if let Some(s) = to_screen(&vpm, rect, ring_pt(k as f32 / 96.0 * std::f32::consts::TAU)) {
+                        if let Some(hp) = probe_c {
+                            best = best.min(s.distance(hp));
+                        }
+                        pts.push(s);
+                    }
+                }
+                if best < 12.0 && self.coord_drag.is_none() && handle_hover.is_none() {
+                    coord_hover = Some(0);
+                }
+                let active = self.coord_drag.is_some() || coord_hover.is_some();
+                let col = if active { Color32::from_rgb(255, 220, 60) } else { axis_col[2] };
+                if pts.len() > 1 {
+                    painter.add(egui::Shape::line(pts, Stroke::new(if active { 5.0_f32 } else { 3.0 }, col)));
+                }
+                // directia obiectului (axa locala X), ca sa se vada unghiul
+                if let (Some(p0), Some(p1)) = (to_screen(&vpm, rect, c), to_screen(&vpm, rect, c + ex * ring_r)) {
+                    painter.line_segment([p0, p1], Stroke::new(2.0_f32, col));
+                    painter.text(p1 + EV::new(8.0, -8.0), Align2::LEFT_BOTTOM, format!("{:.1}°", self.coord_objects[ci].rot_deg), FontId::proportional(13.0), col);
+                }
+            } else {
+                for k in 0..6usize {
                     let (ax, s) = (k / 2, if k % 2 == 0 { -1.0f32 } else { 1.0 });
-                    let mut fc = c;
-                    fc[ax] = if s < 0.0 { a[ax] } else { b[ax] };
-                    let mut e = Vec3::ZERO;
-                    e[ax] = s;
-                    let (Some(p0), Some(p1)) = (to_screen(&vpm, rect, fc), to_screen(&vpm, rect, fc + e * size * 0.2)) else { continue };
+                    // Resize: din centrul fiecarei fete, in axele locale; Move: din centru, in axele lumii (doar +)
+                    let (start, dir) = if mode == 0 {
+                        (c + local[ax] * h[ax] * s, local[ax] * s)
+                    } else {
+                        if s < 0.0 {
+                            continue;
+                        }
+                        let mut e = Vec3::ZERO;
+                        e[ax] = 1.0;
+                        (c, e)
+                    };
+                    let len = if mode == 0 { dist * 0.06 } else { dist * 0.13 };
+                    let (Some(p0), Some(p1)) = (to_screen(&vpm, rect, start), to_screen(&vpm, rect, start + dir * len)) else { continue };
                     let d = (p1 - p0).normalized();
                     if !(d.x.is_finite() && d.y.is_finite()) {
                         continue;
                     }
-                    (p0, p0 + d * 44.0, p0 + d * 30.0, d)
-                } else {
-                    let Some(p0) = to_screen(&vpm, rect, c) else { continue };
-                    (p0, p0, p0, EV::ZERO)
-                };
-                let near = probe_c.map_or(false, |h| {
-                    let ab = end - p0;
-                    let t = ((h - p0).dot(ab) / ab.length_sq().max(1e-6)).clamp(0.0, 1.0);
-                    rect.contains(h) && h.distance(p0 + ab * t) < 13.0
-                });
-                if near && self.coord_drag.is_none() && coord_hover.is_none() && handle_hover.is_none() {
-                    coord_hover = Some(k);
-                }
-                let active = self.coord_drag == Some(k) || (coord_hover == Some(k) && self.coord_drag.is_none());
-                let col = if active { Color32::from_rgb(255, 220, 60) } else { base };
-                if k < 6 {
+                    let end = if mode == 0 { p0 + d * 44.0 } else { p1 };
+                    let tip = end - d * 14.0;
+                    if probe_c.map_or(false, |hp| rect.contains(hp) && seg_near(p0, end, hp) < 13.0) && self.coord_drag.is_none() && coord_hover.is_none() && handle_hover.is_none() {
+                        coord_hover = Some(k);
+                    }
+                    let active = self.coord_drag == Some(k) || (coord_hover == Some(k) && self.coord_drag.is_none());
+                    let col = if active { Color32::from_rgb(255, 220, 60) } else if mode == 1 { axis_col[ax] } else { base };
                     painter.line_segment([p0, tip], Stroke::new(if active { 5.0_f32 } else { 3.5 }, col));
                     let n = EV::new(-d.y, d.x);
                     painter.add(egui::Shape::convex_polygon(vec![end, tip + n * 8.0, tip - n * 8.0], col, Stroke::new(1.2_f32, Color32::WHITE)));
-                    painter.circle(p0, 5.0, col, Stroke::new(1.2_f32, Color32::WHITE));
-                } else {
-                    // mutare in plan orizontal: cerc cu cruce
-                    painter.circle(p0, 9.0, col.gamma_multiply(0.85), Stroke::new(1.5_f32, Color32::WHITE));
-                    painter.line_segment([p0 - EV::new(5.0, 0.0), p0 + EV::new(5.0, 0.0)], Stroke::new(1.5_f32, Color32::WHITE));
-                    painter.line_segment([p0 - EV::new(0.0, 5.0), p0 + EV::new(0.0, 5.0)], Stroke::new(1.5_f32, Color32::WHITE));
+                    if mode == 1 {
+                        painter.text(end + d * 12.0, Align2::CENTER_CENTER, ["X", "Y", "Z"][ax], FontId::proportional(14.0), col);
+                    } else {
+                        painter.circle(p0, 5.0, col, Stroke::new(1.2_f32, Color32::WHITE));
+                    }
                 }
             }
             if coord_hover.is_some() || self.coord_drag.is_some() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
             }
+            // unghiul cursorului in planul orizontal al centrului (rotire)
+            let cam_r = self.cam;
+            let ang_at = |hp: Pos2| -> Option<f32> {
+                let (ro, rd) = cam_r.ray(uv(hp), aspect);
+                if rd.z.abs() < 1e-4 {
+                    return None;
+                }
+                let t = (c.z - ro.z) / rd.z;
+                if t <= 0.0 {
+                    return None;
+                }
+                let q = ro + rd * t - c;
+                Some(q.y.atan2(q.x))
+            };
             if resp.drag_started_by(egui::PointerButton::Primary) && coord_hover.is_some() {
                 self.coord_drag = coord_hover;
+                self.coord_rot_last = if mode == 2 { probe_c.and_then(ang_at) } else { None };
             }
             if let Some(k) = self.coord_drag {
                 if resp.dragged_by(egui::PointerButton::Primary) {
                     let o = &mut self.coord_objects[ci];
-                    if k < 6 {
+                    if mode == 2 {
+                        if let (Some(hp), Some(last)) = (resp.interact_pointer_pos(), self.coord_rot_last) {
+                            if let Some(a1) = ang_at(hp) {
+                                let mut da = a1 - last;
+                                while da > std::f32::consts::PI { da -= std::f32::consts::TAU; }
+                                while da < -std::f32::consts::PI { da += std::f32::consts::TAU; }
+                                o.rot_deg = (o.rot_deg + da.to_degrees()).rem_euclid(360.0);
+                                // Shift: pasi de 15 grade (ca in Revit / AutoCAD)
+                                self.coord_rot_last = Some(a1);
+                            }
+                        }
+                    } else {
                         let (ax, minf) = (k / 2, k % 2 == 0);
-                        let mut fc = c;
-                        fc[ax] = if minf { a[ax] } else { b[ax] };
-                        let mut e = Vec3::ZERO;
-                        e[ax] = 1.0;
-                        if let (Some(s0), Some(s1)) = (to_screen(&vpm, rect, fc), to_screen(&vpm, rect, fc + e)) {
+                        let dir = if mode == 0 { local[ax] } else { let mut e = Vec3::ZERO; e[ax] = 1.0; e };
+                        let start = if mode == 0 { c + local[ax] * h[ax] * if minf { -1.0 } else { 1.0 } } else { c };
+                        if let (Some(s0), Some(s1)) = (to_screen(&vpm, rect, start), to_screen(&vpm, rect, start + dir)) {
                             let sv = s1 - s0;
                             let ppm = sv.length();
                             if ppm > 1e-3 {
                                 let dm = resp.drag_delta().dot(sv / ppm) / ppm;
-                                if minf {
-                                    o.min[ax] = (o.min[ax] + dm).min(o.max[ax] - 0.01);
-                                } else {
-                                    o.max[ax] = (o.max[ax] + dm).max(o.min[ax] + 0.01);
-                                }
-                            }
-                        }
-                    } else if let Some(h) = resp.interact_pointer_pos() {
-                        // mutare: punctul de sub cursor in planul orizontal al centrului
-                        let (ro, rd) = self.cam.ray(uv(h), aspect);
-                        if rd.z.abs() > 1e-4 {
-                            let t = (c.z - ro.z) / rd.z;
-                            if t > 0.0 {
-                                let p = ro + rd * t;
-                                let (pd, prev) = {
-                                    let (ro0, rd0) = self.cam.ray(uv(h - resp.drag_delta()), aspect);
-                                    let t0 = (c.z - ro0.z) / rd0.z;
-                                    (p, ro0 + rd0 * t0)
-                                };
-                                let mv = Vec3::new(pd.x - prev.x, pd.y - prev.y, 0.0);
-                                if mv.is_finite() {
-                                    o.set_center(c + mv);
+                                if dm.is_finite() {
+                                    let (nc, mut nh);
+                                    nh = h;
+                                    if mode == 0 {
+                                        // fata se muta cu dm, fata opusa ramane pe loc
+                                        let sgn = if minf { -1.0 } else { 1.0 };
+                                        let grow = (sgn * dm).max(0.005 - h[ax] * 2.0);
+                                        nh[ax] = (h[ax] + grow * 0.5).max(0.005);
+                                        nc = c + local[ax] * sgn * grow * 0.5;
+                                    } else {
+                                        nc = c + dir * dm;
+                                    }
+                                    o.min = (nc - nh).to_array();
+                                    o.max = (nc + nh).to_array();
                                 }
                             }
                         }
@@ -3415,6 +3463,11 @@ impl App {
                 }
                 if !resp.dragged() {
                     self.coord_drag = None;
+                    self.coord_rot_last = None;
+                    if mode == 2 && ui.input(|i| i.modifiers.shift) {
+                        let o = &mut self.coord_objects[ci];
+                        o.rot_deg = (o.rot_deg / 15.0).round() * 15.0 % 360.0;
+                    }
                     self.rebuild_coord_model();
                 }
             }

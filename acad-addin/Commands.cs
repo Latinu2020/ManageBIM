@@ -695,6 +695,44 @@ namespace ManageBIM.Acad
             return null;
         }
 
+        /// <summary>Toate proprietatile unui rand (nume, valoare), inclusiv cele goale.</summary>
+        private List<(string, string)> Props(int row)
+        {
+            var res = new List<(string, string)>();
+            var args = _props.GetParameters().Select((pi, i) => i == 0 ? (object)row : pi.ParameterType == typeof(bool) ? (object)true : (pi.HasDefaultValue ? pi.DefaultValue : null)).ToArray();
+            if (!(_props.Invoke(_mgr, args) is System.Collections.IEnumerable list)) return res;
+            foreach (object kv in list)
+            {
+                if (kv == null) continue;
+                Type kt = kv.GetType();
+                string k = Convert.ToString(kt.GetProperty("Key")?.GetValue(kv), System.Globalization.CultureInfo.InvariantCulture);
+                string v = Convert.ToString(kt.GetProperty("Value")?.GetValue(kv), System.Globalization.CultureInfo.InvariantCulture);
+                if (!string.IsNullOrEmpty(k)) res.Add((k, v ?? ""));
+            }
+            return res;
+        }
+
+        /// <summary>Randurile legate printr-o relatie Plant 3D (ex. piesa -> Line Group), prin reflectie
+        /// (DataLinksManager.GetRelatedRowIds(relatie, rol1, rand, rol2)); lista goala daca nu exista.</summary>
+        private List<int> Related(int row, string rel, string role1, string role2)
+        {
+            var res = new List<int>();
+            try
+            {
+                MethodInfo m = _mgr.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance).FirstOrDefault(x =>
+                {
+                    var p = x.GetParameters();
+                    return x.Name == "GetRelatedRowIds" && p.Length == 4 && p[0].ParameterType == typeof(string) && p[1].ParameterType == typeof(string) && p[2].ParameterType == typeof(int) && p[3].ParameterType == typeof(string);
+                });
+                if (m == null) return res;
+                if (m.Invoke(_mgr, new object[] { rel, role1, row, role2 }) is System.Collections.IEnumerable ids)
+                    foreach (object o in ids)
+                        if (o != null) res.Add(Convert.ToInt32(o, System.Globalization.CultureInfo.InvariantCulture));
+            }
+            catch { }
+            return res;
+        }
+
         public void Read(ObjectId id, BimcElement el)
         {
             int row = Convert.ToInt32(_findRow.Invoke(_mgr, new object[] { id }));
@@ -713,19 +751,32 @@ namespace ManageBIM.Acad
                 }
                 catch { }
             }
-            var args = _props.GetParameters().Select((pi, i) => i == 0 ? (object)row : pi.ParameterType == typeof(bool) ? (object)true : (pi.HasDefaultValue ? pi.DefaultValue : null)).ToArray();
-            if (!(_props.Invoke(_mgr, args) is System.Collections.IEnumerable list)) return;
             string tag = null, desc = null;
-            foreach (object kv in list)
+            foreach (var (k, v) in Props(row))
             {
-                if (kv == null) continue;
-                Type kt = kv.GetType();
-                string k = Convert.ToString(kt.GetProperty("Key")?.GetValue(kv), System.Globalization.CultureInfo.InvariantCulture);
-                string v = Convert.ToString(kt.GetProperty("Value")?.GetValue(kv), System.Globalization.CultureInfo.InvariantCulture);
-                if (string.IsNullOrEmpty(k) || string.IsNullOrEmpty(v)) continue;
-                el.Add("Plant 3D", k, v);
+                // si valorile goale: in ManageBIM se vad TOATE proprietatile clasei (inainte lipseau cele necompletate)
+                el.AddKeepEmpty("Plant 3D", k, v);
+                if (string.IsNullOrEmpty(v)) continue;
                 if (k == "Tag" || k == "PartTag") tag = tag ?? v;
                 if (k == "PartFamilyLongDesc" || k == "Description") desc = desc ?? v;
+            }
+            // linia (Line Number, Service, Spec...) nu e pe piesa, ci pe randul Line Group legat de ea
+            foreach (int lg in Related(row, "P3dLineGroupPartRelationship", "Part", "LineGroup"))
+            {
+                foreach (var (k, v) in Props(lg))
+                {
+                    if (string.IsNullOrEmpty(v)) continue;
+                    el.Add("Plant 3D Line", k, v);
+                    if (k == "Tag" || k == "LineNumberTag") el.Add("Plant 3D", "Line Number", v);
+                }
+                break;
+            }
+            // echipamentul unui stut (nozzle) si invers: legatura cu echipamentul gazda
+            foreach (int eq in Related(row, "P3dEquipmentNozzleRelationship", "Nozzle", "Equipment"))
+            {
+                foreach (var (k, v) in Props(eq))
+                    if (!string.IsNullOrEmpty(v) && (k == "Tag" || k == "Description" || k == "ClassName")) el.Add("Plant 3D Equipment", k, v);
+                break;
             }
             // "?-?" / "?" = Tag neatribuit in Plant 3D: numele devine descrierea piesei (ex. "Gate Valve, 150 LB, RF...")
             bool realTag = !string.IsNullOrEmpty(tag) && tag.IndexOf('?') < 0;
