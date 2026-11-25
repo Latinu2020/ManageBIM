@@ -31,6 +31,7 @@ mod autosave;
 mod sync;
 mod userprops;
 mod coord;
+mod mcp_tools;
 
 #[path = "walk.rs"]
 pub mod walk;
@@ -1705,6 +1706,10 @@ pub struct App {
     pub qto_result: Option<crate::qto::QtoResult>,
     /// semnatura starii pentru care s-a calculat rezultatul (setup + selectie / ascunse)
     pub qto_sig: u64,
+    /// serverul MCP pornit (asistenti AI) si fereastra lui de conectare
+    pub mcp: Option<crate::mcp::Server>,
+    pub mcp_open: bool,
+    pub mcp_status: String,
 }
 
 impl App {
@@ -2041,6 +2046,9 @@ impl App {
             qto: Default::default(),
             qto_result: None,
             qto_sig: 0,
+            mcp: None,
+            mcp_open: false,
+            mcp_status: String::new(),
         };
         {
             let p = &app.settings.clash_ui;

@@ -303,6 +303,9 @@ pub struct Settings {
     /// verifica la pornire daca exista o versiune noua pe GitHub (doar citeste pagina publica)
     #[serde(default = "crate::app::yes_default")]
     pub check_updates: bool,
+    /// serverul MCP local (asistenti AI: Claude, OpenCode, Ollama prin client MCP); oprit implicit
+    #[serde(default)]
+    pub mcp: crate::mcp::McpSettings,
 }
 
 fn default_vp_bg() -> String {
@@ -377,7 +380,7 @@ fn default_walk() -> f32 {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), font_family: default_font_family(), font_size: default_font_size(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), snap_cut_to_grid: true, scripts_dir: String::new(), script_params: std::collections::BTreeMap::new(), show_cad_plane: false, show_section_box: true, show_section_behind: true, snap_radius: default_snap_radius(), snap_types: default_snap_types(), unit_system: "m".into(), unit_precision: default_precision(), keybinds: std::collections::BTreeMap::new(), vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default(), sel_rgb: default_sel_rgb(), sel_mix: default_sel_mix(), recent_cmds: Vec::new(), color_icons: true, vp_bg: default_vp_bg(), render_denoise: true, tex_res: 0, no_lod: false, ifc_mvd: crate::ifc_mvd::Mvd::Reference, ifc_map: crate::ifc_map::default_rules(), classifications: crate::classification::builtin(), check_updates: true }
+        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), font_family: default_font_family(), font_size: default_font_size(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), snap_cut_to_grid: true, scripts_dir: String::new(), script_params: std::collections::BTreeMap::new(), show_cad_plane: false, show_section_box: true, show_section_behind: true, snap_radius: default_snap_radius(), snap_types: default_snap_types(), unit_system: "m".into(), unit_precision: default_precision(), keybinds: std::collections::BTreeMap::new(), vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default(), sel_rgb: default_sel_rgb(), sel_mix: default_sel_mix(), recent_cmds: Vec::new(), color_icons: true, vp_bg: default_vp_bg(), render_denoise: true, tex_res: 0, no_lod: false, ifc_mvd: crate::ifc_mvd::Mvd::Reference, ifc_map: crate::ifc_map::default_rules(), classifications: crate::classification::builtin(), check_updates: true, mcp: Default::default() }
     }
 }
 
@@ -967,6 +970,7 @@ pub fn ph(s: &str) -> &str {
     use egui_phosphor::regular as P;
     match s.trim() {
         "📥" => P::DOWNLOAD_SIMPLE,
+        "🤖" => P::ROBOT,
         "📤" => P::UPLOAD_SIMPLE,
         "⬚" => P::SELECTION,
         "✏" => P::PENCIL_SIMPLE,

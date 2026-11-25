@@ -102,6 +102,10 @@ fn install_crash_log() {
 }
 
 fn main() -> eframe::Result<()> {
+    // punte MCP stdio pentru Claude Desktop / OpenCode (fara fereastra): vorbeste cu ManageBIM deja pornit
+    if std::env::args().nth(1).as_deref() == Some("--mcp-stdio") {
+        std::process::exit(bimrust::mcp::stdio_bridge());
+    }
     install_crash_log();
     let files: Vec<String> = std::env::args().skip(1).collect();
     // incearca configuratii GL din ce in ce mai simple (placi video vechi, VM, Remote Desktop)

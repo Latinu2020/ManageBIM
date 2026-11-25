@@ -28,6 +28,7 @@ pub mod coord_objects;
 pub mod pro_materials;
 pub mod hdri;
 pub mod materialx;
+pub mod mcp;
 pub mod pdf;
 pub mod markup;
 pub mod gltf_export;

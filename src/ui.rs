@@ -35,6 +35,7 @@ mod update_panel;
 mod script_window;
 mod pathtrace_window;
 mod prop_editor;
+mod mcp_window;
 pub use prop_editor::PropEditor;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
@@ -116,6 +117,7 @@ impl eframe::App for App {
         }
         crate::app::set_units_mm(self.settings.units_mm);
         self.poll_jobs();
+        self.mcp_step(ctx);
         self.check_file_changes();
         if self.loaded_models().next().is_some() {
             // aplicatia sta in repaus fara input: o trezim periodic ca sa observe fisierele modificate
@@ -1513,6 +1515,17 @@ impl App {
         rgroup(ui, "Reference", |ui| {
             if rbtn(ui, "🔗", "Revit / CAD", &format!("Reference of {what} for Revit and AutoCAD / Plant 3D (MBREFERENCE). Revit can also link the IFC export from the BIM tab."), false, has).clicked() {
                 self.request_path(Purpose::ExportReference);
+            }
+        });
+        rgroup(ui, "AI", |ui| {
+            let on = self.mcp.is_some();
+            let tip = if on {
+                format!("MCP server running on {}\nAI assistants (Claude, OpenCode, Ollama clients) can read and drive the model", crate::mcp::url(self.settings.mcp.port))
+            } else {
+                "Connect AI assistants (Claude Code / Desktop, OpenCode, VS Code, local Ollama via an MCP client) to ManageBIM".to_string()
+            };
+            if rbtn(ui, "🤖", "AI connection", &tip, on || self.mcp_open, true).clicked() {
+                self.mcp_open = !self.mcp_open;
             }
         });
     }
@@ -5118,6 +5131,7 @@ impl App {
         self.prop_editor_window(ctx);
         self.poll_updates(ctx);
         self.update_window(ctx);
+        self.mcp_window(ctx);
         self.command_palette(ctx);
         self.asbuilt_window(ctx);
         if let Some(pr) = &mut self.prompt {

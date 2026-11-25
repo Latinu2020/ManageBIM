@@ -88,7 +88,7 @@ use crate::scripting::Action as ScriptAction;
 impl App {
     /// Fotografia modelului vazuta de script: proprietatile elementelor si
     /// indexii globali ai selectiei curente.
-    fn script_input(&self) -> crate::scripting::Input {
+    pub(crate) fn script_input(&self) -> crate::scripting::Input {
         let mut elements = Vec::new();
         let mut selected = Vec::new();
         let mut idx = 0i32;
@@ -141,7 +141,7 @@ impl App {
     }
 
     /// Executa o sursa Rhai (din fisier sau generata de catalogul grafic).
-    pub(super) fn run_source(&mut self, name: &str, source: &str) {
+    pub(crate) fn run_source(&mut self, name: &str, source: &str) {
         let input = self.script_input();
         let result = match crate::scripting::run(source, &input) {
             Ok(o) => o,

@@ -3,6 +3,12 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.28.4 - 2026-11-26
+- **AI connection (MCP server)** - Share › AI connection: a local Model Context Protocol server (off by default, only on 127.0.0.1, protected by a token) lets AI assistants work with the open model. Tools: model info, find elements (category, level, property / value, text), get properties, get / set selection, hide / show / isolate, zoom, set property (undoable), list / run clash tests, run Rhai scripts, open a model. *Allow changes* off = read-only.
+  - Ready-to-copy setup for **Claude Code** (`claude mcp add …`), **Claude Desktop** (`ManageBIM.exe --mcp-stdio` bridge), **OpenCode**, **VS Code / Copilot** and any Streamable-HTTP client; local **Ollama** models work through MCP clients such as OpenCode, Continue, Open WebUI or LM Studio.
+- **MaterialX import / export fixed**: standard `.mtlx` files now import - ambientCG / GPUOpen / Substance exports with `surfacematerial`, `standard_surface`, `open_pbr_surface`, `UsdPreviewSurface`, `gltf_pbr`, node graphs, `image` / `tiledimage` / `normalmap` nodes, `fileprefix` and displacement; missing AO / roughness / height maps are picked up from sibling files. Imported materials go to **your library**. Export writes standard MaterialX 1.39 (OpenPBR + image nodes) that other tools can read, and the material name survives the round trip. Older ManageBIM `.mtlx` files still open.
+- **Linux AppImage and FreeBSD packages** are published again with every release.
+
 ## 0.28.3 - 2026-11-25
 - **Point clouds**: no more flicker or jumps while zooming (points are no longer dropped during camera moves unless the GPU is slow; gentler wheel zoom, capped point size); **density in the status bar** (☁ Points %) and a Point Cloud button in Analyze › Scan; **automatic classification** (ground / low, medium, high vegetation / buildings) for LAS / LAZ without classes and for E57 - each E57 scan split by class.
 - **Materials**: ambientCG / freepbr ZIPs import reliably (ZIP64 archives, clear message for unsupported compression) and *Import Lib* accepts ZIPs; every import (ZIP, folder, images, .bimmat, MaterialX, Excel) is saved to **your library** (★ in the list) and edits to library materials are saved there too.
