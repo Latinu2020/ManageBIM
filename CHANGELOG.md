@@ -3,7 +3,7 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
-## Unreleased (next: 0.28.2)
+## 0.28.2 - 2026-11-25
 - **Export ribbon**: IFC, GLB and BCF have proper file-format icons (document with a coloured IFC / GLB / BCF tag) and are now also in the Export tab (*Open standards*), not only in BIM.
 - **Coordination objects are no longer created by surprise**: Clearance / Void / Placeholder in the ribbon open the window with a *New … — Create / Cancel* bar; nothing is added until you press **Create**.
 - **New ViewCube**: light-shaded cube with chamfered edge / corner zones (26 directions), labels that turn with the faces, a **compass ring** with N / E / S / W and ticks, Autodesk-style **arrows to the neighbouring faces** when you look straight at a face, Home / PERSP as small pills.

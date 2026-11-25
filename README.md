@@ -9,12 +9,12 @@
 Open **IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP and point clouds** together, run clash detection and model checks,<br>
 plan voids and clearance zones, produce **Inventor-style 2D drawings**, render with **scanned PBR materials** — and stay in sync with Revit and Navisworks.
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.28.1-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.1/ManageBIM-Setup-0.28.1.exe)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.28.2-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.2/ManageBIM-Setup-0.28.2.exe)
 &nbsp;
 [![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Build%20from%20source-334155?style=for-the-badge&logo=linux&logoColor=white)](#building-from-source)
 
 [![Build](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml/badge.svg)](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-0.28.1-blue)
+![Version](https://img.shields.io/badge/version-0.28.2-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20FreeBSD-0078d4)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-b7410e)
 ![No admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a)
@@ -100,22 +100,22 @@ plan voids and clearance zones, produce **Inventor-style 2D drawings**, render w
 
 | Platform | Package | Notes |
 |---|---|---|
-| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.28.1.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.1/ManageBIM-Setup-0.28.1.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime, Intel Open Image Denoise and the scanned PBR material library. Per-user, **no administrator rights**, folder of your choice. |
+| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.28.2.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.2/ManageBIM-Setup-0.28.2.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime, Intel Open Image Denoise and the scanned PBR material library. Per-user, **no administrator rights**, folder of your choice. |
 | **Linux** (x86-64) | [Build from source](#building-from-source) | Prebuilt AppImage packages are paused while the Linux build is being fixed; `cargo build --release` and `packaging/linux/build-appimage.sh` make the same single-file AppImage. |
 | **FreeBSD** (x86-64) | [Build from source](#building-from-source) | Prebuilt packages are paused while the FreeBSD build is being fixed; see *Linux and FreeBSD packages* below. Needs `pkg install mesa-libs libxkbcommon`. |
 
 ## What's new
 
+> **0.28.2** — a **Property editor** for standard IFC property sets (typed in the IFC export) and custom data, with original values never lost; a new **ViewCube** with compass; viewpoints that keep their own look next to View Templates; a **Multi-view** window with chosen views, spacing and live preview; nicer **point clouds** (relief, real size, elevation colours, snapping); easier **walk path** editing; Plant 3D / Civil 3D object properties from the AutoCAD add-in; self-contained **.bimd**.
+>
 > **0.28.1** — **move and rotate** clearance zones, voids and placeholders with a gizmo; show them in **Revit and Navisworks** (display only, with a preview window); compact add-in ribbons with a **ManageBIM** window for every command; **all Plant 3D properties** after Send (empty fields, line data, completed from Piping.dcf).
 >
 > **0.28.0 (stable)** — a cleaner, more professional interface: full ribbon labels and vector icons, one notification at a time, level labels clear of the navigation bar. **Edit coordination objects in 3D** with face arrows, send approved **voids to Revit** (new *ManageBIM Voids* command), **multi-view drawings** (all faces of the section box, DWG at 1:1 in model space), DWG overlays back **exactly** on their cut plane, **light bounced from lamps** in the path trace and fixed spot lights, a large **Path trace window with live preview**, redesigned **View Templates** (update, order, choose what each applies) and an **update check** with one-click install.
->
-> **0.27.32** — **Coordination objects**: clearance zones, provisions for void (**Auto voids** where services cross walls and slabs) and placeholder volumes, part of Clash Detective and the IFC export. **Inventor-style 2D drawings** from a face of the section box (pick it in 3D, it turns light green) with visible and dashed hidden lines, a new zoomable preview and technical line weights in PDF / DWG. **Hidden line** style fixed, and a redesigned **installer** with a choice of install folder.
 
 Older versions: see the full **[CHANGELOG](CHANGELOG.md)**.
 
 > **Windows:** the installer is not digitally signed yet — if SmartScreen asks, choose *More info › Run anyway*.
-> Silent install: `ManageBIM-Setup-0.28.1.exe /S` (add `/NoAddins` for the application only).
+> Silent install: `ManageBIM-Setup-0.28.2.exe /S` (add `/NoAddins` for the application only).
 >
 > **Linux / FreeBSD:** the add-ins (Revit, Navisworks, AutoCAD) and the native STEP / IGES reader exist only on Windows; everything else is the same.
 
