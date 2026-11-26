@@ -43,6 +43,8 @@ impl App {
         let origin = self.origin.clone();
         let p2 = path.clone();
         let (use_cache, auto_cache) = (self.settings.use_cache, self.settings.auto_cache);
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let cancel_t = cancel.clone();
         std::thread::spawn(move || {
             // orice panica (cache, origine, scriere) devine eroare de incarcare - altfel incarcarea ar ramane
             // „in curs” pentru totdeauna, iar autosave-ul s-ar opri
@@ -50,6 +52,10 @@ impl App {
             let body = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
             let txp = tx.clone();
             let prog = move |f: f32, s: &str| {
+                // Cancel: firul se opreste la urmatorul pas de progres (resume_unwind nu scrie crash.log)
+                if cancel_t.load(std::sync::atomic::Ordering::Relaxed) {
+                    std::panic::resume_unwind(Box::new(CANCELLED));
+                }
                 let _ = txp.send(LoadMsg::Progress(f, s.to_string()));
             };
             let lower = p2.to_lowercase();
@@ -124,7 +130,7 @@ impl App {
                 let _ = tx_fail.send(LoadMsg::Done(Err(format!("Internal error while loading: {}", panic_text(&e)))));
             }
         });
-        self.loads.push(LoadJob { slot, path, progress: 0.0, stage: "Starting".into(), rx });
+        self.loads.push(LoadJob { slot, path, progress: 0.0, stage: "Starting".into(), rx, cancel });
     }
 
     pub fn push_slot(&mut self) {
@@ -388,6 +394,10 @@ impl App {
         for (i, j) in self.loads.iter_mut().enumerate() {
             loop {
                 match j.rx.try_recv() {
+                    _ if j.cancel.load(std::sync::atomic::Ordering::Relaxed) => {
+                        done.push((i, Err(CANCELLED.to_string())));
+                        break;
+                    }
                     Ok(LoadMsg::Progress(f, s)) => {
                         j.progress = f;
                         j.stage = s;
@@ -451,6 +461,11 @@ impl App {
                     self.refresh_caches();
                 }
                 Err(e) => {
+                    if e == CANCELLED {
+                        self.reloading.remove(&job.slot);
+                        self.toast(format!("Loading cancelled: {}", crate::file_name(&job.path)));
+                        continue;
+                    }
                     // la Refresh esuat (ex. fisier inca in curs de scriere) ramane modelul vechi pe ecran
                     if self.reloading.remove(&job.slot).is_some() {
                         self.changed_files.insert(job.slot);
@@ -1088,3 +1103,6 @@ impl App {
         }
     }
 }
+
+/// mesajul intern al unei incarcari anulate de utilizator
+pub const CANCELLED: &str = "cancelled by the user";

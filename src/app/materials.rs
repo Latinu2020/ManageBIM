@@ -29,7 +29,7 @@ impl App {
     }
 
     /// Calea reala a unei texturi (daca fisierul a fost mutat, o cauta langa proiect).
-    fn texture_path(&self, path: &str) -> String {
+    pub(crate) fn texture_path(&self, path: &str) -> String {
         if std::path::Path::new(path).exists() {
             return path.to_string();
         }
@@ -160,15 +160,20 @@ impl App {
         if !added.is_empty() {
             let last = added.last().map(|m| m.name.clone()).unwrap_or_default();
             self.mat_sel = self.materials.iter().position(|m| m.name == last).unwrap_or(0);
-            self.keep_in_library(&added);
+            self.mat_scroll = true;
+            self.keep_in_library(&mut added.clone());
             self.toast(format!("{} texture materials added and saved to your library - set the real size of the image in \"Texture size\".", added.len()));
         }
     }
 
     /// Materialele importate raman in biblioteca ta (disponibile in orice proiect, dupa repornire).
-    pub fn keep_in_library(&mut self, mats: &[crate::materials::Material]) {
+    pub fn keep_in_library(&mut self, mats: &mut [crate::materials::Material]) {
         if mats.is_empty() {
             return;
+        }
+        // hartile vin in biblioteca (materialul nu mai depinde de folderul descarcat)
+        for m in mats.iter_mut() {
+            crate::materials::adopt_maps(m);
         }
         if let Err(e) = crate::materials::save_to_user_library(mats) {
             self.error(format!("The materials are in the project but could not be saved to your library: {e}"));
@@ -209,6 +214,7 @@ impl App {
             }
         }
         let last = added.last().map(|m| m.name.clone()).unwrap_or_default();
+        self.mat_scroll = true;
         self.mat_sel = self.materials.iter().position(|m| m.name == last).unwrap_or(0);
         self.pending_mat_assign = added.iter().map(|m| m.name.clone()).collect();
         self.materials_changed();

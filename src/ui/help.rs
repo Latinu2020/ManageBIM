@@ -239,3 +239,82 @@ impl App {
         }
     }
 }
+
+impl App {
+    /// F1: toate scurtaturile de tastatura, cele configurabile cu valoarea curenta din Settings.
+    pub(super) fn keys_window(&mut self, ctx: &egui::Context) {
+        if !self.keys_open {
+            return;
+        }
+        let kb = |c: &str| crate::keybind::binding(&self.settings.keybinds, c);
+        let groups: Vec<(&str, Vec<(String, &str)>)> = vec![
+            ("File", vec![
+                (kb("open"), "Open a model or project"),
+                (kb("save"), "Save the project"),
+                ("F5".into(), "Refresh changed models"),
+                ("Ctrl+F5".into(), "Reload all models"),
+                (kb("palette"), "Command palette - every command and element"),
+            ]),
+            ("Selection", vec![
+                ("Click".into(), "Select an element (Ctrl+click: add / remove)"),
+                ("Ctrl+A".into(), "Select all"),
+                ("Ctrl+Shift+A".into(), "Select same type"),
+                ("Esc".into(), "Clear the selection / end the tool"),
+                (kb("find"), "Find Items"),
+            ]),
+            ("Visibility", vec![
+                ("H".into(), "Hide the selection"),
+                ("I".into(), "Isolate the selection"),
+                ("F".into(), "Focus (zoom to) the selection, or everything"),
+                (kb("hide_panels"), "Hide all panels - full screen model"),
+            ]),
+            ("View", vec![
+                (kb("undo"), "Undo view change (selection, hidden, section, camera)"),
+                (kb("redo"), "Redo view change"),
+                ("Ctrl+1 … 9".into(), "Apply View Template 1 … 9"),
+                (format!("{} / PgDn", kb("section_up")), "Section level up / down"),
+                ("F3".into(), "Object snap on / off"),
+            ]),
+            ("Navigation", vec![
+                ("Left drag".into(), "Orbit"),
+                ("Middle drag".into(), "Pan"),
+                ("Wheel".into(), "Zoom"),
+                ("Double-click".into(), "Focus the clicked element"),
+                ("W A S D / arrows".into(), "Walk (Walk mode)"),
+                ("Q / E".into(), "Walk down / up"),
+            ]),
+            ("Help", vec![("F1".into(), "This list")]),
+        ];
+        let mut open = true;
+        egui::Window::new(crate::theme::icon_job(egui_phosphor::regular::KEYBOARD, crate::i18n::tr("Keyboard shortcuts"), 15.0, ctx.style().visuals.strong_text_color()))
+            .open(&mut open)
+            .default_width(560.0)
+            .collapsible(false)
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.label(RichText::new(crate::i18n::tr("Change the configurable ones in Settings › Keyboard.")).weak());
+                ui.add_space(4.0);
+                egui::ScrollArea::vertical().max_height(560.0).show(ui, |ui| {
+                    for (g, rows) in &groups {
+                        ui.add_space(6.0);
+                        ui.label(RichText::new(crate::i18n::tr(g).to_uppercase()).size(11.0).strong().color(accent()));
+                        egui::Grid::new(("keys", *g)).num_columns(2).spacing([16.0, 5.0]).striped(true).show(ui, |ui| {
+                            for (k, what) in rows {
+                                egui::Frame::none()
+                                    .fill(ui.visuals().extreme_bg_color)
+                                    .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+                                    .rounding(4.0)
+                                    .inner_margin(egui::Margin::symmetric(6.0, 1.0))
+                                    .show(ui, |ui| {
+                                        ui.label(RichText::new(k).monospace().size(12.0));
+                                    });
+                                ui.label(crate::i18n::tr(what));
+                                ui.end_row();
+                            }
+                        });
+                    }
+                });
+            });
+        self.keys_open = open;
+    }
+}

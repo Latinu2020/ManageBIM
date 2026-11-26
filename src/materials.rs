@@ -250,8 +250,60 @@ fn yes() -> bool {
 
 pub const MAX_TEXTURES: usize = 64;
 
+/// Miniatura unei texturi pentru lista de materiale (RGBA, `size` x `size`).
+#[derive(Clone)]
+pub struct Thumb {
+    pub size: usize,
+    pub rgba: Vec<u8>,
+}
+
+pub const THUMB_SIZE: u32 = 64;
+
+/// Miniatura unei imagini, din cache-ul de pe disc (`<biblioteca>/thumbs`) sau calculata si salvata acolo.
+/// Cheia cache-ului contine calea, marimea si data fisierului: o textura inlocuita primeste miniatura noua.
+pub fn thumbnail(path: &str) -> Result<Thumb, String> {
+    use std::hash::{Hash, Hasher};
+    let meta = std::fs::metadata(path).map_err(|e| format!("{path}: {e}"))?;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    path.hash(&mut h);
+    meta.len().hash(&mut h);
+    meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).hash(&mut h);
+    let cache = user_library_dir().map(|d| d.join("thumbs").join(format!("{:016x}.png", h.finish())));
+    let n = THUMB_SIZE as usize;
+    if let Some(c) = &cache {
+        if let Ok((w, hh, px)) = decode_file(&c.to_string_lossy()) {
+            if w as usize == n && hh as usize == n {
+                return Ok(Thumb { size: n, rgba: px });
+            }
+        }
+    }
+    let (w, hh, px) = decode_file(path)?;
+    let rgba = resample(w, hh, &px, THUMB_SIZE);
+    if let Some(c) = &cache {
+        if let Some(d) = c.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        if let Ok(f) = std::fs::File::create(c) {
+            let mut e = png::Encoder::new(std::io::BufWriter::new(f), THUMB_SIZE, THUMB_SIZE);
+            e.set_color(png::ColorType::Rgba);
+            e.set_depth(png::BitDepth::Eight);
+            if let Ok(mut wr) = e.write_header() {
+                let _ = wr.write_image_data(&rgba);
+            }
+        }
+    }
+    Ok(Thumb { size: n, rgba })
+}
+
 /// Loads a PNG / JPG and resamples it to TEX_SIZE x TEX_SIZE RGBA (bilinear).
 pub fn load_texture(path: &str) -> Result<Vec<u8>, String> {
+    let (w, h, rgba) = decode_file(path)?;
+    // randul 0 al imaginii (sus) ajunge sus pe perete
+    Ok(resample_impl(w, h, &rgba, tex_size(), true))
+}
+
+/// PNG / JPG -> (latime, inaltime, RGBA)
+pub fn decode_file(path: &str) -> Result<(u32, u32, Vec<u8>), String> {
     let data = std::fs::read(path).map_err(|e| format!("Cannot read texture {path}: {e}"))?;
     let (w, h, rgba): (u32, u32, Vec<u8>) = if data.starts_with(&[0x89, b'P', b'N', b'G']) {
         let mut dec = png::Decoder::new(std::io::Cursor::new(&data));
@@ -287,13 +339,18 @@ pub fn load_texture(path: &str) -> Result<Vec<u8>, String> {
     if w == 0 || h == 0 {
         return Err("Empty image".into());
     }
-    let n = tex_size();
+    Ok((w, h, rgba))
+}
+
+/// Redimensionare biliniara la n x n; `flip` pune randul de sus al imaginii jos (texturile GPU).
+fn resample_impl(w: u32, h: u32, rgba: &[u8], n: u32, flip: bool) -> Vec<u8> {
     let mut out = vec![0u8; (n * n * 4) as usize];
     for y in 0..n {
         let fy = (y as f32 + 0.5) * h as f32 / n as f32 - 0.5;
         let y0 = fy.floor().clamp(0.0, (h - 1) as f32) as u32;
         let y1 = (y0 + 1).min(h - 1);
         let ty = (fy - y0 as f32).clamp(0.0, 1.0);
+        let oy = if flip { n - 1 - y } else { y };
         for x in 0..n {
             let fx = (x as f32 + 0.5) * w as f32 / n as f32 - 0.5;
             let x0 = fx.floor().clamp(0.0, (w - 1) as f32) as u32;
@@ -302,12 +359,16 @@ pub fn load_texture(path: &str) -> Result<Vec<u8>, String> {
             for c in 0..4 {
                 let g = |xx: u32, yy: u32| rgba[((yy * w + xx) * 4 + c) as usize] as f32;
                 let v = (g(x0, y0) * (1.0 - tx) + g(x1, y0) * tx) * (1.0 - ty) + (g(x0, y1) * (1.0 - tx) + g(x1, y1) * tx) * ty;
-                // randul 0 al imaginii (sus) ajunge sus pe perete
-                out[(((n - 1 - y) * n + x) * 4 + c as u32) as usize] = v.round() as u8;
+                out[((oy * n + x) * 4 + c as u32) as usize] = v.round() as u8;
             }
         }
     }
-    Ok(out)
+    out
+}
+
+/// miniatura: fara intoarcere
+pub fn resample(w: u32, h: u32, rgba: &[u8], n: u32) -> Vec<u8> {
+    resample_impl(w, h, rgba, n, false)
 }
 
 /// Imparte hartile PBR in 2 straturi GPU de aceeasi marime:
@@ -620,4 +681,35 @@ mod bundled_tests {
         m.texture = r"D:\textures\my_brick.png".into();
         assert!(!is_generated(&m));
     }
+}
+
+/// Copiaza hartile unui material importat (MaterialX, .bimmat) in biblioteca ta
+/// (`<biblioteca>/<nume>/`) si schimba caile: materialul ramane intreg daca folderul descarcat e sters.
+/// Hartile deja din biblioteca sau inexistente raman cum sunt. Intoarce numarul de fisiere copiate.
+pub fn adopt_maps(m: &mut Material) -> usize {
+    let Some(root) = user_library_dir() else { return 0 };
+    let safe: String = m.name.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();
+    let dir = root.join(safe.trim());
+    let root_c = std::fs::canonicalize(&root).unwrap_or(root.clone());
+    let mut n = 0;
+    for slot in [&mut m.texture, &mut m.normal_map, &mut m.roughness_map, &mut m.metallic_map, &mut m.ao_map, &mut m.height_map] {
+        if slot.is_empty() {
+            continue;
+        }
+        let src = std::path::Path::new(slot.as_str());
+        let Ok(src_c) = std::fs::canonicalize(src) else { continue };
+        if !src_c.is_file() || src_c.starts_with(&root_c) {
+            continue;
+        }
+        let Some(fname) = src.file_name() else { continue };
+        if std::fs::create_dir_all(&dir).is_err() {
+            return n;
+        }
+        let dst = dir.join(fname);
+        if std::fs::copy(&src_c, &dst).is_ok() {
+            *slot = dst.to_string_lossy().to_string();
+            n += 1;
+        }
+    }
+    n
 }

@@ -115,3 +115,50 @@ impl App {
         }
     }
 }
+
+impl App {
+    /// Clopotelul din bara de stare: mesajele recente (si erorile) raman de citit dupa ce dispar.
+    pub(super) fn notes_bell(&mut self, ui: &mut egui::Ui) {
+        use egui_phosphor::regular as P;
+        let unseen = self.notes.len().saturating_sub(self.notes_seen);
+        let err = self.notes[self.notes_seen.min(self.notes.len())..].iter().any(|n| n.1);
+        let col = if err { Color32::from_rgb(230, 85, 70) } else if unseen > 0 { accent() } else { ui.visuals().weak_text_color() };
+        let label = if unseen > 0 { format!("{} {unseen}", P::BELL) } else { P::BELL.to_string() };
+        let r = ui.menu_button(RichText::new(label).font(crate::theme::icon_font(14.0)).color(col), |ui| {
+            self.notes_seen = self.notes.len();
+            ui.set_min_width(420.0);
+            ui.horizontal(|ui| {
+                ui.strong(crate::i18n::tr("Notifications"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add_enabled(!self.notes.is_empty(), egui::Button::new(crate::i18n::tr("Clear")).small()).clicked() {
+                        self.notes.clear();
+                        self.notes_seen = 0;
+                    }
+                });
+            });
+            ui.separator();
+            if self.notes.is_empty() {
+                ui.label(RichText::new(crate::i18n::tr("No messages yet.")).weak());
+                return;
+            }
+            egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                for (t, e, m) in self.notes.iter().rev() {
+                    let s = t.elapsed().as_secs();
+                    let ago = if s < 60 { "now".to_string() } else if s < 3600 { format!("{} min", s / 60) } else { format!("{} h", s / 3600) };
+                    ui.horizontal_top(|ui| {
+                        let (ic, c) = if *e { (P::WARNING_CIRCLE, Color32::from_rgb(230, 85, 70)) } else { (P::CHECK_CIRCLE, Color32::from_rgb(80, 185, 110)) };
+                        ui.label(RichText::new(ic).font(crate::theme::icon_font(14.0)).color(c));
+                        ui.add_sized([340.0, 0.0], egui::Label::new(RichText::new(m).size(12.5)).wrap());
+                        ui.label(RichText::new(ago).small().weak());
+                    });
+                    ui.add_space(2.0);
+                }
+            });
+            if ui.button(crate::i18n::tr("Copy all")).clicked() {
+                let all: Vec<String> = self.notes.iter().map(|(_, e, m)| format!("{}{m}", if *e { "ERROR: " } else { "" })).collect();
+                ui.output_mut(|o| o.copied_text = all.join("\n"));
+            }
+        });
+        r.response.on_hover_text(if unseen > 0 { format!("{unseen} new message(s) - click to read") } else { "Messages and errors".into() });
+    }
+}

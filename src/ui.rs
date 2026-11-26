@@ -358,6 +358,10 @@ impl App {
             self.palette_q.clear();
             self.palette_sel = 0;
         }
+        // F1 = scurtaturile de tastatura
+        if ctx.input(|i| i.key_pressed(Key::F1)) {
+            self.keys_open = !self.keys_open;
+        }
         // F5 = Refresh modelele modificate, Ctrl+F5 = reincarca tot
         if ctx.input(|i| i.key_pressed(Key::F5)) {
             self.refresh_models(ctrl);
@@ -1421,13 +1425,12 @@ impl App {
                     self.open_panel(Panel::Animation);
                 }
             }
-            let on = self.panel_shown(Panel::Render) && self.render_subtab == 1;
-            if rbtn(ui, "🎨", "Materials", "Material library, image textures & assignments", on, true).clicked() {
-                self.render_subtab = 1;
-                if on {
-                    self.settings.layout.close(Panel::Render);
-                } else {
-                    self.open_panel(Panel::Render);
+            // fereastra proprie, pe toata inaltimea: lista de materiale lunga si lata
+            if rbtn(ui, "🎨", "Materials", "Material library, image textures & assignments", self.mat_window, true).clicked() {
+                self.mat_window = !self.mat_window;
+                if self.mat_window && self.panel_shown(Panel::Render) && self.render_subtab == 1 {
+                    // acelasi editor nu sta deschis in doua locuri
+                    self.render_subtab = 0;
                 }
             }
             if rbtn(ui, "💡", "Show Mat.", "Show render materials in the viewport", self.materials_on, true).clicked() {
@@ -1872,6 +1875,9 @@ impl App {
         rgroup(ui, "Help", |ui| {
             if rbtn(ui, "🖱", "Controls", "Mouse & keyboard navigation", false, true).clicked() {
                 self.show_help = true;
+            }
+            if rbtn(ui, "⌨", "Shortcuts", "All keyboard shortcuts (F1)", self.keys_open, true).clicked() {
+                self.keys_open = !self.keys_open;
             }
             if rbtn(ui, "📄", "Manual", "The ManageBIM manual: every feature, step by step, with search", self.manual_open, true).clicked() {
                 self.manual_open = !self.manual_open;
@@ -3080,6 +3086,8 @@ impl App {
 
     fn status_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
+            let compact_id = egui::Id::new("status_compact");
+            let status_compact = ui.data(|d| d.get_temp::<bool>(compact_id)).unwrap_or(false);
             ui.horizontal(|ui| {
                 // filele panourilor de jos (Find Items, Clash, TimeLiner...): clic = panoul se ridica,
                 // clic pe fila deschisa = coboara (tot ecranul pentru model)
@@ -3092,7 +3100,7 @@ impl App {
                         let on = open && active == Some(p);
                         let col = if on { accent() } else { ui.visuals().weak_text_color() };
                         let icon = p.title().split_whitespace().next().unwrap_or("");
-                        let b = egui::Button::new(crate::theme::icon_job(icon, p.short(), 12.5, col)).fill(if on { accent().gamma_multiply(0.16) } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(6.0);
+                        let b = egui::Button::new(crate::theme::icon_job(icon, if status_compact { "" } else { p.short() }, 12.5, col)).fill(if on { accent().gamma_multiply(0.16) } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(6.0);
                         let r = ui.add(b).on_hover_text(if on { format!("{} - click to lower it", p.title()) } else { format!("{} - click to raise it", p.title()) });
                         if r.clicked() {
                             if on {
@@ -3106,7 +3114,7 @@ impl App {
                     }
                 }
                 if !self.settings.layout.hide_all {
-                    ui.menu_button("＋ Add panel", |ui| {
+                    ui.menu_button(if status_compact { "＋" } else { "＋ Add panel" }, |ui| {
                         ui.label(RichText::new("Add a panel to the bottom toolbar").small().weak());
                         ui.separator();
                         for p in crate::layout::ALL_PANELS {
@@ -3189,13 +3197,15 @@ impl App {
                     ui.separator();
                     ui.colored_label(Color32::from_rgb(90, 200, 120), format!("Simulation: {}", timeline::fmt_date(self.sim_day.floor() as i32)));
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let left_end = ui.min_rect().right();
+                let rr = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let nb = if self.settings.nav_bar { "Hide the navigation bar" } else { "Show the navigation bar" };
                     let nav_icon = RichText::new(egui_phosphor::regular::COMPASS).font(crate::theme::icon_font(14.0)).color(if self.settings.nav_bar { accent() } else { ui.visuals().weak_text_color() });
                     if ui.add(egui::Button::new(nav_icon).frame(false)).on_hover_text(nb).clicked() {
                         self.settings.nav_bar = !self.settings.nav_bar;
                         self.settings.save();
                     }
+                    self.notes_bell(ui);
                     self.update_badge(ui);
                     ui.label(RichText::new(format!("{:.0} FPS", self.fps)).weak()).on_hover_text("Frames per second");
                     // unitatea de lungime: acelasi sistem ca in Settings (m / mm / in / ft)
@@ -3219,6 +3229,17 @@ impl App {
                         self.osnap_on = !self.osnap_on;
                     }
                 });
+                // bara nu incape (ecran ingust / interfata marita): filele raman doar cu iconite; revin cand e loc
+                let right_start = rr.response.rect.left();
+                let gap = right_start - left_end;
+                let tabs = self.settings.layout.in_area(Dock::Bottom).len() as f32;
+                if !status_compact && gap < 4.0 {
+                    ui.data_mut(|d| d.insert_temp(compact_id, true));
+                    ui.ctx().request_repaint();
+                } else if status_compact && gap > tabs * 75.0 + 60.0 {
+                    ui.data_mut(|d| d.insert_temp(compact_id, false));
+                    ui.ctx().request_repaint();
+                }
             });
         });
     }
@@ -4912,15 +4933,26 @@ impl App {
             // proiect nou / gol: scena goala, cu o indicatie discreta
             painter.text(rect.center(), Align2::CENTER_CENTER, "Empty project - Home › Open / Append to add models (Ctrl+O), Save to keep it (Ctrl+S)", FontId::proportional(14.0), pal.overlay_weak);
         }
-        let mut yy = rect.center().y - 30.0 * self.loads.len() as f32 / 2.0;
-        for j in &self.loads {
-            let r = Rect::from_center_size(Pos2::new(rect.center().x, yy), EV::new(360.0, 24.0));
-            painter.rect_filled(r, 4.0, Color32::from_black_alpha(170));
+        let mut yy = rect.center().y - 34.0 * self.loads.len() as f32 / 2.0;
+        let mut cancel = None;
+        for (k, j) in self.loads.iter().enumerate() {
+            let r = Rect::from_center_size(Pos2::new(rect.center().x - 40.0, yy), EV::new(420.0, 26.0));
+            painter.rect_filled(r, 5.0, Color32::from_black_alpha(170));
             let mut f = r.shrink(3.0);
             f.set_width(f.width() * j.progress.clamp(0.02, 1.0));
-            painter.rect_filled(f, 3.0, accent());
+            painter.rect_filled(f, 4.0, accent());
             painter.text(r.center(), Align2::CENTER_CENTER, format!("{} — {} {:.0}%", crate::file_name(&j.path), j.stage, j.progress * 100.0), FontId::proportional(13.0), Color32::WHITE);
-            yy += 30.0;
+            // Cancel: un fisier mare deschis din greseala nu mai tine aplicatia ocupata minute intregi
+            let br = Rect::from_min_size(Pos2::new(r.max.x + 8.0, r.min.y), EV::new(74.0, r.height()));
+            if ui.put(br, egui::Button::new(crate::i18n::tr("Cancel"))).on_hover_text(crate::i18n::tr("Stop loading this file")).clicked() {
+                cancel = Some(k);
+            }
+            yy += 34.0;
+        }
+        if let Some(k) = cancel {
+            if let Some(j) = self.loads.get(k) {
+                j.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
         }
         if let Tool::Redline(k) = self.tool {
             painter.text(rect.center_top() + EV::new(0.0, 14.0), Align2::CENTER_TOP, format!("Redline {}: {} · middle-drag pans, right-drag looks · Esc ends", k.label(), if k == crate::markup::RedKind::Text { "click to place text" } else { "drag to draw" }), FontId::proportional(14.0), pal.overlay_text);
@@ -5132,6 +5164,8 @@ impl App {
         self.poll_updates(ctx);
         self.update_window(ctx);
         self.mcp_window(ctx);
+        self.materials_window(ctx);
+        self.keys_window(ctx);
         self.command_palette(ctx);
         self.asbuilt_window(ctx);
         if let Some(pr) = &mut self.prompt {
@@ -5198,6 +5232,7 @@ impl App {
                 Purpose::MaterialAo => "Ambient occlusion map",
                 Purpose::MaterialHeight => "Height map",
                 Purpose::ExportMaterialX => "Export MaterialX",
+                Purpose::ExportMaterialOne => "Save material as file",
                 Purpose::ImportMaterialX => "Import MaterialX",
                 Purpose::LoadHdri => "Environment map",
                 Purpose::ExportIfcMap => "Export IFC mapping",
@@ -5694,6 +5729,13 @@ fn ribbon_label_lines(ui: &egui::Ui, label: &str, w: f32) -> Vec<(String, FontId
         }
         // un singur cuvant lung (ex. „Placeholder"): despartit in silabe aproximative cu cratima
         if words.len() == 1 && size < 9.0 {
+            // intai un font putin mai mic pe un singur rand (cuvintele scurte nu se mai despart: „Prope-rties")
+            for s2 in [8.2_f32, 7.6] {
+                let f2 = FontId::proportional(s2);
+                if width(label, &f2) <= w {
+                    return vec![(label.to_string(), f2)];
+                }
+            }
             let chars: Vec<char> = label.chars().collect();
             let mid = chars.len() / 2;
             let a: String = chars[..mid].iter().collect::<String>() + "-";

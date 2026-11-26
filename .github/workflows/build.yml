@@ -82,20 +82,24 @@ jobs:
           path: dist/*.tar.gz
 
   quality:
-    # Verificari informationale (nu blocheaza release-ul); datoria de cod se reduce treptat.
+    # "Clichet": pica doar la avertismente clippy NOI (peste packaging/ci/clippy-baseline.txt) si la fisiere .rs
+    # noi neformatate; datoria veche se reduce treptat. Release-ul nu depinde de acest job.
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Format check
+      - name: Clippy and rustfmt (no new warnings, new files formatted)
+        shell: bash
+        run: bash packaging/ci/quality.sh "${{ github.event.pull_request.base.sha || github.event.before }}"
+      - name: Whole-tree format report (informational)
         continue-on-error: true
-        run: cargo fmt --all -- --check
-      - name: Clippy (-D warnings, informational)
-        continue-on-error: true
-        run: cargo clippy --all-targets -- -D warnings
+        shell: bash
+        run: cargo fmt --all -- --check -l | head -50
       - name: Licences and advisories
         continue-on-error: true
         uses: EmbarkStudios/cargo-deny-action@v2
@@ -152,9 +156,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          gh release list --repo "$REPO" --limit 200 --json tagName,createdAt \
-            --jq 'sort_by(.createdAt) | reverse | .[3:] | .[].tagName' |
+          # ordonat dupa numarul versiunii (createdAt e data commit-ului si poate pune o versiune noua printre cele vechi)
+          gh release list --repo "$REPO" --limit 200 --json tagName --jq '.[].tagName' |
+            sort -V -r | tail -n +4 |
           while read -r tag; do
             echo "Deleting old release $tag"
-            gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag
+            # o stergere esuata nu mai marcheaza tot release-ul ca esuat (fisierele sunt deja publicate)
+            gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag || echo "::warning::Could not delete release $tag"
           done

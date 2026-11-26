@@ -96,6 +96,7 @@ pub fn start(port: u16, token: &str, wake: impl Fn() + Send + Sync + 'static) ->
     let client = Arc::new(std::sync::Mutex::new(String::new()));
     let (st, rq, cl) = (stop.clone(), requests.clone(), client.clone());
     let token = token.to_string();
+    #[cfg(not(test))]
     let token_file = token.clone();
     let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(wake);
     std::thread::Builder::new()

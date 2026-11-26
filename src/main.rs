@@ -1,30 +1,12 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 use eframe::egui;
 
+// acelasi desen ca iconita exe-ului / installerului (tools/icon_gen.rs)
+include!("../tools/icon_gen.rs");
+
 fn icon() -> egui::IconData {
-    let n = 64u32;
-    let mut rgba = vec![0u8; (n * n * 4) as usize];
-    for y in 0..n {
-        for x in 0..n {
-            let i = ((y * n + x) * 4) as usize;
-            let (fx, fy) = (x as f32 / n as f32, y as f32 / n as f32);
-            // trei cuburi suprapuse stilizate (albastru / portocaliu / verde)
-            let in_box = |x0: f32, y0: f32, s: f32| fx >= x0 && fx < x0 + s && fy >= y0 && fy < y0 + s;
-            let c: Option<[u8; 3]> = if in_box(0.38, 0.08, 0.5) {
-                Some([70, 140, 230])
-            } else if in_box(0.1, 0.32, 0.5) {
-                Some([235, 135, 45])
-            } else if in_box(0.42, 0.5, 0.44) {
-                Some([70, 190, 100])
-            } else {
-                None
-            };
-            if let Some(c) = c {
-                rgba[i..i + 4].copy_from_slice(&[c[0], c[1], c[2], 255]);
-            }
-        }
-    }
-    egui::IconData { rgba, width: n, height: n }
+    let n = 128u32;
+    egui::IconData { rgba: icon_rgba(n), width: n, height: n }
 }
 
 fn run(files: Vec<String>, depth: u8, msaa: u16) -> eframe::Result<()> {

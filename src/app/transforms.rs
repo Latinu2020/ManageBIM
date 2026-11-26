@@ -291,9 +291,9 @@ impl App {
             // un pachet PBR (.zip de pe ambientCG, freepbr, Poly Haven...) ales din Import Lib
             Purpose::ImportMaterials if path.to_lowercase().ends_with(".zip") => self.import_pbr_packs(&[path.clone()]),
             Purpose::ImportMaterials if path.to_lowercase().ends_with(".csv") || path.to_lowercase().ends_with(".xlsx") => match crate::tables::read_rows(&path).and_then(|r| crate::tables::materials_from_rows(&r)) {
-                Ok(v) => {
+                Ok(mut v) => {
                     let n = v.len();
-                    self.keep_in_library(&v);
+                    self.keep_in_library(&mut v);
                     for m in v {
                         if let Some(x) = self.materials.iter_mut().find(|x| x.name == m.name) {
                             *x = m;
@@ -306,6 +306,18 @@ impl App {
                 }
                 Err(e) => self.error(format!("Material table: {e}")),
             },
+            Purpose::ExportMaterialOne => {
+                let Some(m) = self.materials.get(self.mat_sel).cloned() else { return };
+                let mut p = path.clone();
+                if !p.to_ascii_lowercase().ends_with(".mtlx") {
+                    p.push_str(".mtlx");
+                }
+                let resolve = |s: &str| if s.is_empty() { String::new() } else { self.texture_path(s) };
+                match crate::materialx::write_package(&m, &p, resolve) {
+                    Ok(n) => self.toast(format!("\"{}\" saved: {} with {n} texture map(s) next to it.", m.name, crate::file_name(&p))),
+                    Err(e) => self.error(e),
+                }
+            }
             Purpose::ExportMaterialX => match crate::materialx::write(self.materials.clone(), self.selected.iter().copied().collect(), &path) {
                 Ok(n) => self.toast(format!("MaterialX exported: {n} materials → {}", crate::file_name(&path))),
                 Err(e) => self.error(e),
@@ -358,9 +370,10 @@ impl App {
                 }
             }
             Purpose::ImportMaterialX => match crate::materialx::read(&path) {
-                Ok(v) => {
+                Ok(mut v) => {
                     let mut n = 0;
-                    self.keep_in_library(&v);
+                    self.keep_in_library(&mut v);
+                    let first = v.first().map(|m| m.name.clone());
                     for m in v {
                         if let Some(x) = self.materials.iter_mut().find(|x| x.name == m.name) {
                             *x = m;
@@ -369,9 +382,17 @@ impl App {
                             n += 1;
                         }
                     }
+                    // materialul importat e selectat in lista (si vizibil, chiar daca era un filtru)
+                    if let Some(f) = first {
+                        if let Some(i) = self.materials.iter().position(|m| m.name == f) {
+                            self.mat_sel = i;
+                        }
+                        self.mat_filter.clear();
+                        self.mat_scroll = true;
+                    }
                     self.pending_mat_assign.clear();
                     self.materials_changed();
-                    self.toast(format!("MaterialX: {} materials imported ({} new).", crate::file_name(&path), n));
+                    self.toast(format!("MaterialX: {} materials imported ({} new), saved to your library.", crate::file_name(&path), n));
                 }
                 Err(e) => self.error(e),
             },
@@ -386,9 +407,9 @@ impl App {
                 }
             }
             Purpose::ImportMaterials => match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| serde_json::from_str::<Vec<Material>>(&t).map_err(|e| e.to_string())) {
-                Ok(v) => {
+                Ok(mut v) => {
                     let n = v.len();
-                    self.keep_in_library(&v);
+                    self.keep_in_library(&mut v);
                     for m in v {
                         if let Some(x) = self.materials.iter_mut().find(|x| x.name == m.name) {
                             *x = m;
@@ -673,6 +694,7 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::ExportMaterials => d.set_title("Export material library").add_filter("ManageBIM materials", &["bimmat"]).add_filter("Excel workbook", &["xlsx"]).add_filter("CSV (Excel)", &["csv"]).set_file_name("materials.bimmat").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportMaterials => d.set_title("Import material library").add_filter("Materials, PBR packs (ambientCG / freepbr .zip), Excel / CSV", &["bimmat", "json", "zip", "xlsx", "csv"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportMaterialX => d.set_title("Export MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx"]).set_file_name("materials.mtlx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportMaterialOne => d.set_title("Save material as file (MaterialX + textures)").add_filter("MaterialX", &["mtlx"]).set_file_name(format!("{}.mtlx", self.materials.get(self.mat_sel).map(|m| m.name.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")).unwrap_or_else(|| "material".into()))).save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportMaterialX => d.set_title("Import MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx", "xml"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::LoadHdri => d.set_title("Environment map (.hdr or photo)").add_filter("HDR image", &["hdr"]).add_filter("Photo (equirectangular)", &["png", "jpg", "jpeg"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportIfcMap => d.set_title("Export IFC category mapping").add_filter("CSV", &["csv"]).set_file_name("ifc-mapping.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -767,6 +789,7 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::ExportSets => "sets.bimsets".into(),
                 Purpose::ExportMaterials => "materials.bimmat".into(),
                 Purpose::ExportMaterialX => "materials.mtlx".into(),
+                Purpose::ExportMaterialOne => "material.mtlx".into(),
                 Purpose::ImportMaterialX => "materials.mtlx".into(),
                 Purpose::ExportVpHtml => "viewpoints_report.html".into(),
                 Purpose::ExportVpXlsx => "viewpoints_report.xlsx".into(),

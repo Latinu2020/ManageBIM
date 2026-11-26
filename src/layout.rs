@@ -158,6 +158,9 @@ pub struct UiLayout {
     /// panoul de jos maximizat (inaltime mare pentru clashuri / teste multe)
     #[serde(default)]
     pub bottom_tall: bool,
+    /// versiunea aranjamentului (migrari o singura data; 1 = zona de jos pornita coborata)
+    #[serde(default)]
+    pub version: u32,
 }
 
 impl Default for UiLayout {
@@ -168,8 +171,10 @@ impl Default for UiLayout {
             active: [Some(Panel::Tree), Some(Panel::Properties), Some(Panel::Find)],
             autohide: [false; 3],
             hide_all: false,
-            bottom_open: true,
+            // zona de jos porneste coborata (filele in bara de stare): vederea 3D are tot spatiul
+            bottom_open: false,
             bottom_tall: false,
+            version: 1,
         }
     }
 }
@@ -177,6 +182,11 @@ impl Default for UiLayout {
 impl UiLayout {
     /// repairs layouts saved by older versions (missing / duplicate panels)
     pub fn fixup(&mut self) {
+        // 0.28.5: Find Items nu mai ocupa un sfert din ecran la pornire; alegerea utilizatorului se pastreaza apoi
+        if self.version < 1 {
+            self.version = 1;
+            self.bottom_open = false;
+        }
         let mut seen = Vec::new();
         self.panels.retain(|s| {
             if seen.contains(&s.panel) {

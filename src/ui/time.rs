@@ -534,7 +534,8 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
         ui.separator();
         if self.render_subtab == 1 {
             // derulare in panou: editorul de materiale nu mai impinge panoul de jos peste vederea 3D
-            egui::ScrollArea::vertical().id_salt("materials_scroll").auto_shrink([false, false]).show(ui, |ui| self.materials_ui(ui));
+            // fara derulare exterioara: lista, editorul si asignarile au fiecare derularea lor, pe toata inaltimea panoului
+            self.materials_ui(ui);
             return;
         }
         if self.render_subtab == 2 {

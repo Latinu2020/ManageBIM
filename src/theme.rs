@@ -971,6 +971,7 @@ pub fn ph(s: &str) -> &str {
     match s.trim() {
         "📥" => P::DOWNLOAD_SIMPLE,
         "🤖" => P::ROBOT,
+        "⌨" => P::KEYBOARD,
         "📤" => P::UPLOAD_SIMPLE,
         "⬚" => P::SELECTION,
         "✏" => P::PENCIL_SIMPLE,

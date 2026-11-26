@@ -49,7 +49,10 @@ pub fn read(path: &str) -> Result<Vec<Material>, String> {
             .or_else(|| m.kids.iter().find(|i| i.name == "shaderref").and_then(|i| i.attr("node")))
             .and_then(|n| doc.node(None, n));
         let Some((shader, scope)) = shader else { continue };
-        let name = m.attr("uiname").or(m.attr("name")).unwrap_or("MaterialX").to_string();
+        let name = match m.attr("uiname") {
+            Some(u) => u.to_string(),
+            None => nice_name(m.attr("name").unwrap_or("MaterialX")),
+        };
         let mut mat = from_shader(&doc, shader, scope, &base, name);
         // deplasarea: <input name="displacementshader" nodename="..."/> -> displacement -> imagine
         if let Some(d) = m.kids.iter().find(|i| i.name == "input" && i.attr("name") == Some("displacementshader")).and_then(|i| i.attr("nodename")).and_then(|n| doc.node(None, n)) {
@@ -356,6 +359,39 @@ pub fn write(mats: Vec<Material>, sel: Vec<crate::model::ElemId>, path: &str) ->
     Ok(n)
 }
 
+/// Un material ca pachet portabil: `<nume>.mtlx` + folderul `<nume>_textures` cu hartile copiate,
+/// referite relativ (se muta / trimite impreuna). `resolve` transforma caile salvate in cai reale.
+/// Intoarce numarul de harti copiate.
+pub fn write_package(m: &Material, path: &str, resolve: impl Fn(&str) -> String) -> Result<usize, String> {
+    let p = std::path::Path::new(path);
+    let stem = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "material".into());
+    let dir = p.parent().unwrap_or(std::path::Path::new("."));
+    let tex_dir_name = format!("{stem}_textures");
+    let tex_dir = dir.join(&tex_dir_name);
+    let mut out = m.clone();
+    let mut copied = 0;
+    for slot in [&mut out.texture, &mut out.normal_map, &mut out.roughness_map, &mut out.metallic_map, &mut out.ao_map, &mut out.height_map] {
+        if slot.is_empty() {
+            continue;
+        }
+        let src = resolve(slot);
+        let src_p = std::path::Path::new(&src);
+        if !src_p.is_file() {
+            return Err(format!("Texture map not found: {src}"));
+        }
+        std::fs::create_dir_all(&tex_dir).map_err(|e| format!("Cannot create {}: {e}", tex_dir.display()))?;
+        let fname = src_p.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let dst = tex_dir.join(&fname);
+        if std::fs::canonicalize(src_p).ok() != std::fs::canonicalize(&dst).ok() {
+            std::fs::copy(src_p, &dst).map_err(|e| format!("Cannot copy {src}: {e}"))?;
+        }
+        *slot = format!("{tex_dir_name}/{fname}");
+        copied += 1;
+    }
+    write(vec![out], Vec::new(), path)?;
+    Ok(copied)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -446,11 +482,42 @@ mod tests {
         let v = super::read(p.to_str().unwrap()).expect("read");
         assert_eq!(v.len(), 1);
         let m = &v[0];
-        assert_eq!(m.name, "Bricks104_1K_JPG");
+        assert_eq!(m.name, "Bricks104");
         assert!(m.texture.ends_with("Bricks104_1K-JPG_Color.jpg"), "{}", m.texture);
         assert!(m.normal_map.ends_with("_NormalGL.jpg") && m.roughness_map.ends_with("_Roughness.jpg") && m.height_map.ends_with("_Displacement.jpg"), "{m:?}");
         assert!(m.ao_map.ends_with("_AmbientOcclusion.jpg"), "AO from the sibling file");
         assert_eq!(m.coat, 0, "ambientCG coat driven by the roughness map is not a lacquer");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// "Save as file": .mtlx + folderul cu texturi, recitit cu toate hartile (inclusiv AO, prin fisierul vecin)
+    #[test]
+    fn package_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("mb_mtlx_pkg_{}", std::process::id()));
+        let src = dir.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        for f in ["Wood_Color.jpg", "Wood_NormalGL.jpg", "Wood_Roughness.jpg", "Wood_AmbientOcclusion.jpg"] {
+            std::fs::write(src.join(f), b"x").unwrap();
+        }
+        let s = |f: &str| src.join(f).to_string_lossy().to_string();
+        let m = crate::materials::Material {
+            name: "Oak floor".into(),
+            texture: s("Wood_Color.jpg"),
+            normal_map: s("Wood_NormalGL.jpg"),
+            roughness_map: s("Wood_Roughness.jpg"),
+            ao_map: s("Wood_AmbientOcclusion.jpg"),
+            ..crate::materials::library()[0].clone()
+        };
+        let out = dir.join("out").join("Oak floor.mtlx");
+        std::fs::create_dir_all(out.parent().unwrap()).unwrap();
+        let n = super::write_package(&m, out.to_str().unwrap(), |p| p.to_string()).expect("package");
+        assert_eq!(n, 4);
+        assert!(dir.join("out").join("Oak floor_textures").join("Wood_AmbientOcclusion.jpg").is_file());
+        let r = &super::read(out.to_str().unwrap()).expect("read")[0];
+        assert_eq!(r.name, "Oak floor");
+        for p in [&r.texture, &r.normal_map, &r.roughness_map, &r.ao_map] {
+            assert!(std::path::Path::new(p).is_file(), "{p}");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -494,5 +561,15 @@ mod tests {
         assert_eq!(v2[0].name, "Old red");
         assert_eq!(v2[0].color, [204, 26, 26]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// "WoodFloor051_1K_JPG" (ambientCG) -> "WoodFloor051": fara sufixele de rezolutie / format.
+fn nice_name(n: &str) -> String {
+    let has_res = n.split(['_', '-', ' ']).any(|w| matches!(w.to_ascii_lowercase().as_str(), "1k" | "2k" | "4k" | "8k"));
+    if has_res {
+        crate::materials::pbr_name(n)
+    } else {
+        n.to_string()
     }
 }

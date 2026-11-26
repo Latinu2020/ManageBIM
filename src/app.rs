@@ -1158,6 +1158,7 @@ pub enum Purpose {
     MaterialAo,
     MaterialHeight,
     ExportMaterialX,
+    ExportMaterialOne,
     ImportMaterialX,
     LoadHdri,
     ExportIfcMap,
@@ -1195,6 +1196,8 @@ pub struct LoadJob {
     pub progress: f32,
     pub stage: String,
     rx: Receiver<LoadMsg>,
+    /// butonul Cancel de pe bara de progres
+    pub cancel: Arc<std::sync::atomic::AtomicBool>,
 }
 
 pub struct ClashJob {
@@ -1600,6 +1603,19 @@ pub struct App {
     pub pro_lib_job: Option<std::sync::Arc<std::sync::Mutex<crate::pro_materials::Progress>>>,
     /// previzualizarea hartii de culoare a materialului selectat
     pub mat_preview: Option<(String, eframe::egui::TextureHandle)>,
+    /// filtrul listei de materiale si miniaturile texturilor (cale -> imagine; None = in lucru / esuat)
+    pub mat_filter: String,
+    /// fereastra mare Materials (pe toata inaltimea ferestrei aplicatiei)
+    pub mat_window: bool,
+    /// lista deruleaza pana la materialul selectat (dupa un import)
+    pub mat_scroll: bool,
+    /// istoricul notificarilor (clopotelul din bara de stare): (cand, eroare, mesaj) si cate au fost vazute
+    pub notes: Vec<(Instant, bool, String)>,
+    pub notes_seen: usize,
+    /// fereastra cu scurtaturile de tastatura (F1)
+    pub keys_open: bool,
+    pub mat_thumbs: HashMap<String, Option<eframe::egui::TextureHandle>>,
+    pub mat_thumb_job: Option<(std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<(String, Option<crate::materials::Thumb>)>)>,
     pub tex_failed: HashSet<String>,
     pub pending_csv: Vec<String>,
     pub settings: crate::theme::Settings,
@@ -1973,6 +1989,14 @@ impl App {
             pending_mat_assign: Vec::new(),
             pro_lib_job: None,
             mat_preview: None,
+            mat_filter: String::new(),
+            mat_window: false,
+            mat_scroll: false,
+            notes: Vec::new(),
+            notes_seen: 0,
+            keys_open: false,
+            mat_thumbs: HashMap::new(),
+            mat_thumb_job: None,
             tex_failed: HashSet::new(),
             pending_csv: Vec::new(),
             settings: crate::theme::Settings::load(),
@@ -2119,14 +2143,26 @@ impl App {
         self.settings.save();
     }
 
+    /// istoricul notificarilor (ultimele 200)
+    fn note(&mut self, err: bool, m: &str) {
+        self.notes.push((Instant::now(), err, m.to_string()));
+        if self.notes.len() > 200 {
+            let extra = self.notes.len() - 200;
+            self.notes.drain(..extra);
+            self.notes_seen = self.notes_seen.saturating_sub(extra);
+        }
+    }
+
     pub fn toast(&mut self, msg: impl Into<String>) {
         let m = msg.into();
         self.log.push(m.clone());
+        self.note(false, &m);
         self.toasts.push((m, Instant::now(), false));
     }
     pub fn error(&mut self, msg: impl Into<String>) {
         let m = msg.into();
         self.log.push(format!("ERROR: {m}"));
+        self.note(true, &m);
         self.toasts.push((m, Instant::now(), true));
     }
 

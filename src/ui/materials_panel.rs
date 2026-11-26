@@ -2,21 +2,6 @@
 //! asignari si import / export (.bimmat, .mtlx MaterialX, zip PBR, imagini).
 use super::*;
 
-fn swatch(ui: &mut egui::Ui, m: &crate::materials::Material) {
-    let (r, _) = ui.allocate_exact_size(egui::vec2(22.0, 16.0), egui::Sense::hover());
-    let c = Color32::from_rgba_unmultiplied(m.color[0], m.color[1], m.color[2], m.rgba()[3].max(80));
-    ui.painter().rect_filled(r, 3.0, c);
-    if !m.texture.is_empty() {
-        ui.painter().text(r.center(), Align2::CENTER_CENTER, "🖼", FontId::proportional(11.0), Color32::BLACK);
-    } else if m.coat > 0 || m.sheen > 0 {
-        ui.painter().text(r.center(), Align2::CENTER_CENTER, "✦", FontId::proportional(11.0), Color32::WHITE);
-    }
-    if m.metal > 40 || m.gloss > 60 {
-        ui.painter().circle_filled(r.left_top() + egui::vec2(6.0, 5.0), 2.5, Color32::from_white_alpha(200));
-    }
-    ui.painter().rect_stroke(r, 3.0, Stroke::new(1.0_f32, Color32::from_gray(120)));
-}
-
 fn section(ui: &mut egui::Ui, title: &str, tip: &str) {
     ui.add_space(6.0);
     ui.label(RichText::new(crate::i18n::tr(title).to_uppercase()).size(11.0).strong().color(accent())).on_hover_text(tip);
@@ -142,7 +127,7 @@ impl App {
                     io = Some(Purpose::ExportMaterialX);
                     ui.close_menu();
                 }
-                if ui.button("📥 Import MaterialX (.mtlx)…").on_hover_text("Reads OpenPBR Surface / UsdPreviewSurface parameters and image paths (simple materials, no graph evaluation)").clicked() {
+                if ui.button("📥 Import MaterialX (.mtlx)…").on_hover_text("Standard MaterialX files (ambientCG, GPUOpen, Substance, Blender): OpenPBR, standard_surface, UsdPreviewSurface, node graphs and image maps. Imported materials and their maps go to your library.").clicked() {
                     io = Some(Purpose::ImportMaterialX);
                     ui.close_menu();
                 }
@@ -162,41 +147,82 @@ impl App {
             ui.checkbox(&mut self.materials_on, "Show materials in 3D");
         });
 
-        ui.columns(3, |cols| {
+        // trei coloane pe toata inaltimea panoului: lista (lata), editorul (cu derulare proprie), asignarile
+        self.mat_thumbs_poll(ui.ctx());
+        let avail = ui.available_rect_before_wrap();
+        let h = avail.height().max(220.0);
+        let w = avail.width();
+        let gap = 12.0;
+        let narrow = w < 820.0;
+        let list_w = if narrow { (w * 0.42).max(200.0) } else { (w * 0.34).clamp(260.0, 520.0) };
+        let asg_w = if narrow { 0.0 } else { (w * 0.27).clamp(230.0, 440.0) };
+        let ed_w = (w - list_w - asg_w - if narrow { gap } else { 2.0 * gap }).max(180.0);
+        let r0 = egui::Rect::from_min_size(avail.min, egui::vec2(list_w, h));
+        // panou ingust: asignarile sub editor (60 / 40 din inaltime)
+        let (r1, r2) = if narrow {
+            let x = r0.max.x + gap;
+            let eh = (h * 0.6).floor();
+            (egui::Rect::from_min_size(egui::pos2(x, avail.min.y), egui::vec2(ed_w, eh)), egui::Rect::from_min_size(egui::pos2(x, avail.min.y + eh + 8.0), egui::vec2(ed_w, h - eh - 8.0)))
+        } else {
+            let r1 = egui::Rect::from_min_size(egui::pos2(r0.max.x + gap, avail.min.y), egui::vec2(ed_w, h));
+            (r1, egui::Rect::from_min_size(egui::pos2(r1.max.x + gap, avail.min.y), egui::vec2(asg_w, h)))
+        };
+        let sep = ui.visuals().widgets.noninteractive.bg_stroke;
+        ui.painter().vline(r0.max.x + gap / 2.0, avail.min.y..=avail.min.y + h, sep);
+        if !narrow {
+            ui.painter().vline(r1.max.x + gap / 2.0, avail.min.y..=avail.min.y + h, sep);
+        }
+        let mk = |ui: &mut egui::Ui, r: egui::Rect| ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::top_down(egui::Align::Min)));
+        let mut c0 = mk(ui, r0);
+        let mut c1 = mk(ui, r1);
+        let mut c2 = mk(ui, r2);
+        ui.allocate_rect(egui::Rect::from_min_size(avail.min, egui::vec2(w, h)), egui::Sense::hover());
+        {
             // ---- lista
-            let ui = &mut cols[0];
-            section(ui, "Library", "Click a material to edit it");
+            let ui = &mut c0;
+            ui.horizontal(|ui| {
+                section(ui, "Library", "Click a material to edit it");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add(egui::TextEdit::singleline(&mut self.mat_filter).hint_text(crate::i18n::tr("Filter…")).desired_width(130.0));
+                });
+            });
             let mine = self.user_library_names();
-            egui::ScrollArea::vertical().id_salt("matlib").max_height(ui.available_height() * 0.55).show(ui, |ui| {
+            let filter = self.mat_filter.to_lowercase();
+            egui::ScrollArea::vertical().id_salt("matlib").auto_shrink([false, false]).max_height(ui.available_height()).show(ui, |ui| {
                 for i in 0..self.materials.len() {
-                    ui.horizontal(|ui| {
-                        swatch(ui, &self.materials[i]);
-                        let m = &self.materials[i];
-                        if mine.contains(&m.name) {
-                            ui.label(RichText::new("★").small().color(accent())).on_hover_text("In your material library - available in every project; changes are saved there too");
-                        }
-                        let used = self.mat_assign.iter().any(|a| a.material == m.name);
-                        let mut t = RichText::new(&m.name);
-                        if used {
-                            t = t.strong();
-                        }
-                        if m.is_pbr() || m.coat > 0 || m.sheen > 0 {
-                            t = t.color(accent());
-                        }
-                        if ui.selectable_label(i == self.mat_sel, t).clicked() {
-                            self.mat_sel = i;
-                        }
-                    });
+                    if !filter.is_empty() && !self.materials[i].name.to_lowercase().contains(&filter) {
+                        continue;
+                    }
+                    let in_lib = mine.contains(&self.materials[i].name);
+                    if self.mat_row(ui, i, in_lib) {
+                        self.mat_sel = i;
+                    }
                 }
             });
+        }
 
-            // ---- editor
-            let ui = &mut cols[1];
+        // ---- editor
+        egui::ScrollArea::vertical().id_salt("mated_scroll").auto_shrink([false, false]).max_height(r1.height()).show(&mut c1, |ui| {
             let i = self.mat_sel;
             if i >= self.materials.len() {
                 return;
             }
             let old_name = self.materials[i].name.clone();
+            // salvare: in biblioteca ta (toate proiectele) sau ca fisier (.mtlx cu texturile alaturi)
+            let in_lib = self.user_library_names().contains(&old_name);
+            ui.horizontal_wrapped(|ui| {
+                let (txt, tip) = if in_lib {
+                    ("✔ In my library", "Saved in your material library; edits are saved there automatically. Click to save again now.")
+                } else {
+                    ("★ Save to my library", "Keep this material (with its texture maps) in your library, available in every project")
+                };
+                if ui.button(RichText::new(crate::i18n::tr(txt)).strong()).on_hover_text(crate::i18n::tr(tip)).clicked() {
+                    self.save_material_to_library(i);
+                }
+                if ui.button(crate::i18n::tr("💾 Save as file…")).on_hover_text(crate::i18n::tr("Save this material as a MaterialX file (.mtlx) with its texture maps copied next to it - for another computer, a colleague or Blender / Maya / Houdini / Omniverse")).clicked() {
+                    io = Some(Purpose::ExportMaterialOne);
+                }
+            });
             let m = &mut self.materials[i];
             section(ui, "Surface", "Base colour, gloss and transparency");
             egui::Grid::new("mated_base").num_columns(2).spacing([8.0, 3.0]).show(ui, |ui| {
@@ -325,8 +351,11 @@ impl App {
                 changed = true;
             }
 
-            // ---- asignari (coloana din dreapta)
-            let ui = &mut cols[2];
+        });
+
+        {
+            // ---- asignari (coloana din dreapta; sub editor cand panoul e ingust)
+            let ui = &mut c2;
             section(ui, "Assignments", "Rules lower in the list win");
             let mname = self.materials.get(self.mat_sel).map(|m| m.name.clone()).unwrap_or_default();
             ui.horizontal_wrapped(|ui| {
@@ -390,7 +419,7 @@ impl App {
                 self.mat_assign.swap(k, k - 1);
                 changed = true;
             }
-        });
+        }
 
         if let Some(p) = pick_tex {
             self.request_path(p);
@@ -497,5 +526,155 @@ impl App {
             }
         });
         ui.add_space(3.0);
+    }
+}
+
+// ---------------------------------------------------------------- lista cu miniaturi
+
+impl App {
+    /// Miniaturile terminate de firul de lucru devin texturi egui.
+    pub(super) fn mat_thumbs_poll(&mut self, ctx: &egui::Context) {
+        let mut done = Vec::new();
+        if let Some((_, rx)) = &self.mat_thumb_job {
+            while let Ok(r) = rx.try_recv() {
+                done.push(r);
+            }
+        }
+        for (path, t) in done {
+            let tex = t.map(|t| {
+                let img = egui::ColorImage::from_rgba_unmultiplied([t.size, t.size], &t.rgba);
+                ctx.load_texture(format!("mat_thumb_{path}"), img, egui::TextureOptions::LINEAR)
+            });
+            self.mat_thumbs.insert(path, tex);
+        }
+    }
+
+    /// Miniatura texturii (ceruta firului de lucru la primul apel; pana atunci None).
+    fn mat_thumb(&mut self, tex: &str) -> Option<egui::TextureHandle> {
+        if tex.is_empty() {
+            return None;
+        }
+        let path = self.texture_path(tex);
+        if let Some(t) = self.mat_thumbs.get(&path) {
+            return t.clone();
+        }
+        if self.mat_thumb_job.is_none() {
+            let (tx, rx) = std::sync::mpsc::channel::<String>();
+            let (otx, orx) = std::sync::mpsc::channel();
+            std::thread::Builder::new()
+                .name("mat-thumbs".into())
+                .spawn(move || {
+                    while let Ok(p) = rx.recv() {
+                        let t = std::panic::catch_unwind(|| crate::materials::thumbnail(&p).ok()).ok().flatten();
+                        if otx.send((p, t)).is_err() {
+                            break;
+                        }
+                    }
+                })
+                .ok();
+            self.mat_thumb_job = Some((tx, orx));
+        }
+        // marcat "in lucru" (None) ca sa nu fie cerut din nou la fiecare cadru
+        self.mat_thumbs.insert(path.clone(), None);
+        if let Some((tx, _)) = &self.mat_thumb_job {
+            let _ = tx.send(path);
+        }
+        None
+    }
+
+    /// Un rand al listei: miniatura (textura sau culoarea), numele, ce contine; intoarce true la click.
+    fn mat_row(&mut self, ui: &mut egui::Ui, i: usize, in_lib: bool) -> bool {
+        let (tex, name, sub, color, used, accent_name) = {
+            let m = &self.materials[i];
+            let maps = [&m.texture, &m.normal_map, &m.roughness_map, &m.metallic_map, &m.ao_map, &m.height_map].iter().filter(|p| !p.is_empty()).count();
+            let mut sub = if maps > 0 { format!("PBR · {maps} map{}", if maps == 1 { "" } else { "s" }) } else { "Colour".to_string() };
+            if m.metal > 40 {
+                sub.push_str(" · metal");
+            }
+            if m.coat > 0 {
+                sub.push_str(" · coat");
+            }
+            if m.transparency > 0 {
+                sub.push_str(&format!(" · {}% transp.", m.transparency));
+            }
+            let used = self.mat_assign.iter().filter(|a| a.material == m.name).count();
+            (m.texture.clone(), m.name.clone(), sub, m.color, used, m.is_pbr() || m.coat > 0 || m.sheen > 0)
+        };
+        let thumb = self.mat_thumb(&tex);
+        let row_h = 46.0;
+        let (r, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_h), egui::Sense::click());
+        let sel = i == self.mat_sel;
+        let vis = ui.visuals();
+        if sel {
+            ui.painter().rect_filled(r, 4.0, vis.selection.bg_fill);
+        } else if resp.hovered() {
+            ui.painter().rect_filled(r, 4.0, vis.widgets.hovered.weak_bg_fill);
+        }
+        let t = egui::Rect::from_min_size(r.min + egui::vec2(4.0, 3.0), egui::vec2(40.0, 40.0));
+        match &thumb {
+            Some(h) => {
+                egui::Image::new((h.id(), t.size())).rounding(4.0).paint_at(ui, t);
+            }
+            None => {
+                // culoarea, cu o umbrire simpla de sfera
+                let c = Color32::from_rgb(color[0], color[1], color[2]);
+                ui.painter().rect_filled(t, 4.0, c);
+                ui.painter().circle_filled(t.center() + egui::vec2(-7.0, -7.0), 7.0, Color32::from_white_alpha(45));
+                if !tex.is_empty() {
+                    ui.painter().text(t.center(), Align2::CENTER_CENTER, egui_phosphor::regular::IMAGE, FontId::proportional(14.0), Color32::from_black_alpha(140));
+                }
+            }
+        }
+        ui.painter().rect_stroke(t, 4.0, Stroke::new(1.0_f32, Color32::from_gray(110)));
+        let tx = t.max.x + 8.0;
+        let name_col = if sel { vis.selection.stroke.color } else if accent_name { accent() } else { vis.text_color() };
+        let mut x_end = r.max.x - 6.0;
+        if in_lib {
+            ui.painter().text(egui::pos2(x_end, r.center().y), Align2::RIGHT_CENTER, "★", FontId::proportional(14.0), accent());
+            x_end -= 18.0;
+        }
+        let font = FontId::proportional(14.0);
+        let galley = ui.painter().layout(name.clone(), font, name_col, (x_end - tx).max(20.0));
+        let name_h = galley.size().y.min(18.0);
+        ui.painter().with_clip_rect(egui::Rect::from_min_max(egui::pos2(tx, r.min.y), egui::pos2(x_end, r.max.y))).galley(egui::pos2(tx, r.min.y + 6.0), galley, name_col);
+        let sub = if used > 0 { format!("{sub} · used ×{used}") } else { sub };
+        ui.painter().with_clip_rect(egui::Rect::from_min_max(egui::pos2(tx, r.min.y), egui::pos2(x_end, r.max.y))).text(egui::pos2(tx, r.min.y + 8.0 + name_h), Align2::LEFT_TOP, sub, FontId::proportional(11.5), vis.weak_text_color());
+        if sel && self.mat_scroll {
+            resp.scroll_to_me(Some(egui::Align::Center));
+            self.mat_scroll = false;
+        }
+        let resp = if in_lib { resp.on_hover_text("★ In your material library - available in every project; changes are saved there too") } else { resp };
+        resp.clicked()
+    }
+}
+
+impl App {
+    /// Fereastra Materials: ocupa inaltimea ferestrei aplicatiei (sub ribbon) si ~80% din latime;
+    /// se poate muta si redimensiona, iar lista foloseste toata inaltimea.
+    pub(super) fn materials_window(&mut self, ctx: &egui::Context) {
+        if !self.mat_window {
+            return;
+        }
+        let screen = ctx.screen_rect();
+        let top = 150.0f32.min(screen.height() * 0.2);
+        let h = (screen.height() - top - 40.0).max(420.0);
+        let w = (screen.width() * 0.8).clamp(720.0, 1600.0);
+        let mut open = true;
+        egui::Window::new(crate::theme::icon_job(egui_phosphor::regular::PALETTE, crate::i18n::tr("Materials"), 15.0, ctx.style().visuals.strong_text_color()))
+            .id(egui::Id::new(("materials_window", screen.height() as i32 / 50)))
+            .open(&mut open)
+            .default_pos(egui::pos2((screen.width() - w) / 2.0, top))
+            .default_size([w, h])
+            .min_width(560.0)
+            .min_height(320.0)
+            .resizable(true)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                // continutul ia toata marimea ferestrei (redimensionata de utilizator)
+                let r = ui.available_rect_before_wrap();
+                ui.set_min_size(r.size());
+                self.materials_ui(ui);
+            });
+        self.mat_window = open;
     }
 }

@@ -3,6 +3,19 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.28.5 - unreleased
+- **Materials window**: Render › Materials opens its own window, as tall as the application window, with a **wide list** and real **texture thumbnails** (cached in the library, updated when a map changes), a filter box, and "PBR · 5 maps · used ×3" under each name.
+- **Save a material**: *★ Save to my library* / *✔ In my library* right in the editor, and **Save as file…** - a MaterialX file with its texture maps copied next to it, for another computer, a colleague or Blender / Maya / Houdini / Omniverse.
+- **MaterialX import**: ambientCG names are cleaned ("WoodFloor051_1K_JPG" → "WoodFloor051"), the texture maps are **copied into your library** (deleting the downloaded folder no longer breaks the material), and the imported material is selected and scrolled into view.
+- **AI connection window** redesigned: switches, status pill, endpoint and token with show / copy / new, one tab per client with numbered steps, and the list of tools the assistant can use (blocked ones greyed out when *Allow changes* is off).
+- **Cancel** next to the loading bar: a large file opened by mistake can be stopped (the loading thread stops too).
+- **Notifications**: a bell in the status bar keeps the recent messages and errors (with a counter) after the pop-ups disappear; copy all.
+- **Keyboard shortcuts** window (F1, Help › Shortcuts), with the configurable ones as set in Settings.
+- **The bottom panel starts lowered** (Find Items no longer takes a quarter of the screen at start); your choice is remembered.
+- **Status bar fits at any size**: at 125 % / 150 % interface size or on small screens the panel tabs switch to icons; ribbon labels shrink instead of being hyphenated ("Prope-rties").
+- **New application icon**: blue tile with an isometric cube (same mark as the start page), sharp at every size from 16 to 256 px - window, taskbar, exe and installer.
+- **CI**: clippy may not get new warnings (baseline 242), new .rs files must be rustfmt-formatted, Dependabot weekly updates; the release clean-up keeps the 3 newest versions by version number and no longer marks the release as failed.
+
 ## 0.28.4 - 2026-11-26
 - **AI connection (MCP server)** - Share › AI connection: a local Model Context Protocol server (off by default, only on 127.0.0.1, protected by a token) lets AI assistants work with the open model. Tools: model info, find elements (category, level, property / value, text), get properties, get / set selection, hide / show / isolate, zoom, set property (undoable), list / run clash tests, run Rhai scripts, open a model. *Allow changes* off = read-only.
   - Ready-to-copy setup for **Claude Code** (`claude mcp add …`), **Claude Desktop** (`ManageBIM.exe --mcp-stdio` bridge), **OpenCode**, **VS Code / Copilot** and any Streamable-HTTP client; local **Ollama** models work through MCP clients such as OpenCode, Continue, Open WebUI or LM Studio.
