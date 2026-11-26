@@ -23,6 +23,9 @@ namespace ManageBIM.Revit
         public List<BimcElement> Elements { get; } = new List<BimcElement>();
         public List<string> Warnings { get; } = new List<string>();
 
+        /// <summary>Send selection: only these elements of the host document are exported (null = everything visible).</summary>
+        public HashSet<ElementId> Only { get; set; }
+
         public BimcExportContext(Document doc)
         {
             _docs.Push(doc);
@@ -43,7 +46,9 @@ namespace ManageBIM.Revit
         {
             Document doc = _docs.Peek();
             Element e = doc.GetElement(elementId);
-            if (e == null) return RenderNodeAction.Skip;
+            if (e == null) { _cur = null; return RenderNodeAction.Skip; }
+            // Send selection: elementele neselectate ale modelului principal sunt sarite
+            if (Only != null && _docs.Count == 1 && !Only.Contains(elementId)) { _cur = null; return RenderNodeAction.Skip; }
             try { _cur = Describe(doc, e); }
             catch (Exception ex)
             {

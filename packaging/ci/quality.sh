@@ -12,10 +12,17 @@ fail=0
 
 # ---- clippy
 cargo clippy --all-targets --message-format=short > clippy.log 2>&1
+code=$?
 n=$(grep -cE '^[^ ]+\.rs:[0-9]+:[0-9]+: warning' clippy.log || true)
 errs=$(grep -cE '^[^ ]+\.rs:[0-9]+:[0-9]+: error' clippy.log || true)
 baseline=$(tr -dc '0-9' < packaging/ci/clippy-baseline.txt)
-echo "clippy: $n warnings (baseline $baseline), $errs errors"
+echo "clippy: exit $code, $n warnings (baseline $baseline), $errs errors"
+# clippy n-a rulat pana la capat (dependinte, build script): ultimele randuri ca adnotari, nu "0 avertismente"
+if [ "$code" -ne 0 ] || [ "$n" -eq 0 ]; then
+  echo "::error::clippy did not finish (exit $code) - last lines of its output follow"
+  tail -n 15 clippy.log | sed 's/^/::warning::clippy: /'
+  fail=1
+fi
 if [ "$errs" -gt 0 ]; then
   grep -E '^[^ ]+\.rs:[0-9]+:[0-9]+: error' clippy.log | head -20 | sed 's/^/::error::/'
   fail=1
