@@ -254,6 +254,17 @@ impl UiLayout {
         self.fixup();
     }
     /// visible on screen right now (active tab of its area, or a floating window)
+    /// panoul se vede efectiv pe ecran: afisat, nu ascuns (F11), iar zona de jos ridicata (cand e jos)
+    pub fn visible(&self, p: Panel) -> bool {
+        if !self.shown(p) || self.hide_all {
+            return false;
+        }
+        match self.get(p) {
+            Some(s) if s.dock == Dock::Bottom => self.bottom_open && !self.autohide[2],
+            _ => true,
+        }
+    }
+
     pub fn shown(&self, p: Panel) -> bool {
         match self.get(p) {
             Some(s) if s.open => s.dock == Dock::Float || self.active[s.dock.idx()] == Some(p),

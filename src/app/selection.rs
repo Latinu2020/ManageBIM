@@ -46,12 +46,13 @@ impl App {
 
     /// Clash results are only shown while the Clash Detective panel is open.
     pub fn clash_view(&self) -> bool {
-        self.settings.layout.shown(Panel::Clash)
+        // doar cat panoul se vede: zona de jos coborata / panouri ascunse = modelul revine la normal
+        self.settings.layout.visible(Panel::Clash)
     }
 
     /// The 4D simulation is only shown while the TimeLiner panel is open.
     pub fn sim_view(&self) -> bool {
-        (self.sim_active && self.settings.layout.shown(Panel::TimeLiner)) || self.anim_sim_active
+        (self.sim_active && self.settings.layout.visible(Panel::TimeLiner)) || self.anim_sim_active
     }
 
     pub fn clash_focus_active(&self) -> Option<&ClashFocus> {

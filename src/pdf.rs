@@ -10,7 +10,7 @@ const M: f32 = 28.0;
 const STRIP: f32 = 150.0;
 
 /// textul in WinAnsi (fonturile standard nu au diacriticele romanesti s, t cu virgula)
-fn ansi(s: &str) -> Vec<u8> {
+pub(crate) fn ansi(s: &str) -> Vec<u8> {
     let mut out = Vec::new();
     for c in s.chars() {
         let c = match c {
@@ -44,12 +44,12 @@ fn ansi(s: &str) -> Vec<u8> {
 }
 
 /// latimea aproximativa a textului Helvetica (puncte)
-fn text_w(s: &str, size: f32) -> f32 {
+pub(crate) fn text_w(s: &str, size: f32) -> f32 {
     s.chars().map(|c| if c.is_ascii_uppercase() || c == 'm' || c == 'w' { 0.68 } else if c == ' ' || c == 'i' || c == 'l' || c == '.' || c == ',' { 0.28 } else { 0.52 }).sum::<f32>() * size
 }
 
 /// imparte textul in randuri de cel mult `max_w` puncte
-fn wrap(s: &str, size: f32, max_w: f32) -> Vec<String> {
+pub(crate) fn wrap(s: &str, size: f32, max_w: f32) -> Vec<String> {
     let mut out = Vec::new();
     for para in s.split('\n') {
         let mut line = String::new();
@@ -67,12 +67,12 @@ fn wrap(s: &str, size: f32, max_w: f32) -> Vec<String> {
     out
 }
 
-struct Page {
-    content: Vec<u8>,
-    image: Option<(Vec<u8>, u32, u32)>,
+pub(crate) struct Page {
+    pub(crate) content: Vec<u8>,
+    pub(crate) image: Option<(Vec<u8>, u32, u32)>,
 }
 
-fn text(c: &mut Vec<u8>, x: f32, y: f32, size: f32, bold: bool, s: &str) {
+pub(crate) fn text(c: &mut Vec<u8>, x: f32, y: f32, size: f32, bold: bool, s: &str) {
     c.extend_from_slice(format!("BT /{} {size:.1} Tf {x:.1} {y:.1} Td (", if bold { "F2" } else { "F1" }).as_bytes());
     c.extend_from_slice(&ansi(s));
     c.extend_from_slice(b") Tj ET\n");
@@ -323,7 +323,7 @@ pub fn section_sheet(segs: &[(String, [f64; 4])], texts: &[crate::app::CadText],
     write_pdf(&[Page { content: c, image: None }], tb.project_or(project), W * s, H * s)
 }
 
-fn write_pdf(pages: &[Page], title: &str, pw: f32, ph: f32) -> Vec<u8> {
+pub(crate) fn write_pdf(pages: &[Page], title: &str, pw: f32, ph: f32) -> Vec<u8> {
     let mut out: Vec<u8> = b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n".to_vec();
     let mut offs: Vec<usize> = Vec::new();
     // obiecte: 1 catalog, 2 pagini, 3 F1, 4 F2, 5 info, apoi pe pagina: pagina, continut, imagine

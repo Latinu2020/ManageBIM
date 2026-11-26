@@ -306,6 +306,23 @@ impl App {
                 }
                 Err(e) => self.error(format!("Material table: {e}")),
             },
+            Purpose::ExportDashboardPdf | Purpose::ExportDashboardDocx => {
+                let pdf = matches!(purpose, Purpose::ExportDashboardPdf);
+                let ext = if pdf { ".pdf" } else { ".docx" };
+                let mut out = path.clone();
+                if !out.to_ascii_lowercase().ends_with(ext) {
+                    out.push_str(ext);
+                }
+                let s = self.dash.clone().unwrap_or_else(|| self.dashboard_summary());
+                let bytes = if pdf { crate::dashboard::pdf(&s) } else { crate::dashboard::docx(&s) };
+                match std::fs::write(&out, bytes) {
+                    Ok(()) => {
+                        self.toast(format!("Dashboard exported: {}", crate::file_name(&out)));
+                        crate::formats::open_with_system(std::path::Path::new(&out));
+                    }
+                    Err(e) => self.error(format!("Cannot write {out}: {e}")),
+                }
+            }
             Purpose::ExportMaterialOne => {
                 let Some(m) = self.materials.get(self.mat_sel).cloned() else { return };
                 let mut p = path.clone();
@@ -695,6 +712,8 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::ImportMaterials => d.set_title("Import material library").add_filter("Materials, PBR packs (ambientCG / freepbr .zip), Excel / CSV", &["bimmat", "json", "zip", "xlsx", "csv"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportMaterialX => d.set_title("Export MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx"]).set_file_name("materials.mtlx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportMaterialOne => d.set_title("Save material as file (MaterialX + textures)").add_filter("MaterialX", &["mtlx"]).set_file_name(format!("{}.mtlx", self.materials.get(self.mat_sel).map(|m| m.name.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")).unwrap_or_else(|| "material".into()))).save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportDashboardPdf => d.set_title("Export dashboard (PDF)").add_filter("PDF", &["pdf"]).set_file_name("dashboard.pdf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportDashboardDocx => d.set_title("Export dashboard (Word)").add_filter("Word document", &["docx"]).set_file_name("dashboard.docx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportMaterialX => d.set_title("Import MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx", "xml"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::LoadHdri => d.set_title("Environment map (.hdr or photo)").add_filter("HDR image", &["hdr"]).add_filter("Photo (equirectangular)", &["png", "jpg", "jpeg"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportIfcMap => d.set_title("Export IFC category mapping").add_filter("CSV", &["csv"]).set_file_name("ifc-mapping.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
@@ -790,6 +809,8 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::ExportMaterials => "materials.bimmat".into(),
                 Purpose::ExportMaterialX => "materials.mtlx".into(),
                 Purpose::ExportMaterialOne => "material.mtlx".into(),
+                Purpose::ExportDashboardPdf => "dashboard.pdf".into(),
+                Purpose::ExportDashboardDocx => "dashboard.docx".into(),
                 Purpose::ImportMaterialX => "materials.mtlx".into(),
                 Purpose::ExportVpHtml => "viewpoints_report.html".into(),
                 Purpose::ExportVpXlsx => "viewpoints_report.xlsx".into(),

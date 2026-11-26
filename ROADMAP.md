@@ -2,9 +2,6 @@
 
 What is planned next. Done items move to the [CHANGELOG](CHANGELOG.md).
 
-## Features
-- **Smart sets, part 2**: a preview of what a search set gained / lost after a model update, and "ignore everything like this" from a clash result (creates the set and the exclusion in one step).
-
 ## Interface
 - **One Undo for every model change**: properties, visibility and materials, not only the view.
 

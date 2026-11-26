@@ -64,6 +64,23 @@ impl App {
                         self.smart.cur = self.smart.choices.first().map(|c| c.0.clone());
                     }
                 });
+                // deschis din Clash Detective: excluderea din testul acela, la un click
+                if let Some(ti) = self.smart.target_test.filter(|t| *t < self.clash_tests.len()) {
+                    let tname = self.clash_tests[ti].name.clone();
+                    let n = self.smart.count.map(|c| c.1).unwrap_or(0);
+                    egui::Frame::none().fill(Color32::from_rgb(230, 120, 40).gamma_multiply(0.15)).rounding(6.0).inner_margin(egui::Margin::same(8.0)).show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(RichText::new(format!("{} \"{tname}\": {}", crate::i18n::tr("Ignore in"), crate::i18n::tr("tick what the items share below (type, system, level…), then"))).strong());
+                            if ui.add_enabled(n > 0, egui::Button::new(RichText::new(format!("{} ({n})", crate::i18n::tr("Save & exclude"))).strong())).clicked() {
+                                exclude_test = Some(ti);
+                                action = Some(3);
+                            }
+                            if ui.small_button("✖").on_hover_text(crate::i18n::tr("Not for a clash test")).clicked() {
+                                self.smart.target_test = None;
+                            }
+                        });
+                    });
+                }
                 if !self.smart.missed.is_empty() {
                     ui.label(RichText::new(format!("{} {}", crate::i18n::tr("Not found in the model:"), self.smart.missed.join(", "))).small().color(Color32::from_rgb(230, 160, 60)));
                 }
@@ -204,6 +221,9 @@ impl App {
                 });
             });
         self.smart.open = open;
+        if !open {
+            self.smart.target_test = None;
+        }
         let Some(a) = action else { return };
         let rules = rules_for(&self.smart.choices);
         if a == 1 {
@@ -252,6 +272,7 @@ impl App {
             _ => format!("Search set \"{name}\" saved ({} items).", self.smart.count.map(|c| c.1).unwrap_or(0)),
         };
         self.toast(msg);
+        self.smart.target_test = None;
         self.smart.name_edited = false;
         self.open_panel(Panel::Sets);
     }

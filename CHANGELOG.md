@@ -7,6 +7,11 @@ La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Ca
 - **Smart sets** (Sets › ✨ Smart set…): build a search set by picking a property and ticking its values, with the number of items for every value and a live total (values of one property = OR, different properties = AND); **suggestions from the selection** ("the selected items share System = Supply Air, Level = Level 2" - one click adds them); **type what you want** ("ducts level 2", "walls, EI60", "valves cs150") and the conditions are filled in for you to adjust. Save it, select it, or save it straight **into a clash test's exclusions** or as **Selection A / B**.
 - **Sets in Clash Detective with one click**: every set has a ⛔ menu - exclude it from any clash test (tick / untick) or make it Selection A / B of the current test.
 - Level labels move up at most two rows before one is hidden, so small models keep all their labels.
+- **Dashboard** (Home › Project and Share › Report): one window with the project at a glance - models, open clashes, open issues, Model Checker errors, levels, 4D tasks as cards; every clash test with a status bar and Critical / Major / Minor counts; issues by status, priority and assignee; models, the biggest categories and the levels. **Export as a professional PDF (A4) or Word (.docx) report** with the same content.
+- **"Ignore everything like this…"** (right-click a clash result): Smart set opens with Item A, B or both selected and their shared properties suggested; tick what to ignore and **Save & exclude** adds it to that test's exclusions in one step.
+- **Search sets show what changed**: after the models are updated, a set that gained or lost items shows "+3 -1" in the Sets panel (hover: which items); click to accept.
+- **Headroom / Egress buttons** add the test (or open it) at its settings instead of running it straight away: set the height / distance and grid step, then press Run Test. More can be added from Clash Detective › Templates.
+- **The model no longer stays transparent** after leaving Clash Detective (or TimeLiner) by lowering the bottom panel: the clash / 4D display is only on while the panel is visible.
 
 ## 0.28.6 - 2026-11-26
 Fixes found by testing the add-ins in Revit 2025, AutoCAD Plant 3D 2025 and Navisworks Manage 2025.

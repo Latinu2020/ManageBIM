@@ -37,6 +37,7 @@ mod pathtrace_window;
 mod prop_editor;
 mod mcp_window;
 mod smart_sets;
+mod dashboard;
 pub use prop_editor::PropEditor;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
@@ -908,6 +909,10 @@ impl App {
                 self.refresh_models(force);
             }
             self.panel_btn(ui, Panel::Project, "📁", "Models", "Project & Model Properties (location, files, history)");
+            if rbtn(ui, "📊", "Dashboard", "Project summary: models, clashes, issues, checks, levels - export as a PDF or Word report", self.dash_open, true).clicked() {
+                self.dash_open = !self.dash_open;
+                self.dash = None;
+            }
         });
     }
 
@@ -1519,6 +1524,12 @@ impl App {
         rgroup(ui, "Reference", |ui| {
             if rbtn(ui, "🔗", "Revit / CAD", &format!("Reference of {what} for Revit and AutoCAD / Plant 3D (MBREFERENCE). Revit can also link the IFC export from the BIM tab."), false, has).clicked() {
                 self.request_path(Purpose::ExportReference);
+            }
+        });
+        rgroup(ui, "Report", |ui| {
+            if rbtn(ui, "📊", "Dashboard", "Project summary: models, clashes, issues, checks, levels - export as a PDF or Word report", self.dash_open, true).clicked() {
+                self.dash_open = !self.dash_open;
+                self.dash = None;
             }
         });
         rgroup(ui, "AI", |ui| {
@@ -5176,6 +5187,7 @@ impl App {
         self.materials_window(ctx);
         self.keys_window(ctx);
         self.smart_sets_window(ctx);
+        self.dashboard_window(ctx);
         self.command_palette(ctx);
         self.asbuilt_window(ctx);
         if let Some(pr) = &mut self.prompt {
@@ -5243,6 +5255,8 @@ impl App {
                 Purpose::MaterialHeight => "Height map",
                 Purpose::ExportMaterialX => "Export MaterialX",
                 Purpose::ExportMaterialOne => "Save material as file",
+                Purpose::ExportDashboardPdf => "Export dashboard (PDF)",
+                Purpose::ExportDashboardDocx => "Export dashboard (Word)",
                 Purpose::ImportMaterialX => "Import MaterialX",
                 Purpose::LoadHdri => "Environment map",
                 Purpose::ExportIfcMap => "Export IFC mapping",

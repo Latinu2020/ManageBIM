@@ -204,7 +204,7 @@ pub fn parse_query(q: &str, ix: &Index) -> (Vec<(Key, Vec<String>)>, Vec<String>
             }
         }
         // plural simplu: "ducts" -> "duct", "valves" -> "valve"
-        let stem = if p.len() > 4 && p.ends_with("es") && !p.ends_with("ses") { p[..p.len() - 1].to_string() } else if p.len() > 3 && p.ends_with('s') { p[..p.len() - 1].to_string() } else { p.clone() };
+        let stem = if p.len() > 3 && p.ends_with('s') { p[..p.len() - 1].to_string() } else { p.clone() };
         let mut best: Option<(i32, Key, Vec<String>)> = None;
         for (k, vals) in &ix.props {
             if only_level && !(k.0 == ITEM_CAT && k.1 == "Level") {
@@ -238,7 +238,7 @@ pub fn parse_query(q: &str, ix: &Index) -> (Vec<(Key, Vec<String>)>, Vec<String>
                 (true, _) => 5,
                 _ => 20,
             } + if exact { 30 } else { 0 } - hits.len().min(20) as i32;
-            if best.as_ref().map_or(true, |b| prio > b.0) {
+            if best.as_ref().is_none_or(|b| prio > b.0) {
                 hits.sort();
                 best = Some((prio, k.clone(), hits));
             }
@@ -366,6 +366,8 @@ pub struct Builder {
     pub index: Option<(u64, Index)>,
     /// numarul de elemente gasite pentru alegerile curente (+ semnatura alegerilor)
     pub count: Option<(u64, usize)>,
+    /// deschis din Clash Detective ("Ignore everything like this"): testul in care se salveaza excluderea
+    pub target_test: Option<usize>,
 }
 
 impl Builder {

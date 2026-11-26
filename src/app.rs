@@ -1172,6 +1172,8 @@ pub enum Purpose {
     MaterialHeight,
     ExportMaterialX,
     ExportMaterialOne,
+    ExportDashboardPdf,
+    ExportDashboardDocx,
     ImportMaterialX,
     LoadHdri,
     ExportIfcMap,
@@ -1629,6 +1631,11 @@ pub struct App {
     pub keys_open: bool,
     /// fereastra "Smart set" (search set-uri din valori, sugestii, cautare in cuvinte)
     pub smart: crate::smart_sets::Builder,
+    /// fereastra Dashboard si sumarul afisat (refacut la deschidere / Refresh / export)
+    pub dash_open: bool,
+    pub dash: Option<crate::dashboard::Summary>,
+    /// continutul confirmat al fiecarui search set (GUID-uri): dupa o actualizare de model panoul Sets arata +/-
+    pub set_snap: HashMap<String, std::collections::HashSet<String>>,
     pub mat_thumbs: HashMap<String, Option<eframe::egui::TextureHandle>>,
     pub mat_thumb_job: Option<(std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<(String, Option<crate::materials::Thumb>)>)>,
     pub tex_failed: HashSet<String>,
@@ -2013,6 +2020,9 @@ impl App {
             notes_seen: 0,
             keys_open: false,
             smart: Default::default(),
+            dash_open: false,
+            dash: None,
+            set_snap: HashMap::new(),
             mat_thumbs: HashMap::new(),
             mat_thumb_job: None,
             tex_failed: HashSet::new(),

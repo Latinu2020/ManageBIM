@@ -35,10 +35,10 @@ impl App {
         });
         rgroup(ui, "Space checks", |ui| {
             let busy = self.clash_job.is_some();
-            if rbtn(ui, "↕", "Headroom", "Clear height check: beams, ducts, pipes, trays and stairs lower than 2.10 m above the floor slabs (change it in Clash Detective › Select). Results open in Clash Detective.", false, has && !busy).clicked() {
+            if rbtn(ui, "↕", "Headroom", "Clear height check (beams, ducts, pipes, trays, stairs under the minimum height above floor slabs). Adds the test to Clash Detective - or opens it - at its settings: set the height and grid step, then press Run Test. Add more from Clash Detective › Templates (e.g. 2.10 m and 2.40 m).", false, has && !busy).clicked() {
                 self.run_space_check(crate::egress::Check::Headroom);
             }
-            if rbtn(ui, "🚪", "Egress", "Escape route check: walking distance to the nearest exit (exterior doors on the ground floor, stairs above) longer than 45 m, and floors without any exit. Results open in Clash Detective.", false, has && !busy).clicked() {
+            if rbtn(ui, "🚪", "Egress", "Escape route check (walking distance to the nearest exit, floors without an exit). Adds the test to Clash Detective - or opens it - at its settings: set the maximum distance, then press Run Test.", false, has && !busy).clicked() {
                 self.run_space_check(crate::egress::Check::Egress);
             }
         });
@@ -58,12 +58,13 @@ impl App {
                 self.clash_tests.len() - 1
             }
         };
+        // testul se deschide la parametri (Select): inaltimea / distanta / pasul se ajusteaza, apoi Run Test
         self.cur_test = idx;
         self.cur_result = None;
         self.sel_results.clear();
-        self.clash_subtab = 0;
+        self.clash_subtab = 2;
         self.open_panel(Panel::Clash);
-        self.run_clash(idx);
+        self.toast(format!("\"{}\": adjust the settings, then press Run Test.", self.clash_tests[idx].name));
     }
 
     pub(super) fn coord_objects_window(&mut self, ctx: &egui::Context) {

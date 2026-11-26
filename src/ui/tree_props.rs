@@ -315,6 +315,34 @@ impl App {
                     if ui.small_button(format!("{}", ids.len())).on_hover_text("Select these items").clicked() {
                         acts.push(Action::Select(ids.clone(), ctrl));
                     }
+                    // search set: ce a castigat / pierdut de la ultima confirmare (modele actualizate)
+                    if matches!(self.sets[i].kind, SetKind::Search(_)) && self.loads.is_empty() {
+                        let key = |id: &ElemId| self.elem(*id).map(|(m, e)| format!("{}|{}", m.name, if e.guid.is_empty() { e.name.clone() } else { e.guid.clone() })).unwrap_or_default();
+                        let now: std::collections::HashSet<String> = ids.iter().map(key).collect();
+                        let name = self.sets[i].name.clone();
+                        match self.set_snap.get(&name) {
+                            None => {
+                                self.set_snap.insert(name, now);
+                            }
+                            Some(old) if *old != now => {
+                                let added: Vec<&String> = now.difference(old).collect();
+                                let removed: Vec<&String> = old.difference(&now).collect();
+                                let show = |v: &[&String]| v.iter().take(10).map(|s| s.split_once('|').map(|x| x.1).unwrap_or(s)).collect::<Vec<_>>().join(", ");
+                                let tip = format!(
+                                    "Changed since the models were updated:\n+{} added: {}\n-{} removed: {}\n\nClick to accept the new content",
+                                    added.len(),
+                                    show(&added),
+                                    removed.len(),
+                                    show(&removed)
+                                );
+                                let lbl = RichText::new(format!("+{} -{}", added.len(), removed.len())).small().strong().color(Color32::from_rgb(240, 160, 50));
+                                if ui.add(egui::Button::new(lbl).small()).on_hover_text(tip).clicked() {
+                                    self.set_snap.insert(name, now);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                     if ui.small_button("👁").on_hover_text("Hide / unhide").clicked() {
                         if ids.iter().all(|x| self.hidden.contains(x)) {
                             acts.push(Action::Show(ids.clone()));

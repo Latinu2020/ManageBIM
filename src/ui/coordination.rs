@@ -1061,6 +1061,7 @@ impl App {
         let open_groups = self.open_groups.clone();
         let mods = ui.input(|i| i.modifiers);
         let mut clicked: Option<Row> = None;
+        let mut like_this: Option<(usize, u8)> = None;
         let mut toggle: Option<String> = None;
         let mut rename: Option<(String, String)> = None;
         let (sty, stol, ssev) = (self.clash_tests[ti].ty, self.clash_tests[ti].tol_mm, self.clash_tests[ti].sev_mm);
@@ -1224,13 +1225,38 @@ impl App {
                             row.col(|ui| {
                                 ui.add(egui::TextEdit::singleline(&mut r.comment).desired_width(f32::INFINITY));
                             });
-                            if row.response().clicked() {
+                            let rr = row.response();
+                            if rr.clicked() {
                                 clicked = Some(Row::Item(i, indent));
                             }
+                            rr.context_menu(|ui| {
+                                for (which, label) in [(0u8, "Ignore everything like Item A…"), (1, "Ignore everything like Item B…"), (2, "Ignore everything like both…")] {
+                                    if ui.button(label).on_hover_text("Opens Smart set with these items selected: tick what they share (type, system, level…) and save it as an exclusion of this test").clicked() {
+                                        like_this = Some((i, which));
+                                        ui.close_menu();
+                                    }
+                                }
+                            });
                         }
                     }
                 });
             });
+        if let Some((i, which)) = like_this {
+            if let Some(r) = self.clash_tests[ti].results.get(i) {
+                let ids: Vec<ElemId> = match which {
+                    0 => vec![r.a],
+                    1 => vec![r.b],
+                    _ => vec![r.a, r.b],
+                };
+                self.selected = ids.into_iter().collect();
+                self.colors_dirty = true;
+                self.smart.choices.clear();
+                self.smart.query.clear();
+                self.smart.name_edited = false;
+                self.smart.target_test = Some(ti);
+                self.smart.open = true;
+            }
+        }
         if let Some(g) = toggle {
             if !self.open_groups.remove(&g) {
                 self.open_groups.insert(g);
