@@ -3,7 +3,7 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
-## 0.28.7 - unreleased
+## 0.28.7 - 2026-11-26
 - **Smart sets** (Sets › ✨ Smart set…): build a search set by picking a property and ticking its values, with the number of items for every value and a live total (values of one property = OR, different properties = AND); **suggestions from the selection** ("the selected items share System = Supply Air, Level = Level 2" - one click adds them); **type what you want** ("ducts level 2", "walls, EI60", "valves cs150") and the conditions are filled in for you to adjust. Save it, select it, or save it straight **into a clash test's exclusions** or as **Selection A / B**.
 - **Sets in Clash Detective with one click**: every set has a ⛔ menu - exclude it from any clash test (tick / untick) or make it Selection A / B of the current test.
 - Level labels move up at most two rows before one is hidden, so small models keep all their labels.
