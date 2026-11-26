@@ -16,7 +16,7 @@ path = "src/main.rs"
 [dependencies]
 # text in exported images and videos (4D date, legend) - already used by egui, MIT / Apache-2.0
 ab_glyph = "0.2.32"
-eframe = { version = "0.29.1", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
+eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
 glam = "0.29"
 egui_extras = { version = "0.29.1", default-features = false }
 earcutr = "0.4"
