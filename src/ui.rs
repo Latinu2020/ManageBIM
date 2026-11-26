@@ -4666,15 +4666,22 @@ impl App {
                         }
                     }
                 }
-                // de jos in sus: fiecare eticheta sta deasupra barei si la cel putin 24 px de cea de dedesubt
+                // de jos in sus: fiecare eticheta sta la nivelul ei; una care s-ar suprapune cu alta nu se mai
+                // afiseaza (linia nivelului ramane) - inainte se stivuiau intr-o coloana departe de nivel (~20 de niveluri)
                 labels.sort_by(|a, b| b.0.y.total_cmp(&a.0.y));
+                let mut skipped = 0;
                 for (s, text) in labels {
-                    let mut y = s.y.min(floor_y);
-                    while placed.iter().any(|p| (p - y).abs() < 24.0) {
-                        y -= 24.0;
+                    let y = s.y.min(floor_y);
+                    if placed.iter().any(|p| (p - y).abs() < 22.0) || y < rect.top() + 12.0 {
+                        skipped += 1;
+                        continue;
                     }
                     placed.push(y);
                     label_bg(&painter, Pos2::new(s.x, y), &text, Color32::from_rgb(235, 200, 120));
+                }
+                if skipped > 0 {
+                    let tip = format!("{skipped} level label(s) hidden to avoid overlap - zoom in, or see View › Levels");
+                    painter.text(rect.left_bottom() + EV::new(10.0, -10.0 - if self.settings.nav_bar { 64.0 } else { 0.0 }), Align2::LEFT_BOTTOM, tip, FontId::proportional(11.0), Color32::from_rgba_unmultiplied(235, 200, 120, 170));
                 }
             }
         }

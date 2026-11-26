@@ -74,6 +74,17 @@ pub fn load_any(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
                 m.info.insert(0, ("Cut plane".into(), format!("Restored on axis {axis} at {value:.3} m")));
             }
         }
+        // desen dintr-un proiect Plant 3D: obiectele de pe stratul "0" primesc aria (ex. "Area_2") ca nivel,
+        // ca in add-in-ul AutoCAD (Plant 3D nu are niveluri)
+        if ext == "dwg" {
+            if let Some(area) = plant3d::project_area(path) {
+                for e in &mut m.elements {
+                    if e.storey.is_empty() || e.storey == "0" {
+                        e.storey = area.clone();
+                    }
+                }
+            }
+        }
         m.thicken_flat_gratings(0.03);
         m
     })

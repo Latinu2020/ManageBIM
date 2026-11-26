@@ -144,6 +144,7 @@ fn revit(job: &Job, out: &mut Vec<String>) {
 fn acad(job: &Job, out: &mut Vec<String>) {
     let bundle = job.appdata.join("Autodesk").join("ApplicationPlugins").join("ManageBIM.bundle");
     if job.uninstall {
+        let _ = acad_trust(&bundle, job, false);
         if remove(&bundle) {
             out.push("AutoCAD: removed".into());
         }
@@ -169,9 +170,57 @@ fn acad(job: &Job, out: &mut Vec<String>) {
     }
     if ok {
         out.push("AutoCAD: installed".into());
+        // fara dialogul "Unsigned Executable File - Always Load" la fiecare pornire: folderul devine de incredere
+        if let Some(n) = acad_trust(&bundle, job, true) {
+            if n > 0 {
+                out.push(format!("AutoCAD: add-in folder trusted in {n} profile(s)"));
+            }
+        }
     } else {
         out.push("AutoCAD: no add-in DLL in this package".into());
     }
+}
+
+/// Adauga (sau scoate) folderul bundle-ului in TRUSTEDPATHS din fiecare profil AutoCAD al utilizatorului
+/// (HKCU\Software\Autodesk\AutoCAD\R*\ACAD-*\Profiles\*\Variables). Doar pentru %APPDATA% real (nu in teste).
+/// AutoCAD trebuie sa fie inchis: la iesire isi rescrie profilul.
+fn acad_trust(bundle: &Path, job: &Job, add: bool) -> Option<usize> {
+    let real = std::env::var_os("APPDATA").map(PathBuf::from)?;
+    if real != job.appdata {
+        return None;
+    }
+    if !cfg!(windows) {
+        return None;
+    }
+    let entry = format!("{}\\...", bundle.display());
+    let q = std::process::Command::new("reg").args(["query", "HKCU\\Software\\Autodesk\\AutoCAD", "/s", "/f", "Variables", "/k"]).output().ok()?;
+    let keys: Vec<String> = String::from_utf8_lossy(&q.stdout)
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| l.starts_with("HKEY_CURRENT_USER") && l.contains("\\Profiles\\") && l.ends_with("\\Variables"))
+        .collect();
+    let mut n = 0;
+    for k in keys {
+        let cur = std::process::Command::new("reg").args(["query", &k, "/v", "TRUSTEDPATHS"]).output().ok();
+        let value = cur
+            .and_then(|o| String::from_utf8_lossy(&o.stdout).lines().find(|l| l.contains("TRUSTEDPATHS")).and_then(|l| l.split("REG_SZ").nth(1)).map(|v| v.trim().to_string()))
+            .unwrap_or_default();
+        let mut parts: Vec<String> = value.split(';').filter(|p| !p.trim().is_empty()).map(|p| p.trim().to_string()).collect();
+        let has = parts.iter().any(|p| p.eq_ignore_ascii_case(&entry));
+        if add == has {
+            continue;
+        }
+        if add {
+            parts.push(entry.clone());
+        } else {
+            parts.retain(|p| !p.eq_ignore_ascii_case(&entry));
+        }
+        let ok = std::process::Command::new("reg").args(["add", &k, "/v", "TRUSTEDPATHS", "/t", "REG_SZ", "/d", &parts.join(";"), "/f"]).output().map(|o| o.status.success()).unwrap_or(false);
+        if ok {
+            n += 1;
+        }
+    }
+    Some(n)
 }
 
 // ------------------------------------------------------------------ Navisworks

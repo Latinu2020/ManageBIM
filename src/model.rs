@@ -388,6 +388,7 @@ impl Model {
                     }
                 }
                 e.tris = Vec::new();
+                dedupe_props(&mut e.props);
                 let bvh = Bvh::build(&p);
                 (e, p, bb, bvh)
             })
@@ -712,5 +713,46 @@ pub fn ray_tri(o: Vec3, d: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Option<f32> {
         Some(t)
     } else {
         None
+    }
+}
+
+/// Proprietati duble din aceeasi grupa, cu acelasi nume scris altfel si aceeasi valoare
+/// ("Actuator Height" / "ActuatorHeight" / "actuator_height" - Plant 3D, COM + date Plant): ramane una,
+/// cu numele cel mai lizibil (cu spatii).
+pub fn dedupe_props(props: &mut Vec<Prop>) {
+    if props.len() < 2 {
+        return;
+    }
+    let norm = |s: &str| -> String { s.chars().filter(|c| c.is_alphanumeric()).flat_map(|c| c.to_lowercase()).collect() };
+    let mut seen: std::collections::HashMap<(String, String, String), usize> = std::collections::HashMap::new();
+    let mut out: Vec<Prop> = Vec::with_capacity(props.len());
+    for p in props.drain(..) {
+        let key = (p.group.clone(), norm(&p.name), p.value.trim().to_string());
+        match seen.get(&key) {
+            Some(&i) => {
+                // pastram numele cu spatii (mai usor de citit)
+                if p.name.contains(' ') && !out[i].name.contains(' ') {
+                    out[i].name = p.name;
+                }
+            }
+            None => {
+                seen.insert(key, out.len());
+                out.push(p);
+            }
+        }
+    }
+    *props = out;
+}
+
+#[cfg(test)]
+mod dedupe_tests {
+    use super::*;
+    #[test]
+    fn near_duplicate_properties_are_merged() {
+        let p = |g: &str, n: &str, v: &str| Prop { group: g.into(), name: n.into(), value: v.into() };
+        let mut v = vec![p("Plant 3D", "ActuatorHeight", "15"), p("Plant 3D", "Actuator Height", "15"), p("Plant 3D", "Actuator Width", "8"), p("Other", "ActuatorHeight", "15"), p("Plant 3D", "actuator_height", "16")];
+        dedupe_props(&mut v);
+        let names: Vec<String> = v.iter().map(|x| format!("{}|{}={}", x.group, x.name, x.value)).collect();
+        assert_eq!(names, vec!["Plant 3D|Actuator Height=15", "Plant 3D|Actuator Width=8", "Other|ActuatorHeight=15", "Plant 3D|actuator_height=16"]);
     }
 }

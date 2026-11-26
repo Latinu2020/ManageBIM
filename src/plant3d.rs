@@ -549,3 +549,39 @@ pub fn encode_handles(handles: &[u64]) -> Vec<u8> {
     }
     out
 }
+
+/// Aria unui desen dintr-un proiect Plant 3D: folderele lui sub radacina proiectului (cea cu Project.xml),
+/// fara "Plant 3D Models" (ex. "Area_2"). None in afara unui proiect sau pentru desenele din radacina modelelor.
+pub fn project_area(dwg: &str) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    let mut d = std::path::Path::new(dwg).parent();
+    while let Some(dir) = d {
+        if parts.len() > 8 {
+            return None;
+        }
+        if dir.join("Project.xml").is_file() {
+            parts.reverse();
+            let keep: Vec<String> = parts.into_iter().filter(|p| !p.replace(' ', "_").eq_ignore_ascii_case("Plant_3D_Models")).collect();
+            return if keep.is_empty() { None } else { Some(keep.join(" / ")) };
+        }
+        parts.push(dir.file_name()?.to_string_lossy().to_string());
+        d = dir.parent();
+    }
+    None
+}
+
+#[cfg(test)]
+mod area_tests {
+    #[test]
+    fn plant_area_from_project_folders() {
+        let root = std::env::temp_dir().join(format!("mb_p3d_{}", std::process::id()));
+        let area = root.join("Plant_3D_Models").join("Area_2");
+        std::fs::create_dir_all(&area).unwrap();
+        std::fs::write(root.join("Project.xml"), "<x/>").unwrap();
+        let dwg = area.join("2-P-001.dwg");
+        assert_eq!(super::project_area(dwg.to_str().unwrap()).as_deref(), Some("Area_2"));
+        assert_eq!(super::project_area(root.join("Plant_3D_Models").join("a.dwg").to_str().unwrap()), None);
+        assert_eq!(super::project_area(std::env::temp_dir().join("x.dwg").to_str().unwrap()), None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

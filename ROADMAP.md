@@ -14,6 +14,8 @@ What is planned next. Done items move to the [CHANGELOG](CHANGELOG.md).
 - **One Undo for every model change**: properties, visibility and materials, not only the view.
 
 ## Add-ins (Revit, Navisworks, AutoCAD / Plant 3D / Civil 3D)
+- **Walk paths to Navisworks**: a walk path drawn in ManageBIM becomes a Navisworks viewpoint animation (one key viewpoint per path point, timing from distance and walk speed, eye height kept), created by the ManageBIM add-in in Saved Viewpoints and played with Play; fallback without the add-in: a viewpoints XML with one folder of viewpoints per path.
+- **Levels from ManageBIM in Plant 3D and Navisworks** (they have no real levels): send the levels defined in ManageBIM (from IFC, DWG or created in the app) to Plant 3D - level lines / named UCS and a "Level" property on the objects by elevation - and to Navisworks - grids & levels, plus search sets and a "Level" property per item - so models can be filtered, sectioned and clash-grouped by level there too.
 - **Test every add-in** in all supported versions (Revit, Navisworks, AutoCAD 2022 →), with a checklist per command: export, Live Link, SwitchBack, coordination objects, properties.
 - **Automated add-in tests** where possible (headless export on sample files, compared with the expected result), so a new version does not break them.
 - **Improvements from testing**: clearer messages, faster exports on large models, fewer clicks.

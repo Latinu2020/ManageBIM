@@ -16,6 +16,33 @@ namespace ManageBIM.Acad
 {
     public class Commands
     {
+        /// <summary>
+        /// Aria unui desen dintr-un proiect Plant 3D: folderul lui sub radacina proiectului (cea cu Project.xml),
+        /// fara folderul "Plant 3D Models" (ex. "Area_2"). Gol in afara unui proiect Plant sau pentru desenele
+        /// aflate direct in folderul modelelor.
+        /// </summary>
+        internal static string PlantArea(string dwg)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(dwg)) return "";
+                var dir = new DirectoryInfo(Path.GetDirectoryName(dwg) ?? "");
+                var parts = new List<string>();
+                for (var d = dir; d != null && parts.Count < 8; d = d.Parent)
+                {
+                    if (File.Exists(Path.Combine(d.FullName, "Project.xml")))
+                    {
+                        parts.Reverse();
+                        var keep = parts.Where(p => !p.Replace(" ", "_").Equals("Plant_3D_Models", StringComparison.OrdinalIgnoreCase)).ToList();
+                        return string.Join(" / ", keep);
+                    }
+                    parts.Add(d.Name);
+                }
+            }
+            catch { }
+            return "";
+        }
+
         /// <summary>BIMCEXPORT: writes the 3D content of model space (or a selection) to .bimc.</summary>
         [CommandMethod("BIMCEXPORT", CommandFlags.Modal | CommandFlags.NoBlockEditor)]
         public void Export() => Run(false);
@@ -68,7 +95,7 @@ namespace ManageBIM.Acad
             var sw = Stopwatch.StartNew();
             try
             {
-                var ex = new AcadExporter(db, ed);
+                var ex = new AcadExporter(db, ed) { Area = PlantArea(dwg) };
                 using (doc.LockDocument())
                 using (Transaction tr = db.TransactionManager.StartOpenCloseTransaction())
                 {
@@ -128,6 +155,8 @@ namespace ManageBIM.Acad
         public double Scale = 1.0;
         public string UnitsLabel = "";
         public int Skipped;
+        /// <summary>Aria din proiectul Plant 3D (folderul desenului, ex. "Area_2"): nivelul elementelor de pe stratul "0".</summary>
+        public string Area = "";
 
         private readonly PlantData _plant;
         // diagnostic: erorile Plant 3D si obiectele fara geometrie, grupate pe clasa (rezumat in jurnalul .bimc)
@@ -240,7 +269,7 @@ namespace ManageBIM.Acad
             {
                 Type = string.IsNullOrEmpty(dxf) ? kind : dxf,
                 Guid = "acad:" + ent.Handle.ToString(),
-                Level = layer.Name,
+                Level = (layer.Name == "0" && Area.Length > 0) ? Area : layer.Name,
                 Name = kind + " [" + ent.Handle + "]",
             };
             el.Add("Item", "Handle", ent.Handle.ToString());
