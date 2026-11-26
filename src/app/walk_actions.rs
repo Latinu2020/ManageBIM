@@ -183,3 +183,45 @@ impl App {
         }
     }
 }
+
+impl App {
+    /// Traseul de mers pentru Navisworks: `Outbox\walkpath.txt`, citit de comanda add-in-ului
+    /// "ManageBIM Walk path" (o animatie de viewpoint-uri). Puncte in coordonate reale (metri), la ochi.
+    pub fn send_walk_path_to_navisworks(&mut self) {
+        if self.walk_path.len() < 2 {
+            return self.error("Draw a walk path first (at least two points).");
+        }
+        let Some(dir) = crate::formats::data_root().map(|d| d.join("ManageBIM").join("Outbox")) else { return };
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            return self.error(format!("Cannot create {}: {e}", dir.display()));
+        }
+        let name = self.project_path.as_deref().map(crate::file_name).unwrap_or_else(|| "Walk path".into());
+        let text = walk_path_text(&format!("Walk - {name}"), self.settings.walk_speed, self.settings.eye_height, self.cam.fov_deg, &self.walk_path.iter().map(|p| self.world(*p)).collect::<Vec<_>>());
+        let p = dir.join("walkpath.txt");
+        match crate::formats::write_atomic(&p, text.as_bytes(), false) {
+            Ok(()) => self.toast("Walk path sent - in Navisworks: ManageBIM › Walk path (it becomes a viewpoint animation in Saved Viewpoints)."),
+            Err(e) => self.error(format!("Cannot write {}: {e}", p.display())),
+        }
+    }
+}
+
+/// Formatul MBWALK 1: NAME, SPEED (m/s), EYE (m), FOV (grade), apoi un rand P x y z per punct (pardoseala, metri).
+pub fn walk_path_text(name: &str, speed: f32, eye: f32, fov: f32, pts: &[glam::DVec3]) -> String {
+    let mut s = String::from("MBWALK 1\n");
+    s.push_str(&format!("NAME\t{}\n", name.replace(['\t', '\n', '\r'], " ")));
+    s.push_str(&format!("SPEED\t{speed:.3}\nEYE\t{eye:.3}\nFOV\t{fov:.2}\n"));
+    for p in pts {
+        s.push_str(&format!("P\t{:.4} {:.4} {:.4}\n", p.x, p.y, p.z));
+    }
+    s
+}
+
+#[cfg(test)]
+mod walk_text_tests {
+    #[test]
+    fn walk_path_file_format() {
+        let t = super::walk_path_text("Walk - A", 1.4, 1.7, 60.0, &[glam::DVec3::new(0.0, 0.0, 0.0), glam::DVec3::new(10.0, 0.0, 0.0)]);
+        assert!(t.starts_with("MBWALK 1\nNAME\tWalk - A\nSPEED\t1.400\nEYE\t1.700\nFOV\t60.00\n"));
+        assert_eq!(t.lines().filter(|l| l.starts_with("P\t")).count(), 2);
+    }
+}

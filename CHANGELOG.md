@@ -11,6 +11,8 @@ La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Ca
 - **"Ignore everything like this…"** (right-click a clash result): Smart set opens with Item A, B or both selected and their shared properties suggested; tick what to ignore and **Save & exclude** adds it to that test's exclusions in one step.
 - **Search sets show what changed**: after the models are updated, a set that gained or lost items shows "+3 -1" in the Sets panel (hover: which items); click to accept.
 - **Headroom / Egress buttons** add the test (or open it) at its settings instead of running it straight away: set the height / distance and grid step, then press Run Test. More can be added from Clash Detective › Templates.
+- **Undo / Redo cover model changes too** (Ctrl+Z / Ctrl+Y): properties you wrote, colour overrides, materials and material rules come back together with the selection, visibility, section and camera of that moment.
+- **Walk paths to Navisworks**: Viewpoint › Walk Path › **To Navisworks**, then in Navisworks ManageBIM › Walk path (also in the ManageBIM window): the path becomes a **viewpoint animation** in Saved Viewpoints - key frames at equal distances (constant walking speed), at eye height, looking ahead - ready to Play. If Navisworks refuses the animation, the frames land in a folder of viewpoints instead.
 - **The model no longer stays transparent** after leaving Clash Detective (or TimeLiner) by lowering the bottom panel: the clash / 4D display is only on while the panel is visible.
 
 ## 0.28.6 - 2026-11-26

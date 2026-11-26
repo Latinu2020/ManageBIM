@@ -254,3 +254,32 @@ fn walk_gravity_and_collision() {
     }
     assert!(a.cam.eye().x > start.x, "walked forward");
 }
+
+/// Undo / Redo reface si schimbarile de model: o proprietate scrisa si o culoare fortata
+#[test]
+fn undo_covers_model_changes() {
+    let mut app = app();
+    for _ in 0..app.models.len() {
+        app.trees.push(None);
+        app.base_models.push(None);
+        app.model_xf.push(Default::default());
+    }
+    let id = bimrust::model::ElemId { m: 0, e: 3 };
+    app.lod_moved = std::time::Instant::now() - std::time::Duration::from_secs(5);
+    app.history_tick(false);
+    app.set_user_param(&[id], "FireRating", "EI60");
+    app.history_tick(false);
+    app.overrides.insert(id, [255, 0, 0, 255]);
+    app.history_tick(false);
+    let has = |a: &App| a.elem(id).map(|(_, e)| e.props.iter().any(|p| p.name == "FireRating" && p.value == "EI60")).unwrap_or(false);
+    assert!(has(&app) && app.overrides.contains_key(&id));
+    app.undo_view();
+    assert!(!app.overrides.contains_key(&id), "colour undone");
+    assert!(has(&app), "property still there");
+    app.undo_view();
+    assert!(!has(&app), "property undone");
+    app.redo_view();
+    assert!(has(&app), "property redone");
+    app.redo_view();
+    assert!(app.overrides.contains_key(&id), "colour redone");
+}

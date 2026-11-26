@@ -20,6 +20,7 @@ namespace ManageBIM.Navis
             ("Send", "Export BIMC…", "Save the model as a .bimc file (geometry, colours, all properties)", () => new ExportPlugin()),
             ("Coordination", "Coordination objects", "Show clearance zones, voids and placeholders from ManageBIM (display only)", () => new CoordinationPlugin()),
             ("Coordination", "Issues", "Bring ManageBIM viewpoints / issues in as Saved Viewpoints", () => new IssuesPlugin()),
+            ("Coordination", "Walk path", "Turn the walk path drawn in ManageBIM into a viewpoint animation (Saved Viewpoints)", () => new WalkPlugin()),
             ("Live Link", "Sync selection", "Selection follows ManageBIM and Revit, both ways (click again to stop)", () => new SyncPlugin()),
         };
 

@@ -1051,6 +1051,9 @@ impl App {
             if rbtn(ui, "🎞", "To Animation", "Save the path as an animation (Animator) - edit it, play it or export a video", false, ok).clicked() {
                 self.walk_path_to_animation();
             }
+            if rbtn(ui, "🧭", "To Navisworks", "Send the path to Navisworks: ManageBIM › Walk path there turns it into a viewpoint animation (Saved Viewpoints) at the same walk speed and eye height", false, ok).clicked() {
+                self.send_walk_path_to_navisworks();
+            }
             if rbtn(ui, "🗑", "Clear", "Delete the walk path", false, !self.walk_path.is_empty()).clicked() {
                 self.walk_path.clear();
                 self.path_run = None;
@@ -5036,7 +5039,7 @@ impl App {
                             ui.painter().line_segment([r.center_top() + EV::new(0.0, 5.0), r.center_bottom() - EV::new(0.0, 5.0)], Stroke::new(1.0_f32, Color32::from_white_alpha(28)));
                         };
                         // ---- inapoi / inainte (selectie, vizibilitate, sectiune, camera)
-                        if big(ui, "⟲", "Undo", "Undo view: selection, hidden items, section and camera (Ctrl+Z)", false, self.can_undo()) {
+                        if big(ui, "⟲", "Undo", "Undo: selection, hidden items, section, camera, properties, colours and materials (Ctrl+Z)", false, self.can_undo()) {
                             self.undo_view();
                         }
                         if big(ui, "⟳", "Redo", "Redo view (Ctrl+Y)", false, self.can_redo()) {
@@ -6312,7 +6315,7 @@ fn commands() -> Vec<Cmd> {
             a.apply(Action::Select(all, false));
         }),
         c!("Clear selection", "Select", "🔲", "deselecteaza", |a| a.clear_selection()),
-        c!("Undo view", "Select", "⟲", "inapoi anuleaza ctrl+z selectie ascunse camera", |a| a.undo_view()),
+        c!("Undo", "Select", "⟲", "inapoi anuleaza ctrl+z selectie ascunse camera proprietati culori materiale", |a| a.undo_view()),
         c!("Redo view", "Select", "⟳", "refa inainte ctrl+y", |a| a.redo_view()),
         c!("Select same type", "Select", "⧉", "similar acelasi tip ctrl+shift+a", |a| a.select_similar(true)),
         c!("Select same category", "Select", "▦", "similar aceeasi categorie", |a| a.select_similar(false)),

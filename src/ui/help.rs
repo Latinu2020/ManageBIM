@@ -272,8 +272,8 @@ impl App {
                 (kb("hide_panels"), "Hide all panels - full screen model"),
             ]),
             ("View", vec![
-                (kb("undo"), "Undo view change (selection, hidden, section, camera)"),
-                (kb("redo"), "Redo view change"),
+                (kb("undo"), "Undo: selection, visibility, section, camera, properties, colours and materials"),
+                (kb("redo"), "Redo"),
                 ("Ctrl+1 … 9".into(), "Apply View Template 1 … 9"),
                 (format!("{} / PgDn", kb("section_up")), "Section level up / down"),
                 ("F3".into(), "Object snap on / off"),

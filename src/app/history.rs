@@ -260,17 +260,48 @@ impl App {
         h.finish()
     }
 
+    /// semnatura datelor de model schimbate de utilizator: proprietati, culori fortate, materiale, asignari
+    pub(super) fn model_sig(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.user_params.len().hash(&mut h);
+        for p in &self.user_params {
+            (&p.model, &p.key, &p.group, &p.name, &p.value).hash(&mut h);
+        }
+        // HashMap: ordinea e oarecare, deci suma (comutativa) a semnaturilor pe intrare
+        let ov = self.overrides.iter().fold(0u64, |acc, (id, c)| {
+            let mut e = std::collections::hash_map::DefaultHasher::new();
+            (id, c).hash(&mut e);
+            acc.wrapping_add(e.finish())
+        });
+        (self.overrides.len(), ov).hash(&mut h);
+        for m in &self.materials {
+            (&m.name, m.color, m.transparency, m.gloss, m.metal, &m.texture, &m.normal_map, &m.roughness_map, m.coat, m.sheen).hash(&mut h);
+            ((m.scale * 1000.0) as i64, (m.ior * 1000.0) as i64).hash(&mut h);
+        }
+        for a in &self.mat_assign {
+            (&a.material, a.enabled, a.target.label()).hash(&mut h);
+        }
+        h.finish()
+    }
+
     /// Apelat la fiecare cadru: cand starea s-a schimbat si camera s-a oprit, o pune in istoric.
     pub fn history_tick(&mut self, pointer_down: bool) {
         if pointer_down || self.cam_anim.is_some() || self.lod_moved.elapsed().as_secs_f32() < 0.35 {
             return;
         }
-        let sig = self.view_sig();
+        let msig = self.model_sig();
+        let sig = self.view_sig() ^ msig.rotate_left(17);
         if sig == self.hist_sig {
             return;
         }
         self.hist_sig = sig;
-        let snap = ViewSnap { selected: self.selected.clone(), hidden: Arc::new(self.hidden.clone()), section: self.section.clone(), cam: self.cam };
+        // datele de model: refolosite din instantaneul curent daca nu s-au schimbat (fara copii inutile)
+        let model = match self.hist.get(self.hist_pos) {
+            Some(prev) if prev.model.sig == msig => prev.model.clone(),
+            _ => Arc::new(ModelSnap { sig: msig, user_params: self.user_params.clone(), overrides: self.overrides.clone(), materials: self.materials.clone(), mat_assign: self.mat_assign.clone() }),
+        };
+        let snap = ViewSnap { selected: self.selected.clone(), hidden: Arc::new(self.hidden.clone()), section: self.section.clone(), cam: self.cam, model };
         self.hist.truncate(self.hist_pos + 1);
         self.hist.push(snap);
         if self.hist.len() > 60 {
@@ -309,13 +340,29 @@ impl App {
         self.primary = self.selected.iter().next().copied();
         self.hidden = (*s.hidden).clone();
         self.section = s.section;
+        // datele de model (proprietati, culori, materiale) revin si ele, daca difera
+        if s.model.sig != self.model_sig() {
+            let m = &*s.model;
+            let params_changed = self.user_params != m.user_params;
+            self.user_params = m.user_params.clone();
+            self.overrides = m.overrides.clone();
+            self.materials = m.materials.clone();
+            self.mat_assign = m.mat_assign.clone();
+            if params_changed {
+                let slots: Vec<usize> = self.loaded_models().map(|(i, _)| i).collect();
+                for slot in slots {
+                    self.refresh_user_params(slot);
+                }
+            }
+            self.materials_changed();
+        }
         self.fly_to(s.cam);
         self.colors_dirty = true;
         // starea refacuta nu se mai inregistreaza o data
         let mut tmp = self.cam;
         std::mem::swap(&mut tmp, &mut self.cam);
         self.cam = s.cam;
-        self.hist_sig = self.view_sig();
+        self.hist_sig = self.view_sig() ^ self.model_sig().rotate_left(17);
         self.cam = tmp;
     }
 

@@ -3206,6 +3206,19 @@ pub struct ViewSnap {
     pub hidden: Arc<HashSet<ElemId>>,
     pub section: Section,
     pub cam: Camera,
+    /// datele de model schimbate de utilizator (proprietati, culori, materiale) - Undo le reface si pe ele;
+    /// impartite (Arc) cu instantaneul anterior cand nu s-au schimbat
+    pub model: Arc<ModelSnap>,
+}
+
+/// Schimbarile utilizatorului asupra modelului, in istoricul Undo / Redo.
+#[derive(Clone, Default)]
+pub struct ModelSnap {
+    pub sig: u64,
+    pub user_params: Vec<UserParam>,
+    pub overrides: HashMap<ElemId, [u8; 4]>,
+    pub materials: Vec<crate::materials::Material>,
+    pub mat_assign: Vec<MatAssign>,
 }
 
 /// Un desen 2D (DWG / DXF) asezat peste model la o cota, cu deplasare si rotatie.
