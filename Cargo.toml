@@ -19,7 +19,7 @@ ab_glyph = "0.2.32"
 eframe = { version = "0.29.1", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
 glam = "0.29"
 egui_extras = { version = "0.29.1", default-features = false }
-earcutr = "0.4"
+earcutr = "0.5"
 gltf = { version = "1.4", default-features = false, features = ["utils", "names", "extras"] }
 base64 = "0.22"
 rayon = "1.10"
