@@ -366,9 +366,9 @@ impl App {
 
     /// Drives the export: one captured frame per UI frame. Called before the viewport is drawn.
     pub fn start_pathtrace(&mut self) {
-        // Un job terminat ramane in `self.pathtrace` (ca sa putem exporta PNG-ul),
+        // Un job terminat ramane in `self.pt.job` (ca sa putem exporta PNG-ul),
         // dar NU trebuie sa blocheze o randare noua.
-        if let Some(j) = &self.pathtrace {
+        if let Some(j) = &self.pt.job {
             if !j.done.load(std::sync::atomic::Ordering::Relaxed) {
                 self.toast("Path trace already running.");
                 return;
@@ -402,10 +402,10 @@ impl App {
         }
         let cam = self.cam;
         let sun = self.render.sun_dir();
-        let (w, h, samples, tlimit) = self.pathtrace_params;
-        self.pathtrace_tex = None;
-        self.pathtrace_notified = false;
-        self.pathtrace_done_at = None;
+        let (w, h, samples, tlimit) = self.pt.params;
+        self.pt.tex = None;
+        self.pt.notified = false;
+        self.pt.done_at = None;
         let denoise = self.settings.render_denoise && crate::oidn::available().is_ok();
         // luminile: soare, mediu (IBL) si expunerea generala
         let env = (self.render.env_mode, self.render.env_intensity.clamp(0.0, 3.0), self.render.env_rotation);
@@ -422,19 +422,19 @@ impl App {
         // on the graphics card when possible (many times faster), otherwise on all processor cores
         let gpu = self.start_gpu_render(scene.clone(), denoise);
         if !gpu {
-            self.pathtrace = Some(crate::pathtrace::start_arc((w, h, samples, tlimit), scene, cam.eye(), cam.fwd(), cam.up(), cam.right(), cam.fov_deg, sun, light, env, self.render.night, hdri, denoise));
+            self.pt.job = Some(crate::pathtrace::start_arc((w, h, samples, tlimit), scene, cam.eye(), cam.fwd(), cam.up(), cam.right(), cam.fov_deg, sun, light, env, self.render.night, hdri, denoise));
         }
         self.toast(format!("Path tracing {}×{} · {} samples · {} s max{} · {}", w, h, samples, tlimit, if denoise { " · denoise" } else { "" }, if gpu { "GPU" } else { "CPU" }));
     }
 
     pub fn cancel_pathtrace(&mut self) {
-        if let Some(j) = &self.pathtrace {
+        if let Some(j) = &self.pt.job {
             j.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
         }
     }
 
     pub fn pathtrace_step(&mut self, ctx: &eframe::egui::Context) {
-        let Some(job) = self.pathtrace.clone() else { return; };
+        let Some(job) = self.pt.job.clone() else { return; };
         let count = job.count.load(std::sync::atomic::Ordering::Relaxed);
         if count == 0 {
             ctx.request_repaint();
@@ -444,7 +444,7 @@ impl App {
         // nu blocam firul UI (la 512/1024 px altfel aplicatia pare inghetata).
         let done = job.done.load(std::sync::atomic::Ordering::Relaxed);
         // dupa terminare imaginea nu se mai schimba: nu refacem textura la fiecare cadru
-        if done && self.pathtrace_notified && self.pathtrace_tex.is_some() {
+        if done && self.pt.notified && self.pt.tex.is_some() {
             return;
         }
         let w = job.width as usize;
@@ -470,16 +470,16 @@ impl App {
             }
         }
         let img = eframe::egui::ColorImage::from_rgba_unmultiplied([w, h], &pixels);
-        if let Some(tex) = &mut self.pathtrace_tex {
+        if let Some(tex) = &mut self.pt.tex {
             tex.set(img, eframe::egui::TextureOptions::default());
         } else {
-            self.pathtrace_tex = Some(ctx.load_texture("pathtrace", img, eframe::egui::TextureOptions::default()));
+            self.pt.tex = Some(ctx.load_texture("pathtrace", img, eframe::egui::TextureOptions::default()));
         }
         if job.done.load(std::sync::atomic::Ordering::Relaxed)
-            && !self.pathtrace_notified {
-                self.pathtrace_notified = true;
-                self.pathtrace_done_at = Some(job.started.elapsed().as_secs_f32());
-                self.toast(format!("✅ {} · {} {} · {:.1}s — {}", crate::i18n::tr("Path trace FINISHED"), job.count.load(std::sync::atomic::Ordering::Relaxed), crate::i18n::tr("samples"), self.pathtrace_done_at.unwrap_or(0.0), crate::i18n::tr("Export PNG is ready")));
+            && !self.pt.notified {
+                self.pt.notified = true;
+                self.pt.done_at = Some(job.started.elapsed().as_secs_f32());
+                self.toast(format!("✅ {} · {} {} · {:.1}s — {}", crate::i18n::tr("Path trace FINISHED"), job.count.load(std::sync::atomic::Ordering::Relaxed), crate::i18n::tr("samples"), self.pt.done_at.unwrap_or(0.0), crate::i18n::tr("Export PNG is ready")));
             }
         // Repaint doar cat timp randarea e activa. Daca o cerem si dupa
         // terminare, egui ramane intr-o bucla permanenta si aplicatia "merge" continuu.
@@ -489,7 +489,7 @@ impl App {
     }
 
     pub fn export_pathtrace(&mut self, path: &str) {
-        let job = self.pathtrace.clone();
+        let job = self.pt.job.clone();
         let Some(job) = job else {
             self.error("No path trace running.");
             return;

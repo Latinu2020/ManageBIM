@@ -23,6 +23,8 @@ pub struct RtState {
     pub hdri: Option<(String, Arc<crate::hdri::Hdri>)>,
     /// the last error was already shown
     pub error_shown: bool,
+    /// an AI capture turned the view on just for itself: turn it off again afterwards
+    pub off_after_capture: bool,
 }
 
 impl App {
@@ -120,6 +122,11 @@ impl App {
         }
     }
 
+    /// A final render (Render › Path Trace) is running on the GPU: the live view pauses meanwhile.
+    pub fn gpu_render_running(&self) -> bool {
+        self.renderer.lock().map(|r| r.pt_job.is_some()).unwrap_or(false)
+    }
+
     /// The frame for the interactive view this paint (None while the first scene is still being built).
     pub fn rt_frame(&mut self, _aspect: f32) -> Option<PtFrame> {
         // a scene finished in the background
@@ -214,14 +221,14 @@ impl App {
         if self.renderer.lock().map(|r| r.gpu_live.error.is_some()).unwrap_or(true) {
             return false;
         }
-        let (w, h, samples, tlimit) = self.pathtrace_params;
+        let (w, h, samples, tlimit) = self.pt.params;
         let packed = Arc::new(PtScene::pack(&scene, self.rt_scene_key() ^ 0x5eed));
         let frame = self.pt_frame(packed, samples, false);
         let job = crate::pathtrace::new_job((w, h, samples, tlimit), scene, frame.eye, frame.fwd, frame.up, frame.right, frame.fov_deg, frame.sun, frame.light, frame.env, frame.night, frame.hdri.clone(), denoise);
         if let Ok(mut r) = self.renderer.lock() {
             r.pt_job = Some(crate::render::GpuJob { frame, job: job.clone(), last_read: std::time::Instant::now(), step: 1 });
         }
-        self.pathtrace = Some(job);
+        self.pt.job = Some(job);
         true
     }
 }

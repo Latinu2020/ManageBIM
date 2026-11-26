@@ -562,7 +562,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                 self.request_path(Purpose::RenderImage);
             }
             if ui.button("Path trace image…").on_hover_text("Progressive CPU path tracing with cancel and PNG export").clicked() {
-                self.pathtrace_open = true;
+                self.pt.open = true;
             }
             ui.label(RichText::new("Path trace: preview builds up sample by sample; export any time.").weak().small());
             ui.add_space(4.0);

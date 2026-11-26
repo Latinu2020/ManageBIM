@@ -3,6 +3,18 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.29.0-rc2 - 2026-11-27 (release candidate)
+- **Ray Trace view fixed**: only one rectangle of the view was refreshed (the part matching the 3D view's place in the window), the rest kept adding old frames and turned pale with ghosts of earlier views. Every pixel is now refreshed; the same fix applies to GPU renders and path-traced captures.
+- **Path Trace renders only in its window**: while a final render runs, the 3D view goes back to normal (the live Ray Trace view pauses and resumes afterwards); an AI capture with `ray_trace` no longer leaves Ray Trace turned on.
+- **No more dark blotches in renders** (CPU and GPU): the sky occlusion now fades smoothly with the distance of what is above (it was all or nothing within 2.5 m, which made patches on floors under beams and slabs), and the sun disc is closer to the real one (shadows were blurred into soft stains).
+- **Light and Ray Trace on the navigation bar** at the bottom of the 3D view (💡 opens brightness, ambient, sun and shadows right there).
+- **The chosen length unit is used everywhere**: an old setting reset it to m / mm on every frame, so ft-in, ft, in and cm did not show in measurements.
+- **IFC Mapping window** no longer grows taller by itself.
+- **Damaged files**: E57 and glTF readers no longer stop the app on a damaged file (a crash inside the glTF library is caught); the robustness test now also covers LAS and glTF (about 2,600 damaged files, none crash).
+- **Large point clouds fit in memory**: E57 / LAS / LAZ keep one point in N when the free memory is low (not only above 40 million points), with a note saying so.
+- **Endurance test**: 40 reloads of a model must not grow memory or the caches.
+- **Add-in test: 8 checks** - AutoCAD BIMCSEND, MBLEVELS and **MBREFERENCE**; Navisworks export, Levels, Walk path and **Issues** (new "quiet" / "file=" mode of the Issues plugin for Automation).
+
 ## 0.29.0-rc1 - 2026-11-26 (release candidate)
 - **Path tracing on the graphics card**: Render › Path Trace now renders on the GPU - many times faster than on the processor, with the same light model (soft sun shadows, sky / HDRI light with ambient occlusion, lamps with one bounce, GGX reflections, clearcoat, sheen, glass, PBR textures, section planes) and the same Intel Open Image Denoise at the end. The processor is still used when the graphics card cannot do it, or when *Render on the graphics card* is turned off in the Path Trace window.
 - **Interactive Ray Trace view** (Render › Ray Trace), like Interactive Ray Trace in Navisworks: the 3D view itself is path traced and refines while the camera stands still (half resolution while it moves), up to the number of samples set in the Path Trace window (256 by default), then it is denoised. Changing materials, colours, hidden items, the section or the lamps updates it automatically. While it is on, Render › Image, the Dashboard pictures and the AI `capture_view` (new `ray_trace` option) are path traced too.

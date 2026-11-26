@@ -13,7 +13,10 @@ pub fn load_gltf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, S
 /// Ca load_gltf, din memorie (GLB-ul din .b3dm / .i3dm); path da folderul resurselor externe.
 /// atch: tabelul de lot 3D Tiles 1.0 (randurile pe _BATCHID), daca exista.
 pub fn load_gltf_bytes(bytes: &[u8], path: &str, progress: &dyn Fn(f32, &str), batch: Option<Vec<Vec<(String, String)>>>) -> Result<RawModel, String> {
-    let g = gltf::Gltf::from_slice(bytes).map_err(|e| format!("Invalid glTF: {e}"))?;
+    // the gltf crate can panic while validating a damaged file (an index into an empty list): a clear error instead
+    let g = std::panic::catch_unwind(|| gltf::Gltf::from_slice(bytes))
+        .map_err(|_| "The glTF file is damaged (its structure cannot be read).".to_string())?
+        .map_err(|e| format!("Invalid glTF: {e}"))?;
     let base = Path::new(path).parent().map(|p| p.to_path_buf()).unwrap_or_default();
     let mut buffers: Vec<Vec<u8>> = Vec::new();
     for b in g.buffers() {

@@ -490,6 +490,8 @@ impl App {
         if args.get("ray_trace").and_then(|v| v.as_bool()).unwrap_or(false) {
             if !self.rt.on {
                 self.toggle_raytrace();
+                // only for this image: the user's view goes back to normal afterwards
+                self.rt.off_after_capture = true;
             }
             self.rt_scene_now();
         }
@@ -500,6 +502,12 @@ impl App {
     /// Imaginea capturata -> raspunsul MCP (JPEG in base64). Intoarce true daca a fost folosita.
     pub fn mcp_capture_done(&mut self, r: &Result<crate::video::Frame, String>) -> bool {
         let Some(tx) = self.mcp_capture.take() else { return false };
+        if std::mem::take(&mut self.rt.off_after_capture) && self.rt.on {
+            self.rt.on = false;
+            self.rt.scene = None;
+            self.rt.pending = None;
+            self.rt.key = 0;
+        }
         let res = match r {
             Ok(f) => {
                 let rgb = f.rgb();

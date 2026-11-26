@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Windows.Forms;
@@ -20,19 +21,23 @@ namespace ManageBIM.Navis
 
         private int Run(string[] parameters)
         {
+            // "quiet" (Automation / tests): no windows, every issue is added; "file=<path>" reads another issues file
+            bool quiet = parameters != null && parameters.Contains("quiet");
+            string file = parameters?.FirstOrDefault(p => p.StartsWith("file="))?.Substring(5);
+            void Say(string m) { if (!quiet) MessageBox.Show(m, "ManageBIM"); }
             Document doc = NwApp.ActiveDocument;
             if (doc == null || doc.Models.Count == 0)
             {
-                MessageBox.Show("Open the model first (the same model as in ManageBIM).", "ManageBIM");
+                Say("Open the model first (the same model as in ManageBIM).");
                 return 1;
             }
-            var issues = ManageBimIssues.Read(out string err);
+            var issues = ManageBimIssues.Read(out string err, file);
             if (issues.Count == 0)
             {
-                MessageBox.Show(err, "ManageBIM");
+                Say(err);
                 return 1;
             }
-            var pick = ManageBimIssues.Pick(issues, "ManageBIM issues -> Saved Viewpoints", "Add as viewpoints", true);
+            var pick = quiet ? Enumerable.Range(0, issues.Count).ToList() : ManageBimIssues.Pick(issues, "ManageBIM issues -> Saved Viewpoints", "Add as viewpoints", true);
             if (pick == null || pick.Count == 0) return 0;
             // metri -> unitatile documentului
             double s = UnitConversion.ScaleFactor(Units.Meters, doc.Units);
@@ -82,6 +87,7 @@ namespace ManageBIM.Navis
             try { doc.CurrentViewpoint.CopyFrom(original); } catch { }
             string marks = wanted == 0 ? "" : marked == wanted ? $"\n{marked} with markups (redlines)." :
                 $"\nMarkups added on {marked} of {wanted} viewpoints. For the others use Output > Navisworks (XML) > Viewpoints in ManageBIM, then Saved Viewpoints > right-click > Import Viewpoints.";
+            if (quiet) return ok == pick.Count ? 0 : 3;
             MessageBox.Show($"{ok} viewpoints added to Saved Viewpoints (folder list), {boxes} with a section box." + marks + (failed.Count > 0 ? "\n\nNot added:\n" + string.Join("\n", failed) : ""), "ManageBIM");
             return 0;
         }

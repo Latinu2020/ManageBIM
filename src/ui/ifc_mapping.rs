@@ -12,7 +12,7 @@ impl App {
         let mut io: Option<Purpose> = None;
         egui::Window::new(format!("{} IFC Mapping", egui_phosphor::regular::TREE_STRUCTURE))
             .open(&mut open)
-            .default_size([620.0, 520.0])
+            .default_size([620.0, 460.0])
             .min_width(480.0)
             .resizable(true)
             .collapsible(false)
@@ -36,10 +36,11 @@ impl App {
                 });
                 ui.separator();
                 let filter = ui.data(|d| d.get_temp::<String>(egui::Id::new("ifc_map_filter"))).unwrap_or_default().to_lowercase();
-                let bottom = 34.0;
+                // separator + button row below the table (with spacing); too little here makes the window creep taller
+                let bottom = 56.0;
                 let mut changed = false;
                 let mut del: Option<usize> = None;
-                egui::ScrollArea::vertical().id_salt("ifc_map_rules").max_height((ui.available_height() - bottom).max(120.0)).auto_shrink([false, false]).show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt("ifc_map_rules").max_height((ui.available_height() - bottom).clamp(120.0, 900.0)).auto_shrink([false, true]).show(ui, |ui| {
                     egui::Grid::new("ifc_map_grid_win").num_columns(4).striped(true).spacing([8.0, 4.0]).show(ui, |ui| {
                         ui.strong("Source category");
                         ui.strong("IFC class");

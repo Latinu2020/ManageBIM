@@ -121,7 +121,7 @@ plan voids and clearance zones, produce **Inventor-style 2D drawings**, render w
 
 ## What's new
 
-> **0.29.0-rc1** (release candidate, [download](https://github.com/Latinu2020/ManageBIM/releases/tag/v0.29.0-rc1)) — **path tracing on the graphics card** and an **interactive Ray Trace view** that refines while you look (like Navisworks); all length units incl. **ft-in**; OSNAP up to 40 px; a **Light** button in the top bar; IFC Mapping in its own window; add-in errors shown in ManageBIM.
+> **0.29.0-rc2** (release candidate, [download](https://github.com/Latinu2020/ManageBIM/releases/tag/v0.29.0-rc2)) — **path tracing on the graphics card** and an **interactive Ray Trace view** that refines while you look (like Navisworks); all length units incl. **ft-in**; OSNAP up to 40 px; a **Light** button in the top bar; IFC Mapping in its own window; add-in errors shown in ManageBIM. rc2: the Ray Trace view refreshes the whole frame, no dark blotches in renders, Light / Ray Trace on the navigation bar, all units in measurements.
 >
 > **0.28.9** — the **level preview** zooms (wheel), pans and lets you drag the model levels too; a **tidier ribbon** with every command on one tab; the **add-ins can no longer close Revit, AutoCAD / Plant 3D or Navisworks** (errors are logged with a short message) and are checked for every supported version, with an automated test for AutoCAD and Navisworks.
 >

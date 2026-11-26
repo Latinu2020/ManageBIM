@@ -4,8 +4,8 @@ use super::*;
 
 impl App {
     pub(super) fn pathtrace_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.pathtrace_open;
-        let running = self.pathtrace.as_ref().map(|j| !j.done.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(false);
+        let mut open = self.pt.open;
+        let running = self.pt.job.as_ref().map(|j| !j.done.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(false);
         egui::Window::new("Path trace (progressive CPU)")
             .open(&mut open)
             // fereastra mare: setarile in stanga, previewul randarii in dreapta (0.28)
@@ -20,7 +20,7 @@ impl App {
                 ui.add_enabled_ui(!running, |ui| {
                     ui.horizontal(|ui| {
                         ui.label("Resolution");
-                        let (mut w, h0) = (self.pathtrace_params.0, self.pathtrace_params.1);
+                        let (mut w, h0) = (self.pt.params.0, self.pt.params.1);
                         // proportia: patrat / 16:9 / 4:3 (inaltimea se calculeaza din latime)
                         let mut ratio = if h0 == w { 0 } else if h0 == w * 9 / 16 { 1 } else if h0 == w * 3 / 4 { 2 } else { 0 };
                         egui::ComboBox::from_id_salt("pt_res").width(80.0).selected_text(format!("{w} px")).show_ui(ui, |ui| {
@@ -34,15 +34,15 @@ impl App {
                             }
                         });
                         let h = match ratio { 1 => w * 9 / 16, 2 => w * 3 / 4, _ => w };
-                        self.pathtrace_params.0 = w;
-                        self.pathtrace_params.1 = h;
+                        self.pt.params.0 = w;
+                        self.pt.params.1 = h;
                         ui.label(RichText::new(format!("{w}×{h}")).weak());
                     });
                     ui.horizontal(|ui| {
                         ui.label("Samples");
-                        ui.add(egui::DragValue::new(&mut self.pathtrace_params.2).range(1..=1024).speed(4.0));
+                        ui.add(egui::DragValue::new(&mut self.pt.params.2).range(1..=1024).speed(4.0));
                         ui.label("Time limit (s, 0 = off)");
-                        ui.add(egui::DragValue::new(&mut self.pathtrace_params.3).range(0.0..=600.0).speed(1.0));
+                        ui.add(egui::DragValue::new(&mut self.pt.params.3).range(0.0..=600.0).speed(1.0));
                     });
                     ui.checkbox(&mut self.render.with_materials, "🎨 Render with materials")
                         .on_hover_text("Uses the assigned materials (colours, image textures, brick / tile / wood patterns, gloss, metal, glass). With no materials assigned yet, they are added automatically by IFC type. Hidden elements and the section are respected.");
@@ -123,17 +123,17 @@ impl App {
                             self.cancel_pathtrace();
                         }
                     }
-                    if ui.add_enabled(self.pathtrace_tex.is_some(), egui::Button::new("💾 Export PNG…")).clicked() {
+                    if ui.add_enabled(self.pt.tex.is_some(), egui::Button::new("💾 Export PNG…")).clicked() {
                         self.request_path(Purpose::ExportPathTrace);
                     }
                 });
-                if let Some(job) = &self.pathtrace {
+                if let Some(job) = &self.pt.job {
                     let n = job.count.load(std::sync::atomic::Ordering::Relaxed);
                     let total = job.samples_target;
                     let frac = if total > 0 { n as f32 / total as f32 } else { 0.0 };
                     let done = job.done.load(std::sync::atomic::Ordering::Relaxed);
                     // timerul se opreste la „Ready": pastram secundele de la terminare
-                    let secs = if done { self.pathtrace_done_at.unwrap_or(job.started.elapsed().as_secs_f32()) } else { job.started.elapsed().as_secs_f32() };
+                    let secs = if done { self.pt.done_at.unwrap_or(job.started.elapsed().as_secs_f32()) } else { job.started.elapsed().as_secs_f32() };
                     let fmt_dur = |s: f32| -> String {
                         if s < 60.0 { format!("{s:.0}s") } else { format!("{}m {:02}s", (s / 60.0) as u32, (s % 60.0) as u32) }
                     };
@@ -176,7 +176,7 @@ impl App {
                 let size = ui.available_size().max(egui::vec2(280.0, 240.0));
                 let (area, _) = ui.allocate_exact_size(size, Sense::hover());
                 ui.painter().rect_filled(area, crate::theme::RADIUS_MD, Color32::from_rgb(18, 20, 26));
-                if let Some(tex) = &self.pathtrace_tex {
+                if let Some(tex) = &self.pt.tex {
                     let ts = tex.size_vec2();
                     let inner = area.shrink(8.0);
                     let k = (inner.width() / ts.x.max(1.0)).min(inner.height() / ts.y.max(1.0)).max(0.05);
@@ -189,6 +189,6 @@ impl App {
                 }
                 });
             });
-        self.pathtrace_open = open;
+        self.pt.open = open;
     }
 }

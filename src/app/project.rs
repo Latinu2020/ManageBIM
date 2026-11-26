@@ -394,7 +394,7 @@ impl App {
         self.update_all_before = None;
         self.report_job = None;
         self.batch_queue.clear();
-        if let Some(j) = &self.pathtrace {
+        if let Some(j) = &self.pt.job {
             j.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
         }
         self.sel_results.clear();

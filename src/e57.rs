@@ -17,6 +17,21 @@ pub struct RawCloud {
 /// Cate puncte pastram cel mult (memorie video ~16 octeti / punct).
 pub const MAX_POINTS: usize = 40_000_000;
 
+/// Points that fit now: MAX_POINTS, or fewer when the free memory is low (a point costs about 48 bytes in
+/// memory and on the graphics card; at most 60 % of the free memory is used, at least 2 million points).
+pub fn point_budget() -> usize {
+    match crate::app::available_memory() {
+        Some(free) => ((free as f64 * 0.6 / 48.0) as usize).clamp(2_000_000, MAX_POINTS),
+        None => MAX_POINTS,
+    }
+}
+
+/// The note shown when a point cloud is thinned out.
+fn thinned_note(total: u64, stride: usize, shown: usize) -> String {
+    let why = if (total as f64 / stride as f64) < MAX_POINTS as f64 * 0.99 && point_budget() < MAX_POINTS { " to fit in the free memory" } else { "" };
+    format!("{total} points in the file: one point in {stride} kept{why} ({shown} shown).")
+}
+
 // ------------------------------------------------------------------ XML minimal
 
 #[derive(Default, Debug)]
@@ -144,11 +159,12 @@ impl File {
     }
 }
 
+// damaged files: a read past the end gives 0 (the caller then reports the file as unreadable)
 fn u16le(b: &[u8], o: usize) -> u16 {
-    u16::from_le_bytes([b[o], b[o + 1]])
+    b.get(o..o + 2).map_or(0, |s| u16::from_le_bytes([s[0], s[1]]))
 }
 fn u64le(b: &[u8], o: usize) -> u64 {
-    u64::from_le_bytes(b[o..o + 8].try_into().unwrap())
+    b.get(o..o + 8).and_then(|s| s.try_into().ok()).map_or(0, u64::from_le_bytes)
 }
 
 // ------------------------------------------------------------------ campuri
@@ -342,7 +358,7 @@ pub fn parse(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, R
     }
     let total: u64 = scans_xml.iter().filter_map(|s| s.kid("points").and_then(|p| p.attr_num("recordCount"))).map(|v| v as u64).sum();
     // peste limita: pastram un punct din `stride`
-    let stride = ((total as f64 / MAX_POINTS as f64).ceil() as usize).max(1);
+    let stride = ((total as f64 / point_budget() as f64).ceil() as usize).max(1);
     let mut cloud = RawCloud { base: DVec3::ZERO, pos: Vec::new(), col: Vec::new(), scans: Vec::new() };
     let mut raw = RawModel { elements: Vec::new(), info: Vec::new(), warnings: Vec::new() };
     let mut base_set = false;
@@ -460,7 +476,7 @@ pub fn parse(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, R
     raw.info.push(("Scans".into(), cloud.scans.len().to_string()));
     raw.info.push(("Points".into(), cloud.pos.len().to_string()));
     if stride > 1 {
-        raw.warnings.push(format!("{total} points in the file: one point in {stride} kept ({} shown).", cloud.pos.len()));
+        raw.warnings.push(thinned_note(total, stride, cloud.pos.len()));
     }
     if let Some(v) = root.kid("e57LibraryVersion").map(|n| n.text.trim().to_string()).filter(|v| !v.is_empty()) {
         raw.info.push(("Written by".into(), v));
@@ -675,7 +691,7 @@ pub fn parse_las(b: &[u8], progress: &dyn Fn(f32, &str)) -> Result<(RawModel, Ra
     if count == 0 {
         return Err("LAS: the file has no points.".into());
     }
-    let stride = ((count as f64 / MAX_POINTS as f64).ceil() as usize).max(1);
+    let stride = ((count as f64 / point_budget() as f64).ceil() as usize).max(1);
     // culorile pe 16 biti (ca in standard) sau pe 8 biti (unele programe): detectate din primele puncte
     let wide = rgb_at.is_some_and(|o| (0..count.min(2000)).any(|i| {
         let p = offset + i * rec + o;
@@ -803,7 +819,7 @@ pub fn parse_las(b: &[u8], progress: &dyn Fn(f32, &str)) -> Result<(RawModel, Ra
     raw.info.push(("Format".into(), format!("LAS {maj}.{min} point cloud (format {fmt})")));
     raw.info.push(("Points".into(), n.to_string()));
     if stride > 1 {
-        raw.warnings.push(format!("{count} points in the file: one point in {stride} kept ({n} shown)."));
+        raw.warnings.push(thinned_note(count as u64, stride, n));
     }
     progress(0.95, "Point cloud read");
     Ok((raw, cloud))

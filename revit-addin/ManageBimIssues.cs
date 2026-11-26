@@ -62,11 +62,11 @@ namespace ManageBIM
 
         private static string Un(string s) => s.Replace("\\n", "\n").Replace("\\\\", "\\");
 
-        public static List<MbIssue> Read(out string error)
+        public static List<MbIssue> Read(out string error, string file = null)
         {
             error = null;
             var list = new List<MbIssue>();
-            string f = OutboxFile();
+            string f = string.IsNullOrEmpty(file) ? OutboxFile() : file;
             if (!File.Exists(f)) { error = "No issues from ManageBIM yet.\nOpen ManageBIM, open the model and save at least one viewpoint (Review > Save View)."; return list; }
             MbIssue cur = null;
             foreach (string line in File.ReadAllLines(f))

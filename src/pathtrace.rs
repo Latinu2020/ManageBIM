@@ -17,7 +17,7 @@ pub const DN_DONE: u8 = 2;
 pub const DN_FAILED: u8 = 3;
 
 /// raza unghiulara a discului soarelui (rad): umbre moi, dar inca precise
-const SUN_RADIUS: f32 = 0.035;
+const SUN_RADIUS: f32 = 0.012;
 /// distanta pana la care un obstacol intuneca lumina cerului (ambient occlusion), in metri
 const AO_DIST: f32 = 2.5;
 /// raza becului (m) pentru lampile Point / Spot: umbrele lampilor au margini moi, ca in realitate
@@ -130,6 +130,17 @@ impl Scene {
             }
         }
         k
+    }
+
+    /// Sky visibility along d for the ambient occlusion: 1 = open, fading smoothly to 0 for an obstacle
+    /// right next to p. (A yes / no test within AO_DIST made patches: a floor under a beam at 2.4 m went
+    /// dark, the same floor under a slab at 2.6 m stayed fully lit.) Glass lets part of the sky through.
+    fn ao(&self, p: Vec3, d: Vec3) -> f32 {
+        let Some((t, tri)) = self.hit(p, d, AO_DIST) else { return 1.0 };
+        let a = self.colors[tri as usize][3] as f32 / 255.0;
+        let x = (t / AO_DIST).clamp(0.0, 1.0);
+        let near = x * x * (3.0 - 2.0 * x);
+        1.0 - a * (1.0 - near)
     }
 
     /// (albedo, rugozitate, metalicitate, normala tangenta) in punctul p, din hartile PBR sau din textura simpla
@@ -610,7 +621,7 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
     let (r1, r2) = (rng.next(), rng.next());
     let (r, phi) = (r1.sqrt(), std::f32::consts::TAU * r2);
     let hd = (nt * (r * phi.cos()) + nb * (r * phi.sin()) + n * (1.0 - r1).max(0.0).sqrt()).normalize();
-    let open = 0.18 + 0.82 * sc.transmit(p, hd, AO_DIST);
+    let open = 0.18 + 0.82 * sc.ao(p, hd);
     let irradiance = env(job, hd);
     let up = n.z.max(0.0);
     let amb = 0.30 + 0.28 * up;

@@ -195,8 +195,10 @@ impl App {
                     }
                     None => self.viewpoints.push(vp),
                 }
-                let h = hash_vp(self.viewpoints.iter().find(|v| v.issue.guid == si.guid).unwrap());
-                self.shared.known.insert(si.guid.clone(), (si.modified, h));
+                if let Some(v) = self.viewpoints.iter().find(|v| v.issue.guid == si.guid) {
+                    let h = hash_vp(v);
+                    self.shared.known.insert(si.guid.clone(), (si.modified, h));
+                }
                 pulled += 1;
             }
         }

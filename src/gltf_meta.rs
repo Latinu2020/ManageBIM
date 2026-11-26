@@ -48,6 +48,11 @@ fn comp_size(t: &str) -> usize {
 }
 
 fn read_num(t: &str, b: &[u8]) -> f64 {
+    // a value cut short by a damaged file counts as 0 instead of stopping the app
+    let mut pad = [0u8; 8];
+    let n = b.len().min(8);
+    pad[..n].copy_from_slice(&b[..n]);
+    let b = &pad[..];
     match t {
         "INT8" => b[0] as i8 as f64,
         "UINT8" => b[0] as f64,

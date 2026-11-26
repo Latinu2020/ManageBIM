@@ -123,7 +123,9 @@ impl eframe::App for App {
             theme::install_fonts_with(ctx, &self.settings.font_family);
             self.theme_dirty = true;
         }
-        crate::app::set_units_mm(self.settings.units_mm);
+        // the length unit chosen in the status bar / Settings / View › Options (m, cm, mm, ft-in, ft, in)
+        crate::app::set_unit(crate::app::Unit::from_code(&self.settings.unit_system));
+        crate::app::set_precision(self.settings.unit_precision);
         self.poll_jobs();
         self.mcp_step(ctx);
         self.check_file_changes();
@@ -626,6 +628,44 @@ impl App {
 
     /// Bara de sus, deasupra ribbonului: cautare, Model focus, tema, Setari si
     /// numele proiectului. E mutata aici ca sa nu impinga / suprapuna taburile.
+    /// Quick lighting (top bar and navigation bar): brightness, ambient, sun, shadows. True when
+    /// "More lighting…" was clicked (the caller closes its popup).
+    pub(super) fn quick_light_ui(&mut self, ui: &mut egui::Ui) -> bool {
+        ui.set_min_width(300.0);
+        let mut changed = false;
+        let mut more = false;
+        egui::Grid::new("quick_light_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+            ui.label("Brightness");
+            changed |= ui.add(egui::Slider::new(&mut self.render.exposure, 0.1..=crate::anim::MAX_BRIGHTNESS).logarithmic(true).fixed_decimals(2)).changed();
+            ui.end_row();
+            ui.label("Ambient light");
+            changed |= ui.add(egui::Slider::new(&mut self.render.ambient, 0.0..=3.0).fixed_decimals(2)).changed();
+            ui.end_row();
+            ui.label("Sun intensity");
+            changed |= ui.add(egui::Slider::new(&mut self.render.sun_power, 0.0..=10.0).logarithmic(true).smallest_positive(0.05).fixed_decimals(2)).changed();
+            ui.end_row();
+            ui.label("Shadows");
+            changed |= ui.checkbox(&mut self.render.shadows, "Cast shadows").changed();
+            ui.end_row();
+        });
+        ui.horizontal(|ui| {
+            if ui.button("↺ Default").clicked() {
+                self.render.reset_light();
+                changed = true;
+            }
+            if ui.button("More lighting…").on_hover_text("The Lighting panel: sky, sun position by date / place, lamps").clicked() {
+                self.render_subtab = 2;
+                self.open_panel(Panel::Render);
+                more = true;
+            }
+        });
+        if changed {
+            self.render.update_sun();
+            ui.ctx().request_repaint();
+        }
+        more
+    }
+
     fn app_bar(&mut self, ctx: &egui::Context) {
         use crate::theme::RibbonMode;
         let mode = self.settings.ribbon_mode;
@@ -660,36 +700,8 @@ impl App {
                         ui.memory_mut(|m| m.toggle_popup(lid));
                     }
                     egui::popup_below_widget(ui, lid, &lb, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                        ui.set_min_width(300.0);
-                        let mut changed = false;
-                        egui::Grid::new("quick_light_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-                            ui.label("Brightness");
-                            changed |= ui.add(egui::Slider::new(&mut self.render.exposure, 0.1..=crate::anim::MAX_BRIGHTNESS).logarithmic(true).fixed_decimals(2)).changed();
-                            ui.end_row();
-                            ui.label("Ambient light");
-                            changed |= ui.add(egui::Slider::new(&mut self.render.ambient, 0.0..=3.0).fixed_decimals(2)).changed();
-                            ui.end_row();
-                            ui.label("Sun intensity");
-                            changed |= ui.add(egui::Slider::new(&mut self.render.sun_power, 0.0..=10.0).logarithmic(true).smallest_positive(0.05).fixed_decimals(2)).changed();
-                            ui.end_row();
-                            ui.label("Shadows");
-                            changed |= ui.checkbox(&mut self.render.shadows, "Cast shadows").changed();
-                            ui.end_row();
-                        });
-                        ui.horizontal(|ui| {
-                            if ui.button("↺ Default").clicked() {
-                                self.render.reset_light();
-                                changed = true;
-                            }
-                            if ui.button("More lighting…").on_hover_text("The Lighting panel: sky, sun position by date / place, lamps").clicked() {
-                                self.render_subtab = 2;
-                                self.open_panel(Panel::Render);
-                                ui.memory_mut(|m| m.close_popup());
-                            }
-                        });
-                        if changed {
-                            self.render.update_sun();
-                            ui.ctx().request_repaint();
+                        if self.quick_light_ui(ui) {
+                            ui.memory_mut(|m| m.close_popup());
                         }
                     });
                     if ui.add(egui::Button::new("⚙ Settings").frame(false)).on_hover_text("Application settings: fonts / DPI, export, navigation, files").clicked() {
@@ -2103,7 +2115,7 @@ fn commands() -> Vec<Cmd> {
         c!("Home view", "View", "🏠", "acasa home", |a| a.go_home()),
         c!("Perspective / orthographic", "View", "🔭", "ortho perspectiva", |a| a.cam.ortho = !a.cam.ortho),
         c!("Path trace image", "Render", "◎", "path trace renderare progresiva cancel export png", |a| {
-            a.pathtrace_open = true;
+            a.pt.open = true;
         }),
         c!("Visual style: Shaded", "View", "◆", "stil umbrit shaded", |a| a.set_visual_style(crate::render::VisualStyle::Shaded)),
         c!("Visual style: Realistic", "View", "☀", "stil realist materiale texturi realistic", |a| a.set_visual_style(crate::render::VisualStyle::Realistic)),

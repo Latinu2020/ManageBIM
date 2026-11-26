@@ -235,6 +235,9 @@ impl GpuPt {
     unsafe fn clear(&mut self, gl: &glow::Context) {
         if let Some((fb, ..)) = self.fbo {
             gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fb));
+            // glClearBuffer respects the scissor rectangle egui leaves on: without this only part of the
+            // targets is zeroed and the rest keeps old memory (blocks of wrong colour in the image)
+            gl.disable(glow::SCISSOR_TEST);
             gl.draw_buffers(&[glow::COLOR_ATTACHMENT0, glow::COLOR_ATTACHMENT1, glow::COLOR_ATTACHMENT2]);
             for i in 0..3 {
                 gl.clear_buffer_f32_slice(glow::COLOR, i, &[0.0; 4]);
@@ -332,6 +335,13 @@ impl GpuPt {
         gl.bind_vertex_array(self.vao);
         let lf = u("u_frame");
         for _ in 0..n {
+            // the first sample overwrites every pixel (no blending), the next ones add up: the targets never
+            // need a clear that could miss pixels (stale memory showed as coloured blocks)
+            if self.samples == 0 {
+                gl.disable(glow::BLEND);
+            } else {
+                gl.enable(glow::BLEND);
+            }
             gl.uniform_1_u32(lf.as_ref(), self.samples.wrapping_mul(2_654_435_761).wrapping_add(self.samples));
             gl.draw_arrays(glow::TRIANGLES, 0, 3);
             self.samples += 1;
@@ -540,7 +550,7 @@ const uint PBR = $PBR_CODEu;
 const int MAX_DEPTH = $MAX_DEPTH;
 const float PI = 3.14159265;
 const float TAU = 6.2831853;
-const float SUN_RADIUS = 0.035;
+const float SUN_RADIUS = 0.012;
 const float AO_DIST = 2.5;
 const float LAMP_RADIUS = 0.06;
 const float DISTANT_RADIUS = 0.02;
@@ -636,6 +646,14 @@ float transmit(vec3 o, vec3 d, float tmax) {
         if (left <= 0.0 || k < 0.02) return k;
     }
     return k;
+}
+
+// sky visibility for the ambient occlusion: fades smoothly with the distance of the obstacle (as pathtrace.rs)
+float ao(vec3 p, vec3 d) {
+    float t; int tri;
+    if (!hit(p, d, AO_DIST, t, tri)) return 1.0;
+    float near = smoothstep(0.0, 1.0, clamp(t / AO_DIST, 0.0, 1.0));
+    return 1.0 - alpha_of(tri) * (1.0 - near);
 }
 
 void basis(vec3 n, out vec3 t, out vec3 b) {
@@ -886,7 +904,7 @@ void main() {
         float r1 = rnd(), r2 = rnd();
         float rr = sqrt(r1), phi = TAU * r2;
         vec3 hd = normalize(nt * (rr * cos(phi)) + nb * (rr * sin(phi)) + n * sqrt(max(1.0 - r1, 0.0)));
-        float open = 0.18 + 0.82 * transmit(p, hd, AO_DIST);
+        float open = 0.18 + 0.82 * ao(p, hd);
         vec3 irr = env(hd);
         float amb = 0.30 + 0.28 * max(n.z, 0.0);
         vec3 col = base * irr * (amb * open);

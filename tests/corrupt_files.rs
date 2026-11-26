@@ -1,4 +1,5 @@
 //! Robustness: truncated files or files with damaged bytes must never stop the app (panic).
+//! Formats: IFC, DXF, OBJ, PLY, FBX, STL, .bimc, LAS and glTF (.glb).
 //! For every test file: cuts at several lengths and copies with changed bytes
 //! (deterministic generator, the same variants on every run). Error = ok; panic = bug.
 use bimrust::*;
@@ -49,6 +50,57 @@ fn variants(data: &[u8], seed: u64) -> Vec<(String, Vec<u8>)> {
     out
 }
 
+/// A small LAS 1.2 point cloud (format 2: XYZ + RGB), 50 points.
+fn las_sample() -> Vec<u8> {
+    let mut b = vec![0u8; 227];
+    b[..4].copy_from_slice(b"LASF");
+    b[24] = 1;
+    b[25] = 2;
+    b[94..96].copy_from_slice(&227u16.to_le_bytes());
+    b[96..100].copy_from_slice(&227u32.to_le_bytes());
+    b[104] = 2;
+    b[105..107].copy_from_slice(&26u16.to_le_bytes());
+    b[107..111].copy_from_slice(&50u32.to_le_bytes());
+    for (k, v) in [0.001f64, 0.001, 0.001, 500000.0, 4000000.0, 100.0].iter().enumerate() {
+        b[131 + k * 8..139 + k * 8].copy_from_slice(&v.to_le_bytes());
+    }
+    for i in 0..50i32 {
+        let mut r = vec![0u8; 26];
+        r[0..4].copy_from_slice(&(i * 137).to_le_bytes());
+        r[4..8].copy_from_slice(&(i * 211 % 3000).to_le_bytes());
+        r[8..12].copy_from_slice(&(i * 53 % 900).to_le_bytes());
+        r[20..22].copy_from_slice(&((i as u16) * 1000).to_le_bytes());
+        b.extend_from_slice(&r);
+    }
+    b
+}
+
+/// A binary glTF (.glb) written by ManageBIM's own exporter from a small IFC.
+fn glb_sample() -> Vec<u8> {
+    let raw = load_any("tests/data/wall_opening.ifc", &|_, _| {}).expect("test IFC");
+    let m = build_model(raw, "wall_opening.ifc", glam::DVec3::ZERO);
+    let items: Vec<gltf_export::Item> = m
+        .elements
+        .iter()
+        .filter_map(|e| {
+            let (t0, t1) = (e.tri_start as usize, (e.tri_start + e.tri_count) as usize);
+            let tris = m.pos.get(t0 * 3..t1 * 3)?;
+            Some(gltf_export::Item {
+                model: &m.name,
+                level: &e.storey,
+                name: &e.name,
+                guid: &e.guid,
+                ifc_type: &e.ifc_type,
+                props: e.props.iter().map(|p| (p.group.as_str(), p.name.as_str(), p.value.as_str())).collect(),
+                tris,
+                gloss_metal: vec![[0, 0]; t1 - t0],
+                colors: (t0..t1).map(|t| m.tri_color.get(t).copied().unwrap_or([200, 200, 200, 255])).collect(),
+            })
+        })
+        .collect();
+    gltf_export::write_glb(&items, "test").0
+}
+
 #[test]
 fn corrupt_files_never_panic() {
     let files = [
@@ -72,16 +124,26 @@ fn corrupt_files_never_panic() {
     std::panic::set_hook(Box::new(|_| {}));
     let mut panics = Vec::new();
     let mut runs = 0;
-    for (fi, f) in files.iter().enumerate() {
-        let Ok(data) = std::fs::read(f) else { continue };
-        let ext = std::path::Path::new(f).extension().unwrap().to_string_lossy().to_string();
-        for (name, bytes) in variants(&data, 0x9E37_79B9_7F4A_7C15 ^ fi as u64) {
+    // files on disk plus generated ones: a LAS point cloud and a glTF written by the exporter
+    let mut inputs: Vec<(String, Vec<u8>, String)> = files
+        .iter()
+        .filter_map(|f| Some((f.to_string(), std::fs::read(f).ok()?, std::path::Path::new(f).extension()?.to_string_lossy().to_string())))
+        .collect();
+    inputs.push(("generated.las".into(), las_sample(), "las".into()));
+    inputs.push(("generated.glb".into(), glb_sample(), "glb".into()));
+    for (fi, (f, data, ext)) in inputs.iter().enumerate() {
+        for (name, bytes) in variants(data, 0x9E37_79B9_7F4A_7C15 ^ fi as u64) {
             let p = dir.join(format!("{fi}_{name}.{ext}"));
             std::fs::write(&p, &bytes).unwrap();
             let path = p.to_string_lossy().to_string();
             runs += 1;
             let r = std::panic::catch_unwind(|| {
                 // the .bimc cache has its own reader; a model that was read must also build (indices, colours)
+                // point clouds have their own reader (they do not go through load_any)
+                if path.ends_with(".las") {
+                    let _ = e57::read_las(&path, &|_, _| {});
+                    return;
+                }
                 let raw = if path.ends_with(".bimc") { bimc::read(&path) } else { load_any(&path, &|_, _| {}) };
                 if let Ok(raw) = raw {
                     let _ = build_model(raw, &path, glam::DVec3::ZERO);
@@ -99,4 +161,13 @@ fn corrupt_files_never_panic() {
     assert!(runs > 100, "{runs}");
     assert!(panics.is_empty(), "{} of {runs} corrupt files panicked (kept in {}):\n{}", panics.len(), dir.display(), panics.join("\n"));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Reads one file given in MB_ONE (to get a backtrace of a failure found above).
+#[test]
+#[ignore]
+fn one_file() {
+    let Some(p) = std::env::var_os("MB_ONE") else { return };
+    let p = p.to_string_lossy().to_string();
+    let _ = load_any(&p, &|_, _| {}).map(|raw| build_model(raw, &p, glam::DVec3::ZERO));
 }

@@ -41,6 +41,7 @@ pub use raytrace::RtState;
 pub use clash_types::*;
 pub use measure_types::*;
 pub use project_types::*;
+pub use project::{available_memory, estimated_memory};
 pub use search_types::*;
 
 #[path = "walk.rs"]
@@ -650,13 +651,8 @@ pub struct App {
     pub anim_rec: Option<(Instant, Vec<crate::anim::Keyframe>)>,
     pub anim_sim_active: bool,
     pub render_job: Option<RenderJob>,
-    pub pathtrace: Option<std::sync::Arc<crate::pathtrace::PathTraceJob>>,
-    pub pathtrace_open: bool,
-    pub pathtrace_tex: Option<eframe::egui::TextureHandle>,
-    pub pathtrace_params: (u32, u32, u32, f32),
-    pub pathtrace_notified: bool,
-    /// secundele scurse la momentul terminarii (ca timerul sa nu mai creasca dupa „Ready")
-    pub pathtrace_done_at: Option<f32>,
+    /// the final render (Render › Path Trace): job, window, picture, settings
+    pub pt: PathTraceState,
     /// ultimul font aplicat (ca sa reinstalam fonturile doar la schimbare)
     pub font_family_cur: String,
     /// planul de taiere se trage cu mouse-ul in 3D (partea din cub)
@@ -1062,12 +1058,7 @@ impl App {
             anim_loop: false,
             anim_sim_active: false,
             render_job: None,
-            pathtrace: None,
-            pathtrace_open: false,
-            pathtrace_tex: None,
-            pathtrace_params: (256, 256, 32, 30.0),
-            pathtrace_notified: false,
-            pathtrace_done_at: None,
+            pt: PathTraceState::default(),
             font_family_cur: "Inter".into(),
             cut_drag: false,
             script_open: false,
@@ -1399,6 +1390,28 @@ pub fn grid_location_in(g: &GridData, p: Vec3) -> String {
 }
 
 /// Nivel definit de utilizator: nume si cota (m) fata de ±0.00 al proiectului.
+/// The final path-traced render (Render › Path Trace).
+pub struct PathTraceState {
+    /// the render running or finished (CPU or GPU)
+    pub job: Option<std::sync::Arc<crate::pathtrace::PathTraceJob>>,
+    /// the Path Trace window is open
+    pub open: bool,
+    /// the picture shown in the window
+    pub tex: Option<eframe::egui::TextureHandle>,
+    /// width, height, samples per pixel, time limit (s)
+    pub params: (u32, u32, u32, f32),
+    /// the "finished" notification was shown
+    pub notified: bool,
+    /// seconds elapsed when it finished (the timer stops at "Ready")
+    pub done_at: Option<f32>,
+}
+
+impl Default for PathTraceState {
+    fn default() -> Self {
+        PathTraceState { job: None, open: false, tex: None, params: (256, 256, 32, 30.0), notified: false, done_at: None }
+    }
+}
+
 /// Level state of the project (Level & Storey Manager).
 #[derive(Default)]
 pub struct LevelState {

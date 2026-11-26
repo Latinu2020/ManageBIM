@@ -812,7 +812,7 @@ impl App {
                 self.request_path(Purpose::RenderImage);
             }
             if rbtn(ui, "◎", "Path trace", "Progressive path traced image: preview, samples, time limit, Cancel, export PNG", false, true).clicked() {
-                self.pathtrace_open = true;
+                self.pt.open = true;
             }
             if rbtn(ui, "💡", "Lighting", "Create point / spot / distant lights, set their power (lux) and range, place and move them in the 3D view", false, true).clicked() {
                 self.render_subtab = 2;

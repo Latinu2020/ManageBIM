@@ -4,20 +4,18 @@ What is planned next. Done items move to the [CHANGELOG](CHANGELOG.md).
 
 ## Add-ins (Revit, Navisworks, AutoCAD / Plant 3D / Civil 3D)
 - **Test every add-in** on the other supported versions (only 2025 is installed here; all versions already build): checklist per command - export, Live Link, SwitchBack, coordination objects, properties.
-- **More automated add-in tests**: `tools\test-addins.ps1` covers AutoCAD (BIMCSEND, MBLEVELS) and the Navisworks export; next: Navisworks Levels / Walk / Issues, reference loading, and Revit through a journal file.
+- **Revit automated test** through a journal file (AutoCAD and Navisworks are covered by `tools\test-addins.ps1`: 8 checks).
 - **Improvements from testing**: clearer messages, faster exports on large models, fewer clicks.
 
 ## Code care
 - **Split the remaining large files**: `ui/viewport.rs` (~2200 lines) by tool, `app.rs` (~2500 lines) by area.
-- **Group the rest of the `App` state by subsystem** (`ClashState`, `MaterialsState`, `McpState` …), as done for the levels (`LevelState`).
+- **Group the rest of the `App` state by subsystem** (`ClashState`, `MaterialsState`, `McpState` …), as done for `LevelState`, `RtState` and `PathTraceState`.
 - **Lower the clippy baseline** (130 warnings today) step by step.
 - **English comments** in the older code (the new code already is), so others can contribute.
 
 ## Stability
-- **Fuzz more readers**: 0.28.8 tests damaged IFC, DXF, OBJ, PLY, FBX, STL and .bimc files; still to add E57, LAS / LAZ, glTF and a longer `cargo-fuzz` run.
-- **Fewer `unwrap` / `expect`** outside tests (~150 / ~37 today): clear error messages in the readers and exporters instead.
-- **Lower density for large point clouds**: 0.28.8 warns before files that do not fit in the free memory; next, offer to load a point cloud at a lower density.
-- **Endurance test**: open and close models many times to catch memory leaks.
+- **Fuzz E57** (no writer to make test files yet) and a longer `cargo-fuzz` run; IFC, DXF, OBJ, PLY, FBX, STL, .bimc, LAS and glTF are covered.
+- **Fewer `unwrap`** outside tests (49 today, mostly safe length-checked conversions).
 - **Software renderer without OpenGL 3.3** (VMs, old Remote Desktop); 0.28.8 already shows a clear message.
 
 ## Rendering

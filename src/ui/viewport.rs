@@ -373,7 +373,8 @@ impl App {
         }
         let r = self.renderer.clone();
         // interactive Ray Trace: only in the main 3D view
-        let pt = if self.rt.on && overlays { self.rt_frame(rect.width() / rect.height().max(1.0)) } else { None };
+        // paused while a final Path Trace render uses the graphics card (the render shows in its own window)
+        let pt = if self.rt.on && overlays && !self.gpu_render_running() { self.rt_frame(rect.width() / rect.height().max(1.0)) } else { None };
         // pagina de start peste proiect: modelul nu se mai deseneaza dedesubt
         if !self.start_screen() {
             let lists = std::sync::Arc::new(lists);
@@ -386,7 +387,7 @@ impl App {
                 })),
             });
         }
-        if self.rt.on && overlays {
+        if self.rt.on && overlays && !self.gpu_render_running() {
             self.rt_overlay(ui, &painter, rect);
         }
         if let Some(e) = self.renderer.lock().unwrap_or_else(|e| e.into_inner()).error.clone() {
@@ -2190,6 +2191,15 @@ impl App {
                         if big(ui, ic, lb, tip, false, true) {
                             self.cam.ortho = !self.cam.ortho;
                         }
+                        // light and ray trace, one click away
+                        let lid = egui::Id::new("nav_light_open");
+                        let light_open: bool = ui.data(|d| d.get_temp(lid)).unwrap_or(false);
+                        if big(ui, "💡", "Light", "Brightness, ambient light, sun and shadows", light_open, true) {
+                            ui.data_mut(|d| d.insert_temp(lid, !light_open));
+                        }
+                        if big(ui, "✨", "Ray Trace", "Path-traced view on the graphics card: refines while the camera stands still (like Navisworks)", self.rt.on, self.loaded_models().next().is_some()) {
+                            self.toggle_raytrace();
+                        }
                         // mers: traseu, redare, viteza - mereu pe bara (latime fixa: butoanele nu se muta sub mouse
                         // cand schimbi modul de navigare)
                         sep(ui);
@@ -2218,6 +2228,18 @@ impl App {
                     });
                 });
         });
+        // the light popup, just above the navigation bar
+        let lid = egui::Id::new("nav_light_open");
+        if ctx.data(|d| d.get_temp::<bool>(lid)).unwrap_or(false) {
+            let area = egui::Area::new(egui::Id::new("nav_light_popup")).fixed_pos(pos - EV::new(0.0, 46.0)).pivot(Align2::CENTER_BOTTOM).order(egui::Order::Foreground).show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| self.quick_light_ui(ui)).inner
+            });
+            // closes with "More lighting…", Esc, or a click outside it (not on the bar button itself)
+            let outside = ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !area.response.rect.contains(p) && p.y < pos.y - 40.0));
+            if area.inner || outside || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                ctx.data_mut(|d| d.insert_temp(lid, false));
+            }
+        }
     }
 
     pub(super) fn draw_measure(&self, painter: &egui::Painter, vp: &Mat4, rect: Rect, k: MeasureKind, pts: &[Vec3], col: Color32) {

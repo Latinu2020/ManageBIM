@@ -1002,6 +1002,7 @@ pub fn ph(s: &str) -> &str {
         "📁" => P::FOLDER,
         "📂" => P::FOLDER_OPEN,
         "💡" => P::LIGHTBULB,
+        "✨" => P::SPARKLE,
         "👆" | "🖱" => P::CURSOR,
         "👁" => P::EYE,
         "🎞" | "🎬" => P::FILM_STRIP,

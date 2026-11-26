@@ -6,11 +6,13 @@
   Runs without user interaction and leaves the user's settings and Inbox alone (everything goes to
   target\addin-test). For every program it finds:
    - AutoCAD / Plant 3D (accoreconsole.exe, every installed year): loads the add-in built for that year
-     (R24 = 2021-2024, R25 = 2025+), draws a box, runs BIMCSEND (model -> .bimc) and MBLEVELS
-     (levels -> lines, UCS, XData), saves the drawing. Checks the .bimc and the console messages.
+     (R24 = 2021-2024, R25 = 2025+), draws a box, runs BIMCSEND (model -> .bimc), MBLEVELS
+     (levels -> lines, UCS, XData) and MBREFERENCE (a ManageBIM reference from tests\fixtures\addins),
+     saves the drawing. Checks the .bimc and the console messages.
    - Navisworks Manage / Simulate (Automation API, every installed year): exports a sample IFC
      to .bimc with the ManageBIM add-in (nwd2bimc.exe) and checks the file; then runs ManageBIM Levels
-     (selection sets + plan viewpoints) and Walk path (viewpoint animation) on it.
+     (selection sets + plan viewpoints), Walk path (viewpoint animation) and Issues (viewpoints with
+     section box and markups) on it.
    - Revit has no headless mode: the script prints the manual checklist instead.
   Exit code: 0 all passed, 1 a test failed, 2 nothing to test.
 
@@ -56,11 +58,13 @@ foreach ($a in $acads) {
     New-Item -ItemType Directory -Force (Join-Path $dir 'inbox') | Out-Null
     "MBLEVELS1`nL`tGround Floor`t0`nL`tLevel 1`t3.2`nL`tLevel 2`t6.4`n" | Set-Content (Join-Path $dir 'levels.txt') -Encoding ascii -NoNewline
     $dwg = Join-Path $dir 'out.dwg'
+    $ref = Join-Path $root 'tests\fixtures\addins\wall_opening.mbref'
     @(
         'SECURELOAD 0', 'FILEDIA 0', "NETLOAD `"$dll`"",
         '_BOX 0,0,0 2,3,4',
         'BIMCSEND',
         'MBLEVELS',
+        'MBREFERENCE', "`"$ref`"",
         "_SAVEAS 2018 `"$dwg`"",
         '_QUIT _Y', ''
     ) -join "`r`n" | Set-Content (Join-Path $dir 'test.scr') -Encoding ascii
@@ -75,6 +79,7 @@ foreach ($a in $acads) {
     $err = if ($bimc) { Test-Bimc $bimc.FullName } else { 'no .bimc in the Inbox' }
     Add-Result "$name BIMCSEND" (-not $err -and $out -match 'ManageBIM: 1 objects') $(if ($err) { $err } else { "$($bimc.Length) bytes" })
     Add-Result "$name MBLEVELS" ($out -match '3 level lines' -and $out -match 'level written on 1 objects') $(if ($out -match '3 level lines') { '3 levels, UCS, XData' } else { "see $log" })
+    Add-Result "$name MBREFERENCE" ($out -match 'loaded - (\d+) meshes') $(if ($out -match 'loaded - (\d+) meshes') { "$($matches[1]) reference meshes on a locked layer" } else { "see $log" })
     Add-Result "$name no errors" (-not ($out -match 'stopped because of an error|Unhandled|Exception')) $(if (Test-Path $dwg) { 'drawing saved' } else { 'drawing not saved' })
 }
 Remove-Item Env:\MANAGEBIM_INBOX, Env:\MANAGEBIM_NO_LAUNCH, Env:\MB_LEVELS_FILE -ErrorAction SilentlyContinue
@@ -101,9 +106,11 @@ foreach ($n in $navis) {
     # Levels and Walk path through the Automation API (the plugins' "quiet" mode, input files given with file=)
     "MBLEVELS1`nL`tGround Floor`t0`nL`tLevel 1`t3.2`n" | Set-Content (Join-Path $dir 'levels.txt') -Encoding ascii -NoNewline
     "MBWALK1`nNAME`tTest walk`nSPEED`t1.4`nEYE`t1.7`nP`t0 0 0`nP`t5 0 0`nP`t5 5 0`n" | Set-Content (Join-Path $dir 'walk.txt') -Encoding ascii -NoNewline
+    ("VIEW`tEntrance`tOpen`t1b4e28ba-2fa1-11d2-883f-0016d3cca427`tHigh`tMEP`nCAM`t-8 -8 4`t0.7 0.7 -0.2`t0 0 1`t50`t0`nTXT`tCheck the door`nEND`n" +
+     "VIEW`tPlan`tActive`t1b4e28ba-2fa1-11d2-883f-0016d3cca428`tNormal`t`nCAM`t5 5 30`t0 0 -1`t0 1 0`t0`t20`nBOX`t0 0 0`t10 10 3`nRED`t230 40 40`t3`t-0.1 -0.1 0.1 0.1`nEND`n") | Set-Content (Join-Path $dir 'issues.txt') -Encoding ascii -NoNewline
     $auto = Join-Path $dir 'auto.ps1'
     @'
-param($NwDir, $Ifc, $Levels, $Walk)
+param($NwDir, $Ifc, $Levels, $Walk, $Issues)
 $ErrorActionPreference = 'Stop'
 Add-Type -Path (Join-Path $NwDir 'Autodesk.Navisworks.Automation.dll')
 $app = New-Object Autodesk.Navisworks.Api.Automation.NavisworksApplication
@@ -112,16 +119,18 @@ try {
     $app.OpenFile($Ifc)
     "LEVELS=" + $app.ExecuteAddInPlugin('ManageBIMLevels.MBIM', 'quiet', "file=$Levels")
     "WALK=" + $app.ExecuteAddInPlugin('ManageBIMWalk.MBIM', 'quiet', "file=$Walk")
+    "ISSUES=" + $app.ExecuteAddInPlugin('ManageBIMIssues.MBIM', 'quiet', "file=$Issues")
 } finally { $app.Dispose() }
 '@ | Set-Content $auto -Encoding ascii
     $log = Join-Path $dir 'auto.log'
-    $p = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$auto`"", '-NwDir', "`"$($n.FullName)`"", '-Ifc', "`"$ifc`"", '-Levels', "`"$(Join-Path $dir 'levels.txt')`"", '-Walk', "`"$(Join-Path $dir 'walk.txt')`"" -RedirectStandardOutput $log -RedirectStandardError (Join-Path $dir 'auto.err') -PassThru -WindowStyle Hidden
+    $p = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$auto`"", '-NwDir', "`"$($n.FullName)`"", '-Ifc', "`"$ifc`"", '-Levels', "`"$(Join-Path $dir 'levels.txt')`"", '-Walk', "`"$(Join-Path $dir 'walk.txt')`"", '-Issues', "`"$(Join-Path $dir 'issues.txt')`"" -RedirectStandardOutput $log -RedirectStandardError (Join-Path $dir 'auto.err') -PassThru -WindowStyle Hidden
     $null = $p.Handle
     if (-not $p.WaitForExit($TimeoutSec * 1000)) { $p.Kill(); Add-Result "$name Levels / Walk" $false "timed out after $TimeoutSec s"; continue }
     $txt = Get-Content $log -Raw -ErrorAction SilentlyContinue
     Add-Result "$name Levels" ($txt -match 'LEVELS=0') $(if ($txt -match 'LEVELS=(\d+)') { "plugin returned $($matches[1]) (0 = sets and plan viewpoints made)" } else { "see $log" })
     # Walk: 0 = viewpoint animation, 4 = folder of viewpoints (both are a success)
     Add-Result "$name Walk path" ($txt -match 'WALK=(0|4)') $(if ($txt -match 'WALK=(\d+)') { "plugin returned $($matches[1])" } else { "see $log" })
+    Add-Result "$name Issues" ($txt -match 'ISSUES=0') $(if ($txt -match 'ISSUES=(\d+)') { "plugin returned $($matches[1]) (0 = both viewpoints added, with section box and markup)" } else { "see $log" })
 }
 
 # ------------------------------------------------------------------ Revit (manual)
