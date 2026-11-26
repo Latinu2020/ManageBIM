@@ -3,6 +3,14 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.28.6 - 2026-11-26
+Fixes found by testing the add-ins in Revit 2025, AutoCAD Plant 3D 2025 and Navisworks Manage 2025.
+- **Revit › Send selection** failed with "not a valid exportable view"; it now exports the 3D view and keeps only the selected elements.
+- **AutoCAD / Plant 3D**: the installer adds the ManageBIM add-in folder to AutoCAD's trusted locations (every profile; removed on uninstall), so AutoCAD no longer asks "Always Load" for the unsigned add-in at every start.
+- **Plant 3D levels**: objects on layer "0" get the project **area** (the drawing's folder in the Plant project, e.g. "Area_2") as level - from the add-in and when a Plant DWG is opened directly.
+- **Duplicate properties** with the same value and a name written two ways ("Actuator Height" / "ActuatorHeight") are merged.
+- **Level labels** stay at their level; on models with many levels the overlapping ones are hidden (the level lines stay, with a note) instead of piling up in a column.
+
 ## 0.28.5 - 2026-11-26
 - **Headroom check** (Coordination › Space checks › Headroom): points on every floor slab; the first beam, duct, pipe, cable tray, air terminal or stair above that is lower than the minimum clear height (2.10 m, editable) becomes a result in Clash Detective - obstacle × slab, with how much is missing (Critical from 200 mm, Major from 50 mm). Walls, columns, door heads and furniture standing on the floor are ignored.
 - **Egress check** (Space checks › Egress): per level, walking distance around walls to the nearest exit - exterior doors on the lowest level, stairs / ramps above - longer than the limit (45 m, editable), and floor areas or whole levels without any exit. Space (or slab) × nearest exit, with the farthest point.

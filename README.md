@@ -9,12 +9,12 @@
 Open **IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP, CityJSON, 3D Tiles, USD and point clouds** together, run clash detection and model checks,<br>
 plan voids and clearance zones, produce **Inventor-style 2D drawings**, render with **scanned PBR materials** — and stay in sync with Revit and Navisworks.
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.28.5-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.5/ManageBIM-Setup-0.28.5.exe)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.28.6-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.6/ManageBIM-Setup-0.28.6.exe)
 &nbsp;
 [![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Build%20from%20source-334155?style=for-the-badge&logo=linux&logoColor=white)](#building-from-source)
 
 [![Build](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml/badge.svg)](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-0.28.5-blue)
+![Version](https://img.shields.io/badge/version-0.28.6-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20FreeBSD-0078d4)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-b7410e)
 ![No admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a)
@@ -115,22 +115,22 @@ plan voids and clearance zones, produce **Inventor-style 2D drawings**, render w
 
 | Platform | Package | Notes |
 |---|---|---|
-| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.28.5.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.5/ManageBIM-Setup-0.28.5.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime, Intel Open Image Denoise and the scanned PBR material library. Per-user, **no administrator rights**, folder of your choice. |
-| **Linux** (x86-64) | [**ManageBIM-0.28.5-x86_64.AppImage**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.5/ManageBIM-0.28.5-x86_64.AppImage) | Single file: `chmod +x` and run. Or [build from source](#building-from-source). |
-| **FreeBSD** (x86-64) | [**ManageBIM-0.28.5-freebsd-x86_64.tar.gz**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.5/ManageBIM-0.28.5-freebsd-x86_64.tar.gz) | Unpack and run `./ManageBIM`. Needs `pkg install mesa-libs libxkbcommon`. |
+| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.28.6.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.6/ManageBIM-Setup-0.28.6.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime, Intel Open Image Denoise and the scanned PBR material library. Per-user, **no administrator rights**, folder of your choice. |
+| **Linux** (x86-64) | [**ManageBIM-0.28.6-x86_64.AppImage**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.6/ManageBIM-0.28.6-x86_64.AppImage) | Single file: `chmod +x` and run. Or [build from source](#building-from-source). |
+| **FreeBSD** (x86-64) | [**ManageBIM-0.28.6-freebsd-x86_64.tar.gz**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.6/ManageBIM-0.28.6-freebsd-x86_64.tar.gz) | Unpack and run `./ManageBIM`. Needs `pkg install mesa-libs libxkbcommon`. |
 
 ## What's new
 
+> **0.28.6** — fixes from testing the add-ins in **Revit 2025, Plant 3D 2025 and Navisworks 2025**: Revit *Send selection* works again; AutoCAD no longer asks "Always Load" for the ManageBIM add-in; Plant 3D objects get their project **area** as level; duplicate properties merged; level labels no longer pile up on models with many levels.
+>
 > **0.28.5** — **Headroom and Egress checks** (Coordination › Space checks): clear height under beams, ducts and stairs, and walking distance to the nearest exit, as Clash Detective tests. A full-height **Materials window** with texture thumbnails, *Save as file* and MaterialX imports kept in your library. The AI connection gets **images of the 3D view** and clash tools (status, comments, focus, BCF) and a redesigned window. Plus: Cancel for long loads, a notifications bell, F1 shortcuts, a new app icon and a status bar that fits at 150 %.
 >
 > **0.28.4** — **connect AI assistants** (Claude Code / Desktop, OpenCode, VS Code, local Ollama models through an MCP client) with the built-in **MCP server** (Share › AI connection): they can find elements, read properties, select, hide / isolate, set properties, run clash tests and scripts. **MaterialX** import / export now works with standard files (ambientCG, GPUOpen, Substance: node graphs, standard_surface / OpenPBR / UsdPreviewSurface) and saves to your library. Prebuilt **Linux AppImage** and **FreeBSD** packages are back.
->
-> **0.28.3** — **new open formats with per-object properties**: 3MF, CityJSON / CityJSONSeq, ifcJSON and ifcXML (converted with the official IFC schemas), 3D Tiles 1.1 / 1.0, USD (.usda) and LAZ. Richer DXF (block attributes, XDATA), LAS (one item per classification), PLY (segments) and glTF (EXT_structural_metadata). **Geometric diff between revisions** with a per-triangle **deviation heatmap**.
 
 Older versions: see the full **[CHANGELOG](CHANGELOG.md)**. What comes next: **[ROADMAP](ROADMAP.md)**.
 
 > **Windows:** the installer is not digitally signed yet — if SmartScreen asks, choose *More info › Run anyway*.
-> Silent install: `ManageBIM-Setup-0.28.5.exe /S` (add `/NoAddins` for the application only).
+> Silent install: `ManageBIM-Setup-0.28.6.exe /S` (add `/NoAddins` for the application only).
 >
 > **Linux / FreeBSD:** the add-ins (Revit, Navisworks, AutoCAD) and the native STEP / IGES reader exist only on Windows; everything else is the same.
 
