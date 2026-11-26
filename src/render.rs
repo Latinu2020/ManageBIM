@@ -53,6 +53,12 @@ pub struct Renderer {
     pub error: Option<String>,
     /// off-screen render request (Render tab) and its result
     pub capture: Option<CaptureReq>,
+    /// interactive Ray Trace view: the frame to refine this paint (set by the viewport callback)
+    pub pt_live: Option<crate::gpu_pt::PtFrame>,
+    pub gpu_live: crate::gpu_pt::GpuPt,
+    /// final render on the GPU (Render › Path Trace), advanced a few samples per paint
+    pub pt_job: Option<GpuJob>,
+    gpu_off: crate::gpu_pt::GpuPt,
     pub captured: Option<Result<Frame, String>>,
     fbo: Option<(glow::Framebuffer, glow::Renderbuffer, glow::Renderbuffer, u32, u32)>,
     tex: Option<glow::Texture>,
@@ -84,6 +90,15 @@ struct AoTargets {
 }
 
 #[derive(Clone)]
+/// A final path-traced render running on the GPU; its progress and result go to `job` (as for the CPU render).
+pub struct GpuJob {
+    pub frame: crate::gpu_pt::PtFrame,
+    pub job: std::sync::Arc<crate::pathtrace::PathTraceJob>,
+    pub last_read: std::time::Instant,
+    /// samples per paint (adapted to keep the interface responsive)
+    pub step: u32,
+}
+
 pub struct CaptureReq {
     pub params: FrameParams,
     pub w: u32,
@@ -92,6 +107,8 @@ pub struct CaptureReq {
     pub bg_bottom: [u8; 3],
     /// ce se deseneaza (ascunse / estompate ca in viewport); None = tot modelul (randari, video)
     pub lists: Option<std::sync::Arc<HashMap<u32, DrawList>>>,
+    /// path traced on the GPU instead of rasterised (Ray Trace view on): (frame, samples per pixel)
+    pub pt: Option<(crate::gpu_pt::PtFrame, u32)>,
 }
 
 #[derive(Clone, Copy)]
@@ -497,7 +514,7 @@ void main() {
 
 impl Renderer {
     pub fn new() -> Renderer {
-        Renderer { lists: None, prog: None, meshes: HashMap::new(), pprog: None, points: HashMap::new(), aoprog: None, ao_targets: Vec::new(), ao_vao: None, ao_failed: false, sprog: None, shadow_fbo: None, shadow_state: None, shadow_failed: false, pending: Vec::new(), error: None, capture: None, captured: None, fbo: None, tex: None }
+        Renderer { lists: None, prog: None, meshes: HashMap::new(), pprog: None, points: HashMap::new(), aoprog: None, ao_targets: Vec::new(), ao_vao: None, ao_failed: false, sprog: None, shadow_fbo: None, shadow_state: None, shadow_failed: false, pending: Vec::new(), error: None, capture: None, captured: None, fbo: None, tex: None, pt_live: None, gpu_live: Default::default(), pt_job: None, gpu_off: Default::default() }
     }
 
     unsafe fn init(&mut self, gl: &glow::Context) {
@@ -688,6 +705,19 @@ impl Renderer {
         if self.prog.is_none() {
             return;
         }
+        self.gpu_job_step(gl);
+        // interactive Ray Trace: the path-traced image replaces the rasterised view
+        if let Some(f) = self.pt_live.take() {
+            let mut vp = [0i32; 4];
+            gl.get_parameter_i32_slice(glow::VIEWPORT, &mut vp);
+            if self.gpu_live.live(gl, &f, vp, self.tex) {
+                if let Some(req) = self.capture.take() {
+                    let r = self.capture_frame(gl, &req);
+                    self.captured = Some(r);
+                }
+                return;
+            }
+        }
         self.shadow_state = if p.shadows { self.shadow_pass(gl, p, lists) } else { None };
         let wire = p.style == VisualStyle::Wireframe;
         if wire {
@@ -818,8 +848,98 @@ impl Renderer {
         gl.disable(glow::DEPTH_TEST);
     }
 
+    /// Advances the final GPU render: a few samples per paint (about 30 ms), a preview read back twice a
+    /// second, and at the end the sums go to the job, which then denoises in the background like the CPU render.
+    unsafe fn gpu_job_step(&mut self, gl: &glow::Context) {
+        let Some(mut gj) = self.pt_job.take() else { return };
+        let job = gj.job.clone();
+        let target = job.samples_target.max(1);
+        let n = job.count.load(std::sync::atomic::Ordering::Relaxed);
+        let timed_out = job.time_limit_secs > 0.0 && job.started.elapsed().as_secs_f32() >= job.time_limit_secs;
+        let cancel = job.cancel.load(std::sync::atomic::Ordering::Relaxed);
+        let prev_fb = gl.get_parameter_framebuffer(glow::FRAMEBUFFER_BINDING);
+        let mut vp = [0i32; 4];
+        gl.get_parameter_i32_slice(glow::VIEWPORT, &mut vp);
+        let scissor = gl.is_enabled(glow::SCISSOR_TEST);
+        let restore = |gl: &glow::Context| {
+            gl.bind_framebuffer(glow::FRAMEBUFFER, prev_fb);
+            gl.viewport(vp[0], vp[1], vp[2], vp[3]);
+            if scissor {
+                gl.enable(glow::SCISSOR_TEST);
+            }
+        };
+        let finished = n >= target || timed_out || cancel;
+        if !finished {
+            let k = gj.step.clamp(1, target - n);
+            let t0 = std::time::Instant::now();
+            let ok = self.gpu_off.accumulate(gl, &gj.frame, job.width as i32, job.height as i32, k, self.tex);
+            gl.finish();
+            restore(gl);
+            if !ok {
+                *job.denoise_msg.lock().unwrap_or_else(|e| e.into_inner()) = self.gpu_off.error.clone().unwrap_or_else(|| "GPU path tracing failed".into());
+                job.done.store(true, std::sync::atomic::Ordering::Relaxed);
+                return;
+            }
+            let ms = t0.elapsed().as_secs_f32() * 1000.0;
+            gj.step = if ms < 15.0 { (k * 2).min(64) } else if ms > 45.0 { (k / 2).max(1) } else { k };
+            job.count.store(self.gpu_off.samples, std::sync::atomic::Ordering::Relaxed);
+        }
+        if finished || gj.last_read.elapsed().as_secs_f32() > 0.5 {
+            gj.last_read = std::time::Instant::now();
+            if let Some((col, aux)) = self.gpu_off.read_back(gl) {
+                *job.buf.lock().unwrap_or_else(|e| e.into_inner()) = col;
+                *job.aux.lock().unwrap_or_else(|e| e.into_inner()) = aux;
+                job.count.store(self.gpu_off.samples, std::sync::atomic::Ordering::Relaxed);
+            }
+            restore(gl);
+        }
+        if finished {
+            crate::pathtrace::finish_job(job);
+        } else {
+            self.pt_job = Some(gj);
+        }
+    }
+
+    /// A path-traced image of `f` at w x h with `spp` samples (ACES tone map, as the renders); None if the
+    /// GPU path tracer is not available.
+    unsafe fn capture_pt(&mut self, gl: &glow::Context, f: &crate::gpu_pt::PtFrame, w: u32, h: u32, spp: u32) -> Option<Frame> {
+        let prev_fb = gl.get_parameter_framebuffer(glow::FRAMEBUFFER_BINDING);
+        let mut vp = [0i32; 4];
+        gl.get_parameter_i32_slice(glow::VIEWPORT, &mut vp);
+        let scissor = gl.is_enabled(glow::SCISSOR_TEST);
+        let mut ok = true;
+        // a few samples per call so one call never blocks the GPU for long
+        let mut left = spp.max(1);
+        while ok && left > 0 {
+            let k = left.min(16);
+            ok = self.gpu_off.accumulate(gl, f, w as i32, h as i32, k, self.tex);
+            gl.finish();
+            left -= k;
+        }
+        let data = if ok { self.gpu_off.read_back(gl) } else { None };
+        gl.bind_framebuffer(glow::FRAMEBUFFER, prev_fb);
+        gl.viewport(vp[0], vp[1], vp[2], vp[3]);
+        if scissor {
+            gl.enable(glow::SCISSOR_TEST);
+        }
+        let (col, _) = data?;
+        let n = self.gpu_off.samples.max(1) as f32;
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+        for p in col.chunks_exact(3) {
+            let c = crate::pathtrace::to_srgb([p[0] / n, p[1] / n, p[2] / n]);
+            rgba.extend_from_slice(&[c[0], c[1], c[2], 255]);
+        }
+        Some(Frame { w, h, rgba })
+    }
+
     /// Renders the scene into an off-screen framebuffer of any size and reads it back.
     unsafe fn capture_frame(&mut self, gl: &glow::Context, req: &CaptureReq) -> Result<Frame, String> {
+        // Ray Trace view: the image is path traced at the requested size (not while a final render uses the GPU)
+        if let (Some((f, spp)), None) = (&req.pt, &self.pt_job) {
+            if let Some(fr) = self.capture_pt(gl, f, req.w.max(16), req.h.max(16), *spp) {
+                return Ok(fr);
+            }
+        }
         let (w, h) = (req.w.max(16), req.h.max(16));
         let max = gl.get_parameter_i32(glow::MAX_RENDERBUFFER_SIZE).max(2048) as u32;
         if w > max || h > max {
@@ -1213,7 +1333,7 @@ unsafe fn delete_points(gl: &glow::Context, p: GpuPoints) {
     gl.delete_buffer(p.vbo_col);
 }
 
-unsafe fn compile_program(gl: &glow::Context, header: &str, vs: &str, fs: &str) -> Result<glow::Program, String> {
+pub(crate) unsafe fn compile_program(gl: &glow::Context, header: &str, vs: &str, fs: &str) -> Result<glow::Program, String> {
     let prog = gl.create_program()?;
     let mut shaders = Vec::new();
     for (ty, src) in [(glow::VERTEX_SHADER, vs), (glow::FRAGMENT_SHADER, fs)] {

@@ -18,7 +18,6 @@ impl App {
     pub(super) fn settings_window(&mut self, ctx: &egui::Context) {
         if !self.settings_open { return; }
         let mut open = self.settings_open;
-        let mut io: Option<Purpose> = None;
         egui::Window::new("⚙ Settings")
             .open(&mut open)
             .default_size([640.0, 660.0])
@@ -222,127 +221,27 @@ impl App {
                     });
                     ui.checkbox(&mut self.settings.nav_bar, "Floating navigation cube / bar in the 3D view");
 
-                    // ------------------------------------------------ export
+                    // ------------------------------------------------ sections & export (preferences)
                     ui.separator();
-                    section_title(ui, "IFC export — category mapping");
-                    ui.horizontal(|ui| {
-                        ui.label("MVD").on_hover_text("Model View Definition: which properties and fields are written in the IFC file");
-                        egui::ComboBox::from_id_salt("set_ifc_mvd").width(180.0).selected_text(self.settings.ifc_mvd.code()).show_ui(ui, |ui| {
-                            for m in crate::ifc_mvd::Mvd::ALL {
-                                if ui.selectable_value(&mut self.settings.ifc_mvd, m, m.label()).on_hover_text(m.tip()).clicked() {
-                                    self.settings.save();
-                                }
-                            }
-                        });
-                    });
-                    egui::ScrollArea::vertical().id_salt("ifc_map").max_height(150.0).show(ui, |ui| {
-                        egui::Grid::new("ifc_map_grid").num_columns(4).spacing([6.0, 2.0]).show(ui, |ui| {
-                            ui.strong("Source category");
-                            ui.strong("IFC class");
-                            ui.strong("IFC type");
-                            ui.strong("");
-                            ui.end_row();
-                            let mut del: Option<usize> = None;
-                            for (i, r) in self.settings.ifc_map.iter_mut().enumerate() {
-                                ui.add(egui::TextEdit::singleline(&mut r.source).desired_width(130.0));
-                                egui::ComboBox::from_id_salt(("ic", i)).width(170.0).selected_text(r.class.clone()).show_ui(ui, |ui| {
-                                    for (code, label) in crate::ifc_map::CLASSES {
-                                        ui.selectable_value(&mut r.class, code.to_string(), format!("{code} — {label}"));
-                                    }
-                                });
-                                ui.add(egui::TextEdit::singleline(&mut r.ifc_type).desired_width(90.0));
-                                if ui.small_button("✖").clicked() {
-                                    del = Some(i);
-                                }
-                                ui.end_row();
-                            }
-                            if let Some(i) = del {
-                                self.settings.ifc_map.remove(i);
-                                self.settings.save();
-                            }
-                        });
-                    });
-                    ui.horizontal(|ui| {
-                        if ui.small_button("➕ Add rule").clicked() {
-                            self.settings.ifc_map.push(crate::ifc_map::MapRule::default());
-                            self.settings.save();
-                        }
-                        if ui.small_button("📤 CSV…").on_hover_text("Export the mapping table to CSV (Source Category; IFC Class Name; IFC Type)").clicked() {
-                            io = Some(Purpose::ExportIfcMap);
-                        }
-                        if ui.small_button("📥 CSV…").on_hover_text("Import a mapping table from CSV").clicked() {
-                            io = Some(Purpose::ImportIfcMap);
-                        }
-                        if ui.small_button("↺ Default").on_hover_text("Restore the default mapping for non-IFC geometry").clicked() {
-                            self.settings.ifc_map = crate::ifc_map::default_rules();
-                            self.settings.save();
-                        }
-                    });
-
-                    ui.separator();
-                    section_title(ui, "DWG / DXF section export");
-                    ui.horizontal(|ui| {
-                        ui.label("View");
-                        let cur = self.settings.cad_view;
-                        egui::ComboBox::from_id_salt("mb_cad_view").selected_text(cur.label()).show_ui(ui, |ui| {
-                            for v in crate::app::CadView::ALL {
-                                let label = v.label();
-                                let mut tmp = v;
-                                if ui.selectable_value(&mut tmp, cur, label).clicked() {
-                                    self.settings.cad_view = v;
-                                    if v != crate::app::CadView::Current {
-                                        self.settings.cad_view_pos = 0.0;
-                                    }
-                                    self.settings.save();
-                                }
-                            }
-                        });
-                    })
-                    .response
-                    .on_hover_text("Current = the active section plane. Front / Back / Left / Right cut the whole model from that direction (no section needed).");
-                    if self.settings.cad_view != crate::app::CadView::Current {
-                        ui.horizontal(|ui| {
-                            ui.label("Cut position");
-                            let mut pct = (self.settings.cad_view_pos * 100.0).round() as i32;
-                            if ui.add(egui::Slider::new(&mut pct, 0..=100).suffix("%")).changed() {
-                                self.settings.cad_view_pos = pct as f32 / 100.0;
-                                self.settings.save();
-                            }
-                        })
-                        .response
-                        .on_hover_text("Distance from the chosen face: 0% = exactly on that face (front / left / top), 100% = the opposite face.");
-                    }
+                    section_title(ui, "Sections & export");
                     if ui.checkbox(&mut self.settings.snap_cut_to_grid, "Snap the cut plane to grids / levels").changed() {
                         self.settings.save();
                     }
-                    ui.checkbox(&mut self.cad_annotate, "Annotations: hatch, element tags, grids, levels")
-                        .on_hover_text("Turn off for a clean outline (only the cut edges, one DWG layer per element type).");
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut self.cad_hatch, "Hatch cut materials")
-                            .on_hover_text("Hatch the cut materials (filled contours) - off = clean outline.");
-                        ui.checkbox(&mut self.cad_dims, "Dimensions (chains)")
-                            .on_hover_text("Include dimension chains in the exported DWG / PDF cut.");
-                        ui.checkbox(&mut self.cad_levels, "Levels")
-                            .on_hover_text("Include level lines and labels in the exported DWG / PDF cut.");
-                    });
-                    ui.checkbox(&mut self.settings.show_cad_plane, "Highlight cut plane in 3D")
-                        .on_hover_text("Off by default: the cut plane quad and drag handle appear only when you turn this on.");
+                    if ui.checkbox(&mut self.settings.show_cad_plane, "Highlight the cut plane in 3D").on_hover_text("Off by default: the cut plane quad and drag handle appear only when you turn this on.").changed() {
+                        self.settings.save();
+                    }
                     ui.horizontal(|ui| {
                         ui.label("BCF export version");
-                        if ui.selectable_label(self.settings.bcf_version == 2, "2.1").clicked() {
-                            self.settings.bcf_version = 2;
-                            self.settings.save();
-                        }
-                        if ui.selectable_label(self.settings.bcf_version == 3, "3.0").clicked() {
-                            self.settings.bcf_version = 3;
-                            self.settings.save();
+                        for (v, label) in [(2u8, "2.1"), (3, "3.0")] {
+                            if ui.selectable_label(self.settings.bcf_version == v, label).clicked() {
+                                self.settings.bcf_version = v;
+                                self.settings.save();
+                            }
                         }
                     })
                     .response
                     .on_hover_text("BCF 3.0 places comments inside the Topic (newer BIMcollab / Solibri).");
-                    if ui.button("Title block & sheet format (A3 – A0)…").clicked() {
-                        self.title_block_open = true;
-                    }
+                    ui.label(RichText::new("The cut options (view, hatch, dimensions, levels, title block) are in the Annotation tab; the IFC class mapping in BIM › Map classes.").small().weak());
 
                     // ------------------------------------------------ navigare
                     ui.separator();
@@ -363,11 +262,11 @@ impl App {
                     if ui.checkbox(&mut self.settings.collision, "Collision with geometry").changed() { self.settings.save(); }
                     ui.horizontal(|ui| {
                         ui.label("Units");
-                        for (code, label) in [("m", "m"), ("mm", "mm"), ("in", "in"), ("ft", "ft")] {
+                        for (code, label) in crate::app::Unit::ALL {
                             if ui.selectable_label(self.settings.unit_system == code, label).clicked() {
                                 self.settings.unit_system = code.into();
                                 self.settings.units_mm = code == "mm";
-                                crate::app::set_unit(match code { "mm" => crate::app::Unit::Mm, "in" => crate::app::Unit::In, "ft" => crate::app::Unit::Ft, _ => crate::app::Unit::M });
+                                crate::app::set_unit(crate::app::Unit::from_code(code));
                                 self.settings.save();
                             }
                         }
@@ -383,10 +282,18 @@ impl App {
                         ui.checkbox(&mut self.osnap_on, "On")
                             .on_hover_text("Object Snap: snap to geometry while measuring, relocating or picking grid points. F3 toggles it.");
                         ui.label("radius");
-                        if ui.add(egui::DragValue::new(&mut self.settings.snap_radius).range(6.0..=24.0)).changed() {
+                        let r = ui.add(egui::Slider::new(&mut self.settings.snap_radius, 6.0..=40.0).suffix(" px").integer())
+                            .on_hover_text("How far from the cursor a vertex / midpoint / edge is caught; the snap marker grows with it");
+                        if r.changed() && (!r.dragged() || r.drag_stopped()) {
                             self.settings.save();
                         }
-                        ui.label("px");
+                        // preview: the capture circle and the vertex marker at this size
+                        let rad = self.settings.snap_radius;
+                        let (pr, _) = ui.allocate_exact_size(egui::vec2(rad * 2.0 + 6.0, rad * 2.0 + 6.0), egui::Sense::hover());
+                        let cyan = Color32::from_rgb(120, 230, 255);
+                        ui.painter().circle_stroke(pr.center(), rad, egui::Stroke::new(1.0_f32, cyan.gamma_multiply(0.5)));
+                        let z = (rad / 12.0).clamp(0.8, 3.0);
+                        ui.painter().rect_stroke(egui::Rect::from_center_size(pr.center(), egui::Vec2::splat(11.0 * z)), 0.0, egui::Stroke::new(2.0 * z.sqrt(), cyan));
                     });
                     ui.horizontal(|ui| {
                         ui.label("Snap to");
@@ -473,9 +380,6 @@ impl App {
                     ui.label(RichText::new("Settings are saved automatically in settings.json").weak().small());
                 });
             });
-        if let Some(p) = io {
-            self.request_path(p);
-        }
         self.settings_open = open;
     }
 }

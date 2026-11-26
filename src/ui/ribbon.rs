@@ -645,6 +645,9 @@ impl App {
             if rbtn(ui, "▤", "Filled cuts", "Cut faces drawn solid and hatched (closed solids), instead of seeing inside the elements", self.section_caps, true).clicked() {
                 self.section_caps = !self.section_caps;
             }
+            if rbtn(ui, "✎", "Annotate", "Annotations in the exported DWG / PDF cut: hatch, element tags, grids, levels - off = only the cut outline (one layer per element type)", self.cad_annotate, true).clicked() {
+                self.cad_annotate = !self.cad_annotate;
+            }
             if rbtn(ui, "▨", "Hatch", "Hatch the cut materials (filled contours) in the exported DWG / PDF cut - off = clean outline", self.cad_hatch, true).clicked() {
                 self.cad_hatch = !self.cad_hatch;
             }
@@ -682,8 +685,8 @@ impl App {
                 self.ifc_selection = true;
                 self.request_path(Purpose::ExportIfc);
             }
-            if rbtn(ui, "🗺", "Map classes", "Map non-IFC categories (STEP, OBJ, glTF, DWG) to an IFC class before export, like in Revit. Opens Settings › IFC export — category mapping. Import / export the table as CSV.", false, true).clicked() {
-                self.settings_open = true;
+            if rbtn(ui, "🗺", "Map classes", "IFC Mapping: map non-IFC categories (STEP, OBJ, glTF, DWG) to an IFC class and type before export, like in Revit. Import / export the table as CSV.", self.ifc_map_open, true).clicked() {
+                self.ifc_map_open = !self.ifc_map_open;
             }
         });
         rgroup(ui, "Classification", |ui| {
@@ -764,6 +767,11 @@ impl App {
 
     pub(super) fn ribbon_render(&mut self, ui: &mut egui::Ui) {
         self.style_group(ui);
+        rgroup(ui, "Ray Trace", |ui| {
+            if rbtn(ui, "✨", "Ray Trace", "Interactive Ray Trace: the 3D view is path traced on the graphics card - soft shadows, reflections, sky light, materials. It refines while the camera stands still (half resolution while moving) and is denoised when it is done, like Navisworks.", self.rt.on, self.loaded_models().next().is_some()).clicked() {
+                self.toggle_raytrace();
+            }
+        });
         rgroup(ui, "Presentation", |ui| {
             let on = self.panel_shown(Panel::Animation);
             if rbtn(ui, "🎞", "Animations", "Animations: Record, Orbit 360°, viewpoints, 4D - play them and export video", on, true).clicked() {
@@ -1154,10 +1162,17 @@ impl App {
                 let mut c = self.settings.clone();
                 ui.checkbox(&mut c.auto_cache, "Create .bimc cache when opening a model");
                 ui.checkbox(&mut c.use_cache, "Open the up-to-date .bimc cache instead");
-                if ui.checkbox(&mut c.units_mm, "Lengths in millimetres (measurements, distances)").changed() {
-                    self.settings.units_mm = c.units_mm;
-                    self.settings.save();
-                }
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Length unit");
+                    for (code, label) in crate::app::Unit::ALL {
+                        if ui.selectable_label(self.settings.unit_system == code, code).on_hover_text(label).clicked() {
+                            self.settings.unit_system = code.into();
+                            self.settings.units_mm = code == "mm";
+                            crate::app::set_unit(crate::app::Unit::from_code(code));
+                            self.settings.save();
+                        }
+                    }
+                });
                 ui.horizontal(|ui| {
                     ui.label("Interface size");
                     let mut pct = (self.settings.ui_scale * 100.0).round() as i32;

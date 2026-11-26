@@ -266,6 +266,7 @@ impl App {
             return;
         }
         self.colors_dirty = false;
+        self.rt.looks_gen = self.rt.looks_gen.wrapping_add(1);
         if self.materials_on {
             self.material_map(); // umple mat_cache daca e nevoie; mai jos doar il imprumutam
         }

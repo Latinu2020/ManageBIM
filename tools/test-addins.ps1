@@ -9,7 +9,8 @@
      (R24 = 2021-2024, R25 = 2025+), draws a box, runs BIMCSEND (model -> .bimc) and MBLEVELS
      (levels -> lines, UCS, XData), saves the drawing. Checks the .bimc and the console messages.
    - Navisworks Manage / Simulate (Automation API, every installed year): exports a sample IFC
-     to .bimc with the ManageBIM add-in (nwd2bimc.exe) and checks the file.
+     to .bimc with the ManageBIM add-in (nwd2bimc.exe) and checks the file; then runs ManageBIM Levels
+     (selection sets + plan viewpoints) and Walk path (viewpoint animation) on it.
    - Revit has no headless mode: the script prints the manual checklist instead.
   Exit code: 0 all passed, 1 a test failed, 2 nothing to test.
 
@@ -96,6 +97,31 @@ foreach ($n in $navis) {
     if (-not $p.WaitForExit($TimeoutSec * 1000)) { $p.Kill(); Add-Result "$name export" $false "timed out after $TimeoutSec s"; continue }
     $err = Test-Bimc $out
     Add-Result "$name export" ($p.ExitCode -eq 0 -and -not $err) $(if ($err) { "$err (exit $($p.ExitCode), see $dir\cli.log)" } else { "$((Get-Item $out).Length) bytes" })
+
+    # Levels and Walk path through the Automation API (the plugins' "quiet" mode, input files given with file=)
+    "MBLEVELS1`nL`tGround Floor`t0`nL`tLevel 1`t3.2`n" | Set-Content (Join-Path $dir 'levels.txt') -Encoding ascii -NoNewline
+    "MBWALK1`nNAME`tTest walk`nSPEED`t1.4`nEYE`t1.7`nP`t0 0 0`nP`t5 0 0`nP`t5 5 0`n" | Set-Content (Join-Path $dir 'walk.txt') -Encoding ascii -NoNewline
+    $auto = Join-Path $dir 'auto.ps1'
+    @'
+param($NwDir, $Ifc, $Levels, $Walk)
+$ErrorActionPreference = 'Stop'
+Add-Type -Path (Join-Path $NwDir 'Autodesk.Navisworks.Automation.dll')
+$app = New-Object Autodesk.Navisworks.Api.Automation.NavisworksApplication
+try {
+    $app.DisableProgress()
+    $app.OpenFile($Ifc)
+    "LEVELS=" + $app.ExecuteAddInPlugin('ManageBIMLevels.MBIM', 'quiet', "file=$Levels")
+    "WALK=" + $app.ExecuteAddInPlugin('ManageBIMWalk.MBIM', 'quiet', "file=$Walk")
+} finally { $app.Dispose() }
+'@ | Set-Content $auto -Encoding ascii
+    $log = Join-Path $dir 'auto.log'
+    $p = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$auto`"", '-NwDir', "`"$($n.FullName)`"", '-Ifc', "`"$ifc`"", '-Levels', "`"$(Join-Path $dir 'levels.txt')`"", '-Walk', "`"$(Join-Path $dir 'walk.txt')`"" -RedirectStandardOutput $log -RedirectStandardError (Join-Path $dir 'auto.err') -PassThru -WindowStyle Hidden
+    $null = $p.Handle
+    if (-not $p.WaitForExit($TimeoutSec * 1000)) { $p.Kill(); Add-Result "$name Levels / Walk" $false "timed out after $TimeoutSec s"; continue }
+    $txt = Get-Content $log -Raw -ErrorAction SilentlyContinue
+    Add-Result "$name Levels" ($txt -match 'LEVELS=0') $(if ($txt -match 'LEVELS=(\d+)') { "plugin returned $($matches[1]) (0 = sets and plan viewpoints made)" } else { "see $log" })
+    # Walk: 0 = viewpoint animation, 4 = folder of viewpoints (both are a success)
+    Add-Result "$name Walk path" ($txt -match 'WALK=(0|4)') $(if ($txt -match 'WALK=(\d+)') { "plugin returned $($matches[1])" } else { "see $log" })
 }
 
 # ------------------------------------------------------------------ Revit (manual)

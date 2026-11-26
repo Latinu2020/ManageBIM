@@ -83,7 +83,18 @@ impl App {
                     });
                     ui.horizontal(|ui| {
                         ui.label("Exposure").on_hover_text("Overall brightness (ACES tonemap keeps the highlights)");
-                        ui.add(egui::Slider::new(&mut self.render.exposure, 0.1..=3.0).step_by(0.05));
+                        ui.add(egui::Slider::new(&mut self.render.exposure, 0.1..=crate::anim::MAX_BRIGHTNESS).logarithmic(true).fixed_decimals(2));
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.checkbox(&mut self.settings.pt_gpu, "Render on the graphics card (GPU)").on_hover_text("Many times faster than the processor, same light and materials. Turn off if the graphics card has problems - the render then uses all processor cores.").changed() {
+                            self.settings.save();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Ray Trace view samples").on_hover_text("Interactive Ray Trace (Render tab): samples per pixel before the view stops refining and is denoised");
+                        if ui.add(egui::DragValue::new(&mut self.settings.rt_samples).range(16..=4096)).changed() {
+                            self.settings.save();
+                        }
                     });
                     ui.horizontal(|ui| {
                         let avail = crate::oidn::available();

@@ -486,6 +486,13 @@ impl App {
         if let Some((_, to, _)) = self.cam_anim.take() {
             self.cam = to;
         }
+        // ray_trace: a path-traced image (turns the Ray Trace view on, as the user would)
+        if args.get("ray_trace").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if !self.rt.on {
+                self.toggle_raytrace();
+            }
+            self.rt_scene_now();
+        }
         self.pending_capture = Some((w, h));
         Ok(())
     }

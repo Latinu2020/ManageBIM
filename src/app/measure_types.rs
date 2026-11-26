@@ -79,7 +79,7 @@ impl Measure {
                 for i in 0..p.len() {
                     n += p[i].cross(p[(i + 1) % p.len()]);
                 }
-                format!("{} m²", f3(n.length() * 0.5))
+                fmt_area((n.length() * 0.5) as f64)
             }
         }
     }
@@ -89,43 +89,101 @@ pub fn f3(v: f32) -> String {
     format!("{v:.3}")
 }
 
-/// Unitatea de afisare a lungimilor (masuratori, distante, coordonate).
+/// Display unit for lengths (measurements, distances, coordinates).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Unit { #[default] M, Mm, In, Ft }
+pub enum Unit { #[default] M, Mm, In, Ft, Cm, FtIn }
 
 impl Unit {
+    /// every unit, in the order shown in the pickers: (code saved in the settings, label)
+    pub const ALL: [(&'static str, &'static str); 6] = [("m", "m"), ("cm", "cm"), ("mm", "mm"), ("ft-in", "ft-in  (10' 4 1/2\")"), ("ft", "ft"), ("in", "in")];
+
     pub fn label(self) -> &'static str {
-        match self { Unit::M => "m", Unit::Mm => "mm", Unit::In => "in", Unit::Ft => "ft" }
+        match self { Unit::M => "m", Unit::Mm => "mm", Unit::In => "in", Unit::Ft | Unit::FtIn => "ft", Unit::Cm => "cm" }
     }
-    /// factor metri -> unitate
+    pub fn code(self) -> &'static str {
+        match self { Unit::M => "m", Unit::Mm => "mm", Unit::In => "in", Unit::Ft => "ft", Unit::Cm => "cm", Unit::FtIn => "ft-in" }
+    }
+    pub fn from_code(c: &str) -> Unit {
+        match c { "mm" => Unit::Mm, "in" => Unit::In, "ft" => Unit::Ft, "cm" => Unit::Cm, "ft-in" => Unit::FtIn, _ => Unit::M }
+    }
+    /// metres -> unit
     fn factor(self) -> f64 {
-        match self { Unit::M => 1.0, Unit::Mm => 1000.0, Unit::In => 39.37007874, Unit::Ft => 3.280839895 }
+        match self { Unit::M => 1.0, Unit::Mm => 1000.0, Unit::Cm => 100.0, Unit::In => 39.37007874, Unit::Ft | Unit::FtIn => 3.280839895 }
+    }
+    fn imperial(self) -> bool {
+        matches!(self, Unit::In | Unit::Ft | Unit::FtIn)
     }
 }
 
 static UNIT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0); // Unit::M
-static PREC: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(3); // zecimale
+static PREC: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(3); // decimals
 
 pub fn set_unit(u: Unit) { UNIT.store(u as u8, std::sync::atomic::Ordering::Relaxed); }
 pub fn unit() -> Unit {
-    match UNIT.load(std::sync::atomic::Ordering::Relaxed) { 1 => Unit::Mm, 2 => Unit::In, 3 => Unit::Ft, _ => Unit::M }
+    match UNIT.load(std::sync::atomic::Ordering::Relaxed) { 1 => Unit::Mm, 2 => Unit::In, 3 => Unit::Ft, 4 => Unit::Cm, 5 => Unit::FtIn, _ => Unit::M }
 }
 pub fn set_precision(p: u8) { PREC.store(p.clamp(0, 6), std::sync::atomic::Ordering::Relaxed); }
 pub fn precision() -> u8 { PREC.load(std::sync::atomic::Ordering::Relaxed) }
 
-/// compatibilitate cu setarile vechi (units_mm)
+/// compatibility with the old settings (units_mm)
 pub fn set_units_mm(mm: bool) { set_unit(if mm { Unit::Mm } else { Unit::M }); }
 pub fn units_mm() -> bool { unit() == Unit::Mm }
 
-/// Lungime (metri) in unitatea aleasa, cu sufix.
+/// Feet and inches with the inches rounded to 1/16 (e.g. 10' 4 1/2", -2' 0 3/16").
+pub fn fmt_ft_in(m: f64) -> String {
+    let sign = if m < 0.0 { "-" } else { "" };
+    let sixteenths = (m.abs() * 39.37007874 * 16.0).round() as i64;
+    let (feet, rest) = (sixteenths / (12 * 16), sixteenths % (12 * 16));
+    let (inch, frac) = (rest / 16, rest % 16);
+    let frac = if frac == 0 {
+        String::new()
+    } else {
+        let g = [8, 4, 2, 1].into_iter().find(|g| frac % g == 0).unwrap_or(1);
+        format!(" {}/{}", frac / g, 16 / g)
+    };
+    format!("{sign}{feet}' {inch}{frac}\"")
+}
+
+/// Length (metres) in the chosen unit, with its suffix.
 pub fn fmt_len(m: f64) -> String {
     let u = unit();
+    if u == Unit::FtIn {
+        return fmt_ft_in(m);
+    }
     format!("{:.*} {}", precision() as usize, m * u.factor(), u.label())
 }
 
-/// Numar fara unitate, in unitatea aleasa (ex. componentele ΔX / ΔY / ΔZ).
+/// Number without the unit, in the chosen unit (e.g. the ΔX / ΔY / ΔZ components).
 pub fn fmt_num(m: f64) -> String {
+    if unit() == Unit::FtIn {
+        return fmt_ft_in(m);
+    }
     format!("{:.*}", precision() as usize, m * unit().factor())
 }
 
+/// Area (m²): m² for the metric units, ft² for the imperial ones.
+pub fn fmt_area(m2: f64) -> String {
+    if unit().imperial() {
+        format!("{:.*} ft²", precision().min(2) as usize, m2 * 10.763910417)
+    } else {
+        format!("{:.*} m²", precision().min(3) as usize, m2)
+    }
+}
+
 pub fn unit_label() -> &'static str { unit().label() }
+
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+
+    #[test]
+    fn feet_inches_and_areas() {
+        assert_eq!(fmt_ft_in(0.0), "0' 0\"");
+        assert_eq!(fmt_ft_in(3.1623), "10' 4 1/2\"");
+        assert_eq!(fmt_ft_in(-0.3048), "-1' 0\"");
+        assert_eq!(Unit::from_code("ft-in"), Unit::FtIn);
+        for (c, _) in Unit::ALL {
+            assert_eq!(Unit::from_code(c).code(), c);
+        }
+    }
+}

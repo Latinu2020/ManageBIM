@@ -36,6 +36,8 @@ mod measure_types;
 mod search_types;
 mod clash_types;
 mod project_types;
+mod raytrace;
+pub use raytrace::RtState;
 pub use clash_types::*;
 pub use measure_types::*;
 pub use project_types::*;
@@ -668,6 +670,10 @@ pub struct App {
     pub scenario_index: Option<(u64, std::sync::Arc<crate::script_builder::PropIndex>)>,
     /// fereastra de setari a aplicatiei (View › Settings / butonul ⚙)
     pub settings_open: bool,
+    /// interactive Ray Trace view (GPU path tracing in the viewport, like Navisworks)
+    pub rt: RtState,
+    /// the IFC Mapping window (BIM › Map classes)
+    pub ifc_map_open: bool,
     pub still_path: Option<String>,
     pub pending_capture: Option<(u32, u32)>,
     /// imaginea (Render Image): vederea de dinainte (stil, materiale, selectie), refacuta dupa captura
@@ -1069,6 +1075,8 @@ impl App {
             scenario_index: None,
             script_help_open: false,
             settings_open: false,
+            rt: RtState::default(),
+            ifc_map_open: false,
             still_path: None,
             pending_capture: None,
             still_restore: None,

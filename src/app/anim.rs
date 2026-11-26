@@ -409,7 +409,7 @@ impl App {
         let denoise = self.settings.render_denoise && crate::oidn::available().is_ok();
         // luminile: soare, mediu (IBL) si expunerea generala
         let env = (self.render.env_mode, self.render.env_intensity.clamp(0.0, 3.0), self.render.env_rotation);
-        let light = self.render.sun_power.clamp(0.1, 3.0) * self.render.exposure.clamp(0.1, 3.0);
+        let light = self.render.sun_power.clamp(0.1, 3.0) * self.render.exposure.clamp(0.1, crate::anim::MAX_BRIGHTNESS);
         let hdri = if self.render.hdri_path.is_empty() { None } else {
             match crate::hdri::load(&self.render.hdri_path) {
                 Ok(h) => Some(std::sync::Arc::new(h)),
@@ -419,8 +419,12 @@ impl App {
                 }
             }
         };
-        self.pathtrace = Some(crate::pathtrace::start_arc((w, h, samples, tlimit), scene, cam.eye(), cam.fwd(), cam.up(), cam.right(), cam.fov_deg, sun, light, env, self.render.night, hdri, denoise));
-        self.toast(format!("Path tracing {}×{} · {} samples · {} s max{}", w, h, samples, tlimit, if denoise { " · denoise" } else { "" }));
+        // on the graphics card when possible (many times faster), otherwise on all processor cores
+        let gpu = self.start_gpu_render(scene.clone(), denoise);
+        if !gpu {
+            self.pathtrace = Some(crate::pathtrace::start_arc((w, h, samples, tlimit), scene, cam.eye(), cam.fwd(), cam.up(), cam.right(), cam.fov_deg, sun, light, env, self.render.night, hdri, denoise));
+        }
+        self.toast(format!("Path tracing {}×{} · {} samples · {} s max{} · {}", w, h, samples, tlimit, if denoise { " · denoise" } else { "" }, if gpu { "GPU" } else { "CPU" }));
     }
 
     pub fn cancel_pathtrace(&mut self) {

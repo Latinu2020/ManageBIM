@@ -253,7 +253,7 @@ impl App {
         let mut changed = false;
         egui::Grid::new(id).num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
                     ui.label("Brightness");
-                    changed |= ui.add(egui::Slider::new(&mut self.render.exposure, 0.3..=2.5).fixed_decimals(2)).changed();
+                    changed |= ui.add(egui::Slider::new(&mut self.render.exposure, 0.1..=crate::anim::MAX_BRIGHTNESS).logarithmic(true).fixed_decimals(2)).changed();
                     ui.end_row();
                     ui.label("Ambient light");
                     changed |= ui.add(egui::Slider::new(&mut self.render.ambient, 0.0..=3.0).fixed_decimals(2)).changed();

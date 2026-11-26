@@ -360,7 +360,9 @@ impl App {
             let cp = self.frame_params(w as f32 / h.max(1) as f32);
             // Dashboard / AI: imaginea arata ce se vede in viewport (ascunsele si estomparea clash-ului incluse)
             let lists = (self.dash_job.is_some() || self.mcp_capture.is_some()).then(|| std::sync::Arc::new(self.draw_lists(&cp, h as f32)));
-            self.renderer.lock().unwrap_or_else(|e| e.into_inner()).capture = Some(crate::render::CaptureReq { params: cp, w, h, bg_top, bg_bottom, lists });
+            // Ray Trace view on: the image is path traced too (64 samples, or the view's own count if lower)
+            let pt = if self.rt.on { self.rt.scene.clone().map(|sc| (self.rt_capture_frame(sc), self.settings.rt_samples.clamp(16, 64))) } else { None };
+            self.renderer.lock().unwrap_or_else(|e| e.into_inner()).capture = Some(crate::render::CaptureReq { params: cp, w, h, bg_top, bg_bottom, lists, pt });
         }
         // ce se deseneaza: campul vizual, fara ascunse; simplificat cat timp camera se misca.
         // Lista e capturata de callback (NU in renderer) - altfel, in split-view, al doilea
@@ -370,6 +372,8 @@ impl App {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(350));
         }
         let r = self.renderer.clone();
+        // interactive Ray Trace: only in the main 3D view
+        let pt = if self.rt.on && overlays { self.rt_frame(rect.width() / rect.height().max(1.0)) } else { None };
         // pagina de start peste proiect: modelul nu se mai deseneaza dedesubt
         if !self.start_screen() {
             let lists = std::sync::Arc::new(lists);
@@ -377,9 +381,13 @@ impl App {
                 rect,
                 callback: Arc::new(eframe::egui_glow::CallbackFn::new(move |_info, p| {
                     let mut r = r.lock().unwrap_or_else(|e| e.into_inner());
+                    r.pt_live = pt.clone();
                     unsafe { r.paint(p.gl(), &params, Some(&lists)) };
                 })),
             });
+        }
+        if self.rt.on && overlays {
+            self.rt_overlay(ui, &painter, rect);
         }
         if let Some(e) = self.renderer.lock().unwrap_or_else(|e| e.into_inner()).error.clone() {
             painter.text(rect.center(), Align2::CENTER_CENTER, e, FontId::proportional(14.0), Color32::RED);
@@ -1788,28 +1796,36 @@ impl App {
                     label_bg(&painter, lp, &m.value(), Color32::from_rgb(120, 230, 255));
                 }
             }
+            // capture zone around the cursor (like the AutoCAD aperture): the OSNAP radius, faint
+            if let (true, Some(hp)) = (self.osnap_on, hover) {
+                if rect.contains(hp) {
+                    painter.circle_stroke(hp, self.settings.snap_radius, Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(120, 230, 255, 70)));
+                }
+            }
             if let Some(sp) = snap.and_then(|s| to_screen(&vp, rect, s)) {
-                // simbolul snap-ului: patrat = colt, triunghi = mijloc, X = pe muchie, cerc = suprafata
-                let st = Stroke::new(2.0_f32, Color32::from_rgb(120, 230, 255));
+                // snap marker, sized with the OSNAP radius: square = vertex, triangle = midpoint,
+                // X = on an edge, circle = surface
+                let z = (self.settings.snap_radius / 12.0).clamp(0.8, 3.0);
+                let st = Stroke::new(2.0 * z.sqrt(), Color32::from_rgb(120, 230, 255));
                 match snap_kind {
                     1 => {
-                        painter.rect_stroke(Rect::from_center_size(sp, EV::splat(11.0)), 0.0, st);
+                        painter.rect_stroke(Rect::from_center_size(sp, EV::splat(11.0 * z)), 0.0, st);
                     }
                     2 => {
-                        let pts = vec![sp + EV::new(0.0, -7.0), sp + EV::new(6.5, 5.0), sp + EV::new(-6.5, 5.0)];
+                        let pts = vec![sp + EV::new(0.0, -7.0) * z, sp + EV::new(6.5, 5.0) * z, sp + EV::new(-6.5, 5.0) * z];
                         painter.add(egui::Shape::closed_line(pts, st));
                     }
                     3 => {
-                        painter.line_segment([sp + EV::new(-5.0, -5.0), sp + EV::new(5.0, 5.0)], st);
-                        painter.line_segment([sp + EV::new(-5.0, 5.0), sp + EV::new(5.0, -5.0)], st);
+                        painter.line_segment([sp + EV::new(-5.0, -5.0) * z, sp + EV::new(5.0, 5.0) * z], st);
+                        painter.line_segment([sp + EV::new(-5.0, 5.0) * z, sp + EV::new(5.0, -5.0) * z], st);
                     }
                     _ => {
-                        painter.circle_stroke(sp, 6.0, st);
+                        painter.circle_stroke(sp, 6.0 * z, st);
                     }
                 }
                 let lbl = ["", "Vertex", "Midpoint", "Edge"][snap_kind as usize];
                 if !lbl.is_empty() {
-                    painter.text(sp + EV::new(10.0, 10.0), Align2::LEFT_TOP, lbl, FontId::proportional(10.5), Color32::from_rgb(120, 230, 255));
+                    painter.text(sp + EV::splat(7.0 * z + 4.0), Align2::LEFT_TOP, lbl, FontId::proportional(10.5 + z), Color32::from_rgb(120, 230, 255));
                 }
             }
             let hint = match k {
@@ -1854,7 +1870,7 @@ impl App {
                 for k in 1..self.walk_path.len() {
                     let (a, b) = (self.walk_path[k - 1], self.walk_path[k]);
                     if let Some(s) = to_screen(&vp, rect, (a + b) * 0.5 + lift) {
-                        label_bg_center(&painter, s + EV::new(0.0, -6.0), &format!("{:.2} m", (b - a).length()), pc);
+                        label_bg_center(&painter, s + EV::new(0.0, -6.0), &crate::app::fmt_len((b - a).length() as f64), pc);
                     }
                 }
                 // previzualizare 3D a urmatorului segment, pe podea, cu lungimea lui
@@ -1872,7 +1888,7 @@ impl App {
                             if let (Some(a), Some(b)) = (to_screen(&vp, rect, last + lift), to_screen(&vp, rect, q + lift)) {
                                 painter.extend(egui::Shape::dashed_line(&[a, b], Stroke::new(2.0_f32, pc.gamma_multiply(0.8)), 8.0, 5.0));
                                 painter.circle_stroke(b, 6.0, Stroke::new(2.0_f32, pc));
-                                label_bg_center(&painter, b + EV::new(0.0, -12.0), &format!("{:.2} m", (q - last).length()), pc);
+                                label_bg_center(&painter, b + EV::new(0.0, -12.0), &crate::app::fmt_len((q - last).length() as f64), pc);
                             }
                         }
                     }

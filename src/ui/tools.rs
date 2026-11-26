@@ -541,7 +541,7 @@ impl App {
                 ui.label(format!("{} items · centre {} · bottom Z {:.3}", sel.len(), Self::fmt_xyz(c), self.world(bb.min).z));
                 let moved_sel: Vec<ElemId> = sel.iter().copied().filter(|i| self.elem_offsets.contains_key(i)).collect();
                 if let Some(o) = moved_sel.first().and_then(|i| self.elem_offsets.get(i)) {
-                    ui.label(RichText::new(format!("Moved by {:.3}, {:.3}, {:.3} m from the original position", o[0], o[1], o[2])).color(accent()));
+                    ui.label(RichText::new(format!("Moved by {}, {}, {} from the original position", crate::app::fmt_len(o[0] as f64), crate::app::fmt_len(o[1] as f64), crate::app::fmt_len(o[2] as f64))).color(accent()));
                 }
                 egui::Grid::new("movegrid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
                     ui.label("Move by ΔX / ΔY / ΔZ");

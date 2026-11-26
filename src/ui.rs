@@ -43,6 +43,7 @@ mod ribbon;
 mod viewport;
 mod start_page;
 mod docking;
+mod ifc_mapping;
 pub use prop_editor::PropEditor;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
@@ -277,6 +278,7 @@ impl eframe::App for App {
         self.pathtrace_window(ctx);
         self.script_window(ctx);
         self.settings_window(ctx);
+        self.ifc_mapping_window(ctx);
         self.clash_focus_window(ctx);
         self.tools_window(ctx);
         self.sync_ui_prefs();
@@ -651,6 +653,45 @@ impl App {
                     if ui.add(chip).on_hover_text(format!("Theme: {} - click for {}", self.settings.theme.label(), nt.label())).clicked() {
                         self.set_theme(nt);
                     }
+                    // quick lighting: brightness, ambient, sun and shadows one click away
+                    let lb = ui.add(egui::Button::new("💡 Light").frame(false)).on_hover_text("Lighting of the 3D view (also used for images, videos and renders): brightness, ambient, sun, shadows");
+                    let lid = ui.make_persistent_id("quick_light");
+                    if lb.clicked() {
+                        ui.memory_mut(|m| m.toggle_popup(lid));
+                    }
+                    egui::popup_below_widget(ui, lid, &lb, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                        ui.set_min_width(300.0);
+                        let mut changed = false;
+                        egui::Grid::new("quick_light_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+                            ui.label("Brightness");
+                            changed |= ui.add(egui::Slider::new(&mut self.render.exposure, 0.1..=crate::anim::MAX_BRIGHTNESS).logarithmic(true).fixed_decimals(2)).changed();
+                            ui.end_row();
+                            ui.label("Ambient light");
+                            changed |= ui.add(egui::Slider::new(&mut self.render.ambient, 0.0..=3.0).fixed_decimals(2)).changed();
+                            ui.end_row();
+                            ui.label("Sun intensity");
+                            changed |= ui.add(egui::Slider::new(&mut self.render.sun_power, 0.0..=10.0).logarithmic(true).smallest_positive(0.05).fixed_decimals(2)).changed();
+                            ui.end_row();
+                            ui.label("Shadows");
+                            changed |= ui.checkbox(&mut self.render.shadows, "Cast shadows").changed();
+                            ui.end_row();
+                        });
+                        ui.horizontal(|ui| {
+                            if ui.button("↺ Default").clicked() {
+                                self.render.reset_light();
+                                changed = true;
+                            }
+                            if ui.button("More lighting…").on_hover_text("The Lighting panel: sky, sun position by date / place, lamps").clicked() {
+                                self.render_subtab = 2;
+                                self.open_panel(Panel::Render);
+                                ui.memory_mut(|m| m.close_popup());
+                            }
+                        });
+                        if changed {
+                            self.render.update_sun();
+                            ui.ctx().request_repaint();
+                        }
+                    });
                     if ui.add(egui::Button::new("⚙ Settings").frame(false)).on_hover_text("Application settings: fonts / DPI, export, navigation, files").clicked() {
                         self.settings_open = true;
                     }
@@ -914,11 +955,11 @@ impl App {
                     let cur_u = if self.settings.unit_system.is_empty() { "m".to_string() } else { self.settings.unit_system.clone() };
                     ui.menu_button(RichText::new(&cur_u).strong(), |ui| {
                         ui.label(RichText::new("Length unit").small().weak());
-                        for code in ["m", "mm", "in", "ft"] {
-                            if ui.selectable_label(cur_u == code, code).clicked() {
+                        for (code, label) in crate::app::Unit::ALL {
+                            if ui.selectable_label(cur_u == code, label).clicked() {
                                 self.settings.unit_system = code.into();
                                 self.settings.units_mm = code == "mm";
-                                crate::app::set_unit(match code { "mm" => crate::app::Unit::Mm, "in" => crate::app::Unit::In, "ft" => crate::app::Unit::Ft, _ => crate::app::Unit::M });
+                                crate::app::set_unit(crate::app::Unit::from_code(code));
                                 self.settings.save();
                                 ui.close_menu();
                             }

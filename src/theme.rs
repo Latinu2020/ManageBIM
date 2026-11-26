@@ -285,6 +285,12 @@ pub struct Settings {
     /// Render (path trace): curata zgomotul cu Intel Open Image Denoise la final
     #[serde(default = "yes")]
     pub render_denoise: bool,
+    /// path tracing on the graphics card (much faster); off = on the processor
+    #[serde(default = "yes")]
+    pub pt_gpu: bool,
+    /// interactive Ray Trace view: samples per pixel before it stops refining (and denoises)
+    #[serde(default = "default_rt_samples")]
+    pub rt_samples: u32,
     /// rezolutia texturilor PBR pe GPU: 0 = 512, 1 = 1024, 2 = 2048
     #[serde(default)]
     pub tex_res: u32,
@@ -322,6 +328,10 @@ pub fn default_sel_mix() -> f32 {
 
 fn auto() -> String {
     "auto".into()
+}
+
+fn default_rt_samples() -> u32 {
+    256
 }
 
 fn yes() -> bool {
@@ -380,7 +390,7 @@ fn default_walk() -> f32 {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), font_family: default_font_family(), font_size: default_font_size(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), snap_cut_to_grid: true, scripts_dir: String::new(), script_params: std::collections::BTreeMap::new(), show_cad_plane: false, show_section_box: true, show_section_behind: true, snap_radius: default_snap_radius(), snap_types: default_snap_types(), unit_system: "m".into(), unit_precision: default_precision(), keybinds: std::collections::BTreeMap::new(), vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default(), sel_rgb: default_sel_rgb(), sel_mix: default_sel_mix(), recent_cmds: Vec::new(), color_icons: true, vp_bg: default_vp_bg(), render_denoise: true, tex_res: 0, no_lod: false, ifc_mvd: crate::ifc_mvd::Mvd::Reference, ifc_map: crate::ifc_map::default_rules(), classifications: crate::classification::builtin(), check_updates: true, mcp: Default::default() }
+        Settings { theme: Theme::Dark, auto_cache: true, use_cache: true, recent: Vec::new(), tools: Default::default(), layout: Default::default(), walk_speed: default_walk(), gravity: false, collision: false, eye_height: 1.7, tree_levels: crate::app::default_tree_levels(), ribbon_min: false, ribbon_mode: RibbonMode::Full, sync_selection: false, sync_follow: true, visual_style: crate::render::VisualStyle::Realistic, nav_bar: true, units_mm: false, navis_units: auto(), romanian: false, ui_scale: default_ui_scale(), font_family: default_font_family(), font_size: default_font_size(), cad_view: crate::app::CadView::Current, cad_view_pos: default_cad_view_pos(), bcf_version: default_bcf_version(), section_cut_offset: default_cut_offset(), snap_cut_to_grid: true, scripts_dir: String::new(), script_params: std::collections::BTreeMap::new(), show_cad_plane: false, show_section_box: true, show_section_behind: true, snap_radius: default_snap_radius(), snap_types: default_snap_types(), unit_system: "m".into(), unit_precision: default_precision(), keybinds: std::collections::BTreeMap::new(), vp_root_label: default_vp_root(), clash_ui: ClashUiPrefs::default(), sel_rgb: default_sel_rgb(), sel_mix: default_sel_mix(), recent_cmds: Vec::new(), color_icons: true, vp_bg: default_vp_bg(), render_denoise: true, pt_gpu: true, rt_samples: default_rt_samples(), tex_res: 0, no_lod: false, ifc_mvd: crate::ifc_mvd::Mvd::Reference, ifc_map: crate::ifc_map::default_rules(), classifications: crate::classification::builtin(), check_updates: true, mcp: Default::default() }
     }
 }
 
@@ -427,12 +437,7 @@ impl Settings {
         if s.unit_system.is_empty() {
             s.unit_system = if s.units_mm { "mm".into() } else { "m".into() };
         }
-        crate::app::set_unit(match s.unit_system.as_str() {
-            "mm" => crate::app::Unit::Mm,
-            "in" => crate::app::Unit::In,
-            "ft" => crate::app::Unit::Ft,
-            _ => crate::app::Unit::M,
-        });
+        crate::app::set_unit(crate::app::Unit::from_code(s.unit_system.as_str()));
         crate::app::set_precision(s.unit_precision);
         // vechiul implicit (3 m/s) -> viteza de mers normala; o valoare aleasa de utilizator ramane
         if s.walk_speed == 3.0 {

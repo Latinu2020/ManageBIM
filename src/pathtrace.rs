@@ -43,7 +43,8 @@ pub struct Scene {
 }
 
 impl Scene {
-    pub fn build(app: &crate::app::App) -> Self {
+    /// The visible triangles with their final colours and materials (as in the 3D view), without the BVH.
+    pub fn gather(app: &crate::app::App) -> Self {
         // Camera si geometria trebuie sa fie in ACELASI spatiu de coordonate.
         // Renderer-ul OpenGL foloseste vertecsi locali (m.pos) si cam.eye() local,
         // fara origin (origin e doar pentru export / coordonate reale). Daca adaugam
@@ -89,8 +90,13 @@ impl Scene {
         let textures = app.tex_layers.iter().map(|t| t.1.clone()).collect();
         let planes = app.section.gpu_planes();
         let lights: Vec<_> = app.lights.iter().filter(|l| l.enabled).cloned().collect();
-        let bvh = Bvh::build(&tris);
-        Scene { tris, colors, mats, extra, textures, planes, lights, bvh }
+        Scene { tris, colors, mats, extra, textures, planes, lights, bvh: Bvh::default() }
+    }
+
+    pub fn build(app: &crate::app::App) -> Self {
+        let mut s = Self::gather(app);
+        s.bvh = Bvh::build(&s.tris);
+        s
     }
 
     /// punctul ramane dupa sectiune (ca in shader)
@@ -253,8 +259,27 @@ pub struct PathTraceJob {
 // We'll use Arc<PathTraceJob> everywhere instead.
 #[allow(clippy::too_many_arguments)]
 pub fn start_arc(params: (u32, u32, u32, f32), scene: Arc<Scene>, cam_eye: Vec3, cam_fwd: Vec3, cam_up: Vec3, cam_right: Vec3, fov_deg: f32, sun: Vec3, light: f32, env: (u8, f32, f32), night: bool, hdri: Option<std::sync::Arc<crate::hdri::Hdri>>, denoise: bool) -> Arc<PathTraceJob> {
+    let job = new_job(params, scene, cam_eye, cam_fwd, cam_up, cam_right, fov_deg, sun, light, env, night, hdri, denoise);
+    let j = job.clone();
+    std::thread::spawn(move || {
+        // a panic while rendering must not leave the job running for ever (no new render could start)
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(j.clone()))).is_err() {
+            *j.denoise_msg.lock().unwrap_or_else(|e| e.into_inner()) = "internal error while rendering".into();
+            if j.denoise {
+                j.denoise_state.store(DN_FAILED, Ordering::Relaxed);
+            }
+            j.done.store(true, Ordering::Relaxed);
+        }
+    });
+    job
+}
+
+/// A render job without the CPU worker: the GPU path tracer fills `buf` / `aux` / `count`, then calls
+/// `finish_job`.
+#[allow(clippy::too_many_arguments)]
+pub fn new_job(params: (u32, u32, u32, f32), scene: Arc<Scene>, cam_eye: Vec3, cam_fwd: Vec3, cam_up: Vec3, cam_right: Vec3, fov_deg: f32, sun: Vec3, light: f32, env: (u8, f32, f32), night: bool, hdri: Option<std::sync::Arc<crate::hdri::Hdri>>, denoise: bool) -> Arc<PathTraceJob> {
     let (w, h, samples, tlimit) = params;
-    let job = Arc::new(PathTraceJob {
+    Arc::new(PathTraceJob {
         width: w, height: h, samples_target: samples, time_limit_secs: tlimit,
         cancel: AtomicBool::new(false),
         buf: Mutex::new(vec![0.0; (w * h * 3) as usize]),
@@ -267,19 +292,33 @@ pub fn start_arc(params: (u32, u32, u32, f32), scene: Arc<Scene>, cam_eye: Vec3,
         denoise_state: AtomicU8::new(DN_OFF),
         denoised: Mutex::new(None),
         denoise_msg: Mutex::new(String::new()),
-    });
-    let j = job.clone();
+    })
+}
+
+/// The end of a GPU render: denoise in the background (if asked), then mark the job done.
+pub fn finish_job(job: Arc<PathTraceJob>) {
     std::thread::spawn(move || {
-        // o panica in randare nu lasa job-ul „in curs” pentru totdeauna (altfel nu mai poti porni alta randare)
-        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(j.clone()))).is_err() {
-            *j.denoise_msg.lock().unwrap_or_else(|e| e.into_inner()) = "internal error while rendering".into();
-            if j.denoise {
-                j.denoise_state.store(DN_FAILED, Ordering::Relaxed);
-            }
-            j.done.store(true, Ordering::Relaxed);
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| finish(&job))).is_err() {
+            job.done.store(true, Ordering::Relaxed);
         }
     });
-    job
+}
+
+fn finish(job: &PathTraceJob) {
+    if job.denoise && job.count.load(Ordering::Relaxed) > 0 {
+        job.denoise_state.store(DN_RUNNING, Ordering::Relaxed);
+        match denoise_job(job) {
+            Ok(img) => {
+                *job.denoised.lock().unwrap_or_else(|e| e.into_inner()) = Some(img);
+                job.denoise_state.store(DN_DONE, Ordering::Relaxed);
+            }
+            Err(e) => {
+                *job.denoise_msg.lock().unwrap_or_else(|e| e.into_inner()) = e;
+                job.denoise_state.store(DN_FAILED, Ordering::Relaxed);
+            }
+        }
+    }
+    job.done.store(true, Ordering::Relaxed);
 }
 
 /// Generator pseudo-aleator mic (PCG) - unul per pixel si per esantion, fara stare comuna intre fire.
@@ -398,21 +437,7 @@ fn run(job: Arc<PathTraceJob>) {
         job.count.fetch_add(1, Ordering::Relaxed);
         s += 1;
     }
-    if job.denoise && job.count.load(Ordering::Relaxed) > 0 {
-        job.denoise_state.store(DN_RUNNING, Ordering::Relaxed);
-        let r = denoise_job(&job);
-        match r {
-            Ok(img) => {
-                *job.denoised.lock().unwrap_or_else(|e| e.into_inner()) = Some(img);
-                job.denoise_state.store(DN_DONE, Ordering::Relaxed);
-            }
-            Err(e) => {
-                *job.denoise_msg.lock().unwrap_or_else(|e| e.into_inner()) = e;
-                job.denoise_state.store(DN_FAILED, Ordering::Relaxed);
-            }
-        }
-    }
-    job.done.store(true, Ordering::Relaxed);
+    finish(&job);
 }
 
 /// Imaginea medie (buf / count) curatata de OIDN cu albedo + normala.
@@ -708,7 +733,7 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
         let rdir = ggx_reflect(d, n, nt, nb, rough.max(0.03), rng);
         let (rc, _, _) = trace_d(job, p, rdir, rng, depth + 1);
         let fres = |k: usize| f0[k] + (1.0 - f0[k]) * (1.0 - head).powi(5);
-        let w = ((gloss * 0.55).max(metal * 0.75) + coat * 0.25).max(0.0).min(0.95);
+        let w = ((gloss * 0.55).max(metal * 0.75) + coat * 0.25).clamp(0.0, 0.95);
         for (k, v) in col.iter_mut().enumerate() {
             let f = (fres(k) * w).clamp(0.0, 1.0);
             *v = *v * (1.0 - f) + rc[k] * f;
@@ -957,7 +982,7 @@ mod tests {
         let right = fwd.cross(Vec3::Z).normalize();
         let up = right.cross(fwd);
         let shot = |target_z: f32| {
-            let lamp = crate::lights::SceneLight { name: "S".into(), kind: crate::lights::LightKind::Spot, pos: [0.0, 0.0, 6.0], target: [0.0, 0.0, target_z], angle: 70.0, color: [255, 255, 255], power: 8.0, radius: 0.0, enabled: true, ..Default::default() };
+            let lamp = crate::lights::SceneLight { name: "S".into(), kind: crate::lights::LightKind::Spot, pos: [0.0, 0.0, 6.0], target: [0.0, 0.0, target_z], angle: 70.0, color: [255, 255, 255], power: 8.0, radius: 0.0, enabled: true };
             let s = std::sync::Arc::new(Scene {
                 tris: sc.tris.clone(), colors: sc.colors.clone(), mats: sc.mats.clone(), extra: sc.extra.clone(),
                 textures: sc.textures.clone(), planes: sc.planes.clone(), lights: vec![lamp],

@@ -6,7 +6,6 @@ What is planned next. Done items move to the [CHANGELOG](CHANGELOG.md).
 - **Test every add-in** on the other supported versions (only 2025 is installed here; all versions already build): checklist per command - export, Live Link, SwitchBack, coordination objects, properties.
 - **More automated add-in tests**: `tools\test-addins.ps1` covers AutoCAD (BIMCSEND, MBLEVELS) and the Navisworks export; next: Navisworks Levels / Walk / Issues, reference loading, and Revit through a journal file.
 - **Improvements from testing**: clearer messages, faster exports on large models, fewer clicks.
-- **Show add-in errors in ManageBIM** too (today they go to addin.log and a message in the host program).
 
 ## Code care
 - **Split the remaining large files**: `ui/viewport.rs` (~2200 lines) by tool, `app.rs` (~2500 lines) by area.
@@ -22,4 +21,4 @@ What is planned next. Done items move to the [CHANGELOG](CHANGELOG.md).
 - **Software renderer without OpenGL 3.3** (VMs, old Remote Desktop); 0.28.8 already shows a clear message.
 
 ## Rendering
-- **Path tracing on the graphics card**: the photorealistic render runs on the processor today (all cores); on the GPU (compute shaders) it would be many times faster, with the same materials, lights and denoiser.
+- **Ray Trace view: denoise while moving** (a quick GPU denoiser) and more samples per frame on fast graphics cards; global illumination with more than one bounce.

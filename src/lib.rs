@@ -47,6 +47,7 @@ pub mod model;
 pub mod occt;
 pub mod oidn;
 pub mod pathtrace;
+pub mod gpu_pt;
 pub mod plant3d;
 pub mod plant3d_db;
 pub mod profiler;

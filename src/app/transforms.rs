@@ -239,7 +239,7 @@ impl App {
             Purpose::ImportSettingsProfile => {
                 match crate::theme::Settings::import_profile(std::path::Path::new(&path)) {
                     Ok(s) => {
-                        crate::app::set_unit(match s.unit_system.as_str() { "mm" => crate::app::Unit::Mm, "in" => crate::app::Unit::In, "ft" => crate::app::Unit::Ft, _ => crate::app::Unit::M });
+                        crate::app::set_unit(crate::app::Unit::from_code(s.unit_system.as_str()));
                         crate::app::set_precision(s.unit_precision);
                         self.settings = s;
                         self.toast(format!("Settings loaded from {}", crate::file_name(&path)));

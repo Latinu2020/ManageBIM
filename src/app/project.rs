@@ -187,6 +187,34 @@ impl App {
         self.changed_files = changed;
         self.scan_inbox();
         self.write_issue_outbox();
+        self.scan_addin_errors();
+    }
+
+    /// Errors of the Revit / AutoCAD / Navisworks add-ins (written to %LOCALAPPDATA%\ManageBIM\addin.log by
+    /// their guards) are shown here too, as notifications. Only errors written after ManageBIM started.
+    pub(super) fn scan_addin_errors(&mut self) {
+        static POS: std::sync::Mutex<Option<u64>> = std::sync::Mutex::new(None);
+        let Some(path) = std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("ManageBIM").join("addin.log")) else { return };
+        let len = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let mut pos = POS.lock().unwrap_or_else(|e| e.into_inner());
+        let from = match *pos {
+            None => {
+                *pos = Some(len);
+                return;
+            }
+            Some(p) if p > len => 0, // the log was cleared / rotated
+            Some(p) => p,
+        };
+        if len == from {
+            return;
+        }
+        *pos = Some(len);
+        drop(pos);
+        let Ok(bytes) = std::fs::read(&path) else { return };
+        let text = String::from_utf8_lossy(&bytes[from as usize..bytes.len().min(len as usize)]).to_string();
+        for msg in addin_errors(&text) {
+            self.error(msg);
+        }
     }
 
     /// Butonul Refresh (F5): reincarca modelele ale caror fisiere s-au modificat.
@@ -1174,5 +1202,44 @@ mod memory_tests {
         assert_eq!(super::estimated_memory("a.IFC", 100), 400);
         assert_eq!(super::estimated_memory("a.bimc", 100), 200);
         assert_eq!(super::estimated_memory("a.dwg", 100), 600);
+    }
+}
+
+/// The add-in errors in a piece of addin.log: "2026-11-26 20:24:01 [Revit] Export failed: System.X: message"
+/// (followed by the stack trace) -> "Revit add-in: Export failed - message".
+pub fn addin_errors(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let Some(open) = line.find(" [") else { continue };
+        let Some(close) = line[open..].find("] ").map(|c| open + c) else { continue };
+        let app = &line[open + 2..close];
+        let msg = &line[close + 2..];
+        let Some(f) = msg.find(" failed: ") else { continue };
+        let what = &msg[..f];
+        let mut err = msg[f + 9..].trim();
+        // "System.InvalidOperationException: text" -> "text"
+        if let Some(c) = err.find(": ") {
+            if err[..c].contains('.') && !err[..c].contains(' ') {
+                err = &err[c + 2..];
+            }
+        }
+        out.push(format!("{app} add-in: {what} failed - {err} (details in addin.log)"));
+    }
+    out
+}
+
+#[cfg(test)]
+mod addin_log_tests {
+    #[test]
+    fn errors_are_read_from_the_log() {
+        let log = "2026-11-26 20:24:01 [Revit] Export failed: System.InvalidOperationException: The view is not 3D
+   at ManageBIM.Revit.X.Run()
+2026-11-26 20:25:00 [AutoCAD] BIMCSEND: 12 objects
+2026-11-26 20:26:00 [Navisworks] Levels (window) failed: Object reference not set
+";
+        let e = super::addin_errors(log);
+        assert_eq!(e.len(), 2);
+        assert_eq!(e[0], "Revit add-in: Export failed - The view is not 3D (details in addin.log)");
+        assert!(e[1].starts_with("Navisworks add-in: Levels (window) failed - Object reference"));
     }
 }

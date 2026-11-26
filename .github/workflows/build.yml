@@ -150,6 +150,8 @@ jobs:
         with:
           files: artifacts/**/*
           generate_release_notes: true
+          # v0.29.0-rc1 etc.: a pre-release - not "latest", not offered by the in-app updater
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
       # pe GitHub raman doar ultimele 3 versiuni (release + tag); istoricul complet e in CHANGELOG.md
       - name: Keep only the last 3 releases
         env:

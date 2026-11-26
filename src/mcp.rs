@@ -377,7 +377,8 @@ pub fn tools() -> Vec<Value> {
                 "fit_all": { "type": "boolean", "description": "Zoom to the whole model first" },
                 "view": { "type": "string", "enum": ["top", "front", "back", "left", "right", "iso"], "description": "Standard view direction" },
                 "width": { "type": "integer", "description": "Pixels (256 - 2048, default 1280)" },
-                "height": { "type": "integer", "description": "Pixels (default width × 9/16)" }
+                "height": { "type": "integer", "description": "Pixels (default width × 9/16)" },
+                "ray_trace": { "type": "boolean", "description": "Path-traced image (GPU): soft shadows, reflections, sky light; turns the Ray Trace view on" }
             }),
             &[],
             true,
