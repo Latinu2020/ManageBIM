@@ -578,6 +578,50 @@ impl App {
                 ui.add(egui::TextEdit::singleline(&mut test.name).desired_width(220.0));
             });
             ui.add_space(4.0);
+            // headroom / egress: parametrii lor in locul selectiilor A / B
+            if let Some((check, p)) = test.special.as_mut() {
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
+                    let (title, what) = match check {
+                        crate::egress::Check::Headroom => ("Headroom check", "Points on the top of every floor slab (visible items); the first beam, duct, pipe, tray or stair above that is lower than the minimum becomes a result: obstacle × slab, with how much is missing. Walls, columns and furniture standing on the floor are ignored."),
+                        crate::egress::Check::Egress => ("Egress distance check", "Per level: walkable floor (walls cut at 1 m, doors pass), exits = exterior doors on the lowest level, stairs / ramps on the other levels. Points farther than the limit (walking distance, around walls) become results: space or slab × nearest exit. A level without any exit gives one result."),
+                    };
+                    ui.strong(title);
+                    ui.label(RichText::new(what).small().weak());
+                    ui.add_space(4.0);
+                    egui::Grid::new("cspecial").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+                        match check {
+                            crate::egress::Check::Headroom => {
+                                ui.label("Minimum clear height");
+                                ui.add(egui::DragValue::new(&mut p.min_headroom).range(1.5..=6.0).speed(0.01).suffix(" m"));
+                            }
+                            crate::egress::Check::Egress => {
+                                ui.label("Maximum travel distance");
+                                ui.add(egui::DragValue::new(&mut p.max_travel).range(5.0..=200.0).speed(0.5).suffix(" m"));
+                            }
+                        }
+                        ui.end_row();
+                        ui.label("Grid step").on_hover_text("Smaller = more precise and slower");
+                        ui.add(egui::DragValue::new(&mut p.step).range(0.1..=1.0).speed(0.01).suffix(" m"));
+                        ui.end_row();
+                        ui.label("Severity");
+                        ui.horizontal(|ui| {
+                            let u = if *check == crate::egress::Check::Headroom { " mm too low" } else { " mm too far" };
+                            ui.label("Major from");
+                            ui.add(egui::DragValue::new(&mut test.sev_mm[0]).range(0.0..=100000.0).speed(5.0).suffix(u));
+                            ui.label("Critical from");
+                            ui.add(egui::DragValue::new(&mut test.sev_mm[1]).range(0.0..=100000.0).speed(5.0).suffix(u));
+                        });
+                        ui.end_row();
+                    });
+                    ui.label(RichText::new("Hidden items are left out - hide what should not count (e.g. the roof or an external stair).").small().weak());
+                    ui.add_space(6.0);
+                    if ui.add_enabled(self.clash_job.is_none() && self.loaded_models().next().is_some(), egui::Button::new(RichText::new("▶ Run Test").strong().color(Color32::WHITE)).fill(accent())).clicked() {
+                        run = true;
+                    }
+                });
+            }
+            if test.special.is_none() {
             ui.columns(2, |c| {
                 for (k, (lbl, sel, id)) in [("Selection A", &mut test.a, "selA"), ("Selection B", &mut test.b, "selB")].into_iter().enumerate() {
                     let ui = &mut c[k];
@@ -634,8 +678,10 @@ impl App {
                     run = true;
                 }
             });
+            }
         });
         let t = &mut self.clash_tests[ti];
+        t.special = test.special;
         t.name = test.name;
         t.a = test.a;
         t.b = test.b;

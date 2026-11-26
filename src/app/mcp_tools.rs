@@ -22,6 +22,19 @@ impl App {
             }
         }
         for c in calls {
+            // imaginea vederii: raspunsul pleaca din render_step, cand cadrul capturat e gata
+            if c.tool == "capture_view" {
+                match self.mcp_capture_start(&c.args) {
+                    Ok(()) => {
+                        self.mcp_capture = Some(c.reply);
+                        ctx.request_repaint();
+                    }
+                    Err(e) => {
+                        let _ = c.reply.send(Err(e));
+                    }
+                }
+                continue;
+            }
             let r = if crate::mcp::is_edit(&c.tool) && !self.settings.mcp.allow_edit {
                 Err("Changes from AI assistants are turned off in ManageBIM (Collaborate › AI connection › Allow changes).".to_string())
             } else {
@@ -268,6 +281,86 @@ impl App {
                 let max = args.get("max_results").and_then(|v| v.as_u64()).unwrap_or(25).min(500) as usize;
                 Ok(self.mcp_clash_summary(idx, &self.clash_tests[idx], max))
             }
+            "get_clash_results" => {
+                let ti = self.mcp_test_idx(args)?;
+                let t = &self.clash_tests[ti];
+                let st = s("status").to_lowercase();
+                let sev = s("severity").to_lowercase();
+                let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50).clamp(1, 500) as usize;
+                let hits: Vec<usize> = (0..t.results.len())
+                    .filter(|&i| {
+                        let r = &t.results[i];
+                        (st.is_empty() || format!("{:?}", r.status).to_lowercase() == st) && (sev.is_empty() || t.severity(r.dist).label().to_lowercase() == sev)
+                    })
+                    .collect();
+                let items: Vec<Value> = hits.iter().skip(offset).take(limit).map(|&i| self.mcp_clash_item(ti, i)).collect();
+                Ok(json!({ "test": t.name, "matching": hits.len(), "offset": offset, "returned": items.len(), "results": items }))
+            }
+            "update_clash_results" => {
+                let ti = self.mcp_test_idx(args)?;
+                let idx = self.mcp_result_idx(ti, args)?;
+                let status = match s("status").to_lowercase().as_str() {
+                    "" => None,
+                    x => Some(ClashStatus::ALL.into_iter().find(|c| c.label().to_lowercase() == x).ok_or_else(|| format!("unknown status {x:?} (new, active, reviewed, approved, resolved)"))?),
+                };
+                let assignee = args.get("assignee").and_then(|v| v.as_str()).map(|s| s.trim().to_string());
+                let comment = args.get("comment").and_then(|v| v.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+                let group = args.get("group").and_then(|v| v.as_str()).map(|s| s.trim().to_string());
+                if status.is_none() && assignee.is_none() && comment.is_none() && group.is_none() {
+                    return Err("nothing to change: give status, assignee, comment and / or group".into());
+                }
+                let t = &mut self.clash_tests[ti];
+                for &i in &idx {
+                    let r = &mut t.results[i];
+                    if let Some(st) = status {
+                        crate::app::clash_logic::apply_status(r, st);
+                    }
+                    if let Some(a) = &assignee {
+                        r.assigned = a.clone();
+                    }
+                    if let Some(c) = &comment {
+                        // comentariile se adauga (istoric), ca in Navisworks
+                        if r.comment.is_empty() {
+                            r.comment = c.clone();
+                        } else {
+                            r.comment = format!("{}\n{c}", r.comment);
+                        }
+                    }
+                    if let Some(g) = &group {
+                        r.group = g.clone();
+                    }
+                }
+                self.colors_dirty = true;
+                self.toast(format!("AI assistant updated {} clash result(s) in {}.", idx.len(), self.clash_tests[ti].name));
+                Ok(json!(format!("Updated {} result(s).", idx.len())))
+            }
+            "focus_clash" => {
+                let ti = self.mcp_test_idx(args)?;
+                let idx = self.mcp_result_idx(ti, args)?;
+                self.cur_test = ti;
+                // panoul Clash deschis = modul de afisare clash (cele doua elemente colorate, restul estompat)
+                self.open_panel(Panel::Clash);
+                self.apply(Action::FocusClashes(ti, idx.clone()));
+                Ok(json!(format!("Showing {} clash result(s) - call capture_view to see them.", idx.len())))
+            }
+            "export_clash_bcf" => {
+                let ti = self.mcp_test_idx(args)?;
+                let p = s("path");
+                if p.is_empty() || !p.to_ascii_lowercase().ends_with(".bcf") && !p.to_ascii_lowercase().ends_with(".bcfzip") {
+                    return Err("path must end with .bcf or .bcfzip".into());
+                }
+                if std::path::Path::new(&p).parent().map(|d| !d.as_os_str().is_empty() && !d.is_dir()).unwrap_or(false) {
+                    return Err(format!("folder does not exist for {p}"));
+                }
+                self.cur_test = ti;
+                let errors = self.notes.iter().filter(|n| n.1).count();
+                self.export_clash_bcf(&p);
+                if self.notes.iter().filter(|n| n.1).count() > errors {
+                    return Err(self.notes.last().map(|n| n.2.clone()).unwrap_or_else(|| "export failed".into()));
+                }
+                Ok(json!(format!("BCF written: {p}")))
+            }
             "run_script" => {
                 let src = s("source");
                 if src.is_empty() {
@@ -345,4 +438,140 @@ fn parse_id(s: &str) -> Option<ElemId> {
 /// metri cu 3 zecimale (mm) - fara zgomotul f32 in JSON
 fn r3(v: f32) -> f64 {
     (v as f64 * 1000.0).round() / 1000.0
+}
+
+impl App {
+    /// capture_view: pregateste camera (optional) si cere o captura la marimea dorita.
+    fn mcp_capture_start(&mut self, args: &Value) -> Result<(), String> {
+        if self.mcp_capture.is_some() || self.pending_capture.is_some() || self.render_job.is_some() || self.still_path.is_some() {
+            return Err("ManageBIM is busy capturing another image - try again in a moment".into());
+        }
+        if self.loaded_models().next().is_none() {
+            return Err("no model is open".into());
+        }
+        let w = args.get("width").and_then(|v| v.as_u64()).unwrap_or(1280).clamp(256, 2048) as u32;
+        let h = args.get("height").and_then(|v| v.as_u64()).unwrap_or(w as u64 * 9 / 16).clamp(256, 2048) as u32;
+        // vederea: elementele cerute (zoom), tot modelul, sau ce vede utilizatorul acum
+        let ids = match args.get("ids").and_then(|v| v.as_array()) {
+            Some(a) if !a.is_empty() => self.mcp_ids(args)?,
+            _ => Vec::new(),
+        };
+        if !ids.is_empty() {
+            let bb = self.ids_aabb(&ids);
+            if bb.is_valid() {
+                self.cam.fit(&bb);
+            }
+        } else if args.get("fit_all").and_then(|v| v.as_bool()).unwrap_or(false) {
+            let bb = self.scene_aabb();
+            if bb.is_valid() {
+                self.cam.fit(&bb);
+            }
+        }
+        if let Some(v) = args.get("view").and_then(|v| v.as_str()) {
+            let bb = if ids.is_empty() { self.scene_aabb() } else { self.ids_aabb(&ids) };
+            let (yaw, pitch) = match v.to_ascii_lowercase().as_str() {
+                "top" => (0.0, -1.5607),
+                "front" => (0.0, 0.0),
+                "back" => (std::f32::consts::PI, 0.0),
+                "left" => (-std::f32::consts::FRAC_PI_2, 0.0),
+                "right" => (std::f32::consts::FRAC_PI_2, 0.0),
+                "iso" | "isometric" => (std::f32::consts::FRAC_PI_4, -0.6),
+                _ => return Err(format!("unknown view {v:?} (top, front, back, left, right, iso)")),
+            };
+            if bb.is_valid() {
+                self.cam.set_view(yaw, pitch, &bb);
+            }
+        }
+        // o animatie de camera in curs (focus_clash, zoom) se termina inainte de captura
+        if let Some((_, to, _)) = self.cam_anim.take() {
+            self.cam = to;
+        }
+        self.pending_capture = Some((w, h));
+        Ok(())
+    }
+
+    /// Imaginea capturata -> raspunsul MCP (JPEG in base64). Intoarce true daca a fost folosita.
+    pub fn mcp_capture_done(&mut self, r: &Result<crate::video::Frame, String>) -> bool {
+        let Some(tx) = self.mcp_capture.take() else { return false };
+        let res = match r {
+            Ok(f) => {
+                let rgb = f.rgb();
+                let mut jpg = Vec::new();
+                match jpeg_encoder::Encoder::new(&mut jpg, 85).encode(&rgb, f.w as u16, f.h as u16, jpeg_encoder::ColorType::Rgb) {
+                    Ok(()) => {
+                        use base64::Engine;
+                        let sel = self.selected.len();
+                        let hid = self.hidden.len();
+                        Ok(json!({
+                            "__image": base64::engine::general_purpose::STANDARD.encode(&jpg),
+                            "mime": "image/jpeg",
+                            "text": format!("3D view {}×{} px · {} selected (highlighted) · {} hidden", f.w, f.h, sel, hid),
+                        }))
+                    }
+                    Err(e) => Err(format!("JPEG: {e}")),
+                }
+            }
+            Err(e) => Err(e.clone()),
+        };
+        let _ = tx.send(res);
+        true
+    }
+}
+
+impl App {
+    /// testul de clash dupa nume sau index
+    fn mcp_test_idx(&self, args: &Value) -> Result<usize, String> {
+        let key = args.get("test").map(|v| v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string())).unwrap_or_default();
+        let key = key.trim();
+        if key.is_empty() && self.clash_tests.len() == 1 {
+            return Ok(0);
+        }
+        key.parse::<usize>()
+            .ok()
+            .filter(|i| *i < self.clash_tests.len())
+            .or_else(|| self.clash_tests.iter().position(|t| t.name.eq_ignore_ascii_case(key)))
+            .ok_or_else(|| format!("no clash test {key:?}; use list_clash_tests"))
+    }
+
+    /// rezultatele cerute: "results" = indexi / nume, sau "all", sau filtrul "status"
+    fn mcp_result_idx(&self, ti: usize, args: &Value) -> Result<Vec<usize>, String> {
+        let t = &self.clash_tests[ti];
+        let mut out = Vec::new();
+        match args.get("results") {
+            Some(Value::String(s)) if s.eq_ignore_ascii_case("all") => out.extend(0..t.results.len()),
+            Some(Value::Array(a)) => {
+                for v in a {
+                    let i = match v {
+                        Value::Number(n) => n.as_u64().map(|x| x as usize).filter(|i| *i < t.results.len()),
+                        Value::String(s) => s.trim().parse::<usize>().ok().filter(|i| *i < t.results.len()).or_else(|| t.results.iter().position(|r| r.name.eq_ignore_ascii_case(s.trim()))),
+                        _ => None,
+                    };
+                    out.push(i.ok_or_else(|| format!("no clash result {v} in {}", t.name))?);
+                }
+            }
+            _ => return Err("results is required: an array of result indexes / names, or \"all\"".into()),
+        }
+        if out.is_empty() {
+            return Err("no clash results selected".into());
+        }
+        Ok(out)
+    }
+
+    fn mcp_clash_item(&self, ti: usize, i: usize) -> Value {
+        let t = &self.clash_tests[ti];
+        let r = &t.results[i];
+        json!({
+            "index": i,
+            "name": r.name,
+            "a": self.mcp_elem_brief(r.a),
+            "b": self.mcp_elem_brief(r.b),
+            "distance_mm": (r.dist * 1000.0 * 10.0).round() / 10.0,
+            "point": r.point,
+            "status": format!("{:?}", r.status),
+            "severity": t.severity(r.dist).label(),
+            "assigned": r.assigned,
+            "comment": r.comment,
+            "group": r.group,
+        })
+    }
 }

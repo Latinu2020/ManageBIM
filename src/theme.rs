@@ -972,6 +972,8 @@ pub fn ph(s: &str) -> &str {
         "📥" => P::DOWNLOAD_SIMPLE,
         "🤖" => P::ROBOT,
         "⌨" => P::KEYBOARD,
+        "↕" => P::ARROWS_VERTICAL,
+        "🚪" => P::DOOR_OPEN,
         "📤" => P::UPLOAD_SIMPLE,
         "⬚" => P::SELECTION,
         "✏" => P::PENCIL_SIMPLE,

@@ -392,6 +392,16 @@ pub fn write_package(m: &Material, path: &str, resolve: impl Fn(&str) -> String)
     Ok(copied)
 }
 
+/// "WoodFloor051_1K_JPG" (ambientCG) -> "WoodFloor051": fara sufixele de rezolutie / format.
+fn nice_name(n: &str) -> String {
+    let has_res = n.split(['_', '-', ' ']).any(|w| matches!(w.to_ascii_lowercase().as_str(), "1k" | "2k" | "4k" | "8k"));
+    if has_res {
+        crate::materials::pbr_name(n)
+    } else {
+        n.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -564,12 +574,3 @@ mod tests {
     }
 }
 
-/// "WoodFloor051_1K_JPG" (ambientCG) -> "WoodFloor051": fara sufixele de rezolutie / format.
-fn nice_name(n: &str) -> String {
-    let has_res = n.split(['_', '-', ' ']).any(|w| matches!(w.to_ascii_lowercase().as_str(), "1k" | "2k" | "4k" | "8k"));
-    if has_res {
-        crate::materials::pbr_name(n)
-    } else {
-        n.to_string()
-    }
-}

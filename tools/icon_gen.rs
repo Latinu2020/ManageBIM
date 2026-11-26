@@ -33,6 +33,9 @@ fn icon_in_poly(x: f32, y: f32, p: &[(f32, f32)]) -> bool {
     true
 }
 
+/// o fata a cubului: poligonul (coordonate 0..1) si culoarea
+type IconFace<'a> = (&'a [(f32, f32)], [f32; 3]);
+
 /// Culoarea (RGBA, premultiplicat cu acoperirea) intr-un punct al iconitei, coordonate 0..1.
 #[allow(dead_code)]
 fn icon_sample(x: f32, y: f32, n: u32) -> Option<[f32; 4]> {
@@ -50,8 +53,8 @@ fn icon_sample(x: f32, y: f32, n: u32) -> Option<[f32; 4]> {
     if n >= 48 {
         let d = ((x - 0.3).powi(2) + (y - 0.15).powi(2)).sqrt();
         let g = (1.0 - d / 0.55).clamp(0.0, 1.0) * 0.18;
-        for k in 0..3 {
-            c[k] += (255.0 - c[k]) * g;
+        for v in c.iter_mut() {
+            *v += (255.0 - *v) * g;
         }
     }
     // cubul izometric (fete: sus alb, stanga deschis, dreapta mai inchis)
@@ -65,7 +68,7 @@ fn icon_sample(x: f32, y: f32, n: u32) -> Option<[f32; 4]> {
     let ll = (cx - k, cy + s / 2.0);
     let lr = (cx + k, cy + s / 2.0);
     let bo = (cx, cy + s);
-    let faces: [(&[(f32, f32)], [f32; 3]); 3] = [
+    let faces: [IconFace; 3] = [
         (&[top_v, ur, ce, ul], [255.0, 255.0, 255.0]),
         (&[ul, ce, bo, ll], [212.0, 228.0, 255.0]),
         (&[ce, ur, lr, bo], [160.0, 193.0, 250.0]),
@@ -118,14 +121,14 @@ pub fn ico_bytes(sizes: &[u32]) -> Vec<u8> {
     for &n in sizes {
         let px = icon_rgba(n);
         let mut d = Vec::new();
-        let row_mask = ((n + 31) / 32 * 4) as usize;
+        let row_mask = (n.div_ceil(32) * 4) as usize;
         d.extend_from_slice(&40u32.to_le_bytes());
         d.extend_from_slice(&(n as i32).to_le_bytes());
         d.extend_from_slice(&((n * 2) as i32).to_le_bytes());
         d.extend_from_slice(&1u16.to_le_bytes());
         d.extend_from_slice(&32u16.to_le_bytes());
         d.extend_from_slice(&0u32.to_le_bytes());
-        d.extend_from_slice(&((n * n * 4) as u32 + (row_mask * n as usize) as u32).to_le_bytes());
+        d.extend_from_slice(&((n * n * 4) + (row_mask * n as usize) as u32).to_le_bytes());
         d.extend_from_slice(&[0u8; 16]);
         for y in (0..n).rev() {
             for x in 0..n {
@@ -133,7 +136,7 @@ pub fn ico_bytes(sizes: &[u32]) -> Vec<u8> {
                 d.extend_from_slice(&[px[i + 2], px[i + 1], px[i], px[i + 3]]);
             }
         }
-        d.extend(std::iter::repeat(0u8).take(row_mask * n as usize));
+        d.extend(std::iter::repeat_n(0u8, row_mask * n as usize));
         images.push((n, d));
     }
     let mut out = Vec::new();

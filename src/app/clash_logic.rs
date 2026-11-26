@@ -65,8 +65,27 @@ impl App {
     }
 
     /// Runs a test on the calling thread (batch use / tests).
+    /// elementele pe care lucreaza headroom / egress: tot ce e vizibil (fara cele excluse de reguli)
+    fn special_items(&self, test: &ClashTest) -> Vec<ElemId> {
+        let excluded = self.excluded_items(&test.rules);
+        self.all_ids().into_iter().filter(|i| self.is_visible(*i) && !excluded.contains(i)).collect()
+    }
+
+    fn run_special(models: &[Option<Arc<Model>>], items: &[ElemId], check: crate::egress::Check, p: &crate::egress::Params) -> Vec<clash::Found> {
+        match check {
+            crate::egress::Check::Headroom => crate::egress::headroom(models, items, p),
+            crate::egress::Check::Egress => crate::egress::egress(models, items, p),
+        }
+    }
+
     pub fn run_clash_blocking(&mut self, t: usize) {
         let test = self.clash_tests[t].clone();
+        if let Some((check, p)) = test.special {
+            let items = self.special_items(&test);
+            let found = Self::run_special(&self.models, &items, check, &p);
+            self.merge_clash(t, found, 0.0);
+            return;
+        }
         let excluded = self.excluded_items(&test.rules);
         let a: Vec<ElemId> = self.resolve_selector(&test.a).into_iter().filter(|i| !excluded.contains(i)).collect();
         let b: Vec<ElemId> = self.resolve_selector(&test.b).into_iter().filter(|i| !excluded.contains(i)).collect();
@@ -79,6 +98,19 @@ impl App {
             return;
         }
         let Some(test) = self.clash_tests.get(t) else { return };
+        if let Some((check, p)) = test.special {
+            let items = self.special_items(&test.clone());
+            let models: Vec<Option<Arc<Model>>> = self.models.clone();
+            let prog = clash::Progress::new();
+            let (tx, rx) = channel();
+            std::thread::spawn(move || {
+                if let Ok(r) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Self::run_special(&models, &items, check, &p))) {
+                    let _ = tx.send(r);
+                }
+            });
+            self.clash_job = Some(ClashJob { test: t, prog, rx, started: Instant::now() });
+            return;
+        }
         let excluded = self.excluded_items(&test.rules);
         let a: Vec<ElemId> = self.resolve_selector(&test.a).into_iter().filter(|i| !excluded.contains(i)).collect();
         let b: Vec<ElemId> = self.resolve_selector(&test.b).into_iter().filter(|i| !excluded.contains(i)).collect();

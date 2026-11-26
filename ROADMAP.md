@@ -3,8 +3,6 @@
 What is planned next. Done items move to the [CHANGELOG](CHANGELOG.md).
 
 ## Features
-- **AI connection, part 2**: `capture_view` (the assistant sees the 3D view as an image) and clash workflow tools (status, assignee, comment, BCF export).
-- **Egress + headroom checks**: clear height under beams, ducts and slabs, plus escape route distances, with results as clashes / issues.
 - **Smarter search sets** (much easier than in Navisworks):
   - build a set by picking **property values** from a list (category, level, system, type, any Pset property), with live element counts as you choose;
   - **suggestions** from the selection ("these 12 elements share System = Supply Air, Level = Level 2 - make a set?") and ready-made sets by discipline / system / level;

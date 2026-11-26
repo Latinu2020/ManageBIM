@@ -240,6 +240,9 @@ impl App {
     }
 }
 
+/// un grup din fereastra de scurtaturi: titlul si (tastele, ce fac)
+type KeyGroup<'a> = (&'a str, Vec<(String, &'a str)>);
+
 impl App {
     /// F1: toate scurtaturile de tastatura, cele configurabile cu valoarea curenta din Settings.
     pub(super) fn keys_window(&mut self, ctx: &egui::Context) {
@@ -247,7 +250,7 @@ impl App {
             return;
         }
         let kb = |c: &str| crate::keybind::binding(&self.settings.keybinds, c);
-        let groups: Vec<(&str, Vec<(String, &str)>)> = vec![
+        let groups: Vec<KeyGroup> = vec![
             ("File", vec![
                 (kb("open"), "Open a model or project"),
                 (kb("save"), "Save the project"),

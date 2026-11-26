@@ -33,6 +33,37 @@ impl App {
                 self.coord_open = !self.coord_open;
             }
         });
+        rgroup(ui, "Space checks", |ui| {
+            let busy = self.clash_job.is_some();
+            if rbtn(ui, "↕", "Headroom", "Clear height check: beams, ducts, pipes, trays and stairs lower than 2.10 m above the floor slabs (change it in Clash Detective › Select). Results open in Clash Detective.", false, has && !busy).clicked() {
+                self.run_space_check(crate::egress::Check::Headroom);
+            }
+            if rbtn(ui, "🚪", "Egress", "Escape route check: walking distance to the nearest exit (exterior doors on the ground floor, stairs above) longer than 45 m, and floors without any exit. Results open in Clash Detective.", false, has && !busy).clicked() {
+                self.run_space_check(crate::egress::Check::Egress);
+            }
+        });
+    }
+
+    /// Butoanele Headroom / Egress: testul special (creat o data, cu parametrii lui), rulat si aratat.
+    fn run_space_check(&mut self, check: crate::egress::Check) {
+        let idx = match self.clash_tests.iter().position(|t| t.special.map(|s| s.0) == Some(check)) {
+            Some(i) => i,
+            None => {
+                let want = match check {
+                    crate::egress::Check::Headroom => "Headroom",
+                    crate::egress::Check::Egress => "Egress",
+                };
+                let Some((_, _, t)) = crate::app::ClashTest::templates().into_iter().find(|(n, _, _)| n.starts_with(want)) else { return };
+                self.clash_tests.push(t);
+                self.clash_tests.len() - 1
+            }
+        };
+        self.cur_test = idx;
+        self.cur_result = None;
+        self.sel_results.clear();
+        self.clash_subtab = 0;
+        self.open_panel(Panel::Clash);
+        self.run_clash(idx);
     }
 
     pub(super) fn coord_objects_window(&mut self, ctx: &egui::Context) {

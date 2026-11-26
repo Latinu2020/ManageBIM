@@ -516,6 +516,11 @@ impl App {
                 }
                 f
             });
+            // captura ceruta de un asistent AI (MCP capture_view)
+            if self.still_path.is_none() && self.render_job.is_none() && self.mcp_capture.is_some() {
+                self.mcp_capture_done(&r);
+                return;
+            }
             if let Some(p) = self.still_path.take() {
                 // vederea revine cum era (stil, materiale, selectie)
                 if let Some((style, mat, sel)) = self.still_restore.take() {

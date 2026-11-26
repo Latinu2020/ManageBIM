@@ -8,6 +8,7 @@ pub mod clash;
 pub mod clash_smart;
 pub mod compare;
 pub mod e57;
+pub mod egress;
 pub mod fbx;
 pub mod fcstd;
 pub mod formats;

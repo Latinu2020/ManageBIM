@@ -305,6 +305,16 @@ pub fn dispatch(m: &Value, call: &dyn Fn(String, Value) -> Result<Value, String>
                 Err((-32602, format!("unknown tool: {name}")))
             } else {
                 Ok(match call(name, args) {
+                    // continut gata facut (puntea stdio il primeste asa de la aplicatie)
+                    Ok(v) if v.get("__content").is_some() => json!({ "content": v["__content"].clone(), "isError": false }),
+                    // imagine (capture_view): bloc image + descriere
+                    Ok(v) if v.get("__image").is_some() => json!({
+                        "content": [
+                            { "type": "image", "data": v["__image"].clone(), "mimeType": v["mime"].as_str().unwrap_or("image/jpeg") },
+                            { "type": "text", "text": v["text"].as_str().unwrap_or("") }
+                        ],
+                        "isError": false
+                    }),
                     Ok(v) => {
                         let text = if let Value::String(s) = &v { s.clone() } else { serde_json::to_string_pretty(&v).unwrap_or_default() };
                         json!({ "content": [{ "type": "text", "text": text }], "isError": false })
@@ -323,7 +333,8 @@ pub fn dispatch(m: &Value, call: &dyn Fn(String, Value) -> Result<Value, String>
 
 const INSTRUCTIONS: &str = "ManageBIM is a BIM viewer / coordination app. Elements are addressed by id \"model:element\" \
 (from find_elements / get_selection). Lengths are in metres. Typical flow: get_model_info -> find_elements -> \
-get_properties / select_elements -> set_visibility or set_property. Clash tests: list_clash_tests, run_clash_test. \
+get_properties / select_elements -> set_visibility or set_property; capture_view shows the 3D view as an image. \
+Clash tests: list_clash_tests, run_clash_test, get_clash_results, focus_clash + capture_view, update_clash_results, export_clash_bcf. \
 run_script executes a Rhai script of the app's Script console for bulk work.";
 
 fn tool(name: &str, title: &str, desc: &str, props: Value, required: &[&str], read_only: bool) -> Value {
@@ -357,6 +368,20 @@ pub fn tools() -> Vec<Value> {
             true,
         ),
         tool("get_properties", "Get properties", "All properties (grouped by property set) of up to 50 elements.", json!({ "ids": ids }), &[], true),
+        tool(
+            "capture_view",
+            "Capture 3D view",
+            "Image (JPEG) of the ManageBIM 3D view as the user sees it: selected elements highlighted, hidden ones left out, current visual style and section. Optionally zoom to elements (ids), fit the whole model (fit_all) or use a standard view first.",
+            json!({
+                "ids": { "type": "array", "items": { "type": "string" }, "description": "Zoom to these elements first" },
+                "fit_all": { "type": "boolean", "description": "Zoom to the whole model first" },
+                "view": { "type": "string", "enum": ["top", "front", "back", "left", "right", "iso"], "description": "Standard view direction" },
+                "width": { "type": "integer", "description": "Pixels (256 - 2048, default 1280)" },
+                "height": { "type": "integer", "description": "Pixels (default width × 9/16)" }
+            }),
+            &[],
+            true,
+        ),
         tool("get_selection", "Get selection", "Ids and names of the elements selected in ManageBIM.", json!({}), &[], true),
         tool(
             "select_elements",
@@ -393,6 +418,51 @@ pub fn tools() -> Vec<Value> {
             false,
         ),
         tool(
+            "get_clash_results",
+            "Get clash results",
+            "Results of a clash test with elements, distance, status, severity, assignee and comments; filter by status / severity, page with offset / limit.",
+            json!({
+                "test": { "type": "string", "description": "Test name or 0-based index (optional when there is one test)" },
+                "status": { "type": "string", "enum": ["new", "active", "reviewed", "approved", "resolved"] },
+                "severity": { "type": "string", "enum": ["critical", "major", "minor"] },
+                "offset": { "type": "integer" },
+                "limit": { "type": "integer", "description": "Default 50, max 500" }
+            }),
+            &[],
+            true,
+        ),
+        tool(
+            "update_clash_results",
+            "Update clash results",
+            "Set status (new / active / reviewed / approved / resolved; approved and resolved record who and when), assignee, group, and add a comment, on clash results.",
+            json!({
+                "test": { "type": "string" },
+                "results": { "description": "Array of result indexes or names, or \"all\"" },
+                "status": { "type": "string", "enum": ["new", "active", "reviewed", "approved", "resolved"] },
+                "assignee": { "type": "string" },
+                "comment": { "type": "string", "description": "Added under the existing comments" },
+                "group": { "type": "string" }
+            }),
+            &["results"],
+            false,
+        ),
+        tool(
+            "focus_clash",
+            "Focus clash",
+            "Show clash results in ManageBIM like a click in Clash Detective: the two elements highlighted, the rest dimmed, camera on the clash. Follow with capture_view to see it.",
+            json!({ "test": { "type": "string" }, "results": { "description": "Array of result indexes or names" } }),
+            &["results"],
+            false,
+        ),
+        tool(
+            "export_clash_bcf",
+            "Export clashes to BCF",
+            "Write the open results of a clash test as a BCF file (viewpoints, elements, status) for Revit, ACC, Solibri, BIMcollab.",
+            json!({ "test": { "type": "string" }, "path": { "type": "string", "description": "Full path ending with .bcf or .bcfzip" } }),
+            &["path"],
+            false,
+        ),
+        tool(
             "run_script",
             "Run script",
             "Run a Rhai script in the ManageBIM Script console (functions: log, selected_count, find_where_empty, select_where, select_ids, set_prop, create_clash_test, zoom_to_selection). Returns the log lines.",
@@ -406,7 +476,7 @@ pub fn tools() -> Vec<Value> {
 
 /// Uneltele care schimba ceva (blocate cand "Allow changes" e oprit)
 pub fn is_edit(tool: &str) -> bool {
-    matches!(tool, "set_property" | "run_script" | "open_model" | "run_clash_test")
+    matches!(tool, "set_property" | "run_script" | "open_model" | "run_clash_test" | "update_clash_results" | "export_clash_bcf")
 }
 
 // ---------------------------------------------------------------- puntea stdio
@@ -466,11 +536,11 @@ fn forward_tool(tool: &str, args: &Value) -> Result<Value, String> {
         return Err(e["message"].as_str().unwrap_or("error").to_string());
     }
     let r = &v["result"];
-    let text = r["content"][0]["text"].as_str().unwrap_or("").to_string();
     if r["isError"].as_bool().unwrap_or(false) {
-        Err(text)
+        Err(r["content"][0]["text"].as_str().unwrap_or("").to_string())
     } else {
-        Ok(Value::String(text))
+        // tot continutul (text si imagini) trece neschimbat
+        Ok(json!({ "__content": r["content"].clone() }))
     }
 }
 

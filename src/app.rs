@@ -572,6 +572,10 @@ pub struct ClashTest {
     /// amprenta configuratiei la ultima rulare (Status Old cand s-a schimbat ceva de atunci)
     #[serde(default)]
     pub run_key: u64,
+    /// test special: inaltime libera (headroom) sau distanta de evacuare (egress), cu parametrii lui;
+    /// rulat de crate::egress in locul detectiei de clash obisnuite
+    #[serde(default)]
+    pub special: Option<(crate::egress::Check, crate::egress::Params)>,
 }
 
 fn sev_default() -> [f32; 2] {
@@ -652,7 +656,15 @@ impl ClashTest {
             (t.a, t.b, t.ty, t.tol_mm, t.sev_mm) = (a, b, ty, tol, sev);
             t
         };
+        let special = |name: &str, check: crate::egress::Check, sev: [f32; 2]| {
+            let mut t = ClashTest::new(name.to_string());
+            t.special = Some((check, crate::egress::Params::default()));
+            t.sev_mm = sev;
+            t
+        };
         vec![
+            ("Headroom (clear height 2.10 m)", "Beams, ducts, pipes, trays and stairs lower than 2.10 m above the floor slabs. Change the height in the test", special("Headroom 2.10 m", crate::egress::Check::Headroom, [50.0, 200.0])),
+            ("Egress distance (45 m)", "Walking distance to the nearest exit (exterior doors on the ground floor, stairs on upper floors) longer than 45 m. Change the limit in the test", special("Egress 45 m", crate::egress::Check::Egress, [1000.0, 5000.0])),
             ("Structure vs HVAC (hard)", "Ducts through beams, columns, slabs - 10 mm tolerance; Critical over 50 mm", mk("Structure vs HVAC", d("Structure"), d("MEP - HVAC"), ClashType::Hard, 10.0, [10.0, 50.0])),
             ("Structure vs Plumbing (hard)", "Pipes through the structure - 10 mm tolerance", mk("Structure vs Plumbing", d("Structure"), d("MEP - Plumbing"), ClashType::Hard, 10.0, [10.0, 50.0])),
             ("Structure vs Electrical (hard)", "Cable trays through the structure - 10 mm tolerance", mk("Structure vs Electrical", d("Structure"), d("MEP - Electrical"), ClashType::Hard, 10.0, [10.0, 50.0])),
@@ -677,6 +689,7 @@ impl ClashTest {
             rules: ClashRules::default(),
             sev_mm: sev_default(),
             run_key: 0,
+            special: None,
         }
     }
     pub fn count(&self, s: ClashStatus) -> usize {
@@ -1726,6 +1739,8 @@ pub struct App {
     pub mcp: Option<crate::mcp::Server>,
     pub mcp_open: bool,
     pub mcp_status: String,
+    /// raspunsul unei cereri MCP capture_view, trimis cand imaginea e gata (dupa cadrul urmator)
+    pub mcp_capture: Option<std::sync::mpsc::Sender<Result<serde_json::Value, String>>>,
 }
 
 impl App {
@@ -2073,6 +2088,7 @@ impl App {
             mcp: None,
             mcp_open: false,
             mcp_status: String::new(),
+            mcp_capture: None,
         };
         {
             let p = &app.settings.clash_ui;
