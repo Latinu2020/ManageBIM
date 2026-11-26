@@ -296,8 +296,8 @@ fn pose_of(n: &Node) -> (DQuat, DVec3) {
 /// Limite de normalizare din `colorLimits` / `intensityLimits`, daca exista.
 fn limit(n: &Node, group: &str, lo: &str, hi: &str) -> Option<(f64, f64)> {
     let g = n.kid(group)?;
-    let a = g.kid(lo).map(|x| scaled_value(x)).unwrap_or(0.0);
-    let b = g.kid(hi).map(|x| scaled_value(x))?;
+    let a = g.kid(lo).map(scaled_value).unwrap_or(0.0);
+    let b = g.kid(hi).map(scaled_value)?;
     (b > a).then_some((a, b))
 }
 
@@ -400,7 +400,7 @@ pub fn parse(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, R
         let mut hi = DVec3::splat(f64::NEG_INFINITY);
         let mut i = 0;
         while i < n {
-            if invalid.as_ref().map_or(false, |v| v.get(i).copied().unwrap_or(0.0) != 0.0) {
+            if invalid.as_ref().is_some_and(|v| v.get(i).copied().unwrap_or(0.0) != 0.0) {
                 i += stride;
                 continue;
             }
@@ -677,7 +677,7 @@ pub fn parse_las(b: &[u8], progress: &dyn Fn(f32, &str)) -> Result<(RawModel, Ra
     }
     let stride = ((count as f64 / MAX_POINTS as f64).ceil() as usize).max(1);
     // culorile pe 16 biti (ca in standard) sau pe 8 biti (unele programe): detectate din primele puncte
-    let wide = rgb_at.map_or(false, |o| (0..count.min(2000)).any(|i| {
+    let wide = rgb_at.is_some_and(|o| (0..count.min(2000)).any(|i| {
         let p = offset + i * rec + o;
         u16_(p) > 255 || u16_(p + 2) > 255 || u16_(p + 4) > 255
     }));

@@ -360,7 +360,7 @@ pub fn ifcjson_to_step(v: &serde_json::Value) -> Result<(String, usize), String>
     let mut c = Conv::new(s);
     let data = v.get("data").and_then(|d| d.as_array()).ok_or("ifcJSON: no \"data\" array.")?;
     for d in data {
-        if d.get("type").and_then(|t| t.as_str()).map_or(false, |t| s.is_entity(t)) {
+        if d.get("type").and_then(|t| t.as_str()).is_some_and(|t| s.is_entity(t)) {
             c.json_inst(d);
         }
     }

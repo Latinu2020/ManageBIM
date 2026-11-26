@@ -45,11 +45,11 @@ namespace ManageBIM.Acad
 
         /// <summary>BIMCEXPORT: writes the 3D content of model space (or a selection) to .bimc.</summary>
         [CommandMethod("BIMCEXPORT", CommandFlags.Modal | CommandFlags.NoBlockEditor)]
-        public void Export() => Run(false);
+        public void Export() => Safe.Command("BIMCEXPORT", () => Run(false));
 
         /// <summary>BIMCSEND: trimite tot modelul direct in ManageBIM (fara dialog); a doua oara actualizeaza live.</summary>
         [CommandMethod("BIMCSEND", CommandFlags.Modal | CommandFlags.NoBlockEditor)]
-        public void Send() => Run(true);
+        public void Send() => Safe.Command("BIMCSEND", () => Run(true));
 
         private static void Run(bool send)
         {

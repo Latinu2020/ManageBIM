@@ -380,9 +380,9 @@ fn tools_grids_levels_sections_and_project_roundtrip() {
     assert_eq!(app.section.mode, SectionMode::Planes);
     assert!((app.section.planes[0].offset - (levels[1].1 + 1.2)).abs() < 1e-4);
     // niveluri proprii + proiect salvat / redeschis
-    app.user_levels = vec![bimrust::app::UserLevel { name: "P0".into(), elev: 0.0 }, bimrust::app::UserLevel { name: "P1".into(), elev: 3.5 }];
-    app.use_user_levels = true;
-    app.level_zero = 12.0;
+    app.level.user = vec![bimrust::app::UserLevel { name: "P0".into(), elev: 0.0 }, bimrust::app::UserLevel { name: "P1".into(), elev: 3.5 }];
+    app.level.custom = true;
+    app.level.zero = 12.0;
     let path = std::env::temp_dir().join(format!("mb_tools_{}.bimr", std::process::id()));
     let p = path.to_string_lossy().to_string();
     // setarile (lista Recent) intr-un folder de test, nu in cele ale utilizatorului
@@ -398,9 +398,9 @@ fn tools_grids_levels_sections_and_project_roundtrip() {
     }
     b.poll_jobs();
     assert_eq!(b.user_grids.len(), 6);
-    assert!(b.use_user_grids && b.use_user_levels);
-    assert_eq!(b.user_levels[1].elev, 3.5);
-    assert_eq!(b.level_zero, 12.0);
+    assert!(b.use_user_grids && b.level.custom);
+    assert_eq!(b.level.user[1].elev, 3.5);
+    assert_eq!(b.level.zero, 12.0);
     let _ = std::fs::remove_file(&path);
     // proiect nou: gol, fara pagina de start
     b.new_project();

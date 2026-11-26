@@ -19,6 +19,14 @@ namespace ManageBIM.Revit
     {
         public Result Execute(ExternalCommandData data, ref string message, ElementSet elements)
         {
+            string msg = message;
+            Result r = Safe.Command(GetType().Name.Replace("Command", ""), () => Run(data, ref msg, elements), out string error);
+            message = error ?? msg;
+            return r;
+        }
+
+        private Result Run(ExternalCommandData data, ref string message, ElementSet elements)
+        {
             bool on = SelectionSync.Toggle();
             TaskDialog.Show("ManageBIM",
                 on ? "Selection sync is ON.\n\nSelect elements in Revit and they are selected in ManageBIM (and Navisworks); select in ManageBIM and they are selected here.\n\nIn ManageBIM: Select › Live Link › Sync Selection.\nClick this button again to stop."

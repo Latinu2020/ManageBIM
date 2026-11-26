@@ -15,7 +15,9 @@ namespace ManageBIM.Navis
     [AddInPlugin(AddInLocation.AddIn)]
     public class SendPlugin : AddInPlugin
     {
-        public override int Execute(params string[] parameters)
+        public override int Execute(params string[] parameters) => Safe.Plugin(GetType().Name.Replace("Plugin", ""), parameters, () => Run(parameters));
+
+        private int Run(string[] parameters)
         {
             Document doc = NwApp.ActiveDocument;
             if (doc == null || doc.Models.Count == 0)
@@ -61,7 +63,9 @@ namespace ManageBIM.Navis
     [AddInPlugin(AddInLocation.None)]
     public class ExportPlugin : AddInPlugin
     {
-        public override int Execute(params string[] parameters)
+        public override int Execute(params string[] parameters) => Safe.Plugin(GetType().Name.Replace("Plugin", ""), parameters, () => Run(parameters));
+
+        private int Run(string[] parameters)
         {
             Document doc = NwApp.ActiveDocument;
             bool batch = parameters != null && parameters.Length > 0 && !string.IsNullOrWhiteSpace(parameters[0]);

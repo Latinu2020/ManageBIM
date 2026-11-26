@@ -7,7 +7,7 @@ impl App {
         if self.loaded_models().next().is_none() || !self.loads.is_empty() {
             return;
         }
-        let due = self.autosave.last.map_or(true, |t| t.elapsed().as_secs() >= 180);
+        let due = self.autosave.last.is_none_or(|t| t.elapsed().as_secs() >= 180);
         if !due {
             return;
         }

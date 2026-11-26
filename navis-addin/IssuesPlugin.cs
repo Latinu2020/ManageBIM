@@ -16,7 +16,9 @@ namespace ManageBIM.Navis
     [AddInPlugin(AddInLocation.None)]
     public class IssuesPlugin : AddInPlugin
     {
-        public override int Execute(params string[] parameters)
+        public override int Execute(params string[] parameters) => Safe.Plugin(GetType().Name.Replace("Plugin", ""), parameters, () => Run(parameters));
+
+        private int Run(string[] parameters)
         {
             Document doc = NwApp.ActiveDocument;
             if (doc == null || doc.Models.Count == 0)

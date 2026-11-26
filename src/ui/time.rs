@@ -915,7 +915,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
             }
             let info = self.animations.get(self.cur_anim).map(|a| (a.name.clone(), a.duration(), a.keys.len(), a.sets.iter().filter(|s| s.enabled).count(), a.sim_4d));
             let fps = self.render.fps.max(1);
-            let can = info.as_ref().map_or(false, |i| i.1 > 0.0 && i.2 >= 1) && self.anim_rec.is_none();
+            let can = info.as_ref().is_some_and(|i| i.1 > 0.0 && i.2 >= 1) && self.anim_rec.is_none();
             egui::Frame::group(ui.style()).rounding(6.0).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 match &info {

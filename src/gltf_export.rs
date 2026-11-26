@@ -179,12 +179,12 @@ pub fn write_glb(items: &[Item], generator: &str) -> (Vec<u8>, Stats) {
         });
     }
     let mut js = serde_json::to_vec(&gltf).unwrap_or_default();
-    while js.len() % 4 != 0 {
+    while !js.len().is_multiple_of(4) {
         js.push(b' ');
     }
     let mut bin = pos;
     bin.extend_from_slice(&nrm);
-    while bin.len() % 4 != 0 {
+    while !bin.len().is_multiple_of(4) {
         bin.push(0);
     }
     let has_bin = !bin.is_empty();
@@ -205,7 +205,7 @@ pub fn write_glb(items: &[Item], generator: &str) -> (Vec<u8>, Stats) {
 }
 
 fn meshes_empty(g: &Value) -> bool {
-    g["meshes"].as_array().map_or(true, |m| m.is_empty())
+    g["meshes"].as_array().is_none_or(|m| m.is_empty())
 }
 
 #[cfg(test)]

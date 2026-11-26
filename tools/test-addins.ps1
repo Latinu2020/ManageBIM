@@ -1,0 +1,117 @@
+<#
+.SYNOPSIS
+  Automated smoke test of the ManageBIM add-ins in the Autodesk programs installed on this PC.
+
+.DESCRIPTION
+  Runs without user interaction and leaves the user's settings and Inbox alone (everything goes to
+  target\addin-test). For every program it finds:
+   - AutoCAD / Plant 3D (accoreconsole.exe, every installed year): loads the add-in built for that year
+     (R24 = 2021-2024, R25 = 2025+), draws a box, runs BIMCSEND (model -> .bimc) and MBLEVELS
+     (levels -> lines, UCS, XData), saves the drawing. Checks the .bimc and the console messages.
+   - Navisworks Manage / Simulate (Automation API, every installed year): exports a sample IFC
+     to .bimc with the ManageBIM add-in (nwd2bimc.exe) and checks the file.
+   - Revit has no headless mode: the script prints the manual checklist instead.
+  Exit code: 0 all passed, 1 a test failed, 2 nothing to test.
+
+  Build the add-ins first (revit-addin\build.ps1, acad-addin\build.ps1, navis-addin\build.ps1).
+  Navisworks loads the add-in from its Plugins folder: run navis-addin\build.ps1 without -NoInstall.
+
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File tools\test-addins.ps1
+#>
+param([int]$TimeoutSec = 300)
+$ErrorActionPreference = 'Stop'
+$root = Split-Path $PSScriptRoot -Parent
+$work = Join-Path $root 'target\addin-test'
+$pf = $env:ProgramFiles
+$results = @()
+
+function Add-Result($name, $ok, $detail) {
+    $script:results += [pscustomobject]@{ Test = $name; Result = $(if ($ok) { 'PASS' } else { 'FAIL' }); Detail = $detail }
+    $c = if ($ok) { 'Green' } else { 'Red' }
+    Write-Host ("{0,-34} {1}  {2}" -f $name, $(if ($ok) { 'PASS' } else { 'FAIL' }), $detail) -ForegroundColor $c
+}
+
+# a .bimc starts with the magic "BIMC" and holds at least the header
+function Test-Bimc($path) {
+    if (-not (Test-Path $path)) { return 'missing' }
+    $b = [IO.File]::ReadAllBytes($path)
+    if ($b.Length -lt 16) { return "too small ($($b.Length) bytes)" }
+    if ([Text.Encoding]::ASCII.GetString($b, 0, 4) -ne 'BIMC') { return 'not a .bimc file' }
+    return $null
+}
+
+# ------------------------------------------------------------------ AutoCAD / Plant 3D
+$acads = Get-ChildItem (Join-Path $pf 'Autodesk') -Directory -Filter 'AutoCAD*' -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^AutoCAD (\d{4})$' -and (Test-Path (Join-Path $_.FullName 'accoreconsole.exe')) }
+foreach ($a in $acads) {
+    $year = [int]($a.Name -replace '\D', '')
+    $series = if ($year -ge 2025) { 'R25' } else { 'R24' }
+    $dll = Join-Path $root "installers\payload\acad\ManageBIM.AcadExporter.$series.dll"
+    $name = "AutoCAD $year ($series)"
+    if (-not (Test-Path $dll)) { Add-Result $name $false "add-in not built: $dll"; continue }
+    $dir = Join-Path $work "acad$year"
+    Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force (Join-Path $dir 'inbox') | Out-Null
+    "MBLEVELS1`nL`tGround Floor`t0`nL`tLevel 1`t3.2`nL`tLevel 2`t6.4`n" | Set-Content (Join-Path $dir 'levels.txt') -Encoding ascii -NoNewline
+    $dwg = Join-Path $dir 'out.dwg'
+    @(
+        'SECURELOAD 0', 'FILEDIA 0', "NETLOAD `"$dll`"",
+        '_BOX 0,0,0 2,3,4',
+        'BIMCSEND',
+        'MBLEVELS',
+        "_SAVEAS 2018 `"$dwg`"",
+        '_QUIT _Y', ''
+    ) -join "`r`n" | Set-Content (Join-Path $dir 'test.scr') -Encoding ascii
+    $env:MANAGEBIM_INBOX = Join-Path $dir 'inbox'
+    $env:MANAGEBIM_NO_LAUNCH = '1'
+    $env:MB_LEVELS_FILE = Join-Path $dir 'levels.txt'
+    $log = Join-Path $dir 'console.log'
+    $p = Start-Process (Join-Path $a.FullName 'accoreconsole.exe') -ArgumentList '/s', "`"$(Join-Path $dir 'test.scr')`"" -RedirectStandardOutput $log -PassThru -WindowStyle Hidden
+    if (-not $p.WaitForExit($TimeoutSec * 1000)) { $p.Kill(); Add-Result $name $false "timed out after $TimeoutSec s (see $log)"; continue }
+    $out = (Get-Content $log -Raw) -replace "`0", ''
+    $bimc = Get-ChildItem (Join-Path $dir 'inbox') -Filter *.bimc -ErrorAction SilentlyContinue | Select-Object -First 1
+    $err = if ($bimc) { Test-Bimc $bimc.FullName } else { 'no .bimc in the Inbox' }
+    Add-Result "$name BIMCSEND" (-not $err -and $out -match 'ManageBIM: 1 objects') $(if ($err) { $err } else { "$($bimc.Length) bytes" })
+    Add-Result "$name MBLEVELS" ($out -match '3 level lines' -and $out -match 'level written on 1 objects') $(if ($out -match '3 level lines') { '3 levels, UCS, XData' } else { "see $log" })
+    Add-Result "$name no errors" (-not ($out -match 'stopped because of an error|Unhandled|Exception')) $(if (Test-Path $dwg) { 'drawing saved' } else { 'drawing not saved' })
+}
+Remove-Item Env:\MANAGEBIM_INBOX, Env:\MANAGEBIM_NO_LAUNCH, Env:\MB_LEVELS_FILE -ErrorAction SilentlyContinue
+
+# ------------------------------------------------------------------ Navisworks
+$navis = Get-ChildItem (Join-Path $pf 'Autodesk') -Directory -Filter 'Navisworks*' -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^Navisworks (Manage|Simulate) (\d{4})$' -and (Test-Path (Join-Path $_.FullName 'Autodesk.Navisworks.Automation.dll')) }
+$cli = Join-Path $root 'navis-addin\bin\nwd2bimc.exe'
+$ifc = Join-Path $root 'tests\fixtures\demo_arhitectura.ifc'
+foreach ($n in $navis) {
+    $year = [int]($n.Name -replace '\D', '')
+    $name = "Navisworks $year"
+    if (-not (Test-Path $cli)) { Add-Result $name $false "nwd2bimc.exe not built (navis-addin\build.ps1)"; continue }
+    $dir = Join-Path $work "navis$year"
+    Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    $out = Join-Path $dir 'demo.bimc'
+    $p = Start-Process $cli -ArgumentList '--year', $year, '-f', "`"$ifc`"", "`"$out`"" -RedirectStandardOutput (Join-Path $dir 'cli.log') -RedirectStandardError (Join-Path $dir 'cli.err') -PassThru -WindowStyle Hidden
+    $null = $p.Handle  # PowerShell 5.1: without this ExitCode stays empty
+    if (-not $p.WaitForExit($TimeoutSec * 1000)) { $p.Kill(); Add-Result "$name export" $false "timed out after $TimeoutSec s"; continue }
+    $err = Test-Bimc $out
+    Add-Result "$name export" ($p.ExitCode -eq 0 -and -not $err) $(if ($err) { "$err (exit $($p.ExitCode), see $dir\cli.log)" } else { "$((Get-Item $out).Length) bytes" })
+}
+
+# ------------------------------------------------------------------ Revit (manual)
+$revits = Get-ChildItem (Join-Path $pf 'Autodesk') -Directory -Filter 'Revit 20*' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^Revit \d{4}$' }
+if ($revits) {
+    Write-Host ''
+    Write-Host "Revit ($(($revits.Name) -join ', ')) has no headless mode - check by hand (ManageBIM tab):" -ForegroundColor Yellow
+    Write-Host '  1. Export BIMC: the .bimc opens in ManageBIM with categories, levels and properties.'
+    Write-Host '  2. Send / Send selection: the model (or only the selection) appears in ManageBIM; send again = live update.'
+    Write-Host '  3. Sync selection: select in Revit -> selected in ManageBIM, and back.'
+    Write-Host '  4. Issues: ManageBIM viewpoints become 3D views with camera, section box and comments.'
+    Write-Host '  5. Coordination objects and Reference: shown and removed again.'
+}
+
+Write-Host ''
+if ($results.Count -eq 0) { Write-Host 'Nothing to test: no AutoCAD or Navisworks found.'; exit 2 }
+$failed = @($results | Where-Object Result -eq 'FAIL')
+Write-Host ("{0} passed, {1} failed" -f ($results.Count - $failed.Count), $failed.Count)
+if ($failed.Count) { exit 1 } else { exit 0 }

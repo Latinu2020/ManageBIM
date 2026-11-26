@@ -3,16 +3,16 @@
 What is planned next. Done items move to the [CHANGELOG](CHANGELOG.md).
 
 ## Add-ins (Revit, Navisworks, AutoCAD / Plant 3D / Civil 3D)
-- **Test every add-in** in all supported versions (Revit, Navisworks, AutoCAD 2022 →), with a checklist per command: export, Live Link, SwitchBack, coordination objects, properties.
-- **Automated add-in tests** where possible (headless export on sample files, compared with the expected result), so a new version does not break them.
+- **Test every add-in** on the other supported versions (only 2025 is installed here; all versions already build): checklist per command - export, Live Link, SwitchBack, coordination objects, properties.
+- **More automated add-in tests**: `tools\test-addins.ps1` covers AutoCAD (BIMCSEND, MBLEVELS) and the Navisworks export; next: Navisworks Levels / Walk / Issues, reference loading, and Revit through a journal file.
 - **Improvements from testing**: clearer messages, faster exports on large models, fewer clicks.
-- **Stability**: no add-in error may close Revit / Navisworks / AutoCAD; errors are logged and shown in the ManageBIM window.
+- **Show add-in errors in ManageBIM** too (today they go to addin.log and a message in the host program).
 
 ## Code care
-- **Split the largest files**: `ui.rs` (~6500 lines) by ribbon tab and window, `app.rs` (~3300 lines) by area.
-- **Group the `App` state by subsystem** (`ClashState`, `MaterialsState`, `McpState` …) so it is easier to follow and test.
-- **Lower the clippy baseline** (226 warnings today) step by step.
-- **One language for code comments** (English), so others can contribute.
+- **Split the remaining large files**: `ui/viewport.rs` (~2200 lines) by tool, `app.rs` (~2500 lines) by area.
+- **Group the rest of the `App` state by subsystem** (`ClashState`, `MaterialsState`, `McpState` …), as done for the levels (`LevelState`).
+- **Lower the clippy baseline** (130 warnings today) step by step.
+- **English comments** in the older code (the new code already is), so others can contribute.
 
 ## Stability
 - **Fuzz more readers**: 0.28.8 tests damaged IFC, DXF, OBJ, PLY, FBX, STL and .bimc files; still to add E57, LAS / LAZ, glTF and a longer `cargo-fuzz` run.

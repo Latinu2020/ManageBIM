@@ -70,7 +70,7 @@ impl App {
                         let t = &self.clash_tests[i];
                         let k = status_counts(t);
                         let state = test_state(t);
-                        let running = self.clash_job.as_ref().map_or(false, |j| j.test == i);
+                        let running = self.clash_job.as_ref().is_some_and(|j| j.test == i);
                         row.set_selected(i == ti);
                         row.col(|ui| {
                             if let Some(new) = super::table::name_cell(ui, egui::Id::new("mb_clash_tests"), i, &mut renaming, &t.name) {
@@ -869,7 +869,7 @@ impl App {
                 self.colors_dirty = true;
             }
             if ui.button("Show all clashes").on_hover_text("Select every open clash in the list and show only them").clicked() {
-                let idx: Vec<usize> = self.clash_tests[ti].results.iter().enumerate().filter(|(_, r)| r.status != ClashStatus::Resolved && self.clash_filter.map_or(true, |f| r.status == f)).map(|(i, _)| i).collect();
+                let idx: Vec<usize> = self.clash_tests[ti].results.iter().enumerate().filter(|(_, r)| r.status != ClashStatus::Resolved && self.clash_filter.is_none_or(|f| r.status == f)).map(|(i, _)| i).collect();
                 self.sel_results = idx.iter().copied().collect();
                 self.clash_others = Others::Hide;
                 self.apply(Action::FocusClashes(ti, idx));
@@ -964,7 +964,7 @@ impl App {
         let picked: std::collections::BTreeSet<ElemId> = self.selected.iter().copied().collect();
         let res_len = self.clash_tests[ti].results.len();
         let pass = |r: &ClashResult| {
-            if filter.map_or(false, |f| r.status != f) {
+            if filter.is_some_and(|f| r.status != f) {
                 return false;
             }
             match sel_mode {
@@ -1068,7 +1068,7 @@ impl App {
         let sev_of = |d: f32| crate::app::severity_of(sty, stol, ssev, d);
         let mut sort_click: Option<u8> = None;
         // panoul Item 1 / Item 2 ia partea de jos cand e un rezultat curent
-        let show_items = self.settings.clash_ui.items_panel && self.cur_result.map_or(false, |c| c < res_len);
+        let show_items = self.settings.clash_ui.items_panel && self.cur_result.is_some_and(|c| c < res_len);
         let avail = ui.available_height();
         let items_h = if show_items { (avail * 0.38).clamp(120.0, 260.0) } else { 0.0 };
         let test = &mut self.clash_tests[ti];

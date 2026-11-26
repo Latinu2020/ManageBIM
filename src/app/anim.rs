@@ -98,11 +98,11 @@ impl App {
         // Record: un keyframe la fiecare 0,2 s cand camera s-a miscat
         if let Some((start, keys)) = &mut self.anim_rec {
             let t = start.elapsed().as_secs_f32();
-            let moved = keys.last().map_or(true, |k| {
+            let moved = keys.last().is_none_or(|k| {
                 let (a, b) = (k.cam, self.cam);
                 (a.eye() - b.eye()).length() > 1e-3 || (a.yaw - b.yaw).abs() > 1e-4 || (a.pitch - b.pitch).abs() > 1e-4 || (a.fov_deg - b.fov_deg).abs() > 1e-3
             });
-            if keys.last().map_or(true, |k| t - k.t >= 0.2) && moved {
+            if keys.last().is_none_or(|k| t - k.t >= 0.2) && moved {
                 keys.push(crate::anim::Keyframe { t, cam: self.cam });
             }
         }
@@ -165,7 +165,7 @@ impl App {
             }
             Some((start, mut keys)) => {
                 let t = start.elapsed().as_secs_f32();
-                if keys.last().map_or(true, |k| t - k.t > 0.05) {
+                if keys.last().is_none_or(|k| t - k.t > 0.05) {
                     keys.push(crate::anim::Keyframe { t, cam: self.cam });
                 }
                 if keys.len() < 2 || t < 0.3 {
@@ -471,13 +471,12 @@ impl App {
         } else {
             self.pathtrace_tex = Some(ctx.load_texture("pathtrace", img, eframe::egui::TextureOptions::default()));
         }
-        if job.done.load(std::sync::atomic::Ordering::Relaxed) {
-            if !self.pathtrace_notified {
+        if job.done.load(std::sync::atomic::Ordering::Relaxed)
+            && !self.pathtrace_notified {
                 self.pathtrace_notified = true;
                 self.pathtrace_done_at = Some(job.started.elapsed().as_secs_f32());
                 self.toast(format!("✅ {} · {} {} · {:.1}s — {}", crate::i18n::tr("Path trace FINISHED"), job.count.load(std::sync::atomic::Ordering::Relaxed), crate::i18n::tr("samples"), self.pathtrace_done_at.unwrap_or(0.0), crate::i18n::tr("Export PNG is ready")));
             }
-        }
         // Repaint doar cat timp randarea e activa. Daca o cerem si dupa
         // terminare, egui ramane intr-o bucla permanenta si aplicatia "merge" continuu.
         if !job.done.load(std::sync::atomic::Ordering::Relaxed) {

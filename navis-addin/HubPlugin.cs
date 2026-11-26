@@ -25,7 +25,9 @@ namespace ManageBIM.Navis
             ("Live Link", "Sync selection", "Selection follows ManageBIM and Revit, both ways (click again to stop)", () => new SyncPlugin()),
         };
 
-        public override int Execute(params string[] parameters)
+        public override int Execute(params string[] parameters) => Safe.Plugin(GetType().Name.Replace("Plugin", ""), parameters, () => Run(parameters));
+
+        private int Run(string[] parameters)
         {
             int pick = Show();
             return pick < 0 ? 0 : Items[pick].Make().Execute(parameters);

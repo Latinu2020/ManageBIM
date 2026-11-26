@@ -829,7 +829,7 @@ impl Renderer {
         let mut vp = [0i32; 4];
         gl.get_parameter_i32_slice(glow::VIEWPORT, &mut vp);
         let scissor = gl.is_enabled(glow::SCISSOR_TEST);
-        if self.fbo.map_or(true, |f| f.3 != w || f.4 != h) {
+        if self.fbo.is_none_or(|f| f.3 != w || f.4 != h) {
             if let Some((fb, c, d, _, _)) = self.fbo.take() {
                 gl.delete_framebuffer(fb);
                 gl.delete_renderbuffer(c);

@@ -17,6 +17,14 @@ namespace ManageBIM.Revit
     {
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            string msg = message;
+            Result r = Safe.Command(GetType().Name.Replace("Command", ""), () => Run(commandData, ref msg, elements), out string error);
+            message = error ?? msg;
+            return r;
+        }
+
+        private Result Run(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
             UIDocument uidoc = commandData.Application.ActiveUIDocument;
             if (uidoc == null) { message = "Open a project first."; return Result.Failed; }
             Document doc = uidoc.Document;

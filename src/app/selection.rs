@@ -71,7 +71,7 @@ impl App {
         }
         if self.clash_highlight_all {
             if let Some(t) = self.clash_tests.get(self.cur_test) {
-                for r in t.results.iter().filter(|r| r.status != ClashStatus::Resolved && self.clash_filter.map_or(true, |f| r.status == f)) {
+                for r in t.results.iter().filter(|r| r.status != ClashStatus::Resolved && self.clash_filter.is_none_or(|f| r.status == f)) {
                     roles.entry(r.a).or_insert(3);
                     roles.entry(r.b).or_insert(4);
                 }

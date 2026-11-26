@@ -78,6 +78,14 @@ namespace ManageBIM.Revit
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            string msg = message;
+            Result r = Safe.Command(GetType().Name.Replace("Command", ""), () => Run(commandData, ref msg, elements), out string error);
+            message = error ?? msg;
+            return r;
+        }
+
+        private Result Run(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
             UIDocument uidoc = commandData.Application.ActiveUIDocument;
             if (uidoc == null) { message = "Open a project first."; return Result.Failed; }
             Document doc = uidoc.Document;
@@ -177,7 +185,7 @@ namespace ManageBIM.Revit
                     lst.Items.Add(it);
                 }
                 var plan = new PictureBox { Dock = DockStyle.Fill, BackColor = System.Drawing.Color.FromArgb(246, 243, 232) };
-                plan.Paint += (s, e) => DrawPlan(e.Graphics, plan.ClientRectangle, objs, lst);
+                plan.Paint += (s, e) => Safe.Ui("Coordination plan", () => DrawPlan(e.Graphics, plan.ClientRectangle, objs, lst));
                 lst.ItemChecked += (s, e) => plan.Invalidate();
                 lst.SelectedIndexChanged += (s, e) => plan.Invalidate();
                 split.Panel1.Controls.Add(lst);

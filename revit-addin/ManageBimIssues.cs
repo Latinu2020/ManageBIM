@@ -141,11 +141,15 @@ namespace ManageBIM
                 var details = new TextBox { Dock = DockStyle.Bottom, Height = 90, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical };
                 lst.SelectedIndexChanged += (s, e) =>
                 {
-                    if (lst.SelectedItem is MbIssue it)
+                    try
                     {
-                        details.Text = (string.IsNullOrEmpty(it.Assigned) ? "" : "Assigned to: " + it.Assigned + "\r\n") + it.Text.Replace("\n", "\r\n") + (it.Selected.Count > 0 ? $"\r\n{it.Selected.Count} selected elements" : "") + (it.Lines.Count + it.Texts.Count > 0 ? $"\r\n{it.Lines.Count} markup lines, {it.Texts.Count} texts" : "");
-                        if (!multi) for (int k = 0; k < lst.Items.Count; k++) lst.SetItemChecked(k, k == lst.SelectedIndex);
+                        if (lst.SelectedItem is MbIssue it)
+                        {
+                            details.Text = (string.IsNullOrEmpty(it.Assigned) ? "" : "Assigned to: " + it.Assigned + "\r\n") + it.Text.Replace("\n", "\r\n") + (it.Selected.Count > 0 ? $"\r\n{it.Selected.Count} selected elements" : "") + (it.Lines.Count + it.Texts.Count > 0 ? $"\r\n{it.Lines.Count} markup lines, {it.Texts.Count} texts" : "");
+                            if (!multi) for (int k = 0; k < lst.Items.Count; k++) lst.SetItemChecked(k, k == lst.SelectedIndex);
+                        }
                     }
+                    catch (Exception ex) { ManageBimLink.Log("Revit", "Issue list: " + ex); }
                 };
                 var bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 40, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(6) };
                 var ok = new Button { Text = okText, DialogResult = DialogResult.OK, Width = 150 };

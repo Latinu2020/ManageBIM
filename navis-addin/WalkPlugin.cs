@@ -22,7 +22,9 @@ namespace ManageBIM.Navis
     [AddInPlugin(AddInLocation.None)]
     public class WalkPlugin : AddInPlugin
     {
-        public override int Execute(params string[] parameters)
+        public override int Execute(params string[] parameters) => Safe.Plugin(GetType().Name.Replace("Plugin", ""), parameters, () => Run(parameters));
+
+        private int Run(string[] parameters)
         {
             bool quiet = parameters != null && parameters.Contains("quiet");
             string log = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManageBIM", "Outbox", "walkpath.log");

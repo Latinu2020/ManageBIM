@@ -282,7 +282,7 @@ impl App {
     pub fn export_user_props(&mut self, path: &str) {
         use crate::qto::{Cell, Sheet};
         let ids: Vec<ElemId> = if self.selected.is_empty() { self.all_ids().into_iter().filter(|i| !self.hidden.contains(i)).collect() } else { self.selected.iter().copied().collect() };
-        let ids: Vec<ElemId> = ids.into_iter().filter(|i| self.elem(*i).map_or(false, |(_, e)| e.tri_count > 0)).collect();
+        let ids: Vec<ElemId> = ids.into_iter().filter(|i| self.elem(*i).is_some_and(|(_, e)| e.tri_count > 0)).collect();
         if ids.is_empty() {
             return self.error("No elements to export.");
         }

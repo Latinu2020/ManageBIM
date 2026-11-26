@@ -220,7 +220,7 @@ impl App {
                 if style {
                     self.apply_style_only(t.visual_style);
                     self.show_grids = t.show_grids;
-                    self.show_levels = t.show_levels;
+                    self.level.show_lines = t.show_levels;
                     self.section_caps = t.section_caps;
                 }
                 if col {
@@ -371,13 +371,13 @@ impl App {
     pub fn current_look(&self) -> crate::app::VpLook {
         let mut overrides: Vec<(ElemId, [u8; 4])> = self.overrides.iter().map(|(k, v)| (*k, *v)).collect();
         overrides.sort_by_key(|(k, _)| *k);
-        crate::app::VpLook { visual_style: self.settings.visual_style, show_grids: self.show_grids, show_levels: self.show_levels, section_caps: self.section_caps, overrides }
+        crate::app::VpLook { visual_style: self.settings.visual_style, show_grids: self.show_grids, show_levels: self.level.show_lines, section_caps: self.section_caps, overrides }
     }
 
     pub fn apply_look(&mut self, l: &crate::app::VpLook) {
         self.apply_style_only(l.visual_style);
         self.show_grids = l.show_grids;
-        self.show_levels = l.show_levels;
+        self.level.show_lines = l.show_levels;
         self.section_caps = l.section_caps;
         self.overrides = l.overrides.iter().copied().collect();
         self.colors_dirty = true;

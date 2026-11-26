@@ -110,7 +110,7 @@ impl App {
         if self.loaded_models().next().is_none() || !self.loads.is_empty() {
             return;
         }
-        if !force && self.shared.last.map_or(false, |t| t.elapsed().as_secs_f32() < 4.0) {
+        if !force && self.shared.last.is_some_and(|t| t.elapsed().as_secs_f32() < 4.0) {
             return;
         }
         self.shared.last = Some(std::time::Instant::now());
@@ -144,7 +144,7 @@ impl App {
         if let Ok(rd) = std::fs::read_dir(&dirp) {
             for e in rd.flatten() {
                 let p = e.path();
-                if p.extension().map_or(true, |x| x != "json") {
+                if p.extension().is_none_or(|x| x != "json") {
                     continue;
                 }
                 files += 1;
@@ -162,7 +162,7 @@ impl App {
                     self.shared.mtimes.insert(key, mt);
                 }
                 let known = self.shared.known.get(&si.guid).copied();
-                if known.map_or(false, |k| si.modified <= k.0) {
+                if known.is_some_and(|k| si.modified <= k.0) {
                     continue;
                 }
                 let local = self.viewpoints.iter().position(|v| v.issue.guid == si.guid);
@@ -183,7 +183,7 @@ impl App {
                 match local {
                     Some(i) => {
                         // schimbat si aici de la ultima sincronizare -> pastram si varianta locala
-                        let changed_here = known.map_or(false, |k| k.1 != hash_vp(&self.viewpoints[i]));
+                        let changed_here = known.is_some_and(|k| k.1 != hash_vp(&self.viewpoints[i]));
                         if changed_here {
                             let mut mine = self.viewpoints[i].clone();
                             mine.name = format!("{} (my copy)", mine.name);
@@ -226,7 +226,7 @@ impl App {
         for i in 0..self.viewpoints.len() {
             let v = &self.viewpoints[i];
             let h = hash_vp(v);
-            if self.shared.known.get(&v.issue.guid).map_or(false, |k| k.1 == h) {
+            if self.shared.known.get(&v.issue.guid).is_some_and(|k| k.1 == h) {
                 continue;
             }
             let mut c = v.clone();

@@ -126,7 +126,7 @@ pub fn load_obj(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
     let mut done = 0usize;
     for line in text.lines() {
         done += line.len() + 1;
-        if faces % 200_000 == 0 {
+        if faces.is_multiple_of(200_000) {
             progress(0.05 + 0.85 * done as f32 / total as f32, "Reading OBJ");
         }
         let l = line.trim();
@@ -460,7 +460,7 @@ pub fn load_ply(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
     // fetele se impart in elemente dupa primul atribut de identificare gasit (ca in scanarile segmentate,
     // modelele fotogrammetrice clasificate sau exporturile cu obiecte)
     const IDS: [&str; 10] = ["object_id", "objectid", "instance", "instance_id", "segment", "segment_id", "label", "class", "category", "material_index"];
-    let id_key = IDS.iter().find(|k| face_vals.first().map_or(false, |fv| fv.iter().any(|(n, _)| n.eq_ignore_ascii_case(k)))).map(|s| s.to_string());
+    let id_key = IDS.iter().find(|k| face_vals.first().is_some_and(|fv| fv.iter().any(|(n, _)| n.eq_ignore_ascii_case(k)))).map(|s| s.to_string());
     let fval = |fv: &[(String, f64)], k: &str| fv.iter().find(|(n, _)| n.eq_ignore_ascii_case(k)).map(|x| x.1);
     let mut groups: std::collections::BTreeMap<i64, (Vec<Tri>, std::collections::BTreeMap<String, (f64, f64, usize)>)> = std::collections::BTreeMap::new();
     for (fi, f) in faces.iter().enumerate() {
@@ -578,7 +578,7 @@ fn aci(i: i64) -> [u8; 4] {
             let h = ((i - 10) / 10) as f32 * 15.0;
             let shade = (i % 10) as usize;
             let v = [1.0, 1.0, 0.8, 0.8, 0.6, 0.6, 0.5, 0.5, 0.3, 0.3][shade];
-            let s = if shade % 2 == 0 { 1.0 } else { 0.5 };
+            let s = if shade.is_multiple_of(2) { 1.0 } else { 0.5 };
             let c = v * s;
             let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
             let m = v - c;
@@ -1242,7 +1242,7 @@ pub fn detect_tools() -> Tools {
 pub fn find_nwd2bimc() -> Option<String> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
-    let navis_installed = ["ProgramFiles", "ProgramW6432"].iter().filter_map(|v| std::env::var_os(v)).any(|pf| {
+    let navis_installed = ["ProgramFiles", "ProgramW6432"].iter().filter_map(std::env::var_os).any(|pf| {
         std::fs::read_dir(PathBuf::from(pf).join("Autodesk"))
             .map(|rd| rd.flatten().any(|e| e.file_name().to_string_lossy().starts_with("Navisworks") && e.path().join("Autodesk.Navisworks.Automation.dll").is_file()))
             .unwrap_or(false)
@@ -1300,7 +1300,7 @@ static NAVIS_GOOD: RwLock<Option<u32>> = RwLock::new(None);
 /// cea care a mers ultima data, cele suportate (2026 -> 2022), apoi cele mai noi (2027+).
 pub fn navis_years() -> Vec<u32> {
     let mut found: Vec<u32> = Vec::new();
-    for pf in ["ProgramFiles", "ProgramW6432"].iter().filter_map(|v| std::env::var_os(v)) {
+    for pf in ["ProgramFiles", "ProgramW6432"].iter().filter_map(std::env::var_os) {
         if let Ok(rd) = std::fs::read_dir(PathBuf::from(pf).join("Autodesk")) {
             for e in rd.flatten() {
                 let n = e.file_name().to_string_lossy().to_string();

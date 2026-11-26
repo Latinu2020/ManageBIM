@@ -72,7 +72,9 @@ namespace ManageBIM.Navis
             return list;
         }
 
-        public override int Execute(params string[] parameters)
+        public override int Execute(params string[] parameters) => Safe.Plugin(GetType().Name.Replace("Plugin", ""), parameters, () => Run(parameters));
+
+        private int Run(string[] parameters)
         {
             Document doc = NwApp.ActiveDocument;
             if (doc == null || doc.Models.Count == 0) { MessageBox.Show("Open the model first (the same model as in ManageBIM).", "ManageBIM"); return 1; }
@@ -173,7 +175,7 @@ namespace ManageBIM.Navis
                     lst.Items.Add(it);
                 }
                 var plan = new PictureBox { Dock = DockStyle.Fill, BackColor = System.Drawing.Color.FromArgb(246, 243, 232) };
-                plan.Paint += (s, e) => DrawPlan(e.Graphics, plan.ClientRectangle, objs, lst);
+                plan.Paint += (s, e) => Safe.Ui("Coordination plan", () => DrawPlan(e.Graphics, plan.ClientRectangle, objs, lst));
                 lst.ItemChecked += (s, e) => plan.Invalidate();
                 lst.SelectedIndexChanged += (s, e) => plan.Invalidate();
                 split.Panel1.Controls.Add(lst);

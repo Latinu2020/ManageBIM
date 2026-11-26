@@ -118,7 +118,7 @@ impl App {
                 if e.tri_count == 0 || self.hidden.contains(&id) || !e.aabb.is_valid() {
                     continue;
                 }
-                if is_service(&e.ifc_type) && restrict.as_ref().map_or(true, |r| r.contains(&id)) {
+                if is_service(&e.ifc_type) && restrict.as_ref().is_none_or(|r| r.contains(&id)) {
                     services.push((id, e.name.clone(), e.aabb));
                 } else if is_host(&e.ifc_type) {
                     hosts.push((id, e.name.clone(), e.guid.clone(), e.aabb));

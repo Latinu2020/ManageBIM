@@ -32,6 +32,14 @@ namespace ManageBIM.Revit
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            string msg = message;
+            Result r = Safe.Command(GetType().Name.Replace("Command", ""), () => Run(commandData, ref msg, elements), out string error);
+            message = error ?? msg;
+            return r;
+        }
+
+        private Result Run(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
             int pick = Show();
             if (pick < 0) return Result.Cancelled;
             return Items[pick].Make().Execute(commandData, ref message, elements);

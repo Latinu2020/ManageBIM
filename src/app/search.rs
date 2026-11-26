@@ -163,8 +163,8 @@ impl App {
             SearchOp::NotEquals => !present.iter().any(|v| lc(v) == val),
             SearchOp::Contains => present.iter().any(|v| lc(v).contains(&val)),
             SearchOp::NotContains => !present.iter().any(|v| lc(v).contains(&val)),
-            SearchOp::Greater => num.map_or(false, |n| present.iter().any(|v| leading_number(v).map_or(false, |x| x > n))),
-            SearchOp::Less => num.map_or(false, |n| present.iter().any(|v| leading_number(v).map_or(false, |x| x < n))),
+            SearchOp::Greater => num.is_some_and(|n| present.iter().any(|v| leading_number(v).is_some_and(|x| x > n))),
+            SearchOp::Less => num.is_some_and(|n| present.iter().any(|v| leading_number(v).is_some_and(|x| x < n))),
         }
     }
 
@@ -189,8 +189,8 @@ impl App {
                 .flat_map(|(i, m)| (0..m.elements.len() as u32).map(move |e| ElemId { m: i as u32, e }))
                 .collect(),
             SelKind::Set => self.sets.iter().find(|x| x.name == s.value).map(|x| self.resolve_set(x)).unwrap_or_default(),
-            SelKind::Type => self.all_ids().into_iter().filter(|id| self.elem(*id).map_or(false, |(_, e)| e.ifc_type == s.value)).collect(),
-            SelKind::Discipline => self.all_ids().into_iter().filter(|id| self.elem(*id).map_or(false, |(m, e)| crate::clash_smart::discipline_of(e, &m.name).label() == s.value)).collect(),
+            SelKind::Type => self.all_ids().into_iter().filter(|id| self.elem(*id).is_some_and(|(_, e)| e.ifc_type == s.value)).collect(),
+            SelKind::Discipline => self.all_ids().into_iter().filter(|id| self.elem(*id).is_some_and(|(m, e)| crate::clash_smart::discipline_of(e, &m.name).label() == s.value)).collect(),
         }
     }
 

@@ -287,7 +287,7 @@ impl App {
             let rows: Vec<(usize, String, usize, bool)> = self
                 .loaded_models()
                 .map(|(i, m)| {
-                    let moved = !self.model_xf.get(i).map_or(true, |x| x.is_identity()) || self.elem_offsets.keys().any(|k| k.m as usize == i);
+                    let moved = !self.model_xf.get(i).is_none_or(|x| x.is_identity()) || self.elem_offsets.keys().any(|k| k.m as usize == i);
                     (i, m.name.clone(), m.elements.len(), moved)
                 })
                 .collect();
@@ -313,7 +313,7 @@ impl App {
             // ---- model properties
             let ui = &mut cols[1];
             ui.label(RichText::new("Model Properties").strong());
-            let sel = self.proj_sel.filter(|i| self.models.get(*i).map_or(false, |m| m.is_some())).or(rows.first().map(|r| r.0));
+            let sel = self.proj_sel.filter(|i| self.models.get(*i).is_some_and(|m| m.is_some())).or(rows.first().map(|r| r.0));
             if let Some(i) = sel {
                 let m = self.models[i].clone().unwrap();
                 let meta = std::fs::metadata(&m.path).ok();

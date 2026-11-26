@@ -395,7 +395,7 @@ fn read_element(r: &mut R, strs: &[String], lim: usize, verts: &mut Vec<DVec3>) 
     for _ in 0..nr {
         let c = (r.u()? as u32).to_le_bytes();
         let n = r.n(nt)?;
-        colors.extend(std::iter::repeat(c).take(n));
+        colors.extend(std::iter::repeat_n(c, n));
     }
     colors.resize(nt, [200, 200, 200, 255]);
     Ok(RawElement { name, ifc_type, guid, storey, props, tris, colors, default_hidden })
@@ -466,7 +466,7 @@ fn read_element_v3(r: &mut R, strs: &[String], lim: usize, shared: &mut Vec<(Vec
     for _ in 0..nr {
         let c = (r.u()? as u32).to_le_bytes();
         let n = r.n(nt)?;
-        colors.extend(std::iter::repeat(c).take(n));
+        colors.extend(std::iter::repeat_n(c, n));
     }
     colors.resize(nt, [200, 200, 200, 255]);
     Ok(RawElement { name, ifc_type, guid, storey, props, tris, colors, default_hidden })

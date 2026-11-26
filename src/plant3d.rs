@@ -209,7 +209,7 @@ fn smooth_tube(r0: &[DVec3], r1: &[DVec3]) -> Option<Vec<[DVec3; 3]>> {
 /// intr-un plan. Asa scrie Plant 3D profilul grinzilor in grafica proxy.
 fn collapsed_prism(w: &[DVec3]) -> bool {
     let n = w.len();
-    if n < 6 || n % 2 != 0 {
+    if n < 6 || !n.is_multiple_of(2) {
         return false;
     }
     let h = n / 2;
@@ -376,7 +376,7 @@ pub fn parse_proxy(g: &[u8]) -> ProxyGeometry {
                         out.placements.push(m);
                     }
                     stack.push(cur);
-                    cur = cur * m;
+                    cur *= m;
                 }
             }
             // POP_MODEL_XFORM

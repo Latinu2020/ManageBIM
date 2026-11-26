@@ -432,7 +432,7 @@ fn local_xf(p: &Prim) -> DMat4 {
         if inv {
             o = o.inverse();
         }
-        m = m * o;
+        m *= o;
     }
     m
 }
@@ -577,7 +577,7 @@ fn walk(w: &mut Walk, p: &Prim, parent: DMat4, path: &str, group: &str, col: [u8
                     let sub_dir = f.parent().map(|d| d.to_path_buf()).unwrap_or_default();
                     let old = std::mem::replace(&mut w.dir, sub_dir);
                     w.depth += 1;
-                    for sp in prims.iter().filter(|sp| def.as_ref().map_or(true, |d| *d == sp.name)) {
+                    for sp in prims.iter().filter(|sp| def.as_ref().is_none_or(|d| *d == sp.name)) {
                         // prim-ul referit inlocuieste numele, dar pastreaza transformarea locala
                         for k in &sp.kids {
                             walk(w, k, m * local_xf(sp), &path, &group, color_of(sp, col), false);
@@ -598,7 +598,7 @@ fn walk(w: &mut Walk, p: &Prim, parent: DMat4, path: &str, group: &str, col: [u8
     for k in &p.kids {
         walk(w, k, m, &path, &group, col, false);
     }
-    if w.out.len() % 500 == 0 {
+    if w.out.len().is_multiple_of(500) {
         (w.progress)(0.5, "Reading USD prims");
     }
 }

@@ -49,7 +49,7 @@ impl App {
     /// Axele si nivelurile tuturor modelelor (nivelurile cu acelasi nume o singura data, axele identice o data).
     pub fn scene_grids(&self) -> GridData {
         let mut all = GridData::default();
-        let custom = self.use_user_levels && !self.user_levels.is_empty();
+        let custom = self.level.custom && !self.level.user.is_empty();
         let my_grids = self.use_user_grids && !self.user_grids.is_empty();
         if my_grids {
             let o = self.origin_f64();
@@ -57,7 +57,7 @@ impl App {
         }
         if custom {
             let oz = self.origin_f64().z;
-            all.levels = self.user_levels.iter().map(|l| (l.name.clone(), (self.level_zero + l.elev - oz) as f32)).collect();
+            all.levels = self.level.user.iter().map(|l| (l.name.clone(), (self.level.zero + l.elev - oz) as f32)).collect();
         }
         for (slot, _) in self.loaded_models() {
             let g = self.grid_data(slot);
@@ -207,11 +207,10 @@ impl App {
                             pts.push(p + (q - p) * k);
                         }
                     }
-                    if pts.len() == 2 && (pts[0] - pts[1]).length_squared() > 1e-8 {
-                        if (0..3).all(|ax| pts.iter().all(|p| p[ax] >= bmin[ax] - 1e-3 && p[ax] <= bmax[ax] + 1e-3)) {
+                    if pts.len() == 2 && (pts[0] - pts[1]).length_squared() > 1e-8
+                        && (0..3).all(|ax| pts.iter().all(|p| p[ax] >= bmin[ax] - 1e-3 && p[ax] <= bmax[ax] + 1e-3)) {
                             out.push((pts[0], pts[1]));
                         }
-                    }
                     if out.len() >= 60000 {
                         return out;
                     }
@@ -552,7 +551,7 @@ impl App {
                 for t in e.tri_start..e.tri_start + e.tri_count {
                     let i = t as usize * 3;
                     if let (Some(a), Some(b), Some(c)) = (m.pos.get(i), m.pos.get(i + 1), m.pos.get(i + 2)) {
-                        tris.push([Vec3::from(*a), Vec3::from(*b), Vec3::from(*c)]);
+                        tris.push([(*a), (*b), (*c)]);
                     }
                 }
                 total += tris.len();

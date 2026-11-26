@@ -26,7 +26,9 @@ namespace ManageBIM.Acad
         private const string App = "MANAGEBIM_LEVEL";
 
         [CommandMethod("MBLEVELS", CommandFlags.Modal | CommandFlags.NoBlockEditor)]
-        public void Levels()
+        public void Levels() => Safe.Command("MBLEVELS", LevelsBody);
+
+        private void LevelsBody()
         {
             Document doc = AcApp.DocumentManager.MdiActiveDocument;
             if (doc == null) return;

@@ -76,7 +76,7 @@ pub fn load_3mf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
     let rels = zip.text("_rels/.rels").unwrap_or_default();
     let main = parse_xml(&rels)
         .ok()
-        .and_then(|r| kids(&r, "Relationship").find(|x| attr(x, "Type").map_or(false, |t| t.ends_with("/3dmodel"))).and_then(|x| attr(x, "Target")).map(|t| t.trim_start_matches('/').to_string()))
+        .and_then(|r| kids(&r, "Relationship").find(|x| attr(x, "Type").is_some_and(|t| t.ends_with("/3dmodel"))).and_then(|x| attr(x, "Target")).map(|t| t.trim_start_matches('/').to_string()))
         .unwrap_or_else(|| "3D/3dmodel.model".into());
     let mut objects: HashMap<String, MfObject> = HashMap::new();
     let mut unit = 0.001;
@@ -325,8 +325,8 @@ pub fn load_json(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, S
     if v.get("asset").is_some() && v.get("root").is_some() {
         return load_3dtiles(path, &v, progress);
     }
-    let is_ifc = v.get("type").and_then(|t| t.as_str()).map_or(false, |t| t.eq_ignore_ascii_case("ifcJSON"))
-        || v.get("data").and_then(|d| d.as_array()).map_or(false, |a| a.iter().any(|x| x.get("type").and_then(|t| t.as_str()).map_or(false, |t| t.starts_with("Ifc"))));
+    let is_ifc = v.get("type").and_then(|t| t.as_str()).is_some_and(|t| t.eq_ignore_ascii_case("ifcJSON"))
+        || v.get("data").and_then(|d| d.as_array()).is_some_and(|a| a.iter().any(|x| x.get("type").and_then(|t| t.as_str()).is_some_and(|t| t.starts_with("Ifc"))));
     if is_ifc {
         return load_ifcjson(&v, path, progress);
     }
@@ -735,7 +735,7 @@ fn tile_walk(ctx: &mut TilesCtx, tile: &serde_json::Value, parent: DMat4, dir: &
             }
             let p = dir.join(u.split(['?', '#']).next().unwrap_or(&u).replace('/', std::path::MAIN_SEPARATOR_STR));
             ctx.contents += 1;
-            if ctx.contents % 25 == 0 {
+            if ctx.contents.is_multiple_of(25) {
                 (ctx.progress)(0.1 + 0.8 * (ctx.contents as f32 / MAX_CONTENTS as f32).min(1.0), "Reading 3D Tiles");
             }
             match std::fs::read(&p) {

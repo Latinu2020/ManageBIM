@@ -16,7 +16,7 @@ impl App {
                     MatTarget::Items(v) => v.iter().copied().filter(|i| self.elem(*i).is_some()).collect(),
                     MatTarget::Type(t) => {
                         let t = t.to_lowercase();
-                        self.all_ids().into_iter().filter(|i| self.elem(*i).map_or(false, |(_, e)| e.ifc_type.to_lowercase().contains(&t))).collect()
+                        self.all_ids().into_iter().filter(|i| self.elem(*i).is_some_and(|(_, e)| e.ifc_type.to_lowercase().contains(&t))).collect()
                     }
                 };
                 for id in ids {
@@ -538,7 +538,7 @@ impl App {
                     })
                     .min_by(|x, y| x.0.total_cmp(&y.0));
                 if let Some((t, p)) = hit {
-                    if best.as_ref().map_or(true, |b| t < b.1) {
+                    if best.as_ref().is_none_or(|b| t < b.1) {
                         best = Some((id, t, p));
                     }
                 }
@@ -670,7 +670,7 @@ impl App {
                         continue;
                     }
                     if let Some(e) = model.elements.get(ei as usize) {
-                        if e.aabb.is_valid() && (!inside(&e.aabb) || section_box.as_ref().map_or(false, |sb| !e.aabb.overlaps(sb, 0.0))) {
+                        if e.aabb.is_valid() && (!inside(&e.aabb) || section_box.as_ref().is_some_and(|sb| !e.aabb.overlaps(sb, 0.0))) {
                             continue;
                         }
                     }

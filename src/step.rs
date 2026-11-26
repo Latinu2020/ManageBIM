@@ -308,7 +308,7 @@ impl<'a> Parser<'a> {
                 self.i += 1;
                 V::Str(decode_string(raw))
             }
-            b'.' if self.s.get(self.i + 1).map_or(false, |c| c.is_ascii_alphabetic()) => {
+            b'.' if self.s.get(self.i + 1).is_some_and(|c| c.is_ascii_alphabetic()) => {
                 self.i += 1;
                 let st = self.i;
                 while let Some(c) = self.peek() {

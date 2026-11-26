@@ -59,7 +59,7 @@ impl App {
         c.truncate(12);
         s.categories = c;
         let oz = self.origin_f64().z;
-        let zero = if self.use_user_levels { self.level_zero } else { 0.0 };
+        let zero = if self.level.custom { self.level.zero } else { 0.0 };
         s.levels = self.scene_grids().levels.iter().map(|(n, z)| (n.clone(), *z as f64 + oz - zero)).collect();
         for t in &self.clash_tests {
             let mut by_status = [0usize; 5];

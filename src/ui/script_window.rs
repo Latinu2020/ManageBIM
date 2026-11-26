@@ -24,7 +24,7 @@ impl App {
                     }
                     if ui.button("➕ New script").clicked() {
                         match script::create(&self.settings.scripts_dir) {
-                            Ok(p) => self.toast(format!("Script created: {}", crate::file_name(&p.to_string_lossy().to_string()))),
+                            Ok(p) => self.toast(format!("Script created: {}", crate::file_name(p.to_string_lossy().as_ref()))),
                             Err(e) => self.error(e),
                         }
                     }
@@ -95,12 +95,12 @@ impl App {
                         ui.label(RichText::new("No .rhai files yet — use New script or Install examples.").weak().small());
                     } else {
                         for p in scripts {
-                            let name = crate::file_name(&p.to_string_lossy().to_string());
+                            let name = crate::file_name(p.to_string_lossy().as_ref());
                             ui.horizontal(|ui| {
                                 ui.label("📜");
                                 ui.label(&name);
                                 if ui.button("▶ Run").clicked() {
-                                    self.run_script(&p.to_string_lossy().to_string());
+                                    self.run_script(p.to_string_lossy().as_ref());
                                 }
                                 if ui.small_button("🗑").on_hover_text("Delete this script").clicked() {
                                     let _ = std::fs::remove_file(&p);

@@ -1,9 +1,9 @@
-//! Robustete: fisiere trunchiate sau cu octeti stricati nu au voie sa opreasca aplicatia (panic).
-//! Pentru fiecare fisier de test: taieturi la mai multe lungimi si variante cu octeti schimbati
-//! (generator determinist, aceleasi variante la fiecare rulare). Eroare = ok; panic = bug.
+//! Robustness: truncated files or files with damaged bytes must never stop the app (panic).
+//! For every test file: cuts at several lengths and copies with changed bytes
+//! (deterministic generator, the same variants on every run). Error = ok; panic = bug.
 use bimrust::*;
 
-/// generator pseudo-aleator simplu (xorshift), ca rezultatele sa fie reproductibile
+/// simple pseudo-random generator (xorshift), so the results are reproducible
 struct Rng(u64);
 impl Rng {
     fn next(&mut self) -> u64 {
@@ -21,7 +21,7 @@ fn variants(data: &[u8], seed: u64) -> Vec<(String, Vec<u8>)> {
         out.push((format!("cut{pct}"), data[..n].to_vec()));
     }
     let mut r = Rng(seed | 1);
-    // MB_FUZZ_N=500 cargo test --test corrupt_files: cautare mai lunga
+    // MB_FUZZ_N=500 cargo test --test corrupt_files: a longer search
     let n: usize = std::env::var("MB_FUZZ_N").ok().and_then(|v| v.parse().ok()).unwrap_or(24);
     for k in 0..n {
         let mut d = data.to_vec();
@@ -40,7 +40,7 @@ fn variants(data: &[u8], seed: u64) -> Vec<(String, Vec<u8>)> {
         }
         out.push((format!("flip{k}"), d));
     }
-    // numere uriase / negative in locul unor cifre (indici, numar de varfuri, lungimi)
+    // huge numbers in place of a digit (indices, vertex counts, lengths)
     let mut d = data.to_vec();
     if let Some(i) = d.iter().position(|c| c.is_ascii_digit()) {
         d.splice(i..i + 1, b"99999999999".iter().copied());
@@ -68,7 +68,7 @@ fn corrupt_files_never_panic() {
     ];
     let dir = std::env::temp_dir().join(format!("mb_corrupt_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    // mesajele de panic nu umplu iesirea testului; le strangem in lista
+    // panic messages do not flood the test output; they are collected in the list
     std::panic::set_hook(Box::new(|_| {}));
     let mut panics = Vec::new();
     let mut runs = 0;
@@ -81,7 +81,7 @@ fn corrupt_files_never_panic() {
             let path = p.to_string_lossy().to_string();
             runs += 1;
             let r = std::panic::catch_unwind(|| {
-                // cache-ul .bimc are cititorul lui; un model citit trebuie si construit (indici, culori)
+                // the .bimc cache has its own reader; a model that was read must also build (indices, colours)
                 let raw = if path.ends_with(".bimc") { bimc::read(&path) } else { load_any(&path, &|_, _| {}) };
                 if let Ok(raw) = raw {
                     let _ = build_model(raw, &path, glam::DVec3::ZERO);

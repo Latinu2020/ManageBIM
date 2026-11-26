@@ -293,11 +293,10 @@ impl App {
                 }
                 ui.end_row();
                 for row in &r.rows {
-                    if nk == 0 {
-                        if ui.selectable_label(false, "All").clicked() {
+                    if nk == 0
+                        && ui.selectable_label(false, "All").clicked() {
                             select = Some((row.ids.clone(), ctrl));
                         }
-                    }
                     for key in &row.keys {
                         let resp = ui.selectable_label(false, key).on_hover_text("Click: select these items · Ctrl+click: add to the selection");
                         if resp.clicked() {

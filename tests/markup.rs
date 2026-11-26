@@ -13,7 +13,7 @@ fn item(i: usize) -> ReportItem {
         dir: [0.0, 1.0, 0.0],
         up: [0.0, 0.0, 1.0],
         fov_deg: 50.0,
-        ortho_height: if i % 2 == 0 { Some(20.0) } else { None },
+        ortho_height: if i.is_multiple_of(2) { Some(20.0) } else { None },
         selected_guids: vec!["2O2Fr$t4X7Zf8NOew3FLOH".into()],
         hidden_guids: vec![],
         image: encode_png(&rgb, 64, 36),

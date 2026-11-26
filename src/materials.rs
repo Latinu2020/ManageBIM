@@ -633,7 +633,7 @@ pub fn import_pbr(path: &str, dest_root: &std::path::Path) -> Result<Material, S
                 "albedo" if l.contains("albedo") || l.contains("basecolor") => 2,
                 _ => 0,
             };
-            if best.as_ref().map_or(true, |(s, _)| score > *s) {
+            if best.as_ref().is_none_or(|(s, _)| score > *s) {
                 best = Some((score, f.to_string_lossy().to_string()));
             }
         }

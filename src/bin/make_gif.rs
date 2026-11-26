@@ -13,7 +13,7 @@ fn main() {
     let fps: u32 = a.get(4).and_then(|v| v.parse().ok()).unwrap_or(10);
     // al 5-lea argument: se pastreaza un cadru din N (GIF mai mic)
     let step: usize = a.get(5).and_then(|v| v.parse().ok()).unwrap_or(1).max(1);
-    let mut files: Vec<_> = std::fs::read_dir(&a[1]).expect("frames dir").filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().map_or(false, |x| x == "png")).collect();
+    let mut files: Vec<_> = std::fs::read_dir(&a[1]).expect("frames dir").filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "png")).collect();
     files.sort();
     let files: Vec<_> = files.into_iter().step_by(step).collect();
     let mut enc: Option<gif::Encoder<File>> = None;

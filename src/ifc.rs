@@ -1495,7 +1495,7 @@ fn circle(r: f64, n: usize) -> Vec<DVec2> {
 
 fn append_curve(out: &mut Vec<DVec3>, seg: Vec<DVec3>) {
     for p in seg {
-        if out.last().map_or(true, |l| (*l - p).length_squared() > 1e-16) {
+        if out.last().is_none_or(|l| (*l - p).length_squared() > 1e-16) {
             out.push(p);
         }
     }

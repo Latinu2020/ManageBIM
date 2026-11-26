@@ -1138,7 +1138,7 @@ fn folder_events(xml: &str) -> Vec<(usize, String)> {
         let open = xml[i..].find("<viewfolder").map(|p| p + i);
         let close = xml[i..].find("</viewfolder>").map(|p| p + i);
         match (open, close) {
-            (Some(o), c) if c.map_or(true, |c| o < c) => {
+            (Some(o), c) if c.is_none_or(|c| o < c) => {
                 let end = xml[o..].find('>').map(|p| p + o).unwrap_or(xml.len());
                 let tag = &xml[o..end];
                 stack.push(xml_attr(tag, "name").unwrap_or_else(|| "Folder".into()));

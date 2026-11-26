@@ -172,7 +172,7 @@ fn glb_triangle() -> Vec<u8> {
         "nodes": [{"mesh": 0, "name": "Tile mesh"}], "scenes": [{"nodes": [0]}], "scene": 0
     });
     let mut j = serde_json::to_vec(&json).unwrap();
-    while j.len() % 4 != 0 {
+    while !j.len().is_multiple_of(4) {
         j.push(b' ');
     }
     let mut out = Vec::new();
@@ -192,11 +192,11 @@ fn glb_triangle() -> Vec<u8> {
 fn tiles_tileset_with_b3dm_batch_table() {
     let glb = glb_triangle();
     let mut ft = serde_json::to_vec(&serde_json::json!({"BATCH_LENGTH": 1})).unwrap();
-    while ft.len() % 8 != 0 {
+    while !ft.len().is_multiple_of(8) {
         ft.push(b' ');
     }
     let mut bt = serde_json::to_vec(&serde_json::json!({"name": ["Pump P-1"], "height": [2.5]})).unwrap();
-    while bt.len() % 8 != 0 {
+    while !bt.len().is_multiple_of(8) {
         bt.push(b' ');
     }
     let mut b3dm = Vec::new();

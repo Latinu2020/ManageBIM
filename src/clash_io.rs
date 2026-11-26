@@ -175,7 +175,7 @@ fn rule_of(c: &Node) -> Option<SearchRule> {
         "no_prop" => SearchOp::Undefined,
         _ => SearchOp::Equals,
     };
-    let or = c.attr("flags").and_then(|f| f.parse::<u32>().ok()).map_or(false, |f| f & 64 != 0);
+    let or = c.attr("flags").and_then(|f| f.parse::<u32>().ok()).is_some_and(|f| f & 64 != 0);
     if prop.is_empty() {
         return None;
     }
@@ -306,7 +306,7 @@ pub fn parse_tests_xml(text: &str) -> Result<Imported, String> {
         let mut same_file = false;
         for r in rn {
             let n = format!("{} {}", r.attr("name").unwrap_or(""), r.attr("type").unwrap_or("")).to_lowercase();
-            let on = r.attr("enabled").map_or(true, yes);
+            let on = r.attr("enabled").is_none_or(yes);
             if on && n.contains("file") {
                 same_file = true;
             } else if on && n.contains("layer") {

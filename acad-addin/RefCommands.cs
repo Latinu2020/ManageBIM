@@ -25,7 +25,9 @@ namespace ManageBIM.Acad
         private const string Prefix = "MBREF-";
 
         [CommandMethod("MBREFERENCE", CommandFlags.Modal | CommandFlags.NoBlockEditor)]
-        public void Load()
+        public void Load() => Safe.Command("MBREFERENCE", LoadBody);
+
+        private void LoadBody()
         {
             Document doc = AcApp.DocumentManager.MdiActiveDocument;
             if (doc == null) return;
@@ -37,7 +39,9 @@ namespace ManageBIM.Acad
         }
 
         [CommandMethod("MBREFRELOAD", CommandFlags.Modal | CommandFlags.NoBlockEditor)]
-        public void Reload()
+        public void Reload() => Safe.Command("MBREFRELOAD", ReloadBody);
+
+        private void ReloadBody()
         {
             Document doc = AcApp.DocumentManager.MdiActiveDocument;
             if (doc == null) return;
@@ -52,7 +56,9 @@ namespace ManageBIM.Acad
         }
 
         [CommandMethod("MBREFUNLOAD", CommandFlags.Modal | CommandFlags.NoBlockEditor)]
-        public void Unload()
+        public void Unload() => Safe.Command("MBREFUNLOAD", UnloadBody);
+
+        private void UnloadBody()
         {
             Document doc = AcApp.DocumentManager.MdiActiveDocument;
             if (doc == null) return;

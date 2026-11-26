@@ -132,7 +132,7 @@ mod ffi {
         pub fn denoise(&self, inp: &super::Input) -> Result<Vec<f32>, String> {
             let (w, h) = (inp.width, inp.height);
             let n = w * h * 3;
-            if w == 0 || h == 0 || inp.color.len() < n || inp.albedo.map_or(false, |a| a.len() < n) || inp.normal.map_or(false, |a| a.len() < n) {
+            if w == 0 || h == 0 || inp.color.len() < n || inp.albedo.is_some_and(|a| a.len() < n) || inp.normal.is_some_and(|a| a.len() < n) {
                 return Err("Denoise: image buffers have the wrong size.".into());
             }
             let mut out = vec![0.0f32; n];

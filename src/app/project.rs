@@ -243,10 +243,10 @@ impl App {
         };
 
         self.selected = self.selected.iter().filter_map(|i| rid(*i)).collect();
-        self.primary = self.primary.and_then(|i| rid(i));
+        self.primary = self.primary.and_then(&rid);
 
         // ascunse: remapate; elementele noi ascunse implicit (ex. IfcSpace) raman ascunse
-        let mapped: HashSet<u32> = (0..old.elements.len() as u32).filter_map(|e| map_e(e)).collect();
+        let mapped: HashSet<u32> = (0..old.elements.len() as u32).filter_map(map_e).collect();
         let mut hidden: HashSet<ElemId> = self.hidden.iter().filter_map(|i| rid(*i)).collect();
         for (k, e) in new.elements.iter().enumerate() {
             if e.default_hidden && !mapped.contains(&(k as u32)) {
@@ -602,11 +602,11 @@ impl App {
             },
             animations: self.animations.clone(),
             render: self.render.clone(),
-            user_levels: self.user_levels.clone(),
-            level_zero: self.level_zero,
-            use_user_levels: self.use_user_levels,
+            user_levels: self.level.user.clone(),
+            level_zero: self.level.zero,
+            use_user_levels: self.level.custom,
             show_grids: self.show_grids,
-            show_levels: self.show_levels,
+            show_levels: self.level.show_lines,
             shared_dir: self.shared_dir.clone(),
             user_grids: self.user_grids.clone(),
             use_user_grids: self.use_user_grids,
@@ -732,7 +732,7 @@ impl App {
         }
         self.project_path = Some(path.to_string());
         // proiectul salvat automat / despachetat din .bimd nu intra in lista Recent
-        let internal = autosave_dir().map_or(false, |d| std::path::Path::new(path).starts_with(&d)) || published_dir().map_or(false, |d| std::path::Path::new(path).starts_with(&d));
+        let internal = autosave_dir().is_some_and(|d| std::path::Path::new(path).starts_with(&d)) || published_dir().is_some_and(|d| std::path::Path::new(path).starts_with(&d));
         if !internal {
             self.settings.add_recent(path);
         }
@@ -763,11 +763,11 @@ impl App {
         self.render.width = self.render.width.clamp(64, 7680);
         self.render.height = self.render.height.clamp(64, 4320);
         self.render.fps = self.render.fps.clamp(1, 120);
-        self.user_levels = pf.user_levels;
-        self.level_zero = pf.level_zero;
-        self.use_user_levels = pf.use_user_levels;
+        self.level.user = pf.user_levels;
+        self.level.zero = pf.level_zero;
+        self.level.custom = pf.use_user_levels;
         self.show_grids = pf.show_grids;
-        self.show_levels = pf.show_levels;
+        self.level.show_lines = pf.show_levels;
         self.shared_dir = pf.shared_dir;
         self.user_grids = pf.user_grids;
         self.use_user_grids = pf.use_user_grids;
@@ -839,7 +839,7 @@ impl App {
                 self.cam = t.cam;
                 self.settings.visual_style = t.visual_style;
                 self.show_grids = t.show_grids;
-                self.show_levels = t.show_levels;
+                self.level.show_lines = t.show_levels;
                 self.section_caps = t.section_caps;
                 self.overrides = t.overrides.into_iter().collect();
                 self.selected = t.selected.into_iter().collect();
