@@ -3,7 +3,7 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
-## 0.28.9 - unreleased
+## 0.28.9 - 2026-11-26
 - **Level preview you can navigate**: in the Level & Storey Manager the ortho elevation now **zooms with the mouse wheel** (around the cursor), **pans** by dragging an empty area (or with the middle / right button) and fits again on double-click. **Model levels can be dragged too**: the first drag copies them to your levels (Use my levels turns on) so they can be moved.
 - **Tidier ribbon**: every command is on one tab only. Dashboard stays in Home (removed from Share); Find Items / Sets in Home and Select (removed from Coordination); Profiler in Display (removed from Analyze); Point Cloud in View; Lighting and Render Image in Render; the property editor in BIM; BCF with the issues in Review; Title Block in Annotation; Save View in Viewpoint. The Select tab keeps Select & Search, Select Similar and Live Link (Visibility and Display stay in Home). Buttons with the same name but a different job were renamed: *Levels in Cut* (Annotation), *New Template* (View), *Stop Sharing* (Review).
 - **Add-ins never close Revit, AutoCAD / Plant 3D or Navisworks**: every ManageBIM command runs inside a guard - an unexpected error is written with all its details to `%LOCALAPPDATA%\ManageBIM\addin.log` and a short message is shown, instead of reaching the host program (Esc during a pick in Revit is still a normal cancel). The plan and issue windows log drawing errors instead of showing the .NET crash dialog.
