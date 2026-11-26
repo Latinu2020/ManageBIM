@@ -3,12 +3,7 @@
 What is planned next. Done items move to the [CHANGELOG](CHANGELOG.md).
 
 ## Features
-- **Smarter search sets** (much easier than in Navisworks):
-  - build a set by picking **property values** from a list (category, level, system, type, any Pset property), with live element counts as you choose;
-  - **suggestions** from the selection ("these 12 elements share System = Supply Air, Level = Level 2 - make a set?") and ready-made sets by discipline / system / level;
-  - plain-language search ("ducts on level 2 larger than 400 mm") turned into rules you can still edit;
-  - sets that **update themselves** when the model changes, with a preview of what was added / removed;
-  - **one click to add a set to a clash test's exclusions** (or to Selection A / B), from the set list, the Find panel or a clash result ("ignore everything like this").
+- **Smart sets, part 2**: a preview of what a search set gained / lost after a model update, and "ignore everything like this" from a clash result (creates the set and the exclusion in one step).
 
 ## Interface
 - **One Undo for every model change**: properties, visibility and materials, not only the view.

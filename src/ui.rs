@@ -36,6 +36,7 @@ mod script_window;
 mod pathtrace_window;
 mod prop_editor;
 mod mcp_window;
+mod smart_sets;
 pub use prop_editor::PropEditor;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
@@ -4671,11 +4672,12 @@ impl App {
                 labels.sort_by(|a, b| b.0.y.total_cmp(&a.0.y));
                 let mut skipped = 0;
                 for (s, text) in labels {
-                    let y = s.y.min(floor_y);
-                    if placed.iter().any(|p| (p - y).abs() < 22.0) || y < rect.top() + 12.0 {
+                    // pana la doua randuri mai sus (eticheta ramane langa nivelul ei); altfel se ascunde
+                    let y0 = s.y.min(floor_y);
+                    let Some(y) = [y0, y0 - 24.0, y0 - 48.0].into_iter().find(|y| !placed.iter().any(|p| (p - y).abs() < 22.0) && *y >= rect.top() + 12.0) else {
                         skipped += 1;
                         continue;
-                    }
+                    };
                     placed.push(y);
                     label_bg(&painter, Pos2::new(s.x, y), &text, Color32::from_rgb(235, 200, 120));
                 }
@@ -5173,6 +5175,7 @@ impl App {
         self.mcp_window(ctx);
         self.materials_window(ctx);
         self.keys_window(ctx);
+        self.smart_sets_window(ctx);
         self.command_palette(ctx);
         self.asbuilt_window(ctx);
         if let Some(pr) = &mut self.prompt {

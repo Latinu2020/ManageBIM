@@ -3,6 +3,11 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.28.7 - unreleased
+- **Smart sets** (Sets › ✨ Smart set…): build a search set by picking a property and ticking its values, with the number of items for every value and a live total (values of one property = OR, different properties = AND); **suggestions from the selection** ("the selected items share System = Supply Air, Level = Level 2" - one click adds them); **type what you want** ("ducts level 2", "walls, EI60", "valves cs150") and the conditions are filled in for you to adjust. Save it, select it, or save it straight **into a clash test's exclusions** or as **Selection A / B**.
+- **Sets in Clash Detective with one click**: every set has a ⛔ menu - exclude it from any clash test (tick / untick) or make it Selection A / B of the current test.
+- Level labels move up at most two rows before one is hidden, so small models keep all their labels.
+
 ## 0.28.6 - 2026-11-26
 Fixes found by testing the add-ins in Revit 2025, AutoCAD Plant 3D 2025 and Navisworks Manage 2025.
 - **Revit › Send selection** failed with "not a valid exportable view"; it now exports the 3D view and keeps only the selected elements.

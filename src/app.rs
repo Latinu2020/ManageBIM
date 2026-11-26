@@ -1627,6 +1627,8 @@ pub struct App {
     pub notes_seen: usize,
     /// fereastra cu scurtaturile de tastatura (F1)
     pub keys_open: bool,
+    /// fereastra "Smart set" (search set-uri din valori, sugestii, cautare in cuvinte)
+    pub smart: crate::smart_sets::Builder,
     pub mat_thumbs: HashMap<String, Option<eframe::egui::TextureHandle>>,
     pub mat_thumb_job: Option<(std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<(String, Option<crate::materials::Thumb>)>)>,
     pub tex_failed: HashSet<String>,
@@ -2010,6 +2012,7 @@ impl App {
             notes: Vec::new(),
             notes_seen: 0,
             keys_open: false,
+            smart: Default::default(),
             mat_thumbs: HashMap::new(),
             mat_thumb_job: None,
             tex_failed: HashSet::new(),

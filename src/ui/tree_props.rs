@@ -275,6 +275,9 @@ impl App {
                 let n = self.sets.len() + 1;
                 self.sets.push(SelSet { name: format!("Selection {n}"), kind: SetKind::Explicit(self.selected.iter().copied().collect()) });
             }
+            if ui.button(RichText::new("✨ Smart set…").strong()).on_hover_text("Pick property values with live counts, get suggestions from the selection, or type what you want (\"ducts level 2\")").clicked() {
+                self.smart.open = !self.smart.open;
+            }
             if ui.button("➕ Search Set").on_hover_text("Define conditions in Find Items, then Save Search Set").clicked() {
                 self.open_panel(Panel::Find);
             }
@@ -331,6 +334,42 @@ impl App {
                             }
                         }
                     }
+                    // folosirea setului in Clash Detective dintr-un click
+                    let set_name = self.sets[i].name.clone();
+                    ui.menu_button("⛔", |ui| {
+                        ui.label(RichText::new("Use in Clash Detective").small().weak());
+                        if self.clash_tests.is_empty() {
+                            ui.label(RichText::new("No clash tests yet").weak());
+                        }
+                        for ti in 0..self.clash_tests.len() {
+                            let excluded = self.clash_tests[ti].rules.exclude_sets.contains(&set_name);
+                            let label = format!("{} Exclude from \"{}\"", if excluded { "✔" } else { "  " }, self.clash_tests[ti].name);
+                            if ui.button(label).clicked() {
+                                let ex = &mut self.clash_tests[ti].rules.exclude_sets;
+                                if excluded {
+                                    ex.retain(|s| s != &set_name);
+                                } else {
+                                    ex.push(set_name.clone());
+                                }
+                                ui.close_menu();
+                            }
+                        }
+                        if !self.clash_tests.is_empty() {
+                            ui.separator();
+                            let ti = self.cur_test.min(self.clash_tests.len() - 1);
+                            let tname = self.clash_tests[ti].name.clone();
+                            if ui.button(format!("Selection A of \"{tname}\"")).clicked() {
+                                self.clash_tests[ti].a = Selector { kind: SelKind::Set, value: set_name.clone() };
+                                ui.close_menu();
+                            }
+                            if ui.button(format!("Selection B of \"{tname}\"")).clicked() {
+                                self.clash_tests[ti].b = Selector { kind: SelKind::Set, value: set_name.clone() };
+                                ui.close_menu();
+                            }
+                        }
+                    })
+                    .response
+                    .on_hover_text("Exclude this set from a clash test, or use it as Selection A / B");
                     if ui.small_button("🗑").on_hover_text("Delete set").clicked() {
                         del = Some(i);
                     }

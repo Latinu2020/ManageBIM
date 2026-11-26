@@ -29,6 +29,7 @@ pub mod coord_objects;
 pub mod pro_materials;
 pub mod hdri;
 pub mod materialx;
+pub mod smart_sets;
 pub mod mcp;
 pub mod pdf;
 pub mod markup;
