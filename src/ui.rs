@@ -38,6 +38,7 @@ mod prop_editor;
 mod mcp_window;
 mod smart_sets;
 mod dashboard;
+mod levels;
 pub use prop_editor::PropEditor;
 
 /// culoarea de accent a temei curente (Dark / Light / Nord)
@@ -130,6 +131,7 @@ impl eframe::App for App {
         self.cam_anim_tick(dt);
         self.gravity_tick(dt);
         self.report_step(ctx);
+        self.dashboard_step(ctx);
         self.render_step();
         self.pathtrace_step(ctx);
         self.update_sim(dt);
@@ -854,9 +856,19 @@ impl App {
             crate::theme::RIBBON_COMPACT.store(mode == RibbonMode::Compact, std::sync::atomic::Ordering::Relaxed);
             if mode != RibbonMode::Compact && !forced_compact {
                 let content = out.content_size.x.max(1.0);
+                // latimea ferestrei la care tab-ul a trebuit ingustat: butoanele cresc la loc doar cand
+                // fereastra se mareste. Altfel grupuri care isi schimba forma dupa latime (Interface: slider
+                // lat / "UI 80%") faceau bucla ingusteaza - creste - ingusteaza si tab-ul View tremura.
+                let sid = egui::Id::new(("ribbon_shrunk_at", self.ribbon_tab));
+                let shrunk_at: Option<f32> = ui.data(|d| d.get_temp(sid));
+                let may_grow = shrunk_at.is_none_or(|a| avail_w > a + 8.0);
                 let target = if content > avail_w + 1.0 {
+                    ui.data_mut(|d| d.insert_temp(sid, avail_w));
                     (w_now * (avail_w - 4.0) / content).floor().max(38.0)
-                } else if content < avail_w - 40.0 && w_now < 62.0 {
+                } else if content < avail_w - 40.0 && w_now < 62.0 && may_grow {
+                    if shrunk_at.is_some() {
+                        ui.data_mut(|d| d.remove::<f32>(sid));
+                    }
                     (w_now + 2.0).min(62.0)
                 } else {
                     w_now
@@ -3316,7 +3328,9 @@ impl App {
         if let Some((w, h)) = capture {
             let (bg_top, bg_bottom) = self.render_bg();
             let cp = self.frame_params(w as f32 / h.max(1) as f32);
-            self.renderer.lock().unwrap_or_else(|e| e.into_inner()).capture = Some(crate::render::CaptureReq { params: cp, w, h, bg_top, bg_bottom });
+            // Dashboard / AI: imaginea arata ce se vede in viewport (ascunsele si estomparea clash-ului incluse)
+            let lists = (self.dash_job.is_some() || self.mcp_capture.is_some()).then(|| std::sync::Arc::new(self.draw_lists(&cp, h as f32)));
+            self.renderer.lock().unwrap_or_else(|e| e.into_inner()).capture = Some(crate::render::CaptureReq { params: cp, w, h, bg_top, bg_bottom, lists });
         }
         // ce se deseneaza: campul vizual, fara ascunse; simplificat cat timp camera se misca.
         // Lista e capturata de callback (NU in renderer) - altfel, in split-view, al doilea
@@ -5560,60 +5574,7 @@ impl App {
                 self.request_path(Purpose::ExportGrids);
             }
         }
-        if self.show_levels_editor {
-            let mut open = true;
-            egui::Window::new("☰ Levels").open(&mut open).collapsible(false).default_width(380.0).show(ctx, |ui| {
-                ui.checkbox(&mut self.use_user_levels, "Use my levels (instead of the levels in the models)");
-                ui.add_space(4.0);
-                let oz = self.origin_f64().z;
-                ui.horizontal(|ui| {
-                    ui.label("±0.00 at real Z =");
-                    ui.add(egui::DragValue::new(&mut self.level_zero).speed(0.01).fixed_decimals(3).suffix(" m"));
-                    if ui.small_button("Lowest level").on_hover_text("Put ±0.00 at the lowest level of the models").clicked() {
-                        if let Some(l) = self.scene_grids_models().levels.first() {
-                            self.level_zero = l.1 as f64 + oz;
-                        }
-                    }
-                });
-                ui.add_space(4.0);
-                let mut del = None;
-                egui::Grid::new("ulev").num_columns(3).striped(true).spacing([8.0, 4.0]).show(ui, |ui| {
-                    ui.label(RichText::new("Name").strong());
-                    ui.label(RichText::new("Elevation (from ±0.00)").strong());
-                    ui.label("");
-                    ui.end_row();
-                    for (i, l) in self.user_levels.iter_mut().enumerate() {
-                        ui.add(egui::TextEdit::singleline(&mut l.name).desired_width(150.0));
-                        ui.add(egui::DragValue::new(&mut l.elev).speed(0.01).fixed_decimals(3).suffix(" m"));
-                        if ui.small_button("✖").clicked() {
-                            del = Some(i);
-                        }
-                        ui.end_row();
-                    }
-                });
-                if let Some(i) = del {
-                    self.user_levels.remove(i);
-                }
-                ui.horizontal_wrapped(|ui| {
-                    if ui.button("➕ Add level").clicked() {
-                        let top = self.user_levels.iter().map(|l| l.elev).fold(f64::NEG_INFINITY, f64::max);
-                        let elev = if top.is_finite() { top + 3.0 } else { 0.0 };
-                        self.user_levels.push(crate::app::UserLevel { name: format!("Level {}", self.user_levels.len()), elev });
-                        self.use_user_levels = true;
-                    }
-                    if ui.button("⤓ Copy from models").on_hover_text("Start from the levels found in the loaded models").clicked() {
-                        let g = self.scene_grids_models();
-                        self.user_levels = g.levels.iter().map(|(n, z)| crate::app::UserLevel { name: n.clone(), elev: ((*z as f64 + oz - self.level_zero) * 1000.0).round() / 1000.0 }).collect();
-                        self.use_user_levels = true;
-                    }
-                    if ui.button("Sort by elevation").clicked() {
-                        self.user_levels.sort_by(|a, b| a.elev.total_cmp(&b.elev));
-                    }
-                });
-                ui.label(RichText::new("Saved with the project (.bimr). Used in the 3D view and for the clash locations (e.g. C-4 / Level 2).").weak().small());
-            });
-            self.show_levels_editor = open;
-        }
+        self.levels_manager(ctx);
         if self.show_cloud {
             let mut open = true;
             let total: usize = self.loaded_models().filter_map(|(_, m)| m.cloud.as_ref().map(|c| c.pos.len())).sum();

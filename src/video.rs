@@ -429,3 +429,87 @@ impl Frame {
         }
     }
 }
+
+impl Frame {
+    /// linie groasa (antialiasing simplu: discuri de-a lungul segmentului)
+    pub fn draw_line(&mut self, a: [f32; 2], b: [f32; 2], width: f32, c: [u8; 4]) {
+        let r = (width * 0.5).max(0.6);
+        let len = ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt();
+        let n = (len / (r * 0.5).max(0.5)).ceil().max(1.0) as usize;
+        for i in 0..=n {
+            let t = i as f32 / n as f32;
+            let (cx, cy) = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+            let ri = r.ceil() as i32 + 1;
+            for yy in (cy as i32 - ri)..=(cy as i32 + ri) {
+                for xx in (cx as i32 - ri)..=(cx as i32 + ri) {
+                    let d = ((xx as f32 + 0.5 - cx).powi(2) + (yy as f32 + 0.5 - cy).powi(2)).sqrt();
+                    let cov = (r + 0.5 - d).clamp(0.0, 1.0);
+                    if cov > 0.0 {
+                        // fara dublarea opacitatii unde discurile se suprapun: doar acoperirea maxima conteaza vizual
+                        self.blend(xx, yy, c, cov * if c[3] == 255 { 1.0 } else { 0.35 });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Markup-urile unui viewpoint peste imagine: coordonatele lor sunt fata de centrul vederii, in inaltimi
+    /// de vedere (ca in aplicatie), grosimile scalate la inaltimea imaginii.
+    pub fn draw_redlines(&mut self, reds: &[crate::markup::Redline]) {
+        use crate::markup::RedKind;
+        let (w, h) = (self.w as f32, self.h as f32);
+        let k = h / 720.0;
+        let p = |q: [f32; 2]| [w * 0.5 + q[0] * h, h * 0.5 + q[1] * h];
+        for r in reds {
+            if r.pts.is_empty() {
+                continue;
+            }
+            let c = [r.color[0], r.color[1], r.color[2], 255];
+            let lw = (r.width * k).max(1.5);
+            let pts: Vec<[f32; 2]> = r.pts.iter().map(|q| p(*q)).collect();
+            let (a, b) = (pts[0], *pts.last().unwrap());
+            let (x0, y0, x1, y1) = (a[0].min(b[0]), a[1].min(b[1]), a[0].max(b[0]), a[1].max(b[1]));
+            match r.kind {
+                RedKind::Freehand => {
+                    for s in pts.windows(2) {
+                        self.draw_line(s[0], s[1], lw, c);
+                    }
+                }
+                RedKind::Line => self.draw_line(a, b, lw, c),
+                RedKind::Arrow => {
+                    self.draw_line(a, b, lw, c);
+                    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+                    let l = (dx * dx + dy * dy).sqrt().max(1e-3);
+                    let (ux, uy) = (dx / l, dy / l);
+                    let hl = (10.0 + r.width * 3.0) * k;
+                    for s in [1.0f32, -1.0] {
+                        let e = [b[0] - ux * hl - uy * hl * 0.45 * s, b[1] - uy * hl + ux * hl * 0.45 * s];
+                        self.draw_line(b, e, lw, c);
+                    }
+                }
+                RedKind::Rect | RedKind::Cloud => {
+                    let q = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+                    for i in 0..4 {
+                        self.draw_line(q[i], q[(i + 1) % 4], lw, c);
+                    }
+                }
+                RedKind::Ellipse => {
+                    let (cx, cy, rx, ry) = ((x0 + x1) * 0.5, (y0 + y1) * 0.5, (x1 - x0) * 0.5, (y1 - y0) * 0.5);
+                    let e: Vec<[f32; 2]> = (0..=64).map(|i| {
+                        let t = i as f32 / 64.0 * std::f32::consts::TAU;
+                        [cx + rx * t.cos(), cy + ry * t.sin()]
+                    }).collect();
+                    for s in e.windows(2) {
+                        self.draw_line(s[0], s[1], lw, c);
+                    }
+                }
+                RedKind::Text => {
+                    let px = (13.0 + r.width * 2.0) * k;
+                    let tw = Frame::text_width(&r.text, px);
+                    self.fill_rect(a[0] as i32 - 3, a[1] as i32 - 3, tw as i32 + 6, (px * 1.3) as i32 + 6, [255, 255, 255, 210]);
+                    self.draw_text(a[0], a[1], px, c, &r.text);
+                }
+            }
+        }
+    }
+}

@@ -1,7 +1,7 @@
 //! Fereastra Dashboard: sumarul proiectului (modele, clash-uri, issues, verificari, niveluri) si exportul
 //! ca raport PDF / Word (crate::dashboard).
 use super::*;
-use crate::dashboard::{ClashRow, ModelRow, Summary, SEVERITY, SEVERITY_RGB, STATUS, STATUS_RGB};
+use crate::dashboard::{ClashRow, Jpeg, ModelRow, Summary, SEVERITY, SEVERITY_RGB, STATUS, STATUS_RGB};
 use egui_phosphor::regular as P;
 
 fn count_list<'a>(it: impl Iterator<Item = &'a str>) -> Vec<(String, usize)> {
@@ -17,7 +17,7 @@ fn count_list<'a>(it: impl Iterator<Item = &'a str>) -> Vec<(String, usize)> {
 /// bara orizontala impartita in segmente colorate
 fn stacked_bar(ui: &mut egui::Ui, parts: &[(String, usize, [u8; 3])], w: f32) {
     let total: usize = parts.iter().map(|p| p.1).sum();
-    let (r, resp) = ui.allocate_exact_size(egui::vec2(w, 12.0), egui::Sense::hover());
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(w.max(1.0), 12.0), egui::Sense::hover());
     let p = ui.painter();
     p.rect_filled(r, 4.0, ui.visuals().extreme_bg_color);
     if total > 0 {
@@ -77,9 +77,72 @@ impl App {
                 Some((crate::egress::Check::Egress, p)) => format!("Egress {:.0} m", p.max_travel),
                 None => t.ty.label().to_string(),
             };
-            s.clash.push(ClashRow { name: t.name.clone(), kind, total: t.results.len(), by_status, by_severity: by_sev, last_run: t.last_run.clone() });
+            // fiecare rezultat, cu elementele, locatia (axe / nivel), responsabilul si comentariul
+            let item = |id: ElemId| self.elem(id).map(|(m, e)| format!("{} [{}]", if e.name.is_empty() { &e.ifc_type } else { &e.name }, m.name)).unwrap_or_default();
+            let level = |id: ElemId| self.elem(id).map(|(_, e)| e.storey.clone()).unwrap_or_default();
+            let results: Vec<crate::dashboard::ResultRow> = t
+                .results
+                .iter()
+                .map(|r| {
+                    let loc = self.grid_location(Vec3::from(r.point));
+                    crate::dashboard::ResultRow {
+                        name: r.name.clone(),
+                        group: r.group.clone(),
+                        status: r.status.label().to_string(),
+                        severity: t.severity(r.dist).label().to_string(),
+                        distance_mm: r.dist * 1000.0,
+                        item_a: item(r.a),
+                        item_b: if r.b_is_scan { "Point cloud".into() } else { item(r.b) },
+                        location: if loc.is_empty() { level(r.a) } else { loc },
+                        assigned: r.assigned.clone(),
+                        comment: r.comment.clone(),
+                        found: r.found.clone(),
+                        image: None,
+                    }
+                })
+                .collect();
+            // grupurile: numar, deschise, statusul cel mai frecvent, responsabilii
+            let mut gmap: std::collections::BTreeMap<String, Vec<&ClashResult>> = Default::default();
+            for r in t.results.iter().filter(|r| !r.group.is_empty()) {
+                gmap.entry(r.group.clone()).or_default().push(r);
+            }
+            let groups = gmap
+                .into_iter()
+                .map(|(name, rs)| {
+                    let open = rs.iter().filter(|r| matches!(r.status, ClashStatus::New | ClashStatus::Active | ClashStatus::Reviewed)).count();
+                    let status = count_list(rs.iter().map(|r| r.status.label())).first().map(|x| x.0.clone()).unwrap_or_default();
+                    let mut who: Vec<&str> = rs.iter().map(|r| r.assigned.as_str()).filter(|a| !a.is_empty()).collect();
+                    who.sort();
+                    who.dedup();
+                    crate::dashboard::GroupRow { name, count: rs.len(), open, status, assigned: who.join(", ") }
+                })
+                .collect();
+            let tolerance = match t.special {
+                Some((crate::egress::Check::Headroom, p)) => format!("{:.2} m clear height", p.min_headroom),
+                Some((crate::egress::Check::Egress, p)) => format!("{:.0} m travel", p.max_travel),
+                None => format!("{} mm", t.tol_mm),
+            };
+            s.clash.push(ClashRow { name: t.name.clone(), kind, total: t.results.len(), by_status, by_severity: by_sev, last_run: t.last_run.clone(), tolerance, groups, results });
         }
         s.viewpoints = self.viewpoints.len();
+        // fiecare viewpoint (issue) cu markup-urile lui; imaginile se ataseaza la export
+        s.views = self
+            .viewpoints
+            .iter()
+            .map(|v| crate::dashboard::VpRow {
+                name: v.name.clone(),
+                folder: v.folder.clone(),
+                status: v.issue.status.clone(),
+                priority: v.issue.priority.clone(),
+                assigned: v.issue.assigned.clone(),
+                author: v.issue.author.clone(),
+                created: crate::markup::pretty_date(&v.issue.created),
+                description: v.comment.clone(),
+                comments: v.comments.iter().map(|c| format!("{} ({}): {}", c.author, crate::markup::pretty_date(&c.date), c.text)).collect(),
+                markups: v.redlines.len(),
+                image: None,
+            })
+            .collect();
         s.issue_status = count_list(self.viewpoints.iter().map(|v| v.issue.status.as_str()));
         s.issue_priority = count_list(self.viewpoints.iter().map(|v| v.issue.priority.as_str()));
         s.issue_assignee = count_list(self.viewpoints.iter().map(|v| v.issue.assigned.as_str()));
@@ -142,7 +205,7 @@ impl App {
                         let w = (ui.available_width() - 10.0 * (cols as f32 - 1.0)) / cols as f32;
                         for (i, (label, value, detail)) in kpis.iter().enumerate() {
                             egui::Frame::none().fill(ui.visuals().faint_bg_color).stroke(ui.visuals().widgets.noninteractive.bg_stroke).rounding(8.0).inner_margin(egui::Margin::same(12.0)).show(ui, |ui| {
-                                ui.set_width(w - 26.0);
+                                ui.set_width((w - 26.0).max(60.0));
                                 ui.label(RichText::new(crate::i18n::tr(label)).small().weak());
                                 ui.label(RichText::new(value).size(26.0).strong().color(accent()));
                                 ui.label(RichText::new(detail).small().weak());
@@ -155,7 +218,7 @@ impl App {
                     ui.add_space(12.0);
                     let card = |ui: &mut egui::Ui, title: &str, add: &mut dyn FnMut(&mut egui::Ui)| {
                         egui::Frame::none().fill(ui.visuals().faint_bg_color).stroke(ui.visuals().widgets.noninteractive.bg_stroke).rounding(8.0).inner_margin(egui::Margin::same(12.0)).show(ui, |ui| {
-                            ui.set_width(ui.available_width());
+                            ui.set_width(ui.available_width().max(0.0));
                             ui.label(RichText::new(crate::i18n::tr(title).to_uppercase()).size(11.0).strong().color(ui.visuals().weak_text_color()));
                             ui.add_space(6.0);
                             add(ui);
@@ -276,6 +339,176 @@ impl App {
         if let Some(p) = export {
             self.dash = Some(self.dashboard_summary());
             self.request_path(p);
+        }
+    }
+}
+
+impl App {
+    /// Exportul Dashboard: intai capturile (fisele de clash si viewpoint-urile cu markup-uri), apoi fisierul.
+    pub(crate) fn dashboard_export(&mut self, pdf: bool, path: String) {
+        let tests: Vec<(Vec<String>, Vec<bool>)> = self
+            .clash_tests
+            .iter()
+            .map(|t| (t.results.iter().map(|r| r.group.clone()).collect(), t.results.iter().map(|r| matches!(r.status, ClashStatus::New | ClashStatus::Active | ClashStatus::Reviewed)).collect()))
+            .collect();
+        let queue = crate::dashboard::pick_images(&tests, 25, 60);
+        let views: Vec<usize> = (0..self.viewpoints.len().min(60)).collect();
+        if (queue.is_empty() && views.is_empty()) || self.loaded_models().next().is_none() {
+            return self.dashboard_write(pdf, &path, Vec::new(), Vec::new());
+        }
+        let saved_bottom = self.settings.layout.bottom_open;
+        if !queue.is_empty() {
+            // modul Clash Detective vizibil pe durata capturilor de clash (elementele colorate, restul estompat)
+            self.open_panel(Panel::Clash);
+        }
+        self.dash_job = Some(crate::dashboard::CaptureJob {
+            pdf,
+            path,
+            queue,
+            idx: 0,
+            wait: 0,
+            waiting: false,
+            images: Vec::new(),
+            saved_cam: self.cam,
+            saved_bottom,
+            saved_test: self.cur_test,
+            views,
+            view_images: Vec::new(),
+            saved_section: self.section.clone(),
+            saved_hidden: self.hidden.clone(),
+            saved_selected: self.selected.clone(),
+            saved_vp: self.active_vp,
+        });
+        self.toast("Dashboard: capturing the clash and viewpoint images…");
+    }
+
+    /// Un pas pe cadru: arata clash-ul / viewpoint-ul urmator, asteapta 3 cadre (culorile), cere captura.
+    pub(super) fn dashboard_step(&mut self, ctx: &egui::Context) {
+        let Some(j) = self.dash_job.as_mut() else { return };
+        ctx.request_repaint();
+        if j.waiting {
+            return;
+        }
+        let total = j.queue.len() + j.views.len();
+        if j.idx >= total {
+            let j = self.dash_job.take().unwrap();
+            self.cam = j.saved_cam;
+            self.cam_anim = None;
+            self.section = j.saved_section;
+            self.hidden = j.saved_hidden;
+            self.selected = j.saved_selected;
+            self.active_vp = j.saved_vp;
+            self.settings.layout.bottom_open = j.saved_bottom;
+            self.cur_test = j.saved_test;
+            self.clash_focus = None;
+            self.colors_dirty = true;
+            self.dashboard_write(j.pdf, &j.path, j.images, j.view_images);
+            return;
+        }
+        if j.wait == 0 {
+            j.wait = 3;
+            if j.idx < j.queue.len() {
+                let (ti, ri) = j.queue[j.idx];
+                self.cur_test = ti;
+                self.apply(Action::FocusClashes(ti, vec![ri]));
+            } else {
+                let vi = j.views[j.idx - j.queue.len()];
+                // viewpoint-urile fara modul clash (zona de jos coborata), cu camera / sectiunea / ascunsele lor
+                self.settings.layout.bottom_open = false;
+                self.clash_focus = None;
+                self.restore_viewpoint(vi);
+            }
+            if let Some((_, to, _)) = self.cam_anim.take() {
+                self.cam = to;
+            }
+            return;
+        }
+        j.wait -= 1;
+        if j.wait == 0 {
+            j.waiting = true;
+            self.pending_capture = Some((1280, 720));
+        }
+    }
+
+    /// Captura ceruta de export (apelat din render_step); intoarce true daca a fost a lui.
+    pub(crate) fn dashboard_capture_done(&mut self, r: &Result<crate::video::Frame, String>) -> bool {
+        let Some(j) = self.dash_job.as_ref() else { return false };
+        if !j.waiting {
+            return false;
+        }
+        let view = j.idx.checked_sub(j.queue.len()).and_then(|k| j.views.get(k).copied());
+        let reds = view.and_then(|vi| self.viewpoints.get(vi)).map(|v| v.redlines.clone()).unwrap_or_default();
+        // punctul clash-ului, proiectat in imagine (cerc rosu + cruce), ca sa se vada exact unde e
+        let mark = match (view, r) {
+            (None, Ok(f)) => {
+                let (ti, ri) = j.queue[j.idx];
+                self.clash_tests.get(ti).and_then(|t| t.results.get(ri)).and_then(|cr| {
+                    let vp = self.frame_params(f.w as f32 / f.h.max(1) as f32).view_proj;
+                    let c = vp * Vec3::from(cr.point).extend(1.0);
+                    (c.w > 1e-6).then(|| [(c.x / c.w * 0.5 + 0.5) * f.w as f32, (0.5 - c.y / c.w * 0.5) * f.h as f32])
+                })
+            }
+            _ => None,
+        };
+        let Some(j) = self.dash_job.as_mut() else { return false };
+        if let Ok(f) = r {
+            let mut f = crate::video::Frame { w: f.w, h: f.h, rgba: f.rgba.clone() };
+            if !reds.is_empty() {
+                f.draw_redlines(&reds);
+            }
+            if let Some([x, y]) = mark {
+                let rad = f.h as f32 * 0.045;
+                let red = [230, 40, 40, 255];
+                let n = 40;
+                for k in 0..n {
+                    let (a0, a1) = (k as f32 / n as f32 * std::f32::consts::TAU, (k + 1) as f32 / n as f32 * std::f32::consts::TAU);
+                    f.draw_line([x + rad * a0.cos(), y + rad * a0.sin()], [x + rad * a1.cos(), y + rad * a1.sin()], 4.0, red);
+                }
+                for (dx, dy) in [(1.0, 0.0), (0.0, 1.0)] {
+                    f.draw_line([x - dx * rad * 0.45, y - dy * rad * 0.45], [x + dx * rad * 0.45, y + dy * rad * 0.45], 2.5, red);
+                }
+            }
+            let rgb = f.rgb();
+            let mut jpg = Vec::new();
+            if jpeg_encoder::Encoder::new(&mut jpg, 82).encode(&rgb, f.w as u16, f.h as u16, jpeg_encoder::ColorType::Rgb).is_ok() {
+                match view {
+                    Some(vi) => j.view_images.push((vi, (jpg, f.w, f.h))),
+                    None => j.images.push((j.queue[j.idx], (jpg, f.w, f.h))),
+                }
+            }
+        }
+        j.idx += 1;
+        j.waiting = false;
+        j.wait = 0;
+        true
+    }
+
+    fn dashboard_write(&mut self, pdf: bool, path: &str, images: Vec<((usize, usize), Jpeg)>, view_images: Vec<(usize, Jpeg)>) {
+        let ext = if pdf { ".pdf" } else { ".docx" };
+        let mut out = path.to_string();
+        if !out.to_ascii_lowercase().ends_with(ext) {
+            out.push_str(ext);
+        }
+        let mut s = self.dashboard_summary();
+        let (n, nv) = (images.len(), view_images.len());
+        for ((ti, ri), img) in images {
+            if let Some(r) = s.clash.get_mut(ti).and_then(|c| c.results.get_mut(ri)) {
+                r.image = Some(img);
+            }
+        }
+        for (vi, img) in view_images {
+            if let Some(v) = s.views.get_mut(vi) {
+                v.image = Some(img);
+            }
+        }
+        self.dash = Some(s.clone());
+        let bytes = if pdf { crate::dashboard::pdf(&s) } else { crate::dashboard::docx(&s) };
+        match std::fs::write(&out, bytes) {
+            Ok(()) => {
+                self.toast(format!("Dashboard exported: {} ({n} clash sheets, {nv} viewpoints with markups)", crate::file_name(&out)));
+                crate::formats::open_with_system(std::path::Path::new(&out));
+            }
+            Err(e) => self.error(format!("Cannot write {out}: {e}")),
         }
     }
 }

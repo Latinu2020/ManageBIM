@@ -83,13 +83,15 @@ struct AoTargets {
     dep: glow::Texture,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct CaptureReq {
     pub params: FrameParams,
     pub w: u32,
     pub h: u32,
     pub bg_top: [u8; 3],
     pub bg_bottom: [u8; 3],
+    /// ce se deseneaza (ascunse / estompate ca in viewport); None = tot modelul (randari, video)
+    pub lists: Option<std::sync::Arc<HashMap<u32, DrawList>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -502,15 +504,33 @@ impl Renderer {
         if self.prog.is_some() || self.error.is_some() {
             return;
         }
-        let header = if gl.version().is_embedded { "#version 300 es\nprecision highp float;\nprecision highp sampler2DArray;\n" } else { "#version 330 core\n" };
-        let prog = gl.create_program().expect("program");
+        // placa video / driverul prea vechi (sau Remote Desktop fara accelerare): explicatie, nu doar eroarea de shader
+        let v = gl.version();
+        let hint = format!(
+            "The 3D view needs OpenGL 3.3; this graphics driver offers OpenGL {}.{} ({}). Update the graphics driver, or run ManageBIM on the dedicated graphics card.",
+            v.major,
+            v.minor,
+            gl.get_parameter_string(glow::RENDERER)
+        );
+        if !v.is_embedded && (v.major, v.minor) < (3, 3) {
+            self.error = Some(hint);
+            return;
+        }
+        let header = if v.is_embedded { "#version 300 es\nprecision highp float;\nprecision highp sampler2DArray;\n" } else { "#version 330 core\n" };
+        let Ok(prog) = gl.create_program() else {
+            self.error = Some(hint);
+            return;
+        };
         let mut shaders = Vec::new();
         for (ty, src) in [(glow::VERTEX_SHADER, VS), (glow::FRAGMENT_SHADER, FS)] {
-            let s = gl.create_shader(ty).expect("shader");
+            let Ok(s) = gl.create_shader(ty) else {
+                self.error = Some(hint);
+                return;
+            };
             gl.shader_source(s, &format!("{header}{src}"));
             gl.compile_shader(s);
             if !gl.get_shader_compile_status(s) {
-                self.error = Some(format!("Shader error: {}", gl.get_shader_info_log(s)));
+                self.error = Some(format!("Shader error: {}\n{hint}", gl.get_shader_info_log(s)));
                 return;
             }
             gl.attach_shader(prog, s);
@@ -841,14 +861,14 @@ impl Renderer {
             gl.color_mask(true, true, true, true);
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
             // umbrele pentru tot modelul (captura nu foloseste listele vederii)
-            self.shadow_state = if req.params.shadows { self.shadow_pass(gl, &req.params, None) } else { None };
+            self.shadow_state = if req.params.shadows { self.shadow_pass(gl, &req.params, req.lists.as_deref()) } else { None };
             gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fb));
             gl.viewport(0, 0, w as i32, h as i32);
             // capturile (randari / video) deseneaza tot modelul, la calitate maxima (si cu SSAO)
-            if !(req.params.ao > 0.0 && self.draw_ao(gl, &req.params, None)) {
+            if !(req.params.ao > 0.0 && self.draw_ao(gl, &req.params, req.lists.as_deref())) {
                 gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fb));
                 gl.viewport(0, 0, w as i32, h as i32);
-                self.draw(gl, &req.params, None);
+                self.draw(gl, &req.params, req.lists.as_deref());
             }
             let mut buf = vec![0u8; (w * h * 4) as usize];
             gl.pixel_store_i32(glow::PACK_ALIGNMENT, 1);

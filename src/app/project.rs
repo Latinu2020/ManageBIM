@@ -29,6 +29,20 @@ impl App {
     }
 
     pub(super) fn start_load(&mut self, slot: usize, path: String) {
+        // fisier mai mare decat incape in memoria libera: avertisment inainte (citirea continua)
+        if let (Ok(meta), Some(free)) = (std::fs::metadata(&path), available_memory()) {
+            let need = estimated_memory(&path, meta.len());
+            if need > free * 8 / 10 {
+                let gb = |b: u64| b as f64 / 1_073_741_824.0;
+                self.toast(format!(
+                    "{} is large ({:.1} GB): it needs about {:.1} GB of memory and only {:.1} GB are free. Loading may be slow or fail - close other programs, or open a smaller part / the .bimc cache.",
+                    crate::file_name(&path),
+                    gb(meta.len()),
+                    gb(need),
+                    gb(free)
+                ));
+            }
+        }
         // data fisierului la momentul citirii -> Refresh stie daca s-a modificat ulterior
         match file_mtime(&path) {
             Some(t) => {
@@ -1106,3 +1120,59 @@ impl App {
 
 /// mesajul intern al unei incarcari anulate de utilizator
 pub const CANCELLED: &str = "cancelled by the user";
+
+/// Memoria estimata pentru un fisier deschis: geometria triangulata + proprietatile ocupa de cateva ori
+/// dimensiunea fisierului text (IFC / DXF / OBJ); cache-ul .bimc si norii de puncte sunt mai compacti.
+pub fn estimated_memory(path: &str, size: u64) -> u64 {
+    let ext = std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let factor = match ext.as_str() {
+        "bimc" | "e57" | "las" | "laz" | "glb" => 2,
+        "ifc" | "ifczip" | "dxf" | "obj" | "fbx" | "stl" | "ply" => 4,
+        // DWG / STEP / Navisworks: conversie externa, geometria rezultata e mult mai mare decat fisierul
+        _ => 6,
+    };
+    size.saturating_mul(factor)
+}
+
+/// Memoria fizica libera acum (octeti); None daca nu se poate afla.
+pub fn available_memory() -> Option<u64> {
+    #[cfg(windows)]
+    {
+        #[repr(C)]
+        struct MemoryStatusEx {
+            length: u32,
+            load: u32,
+            total_phys: u64,
+            avail_phys: u64,
+            total_page: u64,
+            avail_page: u64,
+            total_virtual: u64,
+            avail_virtual: u64,
+            avail_ext_virtual: u64,
+        }
+        extern "system" {
+            fn GlobalMemoryStatusEx(s: *mut MemoryStatusEx) -> i32;
+        }
+        let mut s = MemoryStatusEx { length: std::mem::size_of::<MemoryStatusEx>() as u32, load: 0, total_phys: 0, avail_phys: 0, total_page: 0, avail_page: 0, total_virtual: 0, avail_virtual: 0, avail_ext_virtual: 0 };
+        // SAFETY: structura are dimensiunea si campurile din documentatia Win32 (MEMORYSTATUSEX)
+        (unsafe { GlobalMemoryStatusEx(&mut s) } != 0).then_some(s.avail_phys)
+    }
+    #[cfg(not(windows))]
+    {
+        let s = std::fs::read_to_string("/proc/meminfo").ok()?;
+        let kb: u64 = s.lines().find(|l| l.starts_with("MemAvailable:"))?.split_whitespace().nth(1)?.parse().ok()?;
+        Some(kb * 1024)
+    }
+}
+
+#[cfg(test)]
+mod memory_tests {
+    #[test]
+    fn free_memory_is_known_and_estimates_scale() {
+        let free = super::available_memory().expect("free memory");
+        assert!(free > 64 * 1024 * 1024, "{free}");
+        assert_eq!(super::estimated_memory("a.IFC", 100), 400);
+        assert_eq!(super::estimated_memory("a.bimc", 100), 200);
+        assert_eq!(super::estimated_memory("a.dwg", 100), 600);
+    }
+}

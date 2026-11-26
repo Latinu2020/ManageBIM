@@ -516,6 +516,10 @@ impl App {
                 }
                 f
             });
+            // captura pentru fisele de clash ale raportului Dashboard
+            if self.still_path.is_none() && self.render_job.is_none() && self.dashboard_capture_done(&r) {
+                return;
+            }
             // captura ceruta de un asistent AI (MCP capture_view)
             if self.still_path.is_none() && self.render_job.is_none() && self.mcp_capture.is_some() {
                 self.mcp_capture_done(&r);

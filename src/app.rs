@@ -1636,6 +1636,8 @@ pub struct App {
     pub dash: Option<crate::dashboard::Summary>,
     /// continutul confirmat al fiecarui search set (GUID-uri): dupa o actualizare de model panoul Sets arata +/-
     pub set_snap: HashMap<String, std::collections::HashSet<String>>,
+    /// exportul Dashboard cu imaginile clash-urilor (o captura pe cadru)
+    pub dash_job: Option<crate::dashboard::CaptureJob>,
     pub mat_thumbs: HashMap<String, Option<eframe::egui::TextureHandle>>,
     pub mat_thumb_job: Option<(std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<(String, Option<crate::materials::Thumb>)>)>,
     pub tex_failed: HashSet<String>,
@@ -2023,6 +2025,7 @@ impl App {
             dash_open: false,
             dash: None,
             set_snap: HashMap::new(),
+            dash_job: None,
             mat_thumbs: HashMap::new(),
             mat_thumb_job: None,
             tex_failed: HashSet::new(),

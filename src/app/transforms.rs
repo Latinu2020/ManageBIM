@@ -307,21 +307,9 @@ impl App {
                 Err(e) => self.error(format!("Material table: {e}")),
             },
             Purpose::ExportDashboardPdf | Purpose::ExportDashboardDocx => {
+                // cu clash-uri deschise: intai fisele cu imagini (cateva cadre), apoi fisierul
                 let pdf = matches!(purpose, Purpose::ExportDashboardPdf);
-                let ext = if pdf { ".pdf" } else { ".docx" };
-                let mut out = path.clone();
-                if !out.to_ascii_lowercase().ends_with(ext) {
-                    out.push_str(ext);
-                }
-                let s = self.dash.clone().unwrap_or_else(|| self.dashboard_summary());
-                let bytes = if pdf { crate::dashboard::pdf(&s) } else { crate::dashboard::docx(&s) };
-                match std::fs::write(&out, bytes) {
-                    Ok(()) => {
-                        self.toast(format!("Dashboard exported: {}", crate::file_name(&out)));
-                        crate::formats::open_with_system(std::path::Path::new(&out));
-                    }
-                    Err(e) => self.error(format!("Cannot write {out}: {e}")),
-                }
+                self.dashboard_export(pdf, path.clone());
             }
             Purpose::ExportMaterialOne => {
                 let Some(m) = self.materials.get(self.mat_sel).cloned() else { return };

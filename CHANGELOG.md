@@ -3,10 +3,19 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
-## 0.28.8 - unreleased
+## 0.28.8 - 2026-11-26
 - **Levels in Plant 3D / AutoCAD and Navisworks** (they have no real levels): View › Grids & Levels › **Send Levels** sends the project levels (from IFC, Revit, DWG or your own); then
   - **AutoCAD / Plant 3D - command MBLEVELS**: a level line and label at every elevation (layer MB-Levels), a **named UCS** per level ("Level - Level 1" - work straight on that level), and the **level on every object** by its bottom elevation (XData MANAGEBIM_LEVEL, shown as a property when the DWG is opened in ManageBIM). Running it again replaces the previous levels.
   - **Navisworks - ManageBIM › Levels**: one **selection set per level** (Sets › "ManageBIM levels": hide, filter, use as Selection A / B in Clash Detective) and one **plan viewpoint per level** (top view, section box between the level and the next).
+- **Detailed Dashboard report** (PDF / Word): every clash test gets its own page - status and severity bars, the **groups** (count, open, status, assignee) and **every clash** (status, severity, distance, Item A / B, location by grid and level, assignee); then a **sheet for every open clash** with a picture of it (the clashing elements highlighted, the rest dimmed, a red ring at the clash point) and all its details (first clash of every group, up to 60 sheets).
+- **Viewpoints & markups in the report**: a table of all viewpoints (status, priority, assignee, number of markups and comments) and **a sheet per viewpoint** with its picture - its camera, section and hidden items - **with the redlines drawn on it**, plus description and comments. The camera, section, hidden items and selection are put back afterwards.
+- **Level & Storey Manager** (View › Grids & Levels › Edit Levels): the storey schedule from top to bottom - name, elevation from ±0.00, **storey height**, real Z, add a level **above / below**, delete - next to an **orthographic elevation of the model** (front or side) with the level lines, the **±0.00 line in red**, the storey heights and the elevation under the cursor; drag a line to move a level. ±0.00 can be set at the lowest level or at the bottom of the model. Levels only change labels and references (level lines, clash / issue locations, section by level, Dashboard, levels sent to Plant 3D / Navisworks), never the geometry.
+- The **View tab no longer flickers** after a render (the ribbon kept switching between two widths).
+- **Dashboard no longer crashes** when its window is narrow ("assertion failed: 0.0 <= width").
+- **Stability**:
+  - **Damaged files** do not crash the reader: a new test opens about 6,500 truncated or corrupted copies of IFC, DXF, OBJ, PLY, FBX, STL and .bimc files and checks every one ends in a clear error, not a crash.
+  - **Files too big for the free memory**: a warning before loading (file size, the memory it needs, the memory that is free), with what to do.
+  - **Old graphics drivers**: if the 3D window cannot be opened, a message explains that ManageBIM needs OpenGL 3.3 and what to do (update the driver, use the dedicated graphics card, enable 3D acceleration over Remote Desktop / VM) instead of closing without a word; the 3D view shows the OpenGL version found and the graphics card.
 
 ## 0.28.7 - 2026-11-26
 - **Smart sets** (Sets › ✨ Smart set…): build a search set by picking a property and ticking its values, with the number of items for every value and a live total (values of one property = OR, different properties = AND); **suggestions from the selection** ("the selected items share System = Supply Air, Level = Level 2" - one click adds them); **type what you want** ("ducts level 2", "walls, EI60", "valves cs150") and the conditions are filled in for you to adjust. Save it, select it, or save it straight **into a clash test's exclusions** or as **Selection A / B**.

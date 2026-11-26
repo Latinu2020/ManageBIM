@@ -34,6 +34,22 @@ fn run(files: Vec<String>, depth: u8, msaa: u16) -> eframe::Result<()> {
     )
 }
 
+/// Mesaj de eroare pe ecran (aplicatia nu are consola).
+fn error_box(text: &str) {
+    #[cfg(windows)]
+    {
+        extern "system" {
+            fn MessageBoxW(h: *mut std::ffi::c_void, text: *const u16, caption: *const u16, t: u32) -> i32;
+        }
+        let w = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+        unsafe {
+            MessageBoxW(std::ptr::null_mut(), w(text).as_ptr(), w("ManageBIM").as_ptr(), 0x10);
+        }
+    }
+    #[cfg(not(windows))]
+    eprintln!("{text}");
+}
+
 /// La o eroare interna: motivul + locul in %APPDATA%\ManageBIM\crash.log si un mesaj pe ecran
 /// (altfel o aplicatie cu fereastra se inchide fara niciun semn).
 fn install_crash_log() {
@@ -67,17 +83,7 @@ fn install_crash_log() {
         }
         // erorile din firele de lucru sunt prinse (devin mesaje de eroare); doar firul principal inchide aplicatia
         if std::thread::current().name() == Some("main") {
-            #[cfg(windows)]
-            {
-                extern "system" {
-                    fn MessageBoxW(h: *mut std::ffi::c_void, text: *const u16, caption: *const u16, t: u32) -> i32;
-                }
-                let text = format!("ManageBIM stopped because of an internal error:\n\n{info}\n\nDetails were saved to:\n{}", path.as_ref().map(|p| p.display().to_string()).unwrap_or_default());
-                let w = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
-                unsafe {
-                    MessageBoxW(std::ptr::null_mut(), w(&text).as_ptr(), w("ManageBIM").as_ptr(), 0x10);
-                }
-            }
+            error_box(&format!("ManageBIM stopped because of an internal error:\n\n{info}\n\nDetails were saved to:\n{}", path.as_ref().map(|p| p.display().to_string()).unwrap_or_default()));
         }
         default(info);
     }));
@@ -104,6 +110,17 @@ fn main() -> eframe::Result<()> {
                 }
             }
         }
+    }
+    // nicio configuratie nu a mers: explicatie in loc de o inchidere fara niciun semn
+    if let Err(e) = &last {
+        error_box(&format!(
+            "ManageBIM could not open its 3D window.\n\n\
+             ManageBIM needs a graphics card / driver with OpenGL 3.3 or newer.\n\
+             - Update the graphics driver (Intel / AMD / NVIDIA website).\n\
+             - On a laptop with two graphics cards, run ManageBIM on the dedicated one.\n\
+             - Over Remote Desktop or in a virtual machine, enable 3D acceleration.\n\n\
+             Details: {e}"
+        ));
     }
     last
 }
