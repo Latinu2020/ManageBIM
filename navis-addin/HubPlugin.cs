@@ -21,6 +21,7 @@ namespace ManageBIM.Navis
             ("Coordination", "Coordination objects", "Show clearance zones, voids and placeholders from ManageBIM (display only)", () => new CoordinationPlugin()),
             ("Coordination", "Issues", "Bring ManageBIM viewpoints / issues in as Saved Viewpoints", () => new IssuesPlugin()),
             ("Coordination", "Walk path", "Turn the walk path drawn in ManageBIM into a viewpoint animation (Saved Viewpoints)", () => new WalkPlugin()),
+            ("Coordination", "Levels", "Levels from ManageBIM as selection sets and plan viewpoints", () => new LevelsPlugin()),
             ("Live Link", "Sync selection", "Selection follows ManageBIM and Revit, both ways (click again to stop)", () => new SyncPlugin()),
         };
 

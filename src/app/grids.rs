@@ -1036,3 +1036,44 @@ impl App {
         Ok(n)
     }
 }
+
+impl App {
+    /// Nivelurile pentru Plant 3D / AutoCAD (comanda MBLEVELS) si Navisworks (ManageBIM › Levels):
+    /// `Outbox\levels.txt`, cote reale in metri (aceleasi coordonate ca modelele trimise).
+    pub fn send_levels_outbox(&mut self) {
+        let oz = self.origin_f64().z;
+        let levels: Vec<(String, f64)> = self.scene_grids().levels.iter().map(|(n, z)| (n.clone(), *z as f64 + oz)).collect();
+        if levels.is_empty() {
+            return self.error("No levels in the project - they come from IFC / Revit / DWG models, or create them in View › Edit Levels.");
+        }
+        let Some(dir) = crate::formats::data_root().map(|d| d.join("ManageBIM").join("Outbox")) else { return };
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            return self.error(format!("Cannot create {}: {e}", dir.display()));
+        }
+        let p = dir.join("levels.txt");
+        match crate::formats::write_atomic(&p, levels_text(&levels).as_bytes(), false) {
+            Ok(()) => self.toast(format!("{} levels sent - AutoCAD / Plant 3D: command MBLEVELS · Navisworks: ManageBIM › Levels.", levels.len())),
+            Err(e) => self.error(format!("Cannot write {}: {e}", p.display())),
+        }
+    }
+}
+
+/// Formatul MBLEVELS 1: un rand L <tab> nume <tab> cota (m), ordonat crescator dupa cota.
+pub fn levels_text(levels: &[(String, f64)]) -> String {
+    let mut v: Vec<&(String, f64)> = levels.iter().collect();
+    v.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let mut s = String::from("MBLEVELS 1\n");
+    for (n, z) in v {
+        s.push_str(&format!("L\t{}\t{z:.4}\n", n.replace(['\t', '\n', '\r'], " ")));
+    }
+    s
+}
+
+#[cfg(test)]
+mod levels_text_tests {
+    #[test]
+    fn levels_file_is_sorted() {
+        let t = super::levels_text(&[("Level 1".into(), 3.3), ("Ground Floor".into(), 0.0)]);
+        assert_eq!(t, "MBLEVELS 1\nL\tGround Floor\t0.0000\nL\tLevel 1\t3.3000\n");
+    }
+}

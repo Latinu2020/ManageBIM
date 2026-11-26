@@ -3,6 +3,11 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.28.8 - unreleased
+- **Levels in Plant 3D / AutoCAD and Navisworks** (they have no real levels): View › Grids & Levels › **Send Levels** sends the project levels (from IFC, Revit, DWG or your own); then
+  - **AutoCAD / Plant 3D - command MBLEVELS**: a level line and label at every elevation (layer MB-Levels), a **named UCS** per level ("Level - Level 1" - work straight on that level), and the **level on every object** by its bottom elevation (XData MANAGEBIM_LEVEL, shown as a property when the DWG is opened in ManageBIM). Running it again replaces the previous levels.
+  - **Navisworks - ManageBIM › Levels**: one **selection set per level** (Sets › "ManageBIM levels": hide, filter, use as Selection A / B in Clash Detective) and one **plan viewpoint per level** (top view, section box between the level and the next).
+
 ## 0.28.7 - 2026-11-26
 - **Smart sets** (Sets › ✨ Smart set…): build a search set by picking a property and ticking its values, with the number of items for every value and a live total (values of one property = OR, different properties = AND); **suggestions from the selection** ("the selected items share System = Supply Air, Level = Level 2" - one click adds them); **type what you want** ("ducts level 2", "walls, EI60", "valves cs150") and the conditions are filled in for you to adjust. Save it, select it, or save it straight **into a clash test's exclusions** or as **Selection A / B**.
 - **Sets in Clash Detective with one click**: every set has a ⛔ menu - exclude it from any clash test (tick / untick) or make it Selection A / B of the current test.

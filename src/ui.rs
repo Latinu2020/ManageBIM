@@ -1784,6 +1784,9 @@ impl App {
             if rbtn(ui, "✏", "Edit Levels", "Your own levels: ±0.00 of the project, names and elevations (editable)", self.show_levels_editor, true).clicked() {
                 self.show_levels_editor = !self.show_levels_editor;
             }
+            if rbtn(ui, "📤", "Send Levels", "Send these levels to AutoCAD / Plant 3D (command MBLEVELS: level lines, a UCS per level, the level on every object) and Navisworks (ManageBIM › Levels: a selection set and a plan view per level)", false, self.loaded_models().next().is_some()).clicked() {
+                self.send_levels_outbox();
+            }
         });
     }
 

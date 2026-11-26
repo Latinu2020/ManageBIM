@@ -9,6 +9,7 @@ using AcApp = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 [assembly: CommandClass(typeof(ManageBIM.Acad.Commands))]
 // comenzile de referinta (MBREFERENCE / MBREFRELOAD / MBREFUNLOAD): fara linia asta AutoCAD / Plant 3D nu le vede
 [assembly: CommandClass(typeof(ManageBIM.Acad.RefCommands))]
+[assembly: CommandClass(typeof(ManageBIM.Acad.LevelCommands))]
 
 namespace ManageBIM.Acad
 {
