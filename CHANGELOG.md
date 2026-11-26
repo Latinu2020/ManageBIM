@@ -3,7 +3,7 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
-## 0.28.5 - unreleased
+## 0.28.5 - 2026-11-26
 - **Headroom check** (Coordination › Space checks › Headroom): points on every floor slab; the first beam, duct, pipe, cable tray, air terminal or stair above that is lower than the minimum clear height (2.10 m, editable) becomes a result in Clash Detective - obstacle × slab, with how much is missing (Critical from 200 mm, Major from 50 mm). Walls, columns, door heads and furniture standing on the floor are ignored.
 - **Egress check** (Space checks › Egress): per level, walking distance around walls to the nearest exit - exterior doors on the lowest level, stairs / ramps above - longer than the limit (45 m, editable), and floor areas or whole levels without any exit. Space (or slab) × nearest exit, with the farthest point.
 - Both are ordinary clash tests (templates *Headroom* and *Egress* in Clash Detective): status, assignee, comments, viewpoints, Update All, HTML / BCF reports, and the AI tools work on them; hidden items are left out.
