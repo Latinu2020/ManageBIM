@@ -240,6 +240,42 @@ impl App {
                 }
                 Ok(json!(format!("{action}: {n} element(s); hidden now: {}", self.hidden.len())))
             }
+            "render_settings" => {
+                let num = |k: &str| args.get(k).and_then(|v| v.as_f64()).map(|v| v as f32);
+                if let Some(on) = args.get("ray_trace").and_then(|v| v.as_bool()) {
+                    if on != self.rt.on {
+                        if on && self.loaded_models().next().is_none() {
+                            return Err("Open a model first - ray tracing needs geometry.".into());
+                        }
+                        self.toggle_raytrace();
+                    }
+                }
+                if let Some(b) = args.get("light_bounces").and_then(|v| v.as_u64()) {
+                    self.settings.light_bounces = (b as u32).clamp(1, crate::pathtrace::MAX_BOUNCES);
+                    crate::pathtrace::set_light_bounces(self.settings.light_bounces);
+                    self.settings.save();
+                }
+                if let Some(v) = num("brightness") {
+                    self.render.exposure = v.clamp(0.1, crate::anim::MAX_BRIGHTNESS);
+                }
+                if let Some(v) = num("sun_azimuth") {
+                    self.render.sun_az = v.clamp(-180.0, 180.0);
+                }
+                if let Some(v) = num("sun_elevation") {
+                    self.render.sun_el = v.clamp(1.0, 90.0);
+                }
+                if let Some(v) = num("sun_power") {
+                    self.render.sun_power = v.clamp(0.0, 3.0);
+                }
+                Ok(json!({
+                    "ray_trace": self.rt.on,
+                    "light_bounces": self.settings.light_bounces,
+                    "brightness": self.render.exposure,
+                    "sun_azimuth": self.render.sun_az,
+                    "sun_elevation": self.render.sun_el,
+                    "sun_power": self.render.sun_power,
+                }))
+            }
             "zoom_to" => {
                 let all = args.get("all").and_then(|v| v.as_bool()).unwrap_or(false);
                 let ids = if all { Vec::new() } else { self.mcp_ids(args)? };

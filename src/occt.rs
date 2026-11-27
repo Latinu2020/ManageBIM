@@ -117,6 +117,8 @@ mod ffi {
         API.get_or_init(load_api).as_ref().map_err(|e| e.clone())
     }
 
+    // the function types of the DLL symbols come from the variables they are assigned to
+    #[allow(clippy::missing_transmute_annotations)]
     fn load_api() -> Result<Api, String> {
         let dirs = super::search_dirs();
         let Some(dll) = dirs.iter().map(|d| d.join("mbocct.dll")).find(|p| p.is_file()) else {

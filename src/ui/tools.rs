@@ -77,8 +77,8 @@ impl App {
                 self.init_section_defaults();
             }
             ui.separator();
-            ui.checkbox(&mut self.section_caps, "Filled cuts").on_hover_text("Cut faces drawn solid and hatched (closed solids), instead of seeing inside the elements");
-            ui.checkbox(&mut self.show_section_plane, "Show plane").on_hover_text("Draw the section plane as a transparent green surface");
+            ui.checkbox(&mut self.sec.caps, "Filled cuts").on_hover_text("Cut faces drawn solid and hatched (closed solids), instead of seeing inside the elements");
+            ui.checkbox(&mut self.sec.show_plane, "Show plane").on_hover_text("Draw the section plane as a transparent green surface");
         });
         // section by level: a whole level (with margins below / above), a plane cut or only the elements of the level
         let levels = self.scene_grids().levels;
@@ -88,14 +88,14 @@ impl App {
                 ui.label(RichText::new("no levels in the models - add them in View › Edit Levels").weak());
                 return;
             }
-            let mut li = self.section_level.unwrap_or(0).min(levels.len() - 1);
+            let mut li = self.sec.level.unwrap_or(0).min(levels.len() - 1);
             egui::ComboBox::from_id_salt("seclev").width(150.0).selected_text(format!("{}  {:+.2}", levels[li].0, levels[li].1)).show_ui(ui, |ui| {
                 for (i, l) in levels.iter().enumerate().rev() {
                     ui.selectable_value(&mut li, i, format!("{}  {:+.2}", l.0, l.1));
                 }
             });
-            if Some(li) != self.section_level {
-                self.section_level = Some(li);
+            if Some(li) != self.sec.level {
+                self.sec.level = Some(li);
             }
             if ui.small_button("▼").on_hover_text("Level below (PgDn)").clicked() {
                 self.section_level_step(-1);
@@ -107,7 +107,7 @@ impl App {
                 self.section_level_box(li);
             }
             if ui.button("✂ Plan cut").on_hover_text("Cut everything above the height below (like a floor plan)").clicked() {
-                self.section_plan_cut(li, self.plan_cut_h);
+                self.section_plan_cut(li, self.sec.plan_cut_h);
             }
             if ui.button("👁 Only this level").on_hover_text("Show only the items of this level (by the level name in the models, otherwise by height); Unhide All to undo").clicked() {
                 self.isolate_level(li);
@@ -115,11 +115,11 @@ impl App {
         });
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("Plan cut height").weak());
-            ui.add(egui::DragValue::new(&mut self.plan_cut_h).speed(0.05).range(-5.0..=20.0).fixed_decimals(2).suffix(" m"));
+            ui.add(egui::DragValue::new(&mut self.sec.plan_cut_h).speed(0.05).range(-5.0..=20.0).fixed_decimals(2).suffix(" m"));
             ui.label(RichText::new("Level box: below the level").weak());
-            ui.add(egui::DragValue::new(&mut self.level_below).speed(0.02).range(0.0..=5.0).fixed_decimals(2).suffix(" m")).on_hover_text("e.g. 0.30 to include the slab under the floor");
+            ui.add(egui::DragValue::new(&mut self.sec.level_below).speed(0.02).range(0.0..=5.0).fixed_decimals(2).suffix(" m")).on_hover_text("e.g. 0.30 to include the slab under the floor");
             ui.label(RichText::new("past the next level").weak());
-            ui.add(egui::DragValue::new(&mut self.level_above).speed(0.02).range(-5.0..=5.0).fixed_decimals(2).suffix(" m")).on_hover_text("negative = stop under the next slab, positive = include it");
+            ui.add(egui::DragValue::new(&mut self.sec.level_above).speed(0.02).range(-5.0..=5.0).fixed_decimals(2).suffix(" m")).on_hover_text("negative = stop under the next slab, positive = include it");
         });
         ui.separator();
         ui.spacing_mut().slider_width = (ui.available_width() - 330.0).clamp(150.0, 700.0);
@@ -314,8 +314,7 @@ impl App {
             let ui = &mut cols[1];
             ui.label(RichText::new("Model Properties").strong());
             let sel = self.proj_sel.filter(|i| self.models.get(*i).is_some_and(|m| m.is_some())).or(rows.first().map(|r| r.0));
-            if let Some(i) = sel {
-                let m = self.models[i].clone().unwrap();
+            if let Some((i, m)) = sel.and_then(|i| self.models.get(i).cloned().flatten().map(|m| (i, m))) {
                 let meta = std::fs::metadata(&m.path).ok();
                 let cache = crate::bimc::cache_path(&m.path);
                 let cache_state = if m.path.to_lowercase().ends_with(".bimc") {
@@ -484,8 +483,8 @@ impl App {
             egui::Grid::new("xfgrid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
                 ui.label("Translation X / Y / Z");
                 ui.horizontal(|ui| {
-                    for k in 0..3 {
-                        ui.add(egui::DragValue::new(&mut d.translate[k]).speed(0.01).fixed_decimals(3).suffix(" m"));
+                    for v in d.translate.iter_mut() {
+                        ui.add(egui::DragValue::new(v).speed(0.01).fixed_decimals(3).suffix(" m"));
                     }
                 });
                 ui.end_row();
@@ -546,8 +545,8 @@ impl App {
                 egui::Grid::new("movegrid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
                     ui.label("Move by ΔX / ΔY / ΔZ");
                     ui.horizontal(|ui| {
-                        for k in 0..3 {
-                            ui.add(egui::DragValue::new(&mut self.move_delta[k]).speed(0.01).fixed_decimals(3).suffix(" m"));
+                        for v in self.move_delta.iter_mut() {
+                            ui.add(egui::DragValue::new(v).speed(0.01).fixed_decimals(3).suffix(" m"));
                         }
                         if ui.button("Move").clicked() {
                             let d = Vec3::new(self.move_delta[0] as f32, self.move_delta[1] as f32, self.move_delta[2] as f32);
@@ -558,8 +557,8 @@ impl App {
                     ui.label("Move centre to X / Y / Z");
                     ui.horizontal(|ui| {
                         let mut t = self.move_target.unwrap_or([c.x, c.y, c.z]);
-                        for k in 0..3 {
-                            ui.add(egui::DragValue::new(&mut t[k]).speed(0.01).fixed_decimals(3));
+                        for v in t.iter_mut() {
+                            ui.add(egui::DragValue::new(v).speed(0.01).fixed_decimals(3));
                         }
                         self.move_target = Some(t);
                         if ui.button("Move").clicked() {

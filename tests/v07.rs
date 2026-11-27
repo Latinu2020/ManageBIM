@@ -53,8 +53,10 @@ fn camera_ray_matches_projection_persp_and_ortho() {
     use bimrust::model::Aabb;
     let bb = Aabb { min: glam::Vec3::new(-10.0, -10.0, 0.0), max: glam::Vec3::new(10.0, 10.0, 8.0) };
     for ortho in [false, true] {
-        let mut c = Camera::default();
-        c.ortho = ortho;
+        let mut c = Camera {
+            ortho,
+            ..Default::default()
+        };
         c.fit(&bb);
         let aspect = 1.6;
         let vp = c.proj(aspect, &bb) * c.view();

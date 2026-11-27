@@ -233,6 +233,10 @@ fn corrupt_files_never_panic() {
 fn one_file() {
     let Some(p) = std::env::var_os("MB_ONE") else { return };
     let p = p.to_string_lossy().to_string();
+    if p.ends_with(".las") || p.ends_with(".laz") {
+        let _ = e57::read_las(&p, &|_, _| {});
+        return;
+    }
     if p.ends_with(".e57") {
         let _ = e57::read(&p, &|_, _| {});
         return;

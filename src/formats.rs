@@ -334,7 +334,8 @@ pub fn load_ply(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
     let header = String::from_utf8_lossy(&d[..hend]);
     let mut fmt = "ascii".to_string();
     // (element name, count, properties: (name, type, list count type))
-    let mut elems: Vec<(String, usize, Vec<(String, String, Option<String>)>)> = Vec::new();
+    type ElemRows = Vec<(String, usize, Vec<(String, String, Option<String>)>)>;
+    let mut elems: ElemRows = Vec::new();
     for l in header.lines() {
         let t: Vec<&str> = l.split_whitespace().collect();
         match t.first().copied() {
@@ -462,7 +463,8 @@ pub fn load_ply(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
     const IDS: [&str; 10] = ["object_id", "objectid", "instance", "instance_id", "segment", "segment_id", "label", "class", "category", "material_index"];
     let id_key = IDS.iter().find(|k| face_vals.first().is_some_and(|fv| fv.iter().any(|(n, _)| n.eq_ignore_ascii_case(k)))).map(|s| s.to_string());
     let fval = |fv: &[(String, f64)], k: &str| fv.iter().find(|(n, _)| n.eq_ignore_ascii_case(k)).map(|x| x.1);
-    let mut groups: std::collections::BTreeMap<i64, (Vec<Tri>, std::collections::BTreeMap<String, (f64, f64, usize)>)> = std::collections::BTreeMap::new();
+    type ColorGroups = std::collections::BTreeMap<i64, (Vec<Tri>, std::collections::BTreeMap<String, (f64, f64, usize)>)>;
+    let mut groups: ColorGroups = std::collections::BTreeMap::new();
     for (fi, f) in faces.iter().enumerate() {
         let fv = face_vals.get(fi).map(|v| v.as_slice()).unwrap_or(&[]);
         let gid = id_key.as_deref().and_then(|k| fval(fv, k)).map(|v| v as i64).unwrap_or(i64::MIN);
@@ -645,7 +647,8 @@ impl DxfCtx {
         };
         let thick = e.f(39).unwrap_or(0.0);
         let ext = DVec3::new(e.f(210).unwrap_or(0.0), e.f(220).unwrap_or(0.0), e.f(230).unwrap_or(1.0)).normalize_or(DVec3::Z);
-        let wall = |a: DVec3, b: DVec3, out: &mut Vec<Tri>, push: &mut dyn FnMut(DVec3, DVec3, DVec3, &mut Vec<Tri>)| {
+        type PushTri<'a> = dyn FnMut(DVec3, DVec3, DVec3, &mut Vec<Tri>) + 'a;
+        let wall = |a: DVec3, b: DVec3, out: &mut Vec<Tri>, push: &mut PushTri<'_>| {
             let up = ext * thick;
             push(a, b, b + up, out);
             push(a, b + up, a + up, out);
@@ -730,7 +733,7 @@ impl DxfCtx {
                 let mut i = start;
                 while i < list.len() {
                     let n = list[i] as usize;
-                    if n < 3 || i + n >= list.len() + 1 {
+                    if n < 3 || i + n > list.len() {
                         break;
                     }
                     let f: Vec<usize> = list[i + 1..(i + 1 + n).min(list.len())].iter().map(|v| *v as usize).filter(|v| *v < vs.len()).collect();
@@ -806,7 +809,7 @@ fn xdata_props(e: &Ent) -> Vec<Prop> {
                     out.push(prop(&g, &format!("Value {k}"), v.to_string()));
                 }
             }
-            1010 | 1011 | 1012 | 1013 => {
+            1010..=1013 => {
                 // point: 10xx / 10xx+10 / 10xx+20
                 let y = e.codes.get(i + 1).filter(|x| x.0 == c + 10).map(|x| x.1.trim().to_string()).unwrap_or_default();
                 let z = e.codes.get(i + 2).filter(|x| x.0 == c + 20).map(|x| x.1.trim().to_string()).unwrap_or_default();
@@ -1113,7 +1116,7 @@ fn load_dxf_with(path: &str, progress: &dyn Fn(f32, &str), acis: Option<crate::a
     let mut lk: Vec<String> = layers.keys().cloned().collect();
     lk.sort();
     for l in lk {
-        let t = layers.remove(&l).unwrap();
+        let Some(t) = layers.remove(&l) else { continue };
         elements.push(elem(format!("Layer {l}"), "Layer geometry", &l, vec![prop("Element", "Name", format!("Layer {l}")), prop("Element", "Layer", l.clone())], t));
     }
     let mut warnings = Vec::new();
@@ -1923,8 +1926,11 @@ pub fn backup_path(path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
+/// A DXF file read: (units code, entities, blocks by name with base point and entities).
+type DxfDoc = (i64, Vec<Ent>, HashMap<String, (DVec3, Vec<Ent>)>);
+
 /// Reads a DXF (or a converted DWG): the units ($INSUNITS), the entities and the blocks.
-fn dxf_doc(path: &str) -> Result<(i64, Vec<Ent>, HashMap<String, (DVec3, Vec<Ent>)>), String> {
+fn dxf_doc(path: &str) -> Result<DxfDoc, String> {
     let text = dxf_text_of(path)?;
     let lines: Vec<&str> = text.lines().collect();
     let mut pairs: Vec<(i32, String)> = Vec::with_capacity(lines.len() / 2);
@@ -1983,9 +1989,9 @@ fn dxf_doc(path: &str) -> Result<(i64, Vec<Ent>, HashMap<String, (DVec3, Vec<Ent
 
 /// 2D drawing (DWG / DXF) as lines in metres: LINE, LWPOLYLINE / POLYLINE (closed too), ARC, CIRCLE, ELLIPSE,
 /// blocks (INSERT, nested too). Returns (layer, x1, y1, x2, y2) and the applied scale (units -> m).
-pub fn cad_lines(path: &str) -> Result<(Vec<(String, [f64; 4])>, f64), String> {
+pub fn cad_lines(path: &str) -> Result<(crate::model::CadSegs, f64), String> {
     let (insunits, entities, blocks) = dxf_doc(path)?;
-    let mut out: Vec<(String, [f64; 4])> = Vec::new();
+    let mut out: crate::model::CadSegs = Vec::new();
     fn arc(c: glam::DVec2, r: f64, a0: f64, a1: f64) -> Vec<glam::DVec2> {
         // invalid angles / radii from a damaged drawing: no arc (a „while” loop would be infinite at -inf)
         if !(a0.is_finite() && a1.is_finite() && r.is_finite() && c.is_finite()) {
@@ -2001,11 +2007,11 @@ pub fn cad_lines(path: &str) -> Result<(Vec<(String, [f64; 4])>, f64), String> {
             c + glam::DVec2::new(a.cos(), a.sin()) * r
         }).collect()
     }
-    fn emit(ents: &[Ent], blocks: &HashMap<String, (DVec3, Vec<Ent>)>, xf: &dyn Fn(glam::DVec2) -> glam::DVec2, layer_in: Option<&str>, out: &mut Vec<(String, [f64; 4])>, depth: u32) {
+    fn emit(ents: &[Ent], blocks: &HashMap<String, (DVec3, Vec<Ent>)>, xf: &dyn Fn(glam::DVec2) -> glam::DVec2, layer_in: Option<&str>, out: &mut crate::model::CadSegs, depth: u32) {
         if depth > 6 || out.len() > 2_000_000 {
             return;
         }
-        fn seg(out: &mut Vec<(String, [f64; 4])>, xf: &dyn Fn(glam::DVec2) -> glam::DVec2, lay: &str, pts: &[glam::DVec2], closed: bool) {
+        fn seg(out: &mut crate::model::CadSegs, xf: &dyn Fn(glam::DVec2) -> glam::DVec2, lay: &str, pts: &[glam::DVec2], closed: bool) {
             for w in pts.windows(2) {
                 let (a, b) = (xf(w[0]), xf(w[1]));
                 out.push((lay.to_string(), [a.x, a.y, b.x, b.y]));
@@ -2015,7 +2021,7 @@ pub fn cad_lines(path: &str) -> Result<(Vec<(String, [f64; 4])>, f64), String> {
                 out.push((lay.to_string(), [a.x, a.y, b.x, b.y]));
             }
         }
-        let push = |out: &mut Vec<(String, [f64; 4])>, lay: &str, pts: &[glam::DVec2], closed: bool| seg(out, xf, lay, pts, closed);
+        let push = |out: &mut crate::model::CadSegs, lay: &str, pts: &[glam::DVec2], closed: bool| seg(out, xf, lay, pts, closed);
         for e in ents {
             // layer "0" in blocks takes the layer of the INSERT
             let own = e.s(8).unwrap_or("0");

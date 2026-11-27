@@ -3,6 +3,15 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.29.1 - 2026-11-27
+- **Light bounces between surfaces** (renders and the Ray Trace view, CPU and GPU): the sun and lamp light now bounces up to 4 times (2 by default) instead of once - it goes on from wall to wall, so rooms lit through a window or by lamps are brighter and more even, and corners are no longer dark. **Light bounces** slider in the Path Trace window (1 - 4; each bounce adds less light and costs one more ray per sample).
+- **Ray Trace view refines faster on fast graphics cards**: up to 64 samples per frame within the frame's time budget (it stopped at 8, leaving fast cards idle most of each frame); slow cards are unchanged.
+- **Fewer ways to close ManageBIM**: running out of graphics memory while loading a model skips that model instead of closing the app; quantity take-offs, the 4D simulation buttons, the viewpoint report and the off-screen capture no longer stop the app if their data is missing; fewer `unwrap` in the code (47 -> 24; half of the rest are conversions of slices whose length is checked first).
+- **Damaged LAS point clouds can no longer close ManageBIM**: a header declaring point records too short for their format made the reader go past the end of the file; found by the robustness test run with 16x more damaged variants (6,559 damaged files of every format, none crash now).
+- **AI connection (MCP): new `render_settings` tool** - an assistant can turn the Ray Trace view on / off and set the light bounces, brightness and sun, then look at the result with `capture_view`.
+- **Same line endings on every computer**: a new `.gitattributes` keeps the files with LF in the repository and checks them out with the computer's own line endings, whatever git is set to - working on two computers no longer shows every file as changed.
+- **Code care**: clippy warnings 130 -> 33 - the rest are `chunks_exact` -> `as_chunks` suggestions new in Rust 1.88, kept for older compilers (complex types got short names, e.g. `CadSegs` for the 2D drawing lines; loops and clamps written plainly; DXF layer colours in one `match`); the 3D view function `viewport()` split from 1,770 to about 700 lines (overlays, coordination-object gizmo, light drawing and clicks in their own functions); the 4D simulation, point cloud, update check, bSDD search, viewpoint folders and section options grouped in their own state structs.
+
 ## 0.29.0 - 2026-11-27
 The stable release of the 0.29 release candidates (rc1 - rc3, below), plus:
 - **Ray Trace stops at once**: switching the Ray Trace view off (or closing the Path Trace window during a render) stops the rendering immediately. Each sample is drawn in short bands with a time budget per frame, so even a big model never blocks the interface (and never hits the Windows graphics timeout); fast graphics cards get several samples per frame.

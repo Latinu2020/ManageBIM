@@ -75,7 +75,7 @@ impl Camera {
         let r = scene.size().length() * 0.5;
         let d = (scene.center() - self.eye()).length();
         let far = (d + r) * 1.2 + 1.0;
-        let near = (far / 30000.0).max(0.005).min(0.1);
+        let near = (far / 30000.0).clamp(0.005, 0.1);
         (near, far)
     }
 

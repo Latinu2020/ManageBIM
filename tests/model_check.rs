@@ -252,9 +252,11 @@ fn section_cut_dxf_has_layers_and_lines() {
 #[test]
 fn sheet_dwg_uses_paper_scale_and_title_block() {
     let segs = vec![("Walls".to_string(), [0.0, 0.0, 30.0, 0.0]), ("Walls".to_string(), [30.0, 0.0, 30.0, 18.0])];
-    let mut tb = bimrust::pdf::TitleBlock::default();
-    tb.company = "Acme Engineering".into();
-    tb.project = "Block A".into();
+    let mut tb = bimrust::pdf::TitleBlock {
+        company: "Acme Engineering".into(),
+        project: "Block A".into(),
+        ..Default::default()
+    };
     // A3: 30 x 18 m fits at 1:100 (300 x 180 mm)
     let (d, s) = bimrust::app::cut_sheet_dxf(&segs, &tb, "x", "Plan - Level 1", "2026-11-20 10:00");
     assert_eq!(s, 100);
@@ -307,8 +309,10 @@ fn dwg_export_round_trip_is_exact() {
         ("IfcDoor".to_string(), [1030.5, 2000.25, 1030.5, 2018.0]),
         ("Ifc_Slab".to_string(), [1000.5, 2018.0, 1030.5, 2018.0]),
     ];
-    let mut tb = bimrust::pdf::TitleBlock::default();
-    tb.company = "Acme".into();
+    let tb = bimrust::pdf::TitleBlock {
+        company: "Acme".into(),
+        ..Default::default()
+    };
     let cases = [
         ("rt_model.dxf", bimrust::app::cut_dxf(&segs), 6i16, 3usize, 0usize),
         ("rt_sheet.dxf", bimrust::app::cut_sheet_dxf(&segs, &tb, "Block A", "Plan - Level 1", "2026-11-20").0, 4, 3 + 4 + 4 + 4 + 5, 10),
@@ -419,13 +423,15 @@ fn export_demo_sheet() {
         image_w: 0,
         image_h: 0,
     };
-    let mut tb = bimrust::pdf::TitleBlock::default();
-    tb.company = "Your Company".into();
-    tb.project = "Block A - Coordination".into();
-    tb.client = "Client name".into();
-    tb.drawn = "BIM coordinator".into();
-    tb.checked = "Project lead".into();
-    tb.number_prefix = "CO-".into();
+    let tb = bimrust::pdf::TitleBlock {
+        company: "Your Company".into(),
+        project: "Block A - Coordination".into(),
+        client: "Client name".into(),
+        drawn: "BIM coordinator".into(),
+        checked: "Project lead".into(),
+        number_prefix: "CO-".into(),
+        ..Default::default()
+    };
     let pdf = bimrust::pdf::sheets("Block A", std::slice::from_ref(&it), "2026-11-20", &tb);
     std::fs::write(std::env::var("MB_SHEET_OUT").unwrap_or_else(|_| "target/demo_sheet.pdf".into()), pdf).unwrap();
 }

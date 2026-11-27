@@ -297,9 +297,11 @@ pub fn parse_tests_xml(text: &str) -> Result<Imported, String> {
             _ => 1000.0,
         };
         let tol_mm = t.attr("tolerance").and_then(num).map(|v| v * k).unwrap_or(0.0);
-        let mut rules = ClashRules::default();
-        rules.auto_assign = false;
-        rules.normal_joints = false;
+        let mut rules = ClashRules {
+            auto_assign: false,
+            normal_joints: false,
+            ..Default::default()
+        };
         // the Navisworks rules: "in the same file" is the only one with a direct equivalent
         let mut rn = Vec::new();
         all_named(t, "rule", &mut rn);
@@ -343,9 +345,11 @@ pub fn parse_tests_rows(rows: &[Vec<String>]) -> Result<Imported, String> {
         if name.is_empty() {
             continue;
         }
-        let mut rules = ClashRules::default();
-        rules.same_level = yes(&get(r, c_level));
-        rules.same_type = yes(&get(r, c_typeq));
+        let mut rules = ClashRules {
+            same_level: yes(&get(r, c_level)),
+            same_type: yes(&get(r, c_typeq)),
+            ..Default::default()
+        };
         if c_joint.is_some() {
             rules.normal_joints = yes(&get(r, c_joint));
         }
@@ -907,6 +911,6 @@ mod tests {
         assert_eq!(m.rows, vec!["Set: S", "Set: A"]);
         assert_eq!(m.cols, vec!["Set: M", "Set: E"]);
         assert_eq!(m.cells[&(0, 1)], vec![1]);
-        assert!(m.cells.get(&(1, 1)).is_none());
+        assert!(!m.cells.contains_key(&(1, 1)));
     }
 }

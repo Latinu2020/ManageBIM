@@ -332,8 +332,8 @@ pub fn pdf(s: &Summary) -> Vec<u8> {
     } else {
         let mut all = [0usize; 5];
         for c in &s.clash {
-            for k in 0..5 {
-                all[k] += c.by_status[k];
+            for (a, b) in all.iter_mut().zip(c.by_status.iter()) {
+                *a += *b;
             }
         }
         let parts: Vec<(String, usize, [u8; 3])> = (0..5).map(|k| (STATUS[k].to_string(), all[k], STATUS_RGB[k])).collect();

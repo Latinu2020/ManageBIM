@@ -32,50 +32,50 @@ impl App {
 
     /// Reads the results of the bSDD searches running on a separate thread.
     fn poll_bsdd(&mut self) {
-        if let Some(rx) = &self.bsdd_rx {
+        if let Some(rx) = &self.bsdd.rx {
             match rx.try_recv() {
                 Ok(Ok((classes, total))) => {
-                    self.bsdd_status = if classes.is_empty() { "No classes found in bSDD.".into() } else { format!("{} of {} classes", classes.len(), total) };
-                    self.bsdd_results = classes;
-                    self.bsdd_total = total;
-                    self.bsdd_rx = None;
+                    self.bsdd.status = if classes.is_empty() { "No classes found in bSDD.".into() } else { format!("{} of {} classes", classes.len(), total) };
+                    self.bsdd.results = classes;
+                    self.bsdd.total = total;
+                    self.bsdd.rx = None;
                 }
                 Ok(Err(e)) => {
-                    self.bsdd_status = e;
-                    self.bsdd_rx = None;
+                    self.bsdd.status = e;
+                    self.bsdd.rx = None;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.bsdd_status = "bSDD search stopped unexpectedly.".into();
-                    self.bsdd_rx = None;
+                    self.bsdd.status = "bSDD search stopped unexpectedly.".into();
+                    self.bsdd.rx = None;
                 }
             }
         }
-        if let Some(rx) = &self.bsdd_dicts_rx {
+        if let Some(rx) = &self.bsdd.dicts_rx {
             match rx.try_recv() {
                 Ok(Ok(d)) => {
-                    self.bsdd_dicts = d;
-                    self.bsdd_dicts_rx = None;
+                    self.bsdd.dicts = d;
+                    self.bsdd.dicts_rx = None;
                 }
                 Ok(Err(e)) => {
-                    self.bsdd_status = e;
-                    self.bsdd_dicts_rx = None;
+                    self.bsdd.status = e;
+                    self.bsdd.dicts_rx = None;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.bsdd_dicts_rx = None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.bsdd.dicts_rx = None,
             }
         }
     }
 
     fn bsdd_search(&mut self) {
-        let q = self.bsdd_query.trim().to_string();
+        let q = self.bsdd.query.trim().to_string();
         if q.len() < 2 {
-            self.bsdd_status = "Type at least 2 characters.".into();
+            self.bsdd.status = "Type at least 2 characters.".into();
             return;
         }
-        let dict = if self.bsdd_dict.is_empty() { None } else { Some(self.bsdd_dict.clone()) };
-        self.bsdd_rx = Some(crate::bsdd::spawn_search(q, dict, 200));
-        self.bsdd_status = "Searching bSDD…".into();
+        let dict = if self.bsdd.dict.is_empty() { None } else { Some(self.bsdd.dict.clone()) };
+        self.bsdd.rx = Some(crate::bsdd::spawn_search(q, dict, 200));
+        self.bsdd.status = "Searching bSDD…".into();
     }
 
     /// Writes the classification on the selected elements.
@@ -242,26 +242,26 @@ impl App {
     }
 
     fn class_bsdd_ui(&mut self, ui: &mut egui::Ui, sel_count: usize) {
-        let busy = self.bsdd_rx.is_some();
-        if self.bsdd_dicts.is_empty() && self.bsdd_dicts_rx.is_none() {
-            self.bsdd_dicts_rx = Some(crate::bsdd::spawn_dictionaries());
+        let busy = self.bsdd.rx.is_some();
+        if self.bsdd.dicts.is_empty() && self.bsdd.dicts_rx.is_none() {
+            self.bsdd.dicts_rx = Some(crate::bsdd::spawn_dictionaries());
         }
         ui.horizontal(|ui| {
-            let r = ui.add(egui::TextEdit::singleline(&mut self.bsdd_query).hint_text("🔍 e.g. wall, door, fire damper, EF_25_10…").desired_width(ui.available_width() - 250.0));
+            let r = ui.add(egui::TextEdit::singleline(&mut self.bsdd.query).hint_text("🔍 e.g. wall, door, fire damper, EF_25_10…").desired_width(ui.available_width() - 250.0));
             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-            let sel_label = if self.bsdd_dict.is_empty() {
+            let sel_label = if self.bsdd.dict.is_empty() {
                 "All dictionaries".to_string()
             } else {
-                self.bsdd_dicts.iter().find(|d| d.uri == self.bsdd_dict).map(|d| d.label()).unwrap_or_else(|| self.bsdd_dict.rsplit('/').next().unwrap_or("").to_string())
+                self.bsdd.dicts.iter().find(|d| d.uri == self.bsdd.dict).map(|d| d.label()).unwrap_or_else(|| self.bsdd.dict.rsplit('/').next().unwrap_or("").to_string())
             };
             egui::ComboBox::from_id_salt("bsdd_dict").width(150.0).selected_text(RichText::new(sel_label).small()).show_ui(ui, |ui| {
                 ui.set_min_width(260.0);
-                ui.selectable_value(&mut self.bsdd_dict, String::new(), "All dictionaries");
-                if self.bsdd_dicts.is_empty() {
-                    ui.label(RichText::new(if self.bsdd_dicts_rx.is_some() { "Loading dictionaries…" } else { "Dictionaries unavailable" }).small().weak());
+                ui.selectable_value(&mut self.bsdd.dict, String::new(), "All dictionaries");
+                if self.bsdd.dicts.is_empty() {
+                    ui.label(RichText::new(if self.bsdd.dicts_rx.is_some() { "Loading dictionaries…" } else { "Dictionaries unavailable" }).small().weak());
                 }
-                for d in &self.bsdd_dicts {
-                    ui.selectable_value(&mut self.bsdd_dict, d.uri.clone(), d.label()).on_hover_text(&d.uri);
+                for d in &self.bsdd.dicts {
+                    ui.selectable_value(&mut self.bsdd.dict, d.uri.clone(), d.label()).on_hover_text(&d.uri);
                 }
             });
             if ui.add_enabled(!busy, egui::Button::new(RichText::new("Search").strong())).clicked() || (enter && !busy) {
@@ -273,14 +273,14 @@ impl App {
                 ui.spinner();
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
             }
-            ui.label(RichText::new(&self.bsdd_status).small().weak());
+            ui.label(RichText::new(&self.bsdd.status).small().weak());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.hyperlink_to(RichText::new("search.bsdd.buildingsmart.org ↗").small(), "https://search.bsdd.buildingsmart.org");
             });
         });
         let mut assign: Option<crate::bsdd::BsddClass> = None;
         let mut keep: Option<crate::bsdd::BsddClass> = None;
-        let rows = self.bsdd_results.clone();
+        let rows = self.bsdd.results.clone();
         // fixed table height: the window no longer grows / shrinks with the number of rows
         let h = (ui.available_height() - 6.0).clamp(160.0, 430.0);
         egui_extras::TableBuilder::new(ui)

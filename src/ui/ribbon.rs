@@ -543,7 +543,7 @@ impl App {
                     self.section.mode = SectionMode::Box;
                     self.section.bmin = (bb.min - Vec3::splat(0.3)).to_array();
                     self.section.bmax = (bb.max + Vec3::splat(0.3)).to_array();
-                    self.section_level = None;
+                    self.sec.level = None;
                 }
             }
             if rbtn(ui, "🔗", "Follow", "Section box follows the selection: every time you select elements the box fits around them (the camera stays)", self.section_follow, true).clicked() {
@@ -562,7 +562,7 @@ impl App {
         let levels = self.scene_grids().levels;
         if !levels.is_empty() {
             rgroup(ui, "Level", |ui| {
-                let li = self.section_level.unwrap_or(0).min(levels.len() - 1);
+                let li = self.sec.level.unwrap_or(0).min(levels.len() - 1);
                 let cur = &levels[li].0;
                 let lev = rbtn(ui, "▤", cur, "Current level (click to choose)", false, true);
                 let lid = ui.make_persistent_id("rib_lev_pop");
@@ -572,7 +572,7 @@ impl App {
                 egui::popup_below_widget(ui, lid, &lev, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
                     ui.set_min_width(180.0);
                     for (i, l) in levels.iter().enumerate().rev() {
-                        if ui.selectable_label(self.section_level == Some(i), &l.0).clicked() {
+                        if ui.selectable_label(self.sec.level == Some(i), &l.0).clicked() {
                             self.section_level_box(i);
                             ui.close_menu();
                         }
@@ -588,7 +588,7 @@ impl App {
                     self.section_level_box(li);
                 }
                 if rbtn(ui, "✂", "Cut", "Plan cut at the current height", false, true).clicked() {
-                    self.section_plan_cut(li, self.plan_cut_h);
+                    self.section_plan_cut(li, self.sec.plan_cut_h);
                 }
                 if rbtn(ui, "👁", "Isolate", "Only this level's items", false, true).clicked() {
                     self.isolate_level(li);
@@ -613,8 +613,8 @@ impl App {
             if rbtn(ui, "📄", "Cut to PDF", "Export the cut as a vector PDF sheet (A3 - A0) with title block, at the exact cut position", false, self.section.enabled || self.settings.cad_view != crate::app::CadView::Current).clicked() {
                 self.request_path(Purpose::ExportSectionPdf);
             }
-            if rbtn(ui, "🗺", "2D Preview", "Small closable map-style preview of the cut, before exporting", self.section_preview_open, self.section.enabled).clicked() {
-                self.section_preview_open = !self.section_preview_open;
+            if rbtn(ui, "🗺", "2D Preview", "Small closable map-style preview of the cut, before exporting", self.sec.preview_open, self.section.enabled).clicked() {
+                self.sec.preview_open = !self.sec.preview_open;
             }
             let box_on = self.section.enabled && self.section.mode == SectionMode::Box;
             if rbtn(ui, "◫", "Multi view", "Several views of the section box on one drawing, like an Inventor sheet: choose the views (Front, Right, Back, Left, Top, Bottom) and the spacing, see the preview, then export DWG / DXF at 1:1 in model space (Front stays in real coordinates) or a PDF sheet.", self.mv_open, box_on).clicked() {
@@ -647,8 +647,8 @@ impl App {
                 self.title_block_open = !self.title_block_open;
             }
             // Grids / Levels are toggled in the „Grids & Levels" group (Home / Sections), not here.
-            if rbtn(ui, "▤", "Filled cuts", "Cut faces drawn solid and hatched (closed solids), instead of seeing inside the elements", self.section_caps, true).clicked() {
-                self.section_caps = !self.section_caps;
+            if rbtn(ui, "▤", "Filled cuts", "Cut faces drawn solid and hatched (closed solids), instead of seeing inside the elements", self.sec.caps, true).clicked() {
+                self.sec.caps = !self.sec.caps;
             }
             if rbtn(ui, "✎", "Annotate", "Annotations in the exported DWG / PDF cut: hatch, element tags, grids, levels - off = only the cut outline (one layer per element type)", self.cad_annotate, true).clicked() {
                 self.cad_annotate = !self.cad_annotate;
@@ -967,11 +967,11 @@ impl App {
             visual_style: self.settings.visual_style,
             show_grids: self.show_grids,
             show_levels: self.level.show_lines,
-            section_caps: self.section_caps,
+            section_caps: self.sec.caps,
             overrides: self.overrides.iter().map(|(k, v)| (*k, *v)).collect(),
             selected: self.selected.iter().copied().collect(),
             measures: self.measures.clone(),
-            vp_filter: self.vp_filter.clone(),
+            vp_filter: self.vp.filter.clone(),
             is_default: false,
             note: String::new(),
             include: [true; 5],
@@ -1006,7 +1006,7 @@ impl App {
             self.hidden = t.hidden.into_iter().collect();
             self.selected = t.selected.into_iter().collect();
             self.measures = t.measures;
-            self.vp_filter = t.vp_filter;
+            self.vp.filter = t.vp_filter;
         }
         if sec {
             self.section = t.section;
@@ -1018,7 +1018,7 @@ impl App {
             self.apply_style_only(t.visual_style);
             self.show_grids = t.show_grids;
             self.level.show_lines = t.show_levels;
-            self.section_caps = t.section_caps;
+            self.sec.caps = t.section_caps;
         }
         if col {
             self.overrides = t.overrides.into_iter().collect();
@@ -1091,8 +1091,8 @@ impl App {
         rgroup(ui, "Scene", |ui| {
             // a single place for lighting: sun, sky, lamps (Render › Lighting)
             let has_cloud = self.loaded_models().any(|(_, m)| m.cloud.is_some());
-            if rbtn(ui, "☁", "Point Cloud", "Point density and size (E57 point clouds)", self.show_cloud, has_cloud).clicked() {
-                self.show_cloud = !self.show_cloud;
+            if rbtn(ui, "☁", "Point Cloud", "Point density and size (E57 point clouds)", self.cloud.show, has_cloud).clicked() {
+                self.cloud.show = !self.cloud.show;
             }
         });
     }

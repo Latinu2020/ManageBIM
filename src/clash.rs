@@ -304,9 +304,10 @@ pub fn bvh_min_dist(ba: &Bvh, ta: &[Vec3], bb: &Bvh, tb: &[Vec3], limit: f32) ->
                         let (d, p, q) = tri_tri_dist(&ta[xi..xi + 3], &tb[yi..yi + 3]);
                         if d < best {
                             best = d;
-                            bp = Some((p + q) * 0.5);
+                            let mid = (p + q) * 0.5;
+                            bp = Some(mid);
                             if d <= 0.0 {
-                                return Some((0.0, bp.unwrap()));
+                                return Some((0.0, mid));
                             }
                         }
                     }
@@ -348,7 +349,7 @@ fn seg_tri(p: Vec3, q: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Option<Vec3> {
     let inv = 1.0 / det;
     let s = p - a;
     let u = s.dot(h) * inv;
-    if u < 0.0 || u > 1.0 {
+    if !(0.0..=1.0).contains(&u) {
         return None;
     }
     let qq = s.cross(e1);

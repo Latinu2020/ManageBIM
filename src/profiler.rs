@@ -114,7 +114,7 @@ impl Profile {
         let dropped = v.len().saturating_sub(MAX_RULES);
         if dropped > 0 {
             // we keep the most frequent values, then back in natural order
-            v.sort_by(|a, b| b.1.cmp(&a.1));
+            v.sort_by_key(|e| std::cmp::Reverse(e.1));
             v.truncate(MAX_RULES);
             v.sort_by(|a, b| natural_cmp(&a.0, &b.0));
         }

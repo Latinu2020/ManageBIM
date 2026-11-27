@@ -25,7 +25,7 @@ impl App {
             }
             self.mats.cache = Some(map);
         }
-        self.mats.cache.as_ref().unwrap()
+        self.mats.cache.get_or_insert_with(HashMap::new)
     }
 
     /// The real path of a texture (if the file was moved, it looks for it next to the project).
@@ -299,8 +299,8 @@ impl App {
         let empty = HashMap::new();
         let empty_p: HashMap<ElemId, u16> = HashMap::new();
         let matmap = if self.materials_on { self.mats.cache.as_ref().unwrap_or(&empty) } else { &empty };
-        let (hidden_set, overrides, sim_cache, selected, materials) = (&self.hidden, &self.overrides, &self.sim_cache, &self.selected, &self.materials);
-        let sim_only_linked = self.sim_only_linked && !sim_cache.is_empty();
+        let (hidden_set, overrides, sim_cache, selected, materials) = (&self.hidden, &self.overrides, &self.sim.cache, &self.selected, &self.materials);
+        let sim_only_linked = self.sim.only_linked && !sim_cache.is_empty();
         let anim_obj = &self.anim_obj;
         let (pmap, prules, punmatched) = (self.profile_map.as_ref().unwrap_or(&empty_p), &self.profile.rules, self.profile.unmatched);
         let cmp = self.compare.as_ref().filter(|_| self.compare_on);
@@ -490,7 +490,7 @@ impl App {
         if z0 > z1 {
             (z0, z1) = (0.0, 1.0);
         }
-        Vec4::new(self.cloud_mode as f32, z0, z1, if self.cloud_round { 1.0 } else { 0.0 })
+        Vec4::new(self.cloud.mode as f32, z0, z1, if self.cloud.round { 1.0 } else { 0.0 })
     }
 
     /// The cloud point hit by the ray (only the displayed points - the current density - and the visible scans).
@@ -518,7 +518,7 @@ impl App {
                 if !self.is_visible(id) || !bb.ray(o, inv, lim) {
                     continue;
                 }
-                let shown = ((n as f64) * self.cloud_density.clamp(0.01, 1.0) as f64).ceil() as usize;
+                let shown = ((n as f64) * self.cloud.density.clamp(0.01, 1.0) as f64).ceil() as usize;
                 let (a, b) = (first as usize, (first as usize + shown).min(c.pos.len()));
                 if a >= b {
                     continue;
@@ -660,7 +660,7 @@ impl App {
                 // while moving it is reduced only when the cloud is very large (over ~8 million points displayed) and
                 // proportionally - previously it always dropped to 35%, and on every zoom the points disappeared and
                 // came back (the screen "flickered")
-                let base = self.cloud_density.clamp(0.01, 1.0);
+                let base = self.cloud.density.clamp(0.01, 1.0);
                 let shown = cl.pos.len() as f32 * base;
                 let budget = 8_000_000.0f32;
                 // ...and only when the graphics card really cannot keep up (under ~30 FPS); otherwise the cloud stays the same while moving
@@ -738,6 +738,6 @@ impl App {
             lamp_dir[k] = Vec4::new(d.x, d.y, d.z, w);
         }
         FrameParams { view_proj: vp, eye: self.cam.eye(), planes, nplanes: pl.len().min(6) as i32, sun: self.render.sun_dir(), light: self.render.light(),
-            lamps, lamp_data, lamp_dir, night: self.render.night, nlamps: self.lights.iter().filter(|l| l.enabled).count().min(8) as i32, point_size: self.point_size, cloud: self.cloud_uniform(), cloud_world: [self.cloud_world_mm / 1000.0, proj.y_axis.y * self.vp_rect[3].max(100.0) * self.ppp * 0.5], caps: self.section_caps, ao: if self.settings.visual_style == crate::render::VisualStyle::Wireframe || self.settings.visual_style == crate::render::VisualStyle::Hidden { 0.0 } else { self.render.ao }, edges: if self.settings.visual_style == crate::render::VisualStyle::Concept || self.settings.visual_style == crate::render::VisualStyle::Hidden { self.render.edges.max(0.9) } else { self.render.edges }, style: self.settings.visual_style, depth_k: [proj.z_axis.z, proj.w_axis.z, if self.cam.ortho { 1.0 } else { 0.0 }, proj.y_axis.y], shadows: self.render.shadows && self.settings.visual_style != crate::render::VisualStyle::Wireframe && self.settings.visual_style != crate::render::VisualStyle::Hidden && !(self.lod_moving() && self.scene_tris() > 2_000_000), scene: self.shadow_sphere() }
+            lamps, lamp_data, lamp_dir, night: self.render.night, nlamps: self.lights.iter().filter(|l| l.enabled).count().min(8) as i32, point_size: self.cloud.point_size, cloud: self.cloud_uniform(), cloud_world: [self.cloud.world_mm / 1000.0, proj.y_axis.y * self.vp_rect[3].max(100.0) * self.ppp * 0.5], caps: self.sec.caps, ao: if self.settings.visual_style == crate::render::VisualStyle::Wireframe || self.settings.visual_style == crate::render::VisualStyle::Hidden { 0.0 } else { self.render.ao }, edges: if self.settings.visual_style == crate::render::VisualStyle::Concept || self.settings.visual_style == crate::render::VisualStyle::Hidden { self.render.edges.max(0.9) } else { self.render.edges }, style: self.settings.visual_style, depth_k: [proj.z_axis.z, proj.w_axis.z, if self.cam.ortho { 1.0 } else { 0.0 }, proj.y_axis.y], shadows: self.render.shadows && self.settings.visual_style != crate::render::VisualStyle::Wireframe && self.settings.visual_style != crate::render::VisualStyle::Hidden && !(self.lod_moving() && self.scene_tris() > 2_000_000), scene: self.shadow_sphere() }
     }
 }

@@ -91,6 +91,13 @@ impl App {
                         }
                     });
                     ui.horizontal(|ui| {
+                        ui.label("Light bounces").on_hover_text("How many times the sun and lamp light bounce between walls, floors and ceilings (renders and the Ray Trace view). More bounces: brighter, more even interiors and lit corners; each one costs a little more time.");
+                        if ui.add(egui::Slider::new(&mut self.settings.light_bounces, 1..=crate::pathtrace::MAX_BOUNCES)).changed() {
+                            crate::pathtrace::set_light_bounces(self.settings.light_bounces);
+                            self.settings.save();
+                        }
+                    });
+                    ui.horizontal(|ui| {
                         ui.label("Ray Trace view samples").on_hover_text("Interactive Ray Trace (Render tab): samples per pixel before the view stops refining and is denoised");
                         if ui.add(egui::DragValue::new(&mut self.settings.rt_samples).range(16..=4096)).changed() {
                             self.settings.save();

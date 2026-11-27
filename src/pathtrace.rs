@@ -558,6 +558,69 @@ fn ggx_reflect(d: Vec3, n: Vec3, t: Vec3, b: Vec3, rough: f32, rng: &mut Rng) ->
     (d - h * (2.0 * d.dot(h))).normalize_or_zero()
 }
 
+/// How many times the sun and lamp light bounce between surfaces in renders and the Ray Trace view (1 - 4).
+static LIGHT_BOUNCES: AtomicU32 = AtomicU32::new(DEFAULT_BOUNCES);
+/// Light bounces when nothing else is set: the light reaches a room's corners without slowing the view much.
+pub const DEFAULT_BOUNCES: u32 = 2;
+/// The most light bounces offered (each one adds less light and costs one more ray per sample).
+pub const MAX_BOUNCES: u32 = 4;
+
+/// Sets the number of light bounces (clamped to 1 ..= MAX_BOUNCES).
+pub fn set_light_bounces(n: u32) {
+    LIGHT_BOUNCES.store(n.clamp(1, MAX_BOUNCES), Ordering::Relaxed);
+}
+
+/// The number of light bounces in use.
+pub fn light_bounces() -> u32 {
+    LIGHT_BOUNCES.load(Ordering::Relaxed)
+}
+
+/// Indirect light arriving at `p` (normal `n`) along the cosine-weighted direction `hd`: the sun and lamp
+/// light reflected by the surfaces met along a path of up to `bounces` diffuse bounces, each surface tinting it.
+fn indirect_light(job: &PathTraceJob, p: Vec3, n: Vec3, hd: Vec3, rng: &mut Rng, bounces: u32) -> [f32; 3] {
+    let sc = &job.scene;
+    let tris = &sc.tris;
+    let sun = job.sun.normalize_or_zero();
+    let mut acc = [0.0f32; 3];
+    if sc.lights.is_empty() && sun == Vec3::ZERO {
+        return acc;
+    }
+    let mut thr = [1.0f32; 3];
+    let (mut o, mut dir) = (p + n * 1e-3, hd);
+    for b in 0..bounces {
+        let Some((t2, tri2)) = sc.hit(o, dir, 40.0) else { break };
+        let q = o + dir * t2;
+        let j = tri2 as usize * 3;
+        let mut n2 = (tris[j + 1] - tris[j]).cross(tris[j + 2] - tris[j]).normalize_or_zero();
+        if n2.dot(dir) > 0.0 {
+            n2 = -n2;
+        }
+        let (b2, ..) = sc.surface(tri2 as usize, q, n2);
+        let q2 = q + n2 * 1e-3;
+        let mut e = if sc.lights.is_empty() { [0.0; 3] } else { lamp_irradiance(sc, q2, n2, rng) };
+        let nl2 = n2.dot(sun).max(0.0);
+        if nl2 > 0.0 {
+            let s = DIFFUSE * nl2 * sc.transmit(q2, sun, 1e6);
+            for v in e.iter_mut() {
+                *v += s;
+            }
+        }
+        // cos-weighted: pdf and cos cancel out; 0.55 = mean albedo of the bounce (conservation)
+        for k in 0..3 {
+            thr[k] *= b2[k] * 0.55;
+            acc[k] += thr[k] * e[k];
+        }
+        if b + 1 < bounces {
+            let (t, bt) = basis(n2);
+            let (r1, r2) = (rng.next(), rng.next());
+            let (r, phi) = (r1.sqrt(), std::f32::consts::TAU * r2);
+            dir = (t * (r * phi.cos()) + bt * (r * phi.sin()) + n2 * (1.0 - r1).max(0.0).sqrt()).normalize();
+            o = q2;
+        }
+    }
+    acc
+}
+
 /// how many reflections / passes through glass we trace (ray depth)
 const MAX_DEPTH: u32 = 4;
 const DIFFUSE: f32 = 0.22;
@@ -627,32 +690,13 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
     let amb = 0.30 + 0.28 * up;
     let k = amb * open;
     let mut col = [base[0] * irradiance[0] * k, base[1] * irradiance[1] * k, base[2] * irradiance[2] * k];
-    // 0.28: light bounced from the lamps (one diffuse bounce). The hemisphere ray above hits a
-    // nearby surface; the lamps' direct light at that point, tinted by the surface, comes back
-    // here. A wall lit by a lamp thus lights the floor and the ceiling - realistic interiors.
-    // indirect light: sun and lamp light bounced once (a sunny floor lights the ceiling, walls tint each other)
-    let sun_dir0 = job.sun.normalize_or_zero();
-    if (!sc.lights.is_empty() || sun_dir0 != Vec3::ZERO) && depth == 0 {
-        if let Some((t2, tri2)) = sc.hit(p + n * 1e-3, hd, 40.0) {
-            let q = p + n * 1e-3 + hd * t2;
-            let j = tri2 as usize * 3;
-            let mut n2 = (tris[j + 1] - tris[j]).cross(tris[j + 2] - tris[j]).normalize_or_zero();
-            if n2.dot(hd) > 0.0 {
-                n2 = -n2;
-            }
-            let (b2, ..) = sc.surface(tri2 as usize, q, n2);
-            let mut e = if sc.lights.is_empty() { [0.0; 3] } else { lamp_irradiance(sc, q + n2 * 1e-3, n2, rng) };
-            let nl2 = n2.dot(sun_dir0).max(0.0);
-            if nl2 > 0.0 {
-                let s = DIFFUSE * nl2 * sc.transmit(q + n2 * 1e-3, sun_dir0, 1e6);
-                for v in e.iter_mut() {
-                    *v += s;
-                }
-            }
-            // cos-weighted: pdf and cos cancel out; 0.55 = mean albedo of the bounce (conservation)
-            for (k2, v) in col.iter_mut().enumerate() {
-                *v += base[k2] * b2[k2] * e[k2] * 0.55 * (1.0 - metal);
-            }
+    // indirect light: sun and lamp light bounced by the surfaces around (a sunny floor lights the ceiling,
+    // walls tint each other). 0.29.1: more than one bounce (Settings: light bounces, 2 by default) - the
+    // light goes on from wall to wall, so rooms lit through a window or by lamps are no longer dark in the corners.
+    if depth == 0 {
+        let e = indirect_light(job, p, n, hd, rng, light_bounces());
+        for (k2, v) in col.iter_mut().enumerate() {
+            *v += base[k2] * e[k2] * (1.0 - metal);
         }
     }
 
@@ -846,6 +890,33 @@ mod tests {
         let b = job.buf.lock().unwrap();
         let i = (y * job.width as usize + x) * 3;
         (b[i] + b[i + 1] + b[i + 2]) / (3.0 * n)
+    }
+
+    /// more light bounces bring more light to a spot lit only indirectly: the floor next to the sunny face
+    /// of the cube gets light from that face (1 bounce), and from the floor again via the face (2 bounces)
+    #[test]
+    fn more_bounces_bring_more_indirect_light() {
+        let job = new_job((8, 8, 1, 0.0), scene(), Vec3::ZERO, Vec3::Y, Vec3::Z, Vec3::X, 50.0, Vec3::new(0.6, 0.0, 0.8), 1.0, (0, 1.0, 0.0), false, None, false);
+        let (p, n) = (Vec3::new(1.4, 0.0, 1e-3), Vec3::Z);
+        let mean = |bounces: u32| {
+            let mut rng = Rng::new(3, 7, 11);
+            let mut sum = 0.0f32;
+            let (t, b) = basis(n);
+            for _ in 0..4000 {
+                let (r1, r2) = (rng.next(), rng.next());
+                let (r, phi) = (r1.sqrt(), std::f32::consts::TAU * r2);
+                let hd = (t * (r * phi.cos()) + b * (r * phi.sin()) + n * (1.0 - r1).max(0.0).sqrt()).normalize();
+                let e = indirect_light(&job, p, n, hd, &mut rng, bounces);
+                assert!(e.iter().all(|v| v.is_finite() && *v >= 0.0));
+                sum += e[0] + e[1] + e[2];
+            }
+            sum / 4000.0
+        };
+        let (e1, e2, e4) = (mean(1), mean(2), mean(4));
+        assert!(e1 > 0.0, "the sunny face of the cube must light the floor next to it");
+        assert!(e2 > e1 * 1.05, "a second bounce must add light: {e1} -> {e2}");
+        assert!(e4 >= e2 * 0.98, "more bounces never take light away: {e2} -> {e4}");
+        assert!(e4 < e1 * 3.0, "the bounces must lose energy: {e1} -> {e4}");
     }
 
     /// the glass cube lets the sun through: its shadow is much fainter than that of the opaque cube

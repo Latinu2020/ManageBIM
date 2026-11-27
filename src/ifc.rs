@@ -344,7 +344,7 @@ fn make_element(c: &mut Ctx, sh: &Shared, id: u32) -> Option<RawElement> {
     if a.len() < 7 {
         return None;
     }
-    let Some(rep) = a[6].as_ref() else { return None };
+    let rep = a[6].as_ref()?;
     let ty = f.ty(id).to_string();
     let place = a[5].as_ref().map(|p| c.placement(p, 0)).unwrap_or(DMat4::IDENTITY);
     let xf = sh.scale_m * place;
@@ -1473,7 +1473,7 @@ fn frame(loc: DVec3, z: DVec3, xref: DVec3) -> DMat4 {
     DMat4::from_cols(x.extend(0.0), y.extend(0.0), z.extend(0.0), loc.extend(1.0))
 }
 
-fn xf2(pts: &mut Vec<DVec2>, m: &DMat4) {
+fn xf2(pts: &mut [DVec2], m: &DMat4) {
     for p in pts.iter_mut() {
         *p = m.transform_point3(p.extend(0.0)).truncate();
     }

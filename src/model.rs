@@ -1,6 +1,9 @@
 //! The shared data structures: federated model, elements, BVH.
 use glam::{DVec3, Vec3};
 
+/// 2D drawing lines: (layer, [x0, y0, x1, y1]) - plans, sections, sheets and DXF exports.
+pub type CadSegs = Vec<(String, [f64; 4])>;
+
 #[derive(Clone, Copy, Debug)]
 pub struct Aabb {
     pub min: Vec3,
@@ -142,7 +145,8 @@ impl RawModel {
             let cols = std::mem::take(&mut e.colors);
             // the contour edges: pairs of vertices (rounded to 0.1 mm) used only once
             let key = |p: DVec3| ((p.x * 1e4).round() as i64, (p.y * 1e4).round() as i64, (p.z * 1e4).round() as i64);
-            let mut count: std::collections::HashMap<((i64, i64, i64), (i64, i64, i64)), (usize, DVec3, DVec3)> = std::collections::HashMap::new();
+            type EdgeCount = std::collections::HashMap<((i64, i64, i64), (i64, i64, i64)), (usize, DVec3, DVec3)>;
+            let mut count: EdgeCount = std::collections::HashMap::new();
             for t in &top {
                 for k in 0..3 {
                     let (a, b) = (t[k], t[(k + 1) % 3]);

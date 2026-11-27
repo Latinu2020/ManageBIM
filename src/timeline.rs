@@ -73,7 +73,7 @@ pub fn civil_from_days(z: i32) -> (i32, u32, u32) {
 /// Accepts YYYY-MM-DD, DD.MM.YYYY, DD/MM/YYYY
 pub fn parse_date(s: &str) -> Option<i32> {
     let s = s.trim();
-    let parts: Vec<&str> = s.split(|c| c == '-' || c == '.' || c == '/').map(|p| p.trim()).collect();
+    let parts: Vec<&str> = s.split(['-', '.', '/']).map(|p| p.trim()).collect();
     if parts.len() != 3 {
         return None;
     }

@@ -155,47 +155,49 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
     pub(super) fn simulation_ui(&mut self, ui: &mut egui::Ui) {
         let range = self.sim_range();
         ui.horizontal_wrapped(|ui| {
-            let was = self.sim_active;
-            ui.checkbox(&mut self.sim_active, RichText::new("4D Simulation").strong());
-            if self.sim_active && !was {
-                if let Some((s, _)) = range {
-                    if self.sim_day < s as f32 - 1.0 || self.sim_day > range.unwrap().1 as f32 + 1.0 {
-                        self.sim_day = s as f32;
+            let was = self.sim.active;
+            ui.checkbox(&mut self.sim.active, RichText::new("4D Simulation").strong());
+            if self.sim.active && !was {
+                if let Some((s, e)) = range {
+                    if self.sim.day < s as f32 - 1.0 || self.sim.day > e as f32 + 1.0 {
+                        self.sim.day = s as f32;
                     }
                 }
                 self.invalidate_sim();
             }
-            if ui.checkbox(&mut self.sim_only_linked, "Show only scheduled elements").on_hover_text("Hide everything that is not attached to a task - you see only what is being built").clicked() {
+            if ui.checkbox(&mut self.sim.only_linked, "Show only scheduled elements").on_hover_text("Hide everything that is not attached to a task - you see only what is being built").clicked() {
                 self.colors_dirty = true;
             }
-            ui.add_enabled_ui(self.sim_active && range.is_some(), |ui| {
+            // the buttons are enabled only with a schedule range
+            let (r0, r1) = range.unwrap_or_default();
+            ui.add_enabled_ui(self.sim.active && range.is_some(), |ui| {
                 if ui.button("⏮").clicked() {
-                    self.sim_day = range.unwrap().0 as f32 - 0.5;
-                    self.sim_play = false;
+                    self.sim.day = r0 as f32 - 0.5;
+                    self.sim.play = false;
                 }
-                let pl = if self.sim_play { "⏸ Pause" } else { "▶ Play" };
+                let pl = if self.sim.play { "⏸ Pause" } else { "▶ Play" };
                 if ui.button(pl).clicked() {
-                    if !self.sim_play && self.sim_day >= range.unwrap().1 as f32 + 0.99 {
-                        self.sim_day = range.unwrap().0 as f32 - 0.5;
+                    if !self.sim.play && self.sim.day >= r1 as f32 + 0.99 {
+                        self.sim.day = r0 as f32 - 0.5;
                     }
-                    self.sim_play = !self.sim_play;
+                    self.sim.play = !self.sim.play;
                 }
                 if ui.button("⏭").clicked() {
-                    self.sim_day = range.unwrap().1 as f32 + 1.0;
-                    self.sim_play = false;
+                    self.sim.day = r1 as f32 + 1.0;
+                    self.sim.play = false;
                 }
-                ui.add(egui::DragValue::new(&mut self.sim_speed).range(0.5..=365.0).speed(0.5).suffix(" days/s"));
+                ui.add(egui::DragValue::new(&mut self.sim.speed).range(0.5..=365.0).speed(0.5).suffix(" days/s"));
             });
         });
         let Some((s, e)) = range else {
             ui.label(RichText::new("No tasks.").weak());
             return;
         };
-        ui.add_enabled_ui(self.sim_active, |ui| {
+        ui.add_enabled_ui(self.sim.active, |ui| {
             ui.spacing_mut().slider_width = (ui.available_width() - 120.0).max(100.0);
-            ui.add(egui::Slider::new(&mut self.sim_day, (s as f32 - 1.0)..=(e as f32 + 1.0)).show_value(false));
+            ui.add(egui::Slider::new(&mut self.sim.day, (s as f32 - 1.0)..=(e as f32 + 1.0)).show_value(false));
         });
-        ui.label(RichText::new(format!("Date: {}   (range {} – {})", timeline::fmt_date(self.sim_day.floor() as i32), timeline::fmt_date(s), timeline::fmt_date(e))).strong());
+        ui.label(RichText::new(format!("Date: {}   (range {} – {})", timeline::fmt_date(self.sim.day.floor() as i32), timeline::fmt_date(s), timeline::fmt_date(e))).strong());
         // ---- Gantt
         let h = (self.tasks.len() as f32 * 18.0 + 24.0).max(60.0);
         egui::ScrollArea::vertical().id_salt("gantt").auto_shrink([false, false]).show(ui, |ui| {
@@ -243,7 +245,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                 let fg = if g.size().x + 6.0 < r.width() { Color32::from_rgb(15, 20, 25) } else { pal.gantt_text };
                 p.galley_with_override_text_color(tp, g, fg);
             }
-            let cx = x(self.sim_day);
+            let cx = x(self.sim.day);
             p.line_segment([Pos2::new(cx, rect.top()), Pos2::new(cx, rect.bottom())], Stroke::new(2.0_f32, Color32::from_rgb(255, 70, 70)));
             if resp.clicked() {
                 if let Some(pp) = resp.interact_pointer_pos() {
@@ -252,7 +254,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                         self.cur_task = Some(i as usize);
                     }
                     if self.sim_view() {
-                        self.sim_day = s as f32 + (pp.x - rect.left() - 6.0) / (rect.width() - 12.0) * span;
+                        self.sim.day = s as f32 + (pp.x - rect.left() - 6.0) / (rect.width() - 12.0) * span;
                     }
                 }
             }

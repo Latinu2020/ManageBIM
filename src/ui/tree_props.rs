@@ -1,6 +1,11 @@
 //! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
+/// Draws the show / hide eye of a tree row for the given elements.
+type EyeButton<'a> = dyn Fn(&mut egui::Ui, &[ElemId], &mut Vec<Action>) + 'a;
+/// The right-click menu of a tree group.
+type GroupMenu<'a> = dyn Fn(&egui::Response, &Vec<ElemId>, &mut Vec<Action>) + 'a;
+
 impl App {
     pub(super) fn tree_ui(&self, ui: &mut egui::Ui) -> Vec<Action> {
         let mut acts = Vec::new();
@@ -112,8 +117,8 @@ impl App {
         key: egui::Id,
         open: bool,
         ctrl: bool,
-        eye_btn: &dyn Fn(&mut egui::Ui, &[ElemId], &mut Vec<Action>),
-        group_menu: &dyn Fn(&egui::Response, &Vec<ElemId>, &mut Vec<Action>),
+        eye_btn: &EyeButton<'_>,
+        group_menu: &GroupMenu<'_>,
         acts: &mut Vec<Action>,
     ) {
         let ids: Vec<ElemId> = node.ids.iter().map(|e| ElemId { m: mi as u32, e: *e }).collect();
@@ -150,8 +155,8 @@ impl App {
         m: &crate::model::Model,
         ids: &[ElemId],
         ctrl: bool,
-        eye_btn: &dyn Fn(&mut egui::Ui, &[ElemId], &mut Vec<Action>),
-        group_menu: &dyn Fn(&egui::Response, &Vec<ElemId>, &mut Vec<Action>),
+        eye_btn: &EyeButton<'_>,
+        group_menu: &GroupMenu<'_>,
         acts: &mut Vec<Action>,
     ) {
         for (k, id) in ids.iter().enumerate() {

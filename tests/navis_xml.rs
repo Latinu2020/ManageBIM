@@ -371,11 +371,11 @@ fn tools_grids_levels_sections_and_project_roundtrip() {
     assert!(app.section.enabled && app.section.mode == SectionMode::Box);
     assert!((app.section.bmin[2] - (levels[0].1 - 0.01)).abs() < 1e-4 && app.section.bmax[2] < levels[1].1);
     // adjustable margins: the slab below the level included
-    app.level_below = 0.3;
+    app.sec.level_below = 0.3;
     app.section_level_box(0);
     assert!((app.section.bmin[2] - (levels[0].1 - 0.31)).abs() < 1e-4);
     app.section_level_step(1);
-    assert_eq!(app.section_level, Some(1));
+    assert_eq!(app.sec.level, Some(1));
     app.section_plan_cut(1, 1.2);
     assert_eq!(app.section.mode, SectionMode::Planes);
     assert!((app.section.planes[0].offset - (levels[1].1 + 1.2)).abs() < 1e-4);

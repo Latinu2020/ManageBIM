@@ -334,7 +334,7 @@ impl App {
                         } else {
                             self.section.bmax[ax] = (self.section.bmax[ax] + dm).max(self.section.bmin[ax] + 0.01);
                         }
-                        self.section_level = None;
+                        self.sec.level = None;
                     }
                 }
             }
@@ -345,175 +345,7 @@ impl App {
         // ---- the selected coordination object (Coordination objects window open): gizmo with three modes,
         // as for lights - Resize (arrows on faces, in the rotated object's axes), Move (X / Y / Z arrows from the
         // centre), Rotate (circle around the vertical). The virtual model is rebuilt when the mouse is released.
-        let mut coord_hover: Option<usize> = None;
-        let coord_edit = if self.coord_open { self.coord_sel.filter(|&i| i < self.coord_objects.len()) } else { None };
-        if let Some(ci) = coord_edit {
-            let vpm = params.view_proj;
-            let (a, b) = (Vec3::from(self.coord_objects[ci].min), Vec3::from(self.coord_objects[ci].max));
-            let c = (a + b) * 0.5;
-            let h = (b - a) * 0.5;
-            let rot = self.coord_objects[ci].rot_deg.to_radians();
-            // the object's local axes (rotated around the vertical)
-            let ex = Vec3::new(rot.cos(), rot.sin(), 0.0);
-            let ey = Vec3::new(-rot.sin(), rot.cos(), 0.0);
-            let ez = Vec3::Z;
-            let local = [ex, ey, ez];
-            let kc = self.coord_objects[ci].kind.color();
-            let base = Color32::from_rgb(kc[0], kc[1], kc[2]);
-            let mode = self.coord_mode;
-            // outline of the rotated box (visible through walls too)
-            let corner = |i: u32| c + ex * if i & 1 == 0 { -h.x } else { h.x } + ey * if i & 2 == 0 { -h.y } else { h.y } + ez * if i & 4 == 0 { -h.z } else { h.z };
-            for (i, j) in [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)] {
-                if let (Some(p), Some(q)) = (to_screen(&vpm, rect, corner(i)), to_screen(&vpm, rect, corner(j))) {
-                    painter.line_segment([p, q], Stroke::new(1.8_f32, base));
-                }
-            }
-            let dist = (c - self.cam.eye()).length().max(0.5);
-            let probe_c = if resp.drag_started_by(egui::PointerButton::Primary) { ui.input(|i| i.pointer.press_origin()).or(hover) } else { hover };
-            let axis_col = [Color32::from_rgb(240, 80, 70), Color32::from_rgb(80, 220, 100), Color32::from_rgb(80, 140, 255)];
-            let seg_near = |p0: Pos2, end: Pos2, hp: Pos2| {
-                let ab = end - p0;
-                let t = ((hp - p0).dot(ab) / ab.length_sq().max(1e-6)).clamp(0.0, 1.0);
-                hp.distance(p0 + ab * t)
-            };
-            // the rotation circle in the horizontal plane of the centre
-            let ring_r = dist * 0.14;
-            let ring_pt = |t: f32| c + Vec3::new(t.cos(), t.sin(), 0.0) * ring_r;
-            if mode == 2 {
-                let mut pts = Vec::with_capacity(97);
-                let mut best = f32::MAX;
-                for k in 0..=96 {
-                    if let Some(s) = to_screen(&vpm, rect, ring_pt(k as f32 / 96.0 * std::f32::consts::TAU)) {
-                        if let Some(hp) = probe_c {
-                            best = best.min(s.distance(hp));
-                        }
-                        pts.push(s);
-                    }
-                }
-                if best < 12.0 && self.coord_drag.is_none() && handle_hover.is_none() {
-                    coord_hover = Some(0);
-                }
-                let active = self.coord_drag.is_some() || coord_hover.is_some();
-                let col = if active { Color32::from_rgb(255, 220, 60) } else { axis_col[2] };
-                if pts.len() > 1 {
-                    painter.add(egui::Shape::line(pts, Stroke::new(if active { 5.0_f32 } else { 3.0 }, col)));
-                }
-                // the object's direction (local X axis), so the angle shows
-                if let (Some(p0), Some(p1)) = (to_screen(&vpm, rect, c), to_screen(&vpm, rect, c + ex * ring_r)) {
-                    painter.line_segment([p0, p1], Stroke::new(2.0_f32, col));
-                    painter.text(p1 + EV::new(8.0, -8.0), Align2::LEFT_BOTTOM, format!("{:.1}°", self.coord_objects[ci].rot_deg), FontId::proportional(13.0), col);
-                }
-            } else {
-                for k in 0..6usize {
-                    let (ax, s) = (k / 2, if k % 2 == 0 { -1.0f32 } else { 1.0 });
-                    // Resize: from the centre of each face, in local axes; Move: from the centre, in world axes (+ only)
-                    let (start, dir) = if mode == 0 {
-                        (c + local[ax] * h[ax] * s, local[ax] * s)
-                    } else {
-                        if s < 0.0 {
-                            continue;
-                        }
-                        let mut e = Vec3::ZERO;
-                        e[ax] = 1.0;
-                        (c, e)
-                    };
-                    let len = if mode == 0 { dist * 0.06 } else { dist * 0.13 };
-                    let (Some(p0), Some(p1)) = (to_screen(&vpm, rect, start), to_screen(&vpm, rect, start + dir * len)) else { continue };
-                    let d = (p1 - p0).normalized();
-                    if !(d.x.is_finite() && d.y.is_finite()) {
-                        continue;
-                    }
-                    let end = if mode == 0 { p0 + d * 44.0 } else { p1 };
-                    let tip = end - d * 14.0;
-                    if probe_c.is_some_and(|hp| rect.contains(hp) && seg_near(p0, end, hp) < 13.0) && self.coord_drag.is_none() && coord_hover.is_none() && handle_hover.is_none() {
-                        coord_hover = Some(k);
-                    }
-                    let active = self.coord_drag == Some(k) || (coord_hover == Some(k) && self.coord_drag.is_none());
-                    let col = if active { Color32::from_rgb(255, 220, 60) } else if mode == 1 { axis_col[ax] } else { base };
-                    painter.line_segment([p0, tip], Stroke::new(if active { 5.0_f32 } else { 3.5 }, col));
-                    let n = EV::new(-d.y, d.x);
-                    painter.add(egui::Shape::convex_polygon(vec![end, tip + n * 8.0, tip - n * 8.0], col, Stroke::new(1.2_f32, Color32::WHITE)));
-                    if mode == 1 {
-                        painter.text(end + d * 12.0, Align2::CENTER_CENTER, ["X", "Y", "Z"][ax], FontId::proportional(14.0), col);
-                    } else {
-                        painter.circle(p0, 5.0, col, Stroke::new(1.2_f32, Color32::WHITE));
-                    }
-                }
-            }
-            if coord_hover.is_some() || self.coord_drag.is_some() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-            }
-            // the cursor angle in the horizontal plane of the centre (rotation)
-            let cam_r = self.cam;
-            let ang_at = |hp: Pos2| -> Option<f32> {
-                let (ro, rd) = cam_r.ray(uv(hp), aspect);
-                if rd.z.abs() < 1e-4 {
-                    return None;
-                }
-                let t = (c.z - ro.z) / rd.z;
-                if t <= 0.0 {
-                    return None;
-                }
-                let q = ro + rd * t - c;
-                Some(q.y.atan2(q.x))
-            };
-            if resp.drag_started_by(egui::PointerButton::Primary) && coord_hover.is_some() {
-                self.coord_drag = coord_hover;
-                self.coord_rot_last = if mode == 2 { probe_c.and_then(ang_at) } else { None };
-            }
-            if let Some(k) = self.coord_drag {
-                if resp.dragged_by(egui::PointerButton::Primary) {
-                    let o = &mut self.coord_objects[ci];
-                    if mode == 2 {
-                        if let (Some(hp), Some(last)) = (resp.interact_pointer_pos(), self.coord_rot_last) {
-                            if let Some(a1) = ang_at(hp) {
-                                let mut da = a1 - last;
-                                while da > std::f32::consts::PI { da -= std::f32::consts::TAU; }
-                                while da < -std::f32::consts::PI { da += std::f32::consts::TAU; }
-                                o.rot_deg = (o.rot_deg + da.to_degrees()).rem_euclid(360.0);
-                                // Shift: 15 degree steps (as in Revit / AutoCAD)
-                                self.coord_rot_last = Some(a1);
-                            }
-                        }
-                    } else {
-                        let (ax, minf) = (k / 2, k % 2 == 0);
-                        let dir = if mode == 0 { local[ax] } else { let mut e = Vec3::ZERO; e[ax] = 1.0; e };
-                        let start = if mode == 0 { c + local[ax] * h[ax] * if minf { -1.0 } else { 1.0 } } else { c };
-                        if let (Some(s0), Some(s1)) = (to_screen(&vpm, rect, start), to_screen(&vpm, rect, start + dir)) {
-                            let sv = s1 - s0;
-                            let ppm = sv.length();
-                            if ppm > 1e-3 {
-                                let dm = resp.drag_delta().dot(sv / ppm) / ppm;
-                                if dm.is_finite() {
-                                    let (nc, mut nh);
-                                    nh = h;
-                                    if mode == 0 {
-                                        // the face moves by dm, the opposite face stays in place
-                                        let sgn = if minf { -1.0 } else { 1.0 };
-                                        let grow = (sgn * dm).max(0.005 - h[ax] * 2.0);
-                                        nh[ax] = (h[ax] + grow * 0.5).max(0.005);
-                                        nc = c + local[ax] * sgn * grow * 0.5;
-                                    } else {
-                                        nc = c + dir * dm;
-                                    }
-                                    o.min = (nc - nh).to_array();
-                                    o.max = (nc + nh).to_array();
-                                }
-                            }
-                        }
-                    }
-                }
-                if !resp.dragged() {
-                    self.coord_drag = None;
-                    self.coord_rot_last = None;
-                    if mode == 2 && ui.input(|i| i.modifiers.shift) {
-                        let o = &mut self.coord_objects[ci];
-                        o.rot_deg = (o.rot_deg / 15.0).round() * 15.0 % 360.0;
-                    }
-                    self.rebuild_coord_model();
-                }
-            }
-        }
+        self.vp_coord_gizmo(ui, &painter, rect, &resp, &params, hover, handle_hover);
         // ---- lights: 3D gizmo. Move = the X/Y/Z arrows, Rotate = the XY / XZ / YZ circles.
         // The hit test and the drag start happen BEFORE navigation: otherwise the orbit moves
         // the camera in the same frame as the light, and the circles run away from the cursor (rotation did not work).
@@ -524,16 +356,11 @@ impl App {
             let dist = (lp - cam_c.eye()).length().max(0.5);
             (i, lp, dist * 0.13, dist * 0.16)
         });
-        let unit = |a: usize| {
-            let mut v = Vec3::ZERO;
-            v[a] = 1.0;
-            v
-        };
         // the cursor angle around the light, in the plane perpendicular to axis `ai`.
         // Normal: the mouse ray intersected with the plane (exact, correct sign). Plane seen edge-on:
         // the angle on screen, with the sign given by the axis orientation relative to the camera.
         let ring_angle = |lp: Vec3, ai: usize, ptr: Pos2, screen: bool| -> Option<f32> {
-            let ax = unit(ai);
+            let ax = axis_unit(ai);
             if !screen {
                 let (u, v) = match ai { 0 => (Vec3::Y, Vec3::Z), 1 => (Vec3::Z, Vec3::X), _ => (Vec3::X, Vec3::Y) };
                 let (o, d) = cam_c.ray(uv(ptr), aspect);
@@ -556,14 +383,6 @@ impl App {
             let s = if ax.dot(-cam_c.fwd()) >= 0.0 { -1.0 } else { 1.0 };
             Some(s * q.y.atan2(q.x))
         };
-        let ring_point = |lp: Vec3, plane: usize, r: f32, t: f32| -> Vec3 {
-            let (u, v) = (t.cos() * r, t.sin() * r);
-            match plane {
-                0 => lp + Vec3::new(u, v, 0.0),  // XY -> rotation around Z
-                1 => lp + Vec3::new(u, 0.0, v),  // XZ -> around Y
-                _ => lp + Vec3::new(0.0, u, v), // YZ -> around X
-            }
-        };
         let drag_start = resp.drag_started_by(egui::PointerButton::Primary);
         // at the start of the drag we test the point where the button was pressed, not where the mouse got to
         let probe = if drag_start { ui.input(|i| i.pointer.press_origin()).or(hover) } else { hover };
@@ -574,7 +393,7 @@ impl App {
                 if !self.light_rotate_mode {
                     let mut best = 16.0f32;
                     for a in 0..3 {
-                        if let (Some(sp), Some(tp)) = (to_screen(&params.view_proj, rect, lp), to_screen(&params.view_proj, rect, lp + unit(a) * len)) {
+                        if let (Some(sp), Some(tp)) = (to_screen(&params.view_proj, rect, lp), to_screen(&params.view_proj, rect, lp + axis_unit(a) * len)) {
                             let v = tp - sp;
                             if v.length() > 1.0 {
                                 let t = ((ptr - sp).dot(v) / v.dot(v)).clamp(0.0, 1.0);
@@ -625,7 +444,7 @@ impl App {
                     let ai = [2usize, 1, 0][plane];
                     // plane seen almost edge-on (ray parallel to it): we measure the angle on screen
                     let (_, d) = cam_c.ray(uv(ptr), aspect);
-                    let screen = d.dot(unit(ai)).abs() < 0.2;
+                    let screen = d.dot(axis_unit(ai)).abs() < 0.2;
                     if let Some(a0) = ring_angle(lp, ai, ptr, screen) {
                         self.light_rot = Some((ai, a0, screen));
                     }
@@ -634,7 +453,7 @@ impl App {
         }
         if resp.dragged_by(egui::PointerButton::Primary) {
             if let (Some((li, lp, len, _)), Some(a)) = (light_g, self.light_axis) {
-                if let (Some(sp), Some(tp)) = (to_screen(&params.view_proj, rect, lp), to_screen(&params.view_proj, rect, lp + unit(a) * len)) {
+                if let (Some(sp), Some(tp)) = (to_screen(&params.view_proj, rect, lp), to_screen(&params.view_proj, rect, lp + axis_unit(a) * len)) {
                     let v = tp - sp;
                     if v.length() > 1.0 {
                         let meters = resp.drag_delta().dot(v) / v.dot(v) * len;
@@ -656,7 +475,7 @@ impl App {
                     while da < -std::f32::consts::PI {
                         da += std::f32::consts::TAU;
                     }
-                    self.lights[li].rotate_direction(unit(ai), da);
+                    self.lights[li].rotate_direction(axis_unit(ai), da);
                     self.light_rot = Some((ai, a, screen));
                 }
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
@@ -832,129 +651,7 @@ impl App {
                 self.xform_point(s, n, id);
             }
         }
-        // ---- lights: drawing. Each lamp = a bulb with halo and rays (clearly visible on any background and
-        // through walls), a label with name and power. Spot / Distant have a direction arrow (Spot also the cone).
-        // The selected light has its gizmo on top: X/Y/Z arrows (Move) or rotation circles (Rotate).
-        let axis_col = [Color32::from_rgb(240, 80, 70), Color32::from_rgb(80, 220, 100), Color32::from_rgb(80, 140, 255)];
-        let tau = std::f32::consts::TAU;
-        for (li, lamp) in self.lights.iter().enumerate() {
-            let lp = Vec3::from(lamp.pos);
-            let Some(sp) = to_screen(&params.view_proj, rect, lp) else { continue };
-            if !rect.expand(60.0).contains(sp) {
-                continue;
-            }
-            let selected = self.light_sel == Some(li);
-            if !lamp.enabled {
-                painter.circle_stroke(sp, 6.0, Stroke::new(1.5_f32, Color32::from_gray(140)));
-                painter.text(sp + EV::new(10.0, -18.0), Align2::LEFT_TOP, format!("{} (off)", lamp.name), FontId::proportional(12.0), Color32::from_gray(150));
-                continue;
-            }
-            let lc = Color32::from_rgb(lamp.color[0], lamp.color[1], lamp.color[2]);
-            let dist = (lp - cam_c.eye()).length().max(0.5);
-            // halo + rays + bulb
-            let sz = (6.0 + lamp.power.clamp(0.0, 20.0) * 0.45).clamp(7.0, 15.0);
-            for (k, a) in [(3.4f32, 22u8), (2.5, 40), (1.7, 70)] {
-                painter.circle_filled(sp, sz * k, Color32::from_rgba_unmultiplied(lc.r(), lc.g(), lc.b(), a));
-            }
-            for k in 0..8 {
-                let t = k as f32 * tau / 8.0;
-                let d = EV::new(t.cos(), t.sin());
-                painter.line_segment([sp + d * (sz + 3.0), sp + d * (sz + 9.0)], Stroke::new(2.0_f32, lc));
-            }
-            painter.circle_filled(sp, sz, lc);
-            painter.circle_filled(sp, sz * 0.45, Color32::WHITE);
-            painter.circle_stroke(sp, sz, Stroke::new(if selected { 2.5_f32 } else { 1.5 }, if selected { accent() } else { Color32::BLACK }));
-            // direction: an arrow of constant length on screen; Spot: also the light cone
-            if lamp.kind != crate::lights::LightKind::Point {
-                let dir = lamp.direction();
-                if let Some(tp) = to_screen(&params.view_proj, rect, lp + dir * dist * 0.22) {
-                    let v = tp - sp;
-                    if v.length() > 2.0 {
-                        let dn = v / v.length();
-                        let perp = EV::new(-dn.y, dn.x);
-                        painter.line_segment([sp, tp], Stroke::new(3.0_f32, lc));
-                        painter.add(egui::Shape::convex_polygon(vec![tp + dn * 4.0, tp - dn * 14.0 + perp * 7.0, tp - dn * 14.0 - perp * 7.0], lc, Stroke::new(1.0_f32, Color32::BLACK)));
-                    }
-                }
-                if lamp.kind == crate::lights::LightKind::Spot {
-                    let half = (lamp.angle.clamp(5.0, 120.0) * 0.5).to_radians().min(1.25);
-                    let cl = dist * 0.18;
-                    let cr = cl * half.tan();
-                    let u = dir.any_orthonormal_vector();
-                    let w = dir.cross(u);
-                    let c = lp + dir * cl;
-                    let pts: Vec<Pos2> = (0..=48)
-                        .filter_map(|k| {
-                            let t = k as f32 / 48.0 * tau;
-                            to_screen(&params.view_proj, rect, c + (u * t.cos() + w * t.sin()) * cr)
-                        })
-                        .collect();
-                    if pts.len() > 1 {
-                        for k in [0usize, 12, 24, 36] {
-                            if let Some(q) = pts.get(k) {
-                                painter.line_segment([sp, *q], Stroke::new(1.2_f32, lc.gamma_multiply(0.75)));
-                            }
-                        }
-                        painter.add(egui::Shape::line(pts, Stroke::new(1.5_f32, lc.gamma_multiply(0.85))));
-                    }
-                }
-            }
-            if selected {
-                if self.light_rotate_mode {
-                    let rr = dist * 0.16;
-                    let rotating = self.light_rot.map(|r| r.0);
-                    for plane in 0..3 {
-                        let pts: Vec<Pos2> = (0..=96).filter_map(|k| to_screen(&params.view_proj, rect, ring_point(lp, plane, rr, k as f32 / 96.0 * tau))).collect();
-                        if pts.len() > 1 {
-                            // circle colour = colour of the axis it rotates around (XY -> Z blue ...)
-                            let ai = [2usize, 1, 0][plane];
-                            let active = light_ring_hover == Some(plane) || rotating == Some(ai);
-                            let rc = if active { Color32::from_rgb(255, 220, 60) } else { axis_col[ai] };
-                            let rw: f32 = if active { 5.0 } else { 3.0 };
-                            painter.add(egui::Shape::line(pts, Stroke::new(rw, rc)));
-                        }
-                    }
-                } else {
-                    let len = dist * 0.13;
-                    for a in 0..3 {
-                        if let Some(tp) = to_screen(&params.view_proj, rect, lp + unit(a) * len) {
-                            let v = tp - sp;
-                            if v.length() > 1.0 {
-                                let active = self.light_axis == Some(a) || light_axis_hover == Some(a);
-                                let w: f32 = if active { 6.0 } else { 4.0 };
-                                let c = if active { Color32::from_rgb(255, 220, 60) } else { axis_col[a] };
-                                painter.line_segment([sp, tp], Stroke::new(w, c));
-                                let dn = v / v.length();
-                                let perp = EV::new(-dn.y, dn.x);
-                                painter.add(egui::Shape::convex_polygon(vec![tp + dn * 6.0, tp - dn * 14.0 + perp * 8.0, tp - dn * 14.0 - perp * 8.0], c, Stroke::NONE));
-                                painter.text(tp + dn * 18.0, Align2::CENTER_CENTER, ["X", "Y", "Z"][a], FontId::proportional(15.0), c);
-                            }
-                        }
-                    }
-                }
-            }
-            // label on a dark background: readable on a white or black model
-            let g = painter.layout_no_wrap(format!("{} · {:.1} lux", lamp.name, lamp.power), FontId::proportional(13.0), Color32::WHITE);
-            let pos = sp + EV::new(sz + 12.0, -sz - 20.0);
-            painter.rect_filled(Rect::from_min_size(pos - EV::splat(4.0), g.size() + EV::splat(8.0)), 4.0, Color32::from_black_alpha(175));
-            painter.galley(pos, g, Color32::WHITE);
-        }
-        // in Rotate mode: the current direction (azimuth / tilt) under the light
-        if let (Some((li, lp, ..)), true) = (light_g, self.light_rotate_mode) {
-            if let Some(sp) = to_screen(&params.view_proj, rect, lp) {
-                let lamp = &self.lights[li];
-                let msg = if lamp.kind == crate::lights::LightKind::Point {
-                    "Point light: drag a circle to turn it into a Spot light and aim it".to_string()
-                } else {
-                    let (az, tilt) = lamp.aim_angles();
-                    format!("Azimuth {az:.0}° · Tilt {tilt:.0}°  (drag a circle)")
-                };
-                let g = painter.layout_no_wrap(msg, FontId::proportional(12.5), Color32::WHITE);
-                let pos = sp + EV::new(-g.size().x * 0.5, 34.0);
-                painter.rect_filled(Rect::from_min_size(pos - EV::splat(4.0), g.size() + EV::splat(8.0)), 4.0, Color32::from_black_alpha(190));
-                painter.galley(pos, g, Color32::WHITE);
-            }
-        }
+        self.vp_draw_lights(&painter, rect, &params, light_g, light_axis_hover, light_ring_hover);
         let grid_click = resp.clicked() && self.grid_pick > 0 && snap.is_some() && !xform_click;
         if grid_click {
             if let Some(s) = snap {
@@ -1042,7 +739,7 @@ impl App {
                 self.settings.cad_view_pos = 0.0;
                 self.settings.show_cad_plane = false;
                 self.face_pick = false;
-                self.section_preview_open = true;
+                self.sec.preview_open = true;
                 self.settings.save();
                 self.toast(format!("{} face chosen - the 2D drawing is in the preview; export it as PDF / DWG", self.settings.cad_view.label()));
             }
@@ -1064,7 +761,325 @@ impl App {
         if let Some(i) = light_click {
             self.light_sel = Some(i);
         }
-        if resp.clicked() && !grid_click && !xform_click && light_click.is_none() && !face_click && !self.face_pick {
+        self.vp_clicks(ui, rect, &resp, &params, mods, snap, grid_click || xform_click || light_click.is_some() || face_click || self.face_pick);
+
+        // --------------------------------------------------------- overlays
+        self.viewport_overlays(ui, &painter, rect, &resp, &params, overlays, &pal, hover, snap, snap_kind);
+    }
+
+    /// The gizmo of the selected coordination object (Coordination objects window open): Resize arrows on the faces,
+    /// Move arrows from the centre, Rotate circle around the vertical.
+    #[allow(clippy::too_many_arguments)]
+    fn vp_coord_gizmo(&mut self, ui: &mut egui::Ui, painter: &egui::Painter, rect: Rect, resp: &egui::Response, params: &crate::render::FrameParams, hover: Option<Pos2>, handle_hover: Option<usize>) {
+        let uv = |p: Pos2| Vec2::new((p.x - rect.left()) / rect.width(), (p.y - rect.top()) / rect.height());
+        let aspect = rect.width() / rect.height().max(1.0);
+        let mut coord_hover: Option<usize> = None;
+        let coord_edit = if self.coord_open { self.coord_sel.filter(|&i| i < self.coord_objects.len()) } else { None };
+        if let Some(ci) = coord_edit {
+            let vpm = params.view_proj;
+            let (a, b) = (Vec3::from(self.coord_objects[ci].min), Vec3::from(self.coord_objects[ci].max));
+            let c = (a + b) * 0.5;
+            let h = (b - a) * 0.5;
+            let rot = self.coord_objects[ci].rot_deg.to_radians();
+            // the object's local axes (rotated around the vertical)
+            let ex = Vec3::new(rot.cos(), rot.sin(), 0.0);
+            let ey = Vec3::new(-rot.sin(), rot.cos(), 0.0);
+            let ez = Vec3::Z;
+            let local = [ex, ey, ez];
+            let kc = self.coord_objects[ci].kind.color();
+            let base = Color32::from_rgb(kc[0], kc[1], kc[2]);
+            let mode = self.coord_mode;
+            // outline of the rotated box (visible through walls too)
+            let corner = |i: u32| c + ex * if i & 1 == 0 { -h.x } else { h.x } + ey * if i & 2 == 0 { -h.y } else { h.y } + ez * if i & 4 == 0 { -h.z } else { h.z };
+            for (i, j) in [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)] {
+                if let (Some(p), Some(q)) = (to_screen(&vpm, rect, corner(i)), to_screen(&vpm, rect, corner(j))) {
+                    painter.line_segment([p, q], Stroke::new(1.8_f32, base));
+                }
+            }
+            let dist = (c - self.cam.eye()).length().max(0.5);
+            let probe_c = if resp.drag_started_by(egui::PointerButton::Primary) { ui.input(|i| i.pointer.press_origin()).or(hover) } else { hover };
+            let axis_col = [Color32::from_rgb(240, 80, 70), Color32::from_rgb(80, 220, 100), Color32::from_rgb(80, 140, 255)];
+            let seg_near = |p0: Pos2, end: Pos2, hp: Pos2| {
+                let ab = end - p0;
+                let t = ((hp - p0).dot(ab) / ab.length_sq().max(1e-6)).clamp(0.0, 1.0);
+                hp.distance(p0 + ab * t)
+            };
+            // the rotation circle in the horizontal plane of the centre
+            let ring_r = dist * 0.14;
+            let ring_pt = |t: f32| c + Vec3::new(t.cos(), t.sin(), 0.0) * ring_r;
+            if mode == 2 {
+                let mut pts = Vec::with_capacity(97);
+                let mut best = f32::MAX;
+                for k in 0..=96 {
+                    if let Some(s) = to_screen(&vpm, rect, ring_pt(k as f32 / 96.0 * std::f32::consts::TAU)) {
+                        if let Some(hp) = probe_c {
+                            best = best.min(s.distance(hp));
+                        }
+                        pts.push(s);
+                    }
+                }
+                if best < 12.0 && self.coord_drag.is_none() && handle_hover.is_none() {
+                    coord_hover = Some(0);
+                }
+                let active = self.coord_drag.is_some() || coord_hover.is_some();
+                let col = if active { Color32::from_rgb(255, 220, 60) } else { axis_col[2] };
+                if pts.len() > 1 {
+                    painter.add(egui::Shape::line(pts, Stroke::new(if active { 5.0_f32 } else { 3.0 }, col)));
+                }
+                // the object's direction (local X axis), so the angle shows
+                if let (Some(p0), Some(p1)) = (to_screen(&vpm, rect, c), to_screen(&vpm, rect, c + ex * ring_r)) {
+                    painter.line_segment([p0, p1], Stroke::new(2.0_f32, col));
+                    painter.text(p1 + EV::new(8.0, -8.0), Align2::LEFT_BOTTOM, format!("{:.1}°", self.coord_objects[ci].rot_deg), FontId::proportional(13.0), col);
+                }
+            } else {
+                for k in 0..6usize {
+                    let (ax, s) = (k / 2, if k % 2 == 0 { -1.0f32 } else { 1.0 });
+                    // Resize: from the centre of each face, in local axes; Move: from the centre, in world axes (+ only)
+                    let (start, dir) = if mode == 0 {
+                        (c + local[ax] * h[ax] * s, local[ax] * s)
+                    } else {
+                        if s < 0.0 {
+                            continue;
+                        }
+                        let mut e = Vec3::ZERO;
+                        e[ax] = 1.0;
+                        (c, e)
+                    };
+                    let len = if mode == 0 { dist * 0.06 } else { dist * 0.13 };
+                    let (Some(p0), Some(p1)) = (to_screen(&vpm, rect, start), to_screen(&vpm, rect, start + dir * len)) else { continue };
+                    let d = (p1 - p0).normalized();
+                    if !(d.x.is_finite() && d.y.is_finite()) {
+                        continue;
+                    }
+                    let end = if mode == 0 { p0 + d * 44.0 } else { p1 };
+                    let tip = end - d * 14.0;
+                    if probe_c.is_some_and(|hp| rect.contains(hp) && seg_near(p0, end, hp) < 13.0) && self.coord_drag.is_none() && coord_hover.is_none() && handle_hover.is_none() {
+                        coord_hover = Some(k);
+                    }
+                    let active = self.coord_drag == Some(k) || (coord_hover == Some(k) && self.coord_drag.is_none());
+                    let col = if active { Color32::from_rgb(255, 220, 60) } else if mode == 1 { axis_col[ax] } else { base };
+                    painter.line_segment([p0, tip], Stroke::new(if active { 5.0_f32 } else { 3.5 }, col));
+                    let n = EV::new(-d.y, d.x);
+                    painter.add(egui::Shape::convex_polygon(vec![end, tip + n * 8.0, tip - n * 8.0], col, Stroke::new(1.2_f32, Color32::WHITE)));
+                    if mode == 1 {
+                        painter.text(end + d * 12.0, Align2::CENTER_CENTER, ["X", "Y", "Z"][ax], FontId::proportional(14.0), col);
+                    } else {
+                        painter.circle(p0, 5.0, col, Stroke::new(1.2_f32, Color32::WHITE));
+                    }
+                }
+            }
+            if coord_hover.is_some() || self.coord_drag.is_some() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+            }
+            // the cursor angle in the horizontal plane of the centre (rotation)
+            let cam_r = self.cam;
+            let ang_at = |hp: Pos2| -> Option<f32> {
+                let (ro, rd) = cam_r.ray(uv(hp), aspect);
+                if rd.z.abs() < 1e-4 {
+                    return None;
+                }
+                let t = (c.z - ro.z) / rd.z;
+                if t <= 0.0 {
+                    return None;
+                }
+                let q = ro + rd * t - c;
+                Some(q.y.atan2(q.x))
+            };
+            if resp.drag_started_by(egui::PointerButton::Primary) && coord_hover.is_some() {
+                self.coord_drag = coord_hover;
+                self.coord_rot_last = if mode == 2 { probe_c.and_then(ang_at) } else { None };
+            }
+            if let Some(k) = self.coord_drag {
+                if resp.dragged_by(egui::PointerButton::Primary) {
+                    let o = &mut self.coord_objects[ci];
+                    if mode == 2 {
+                        if let (Some(hp), Some(last)) = (resp.interact_pointer_pos(), self.coord_rot_last) {
+                            if let Some(a1) = ang_at(hp) {
+                                let mut da = a1 - last;
+                                while da > std::f32::consts::PI { da -= std::f32::consts::TAU; }
+                                while da < -std::f32::consts::PI { da += std::f32::consts::TAU; }
+                                o.rot_deg = (o.rot_deg + da.to_degrees()).rem_euclid(360.0);
+                                // Shift: 15 degree steps (as in Revit / AutoCAD)
+                                self.coord_rot_last = Some(a1);
+                            }
+                        }
+                    } else {
+                        let (ax, minf) = (k / 2, k % 2 == 0);
+                        let dir = if mode == 0 { local[ax] } else { let mut e = Vec3::ZERO; e[ax] = 1.0; e };
+                        let start = if mode == 0 { c + local[ax] * h[ax] * if minf { -1.0 } else { 1.0 } } else { c };
+                        if let (Some(s0), Some(s1)) = (to_screen(&vpm, rect, start), to_screen(&vpm, rect, start + dir)) {
+                            let sv = s1 - s0;
+                            let ppm = sv.length();
+                            if ppm > 1e-3 {
+                                let dm = resp.drag_delta().dot(sv / ppm) / ppm;
+                                if dm.is_finite() {
+                                    let (nc, mut nh);
+                                    nh = h;
+                                    if mode == 0 {
+                                        // the face moves by dm, the opposite face stays in place
+                                        let sgn = if minf { -1.0 } else { 1.0 };
+                                        let grow = (sgn * dm).max(0.005 - h[ax] * 2.0);
+                                        nh[ax] = (h[ax] + grow * 0.5).max(0.005);
+                                        nc = c + local[ax] * sgn * grow * 0.5;
+                                    } else {
+                                        nc = c + dir * dm;
+                                    }
+                                    o.min = (nc - nh).to_array();
+                                    o.max = (nc + nh).to_array();
+                                }
+                            }
+                        }
+                    }
+                }
+                if !resp.dragged() {
+                    self.coord_drag = None;
+                    self.coord_rot_last = None;
+                    if mode == 2 && ui.input(|i| i.modifiers.shift) {
+                        let o = &mut self.coord_objects[ci];
+                        o.rot_deg = (o.rot_deg / 15.0).round() * 15.0 % 360.0;
+                    }
+                    self.rebuild_coord_model();
+                }
+            }
+        }
+    }
+
+    /// Draws the lamps placed in the model (bulb, halo, label, direction and cone) and the gizmo of the selected one.
+    #[allow(clippy::too_many_arguments)]
+    fn vp_draw_lights(&mut self, painter: &egui::Painter, rect: Rect, params: &crate::render::FrameParams, light_g: Option<(usize, Vec3, f32, f32)>, light_axis_hover: Option<usize>, light_ring_hover: Option<usize>) {
+        let cam_c = self.cam;
+        // ---- lights: drawing. Each lamp = a bulb with halo and rays (clearly visible on any background and
+        // through walls), a label with name and power. Spot / Distant have a direction arrow (Spot also the cone).
+        // The selected light has its gizmo on top: X/Y/Z arrows (Move) or rotation circles (Rotate).
+        let axis_col = [Color32::from_rgb(240, 80, 70), Color32::from_rgb(80, 220, 100), Color32::from_rgb(80, 140, 255)];
+        let tau = std::f32::consts::TAU;
+        for (li, lamp) in self.lights.iter().enumerate() {
+            let lp = Vec3::from(lamp.pos);
+            let Some(sp) = to_screen(&params.view_proj, rect, lp) else { continue };
+            if !rect.expand(60.0).contains(sp) {
+                continue;
+            }
+            let selected = self.light_sel == Some(li);
+            if !lamp.enabled {
+                painter.circle_stroke(sp, 6.0, Stroke::new(1.5_f32, Color32::from_gray(140)));
+                painter.text(sp + EV::new(10.0, -18.0), Align2::LEFT_TOP, format!("{} (off)", lamp.name), FontId::proportional(12.0), Color32::from_gray(150));
+                continue;
+            }
+            let lc = Color32::from_rgb(lamp.color[0], lamp.color[1], lamp.color[2]);
+            let dist = (lp - cam_c.eye()).length().max(0.5);
+            // halo + rays + bulb
+            let sz = (6.0 + lamp.power.clamp(0.0, 20.0) * 0.45).clamp(7.0, 15.0);
+            for (k, a) in [(3.4f32, 22u8), (2.5, 40), (1.7, 70)] {
+                painter.circle_filled(sp, sz * k, Color32::from_rgba_unmultiplied(lc.r(), lc.g(), lc.b(), a));
+            }
+            for k in 0..8 {
+                let t = k as f32 * tau / 8.0;
+                let d = EV::new(t.cos(), t.sin());
+                painter.line_segment([sp + d * (sz + 3.0), sp + d * (sz + 9.0)], Stroke::new(2.0_f32, lc));
+            }
+            painter.circle_filled(sp, sz, lc);
+            painter.circle_filled(sp, sz * 0.45, Color32::WHITE);
+            painter.circle_stroke(sp, sz, Stroke::new(if selected { 2.5_f32 } else { 1.5 }, if selected { accent() } else { Color32::BLACK }));
+            // direction: an arrow of constant length on screen; Spot: also the light cone
+            if lamp.kind != crate::lights::LightKind::Point {
+                let dir = lamp.direction();
+                if let Some(tp) = to_screen(&params.view_proj, rect, lp + dir * dist * 0.22) {
+                    let v = tp - sp;
+                    if v.length() > 2.0 {
+                        let dn = v / v.length();
+                        let perp = EV::new(-dn.y, dn.x);
+                        painter.line_segment([sp, tp], Stroke::new(3.0_f32, lc));
+                        painter.add(egui::Shape::convex_polygon(vec![tp + dn * 4.0, tp - dn * 14.0 + perp * 7.0, tp - dn * 14.0 - perp * 7.0], lc, Stroke::new(1.0_f32, Color32::BLACK)));
+                    }
+                }
+                if lamp.kind == crate::lights::LightKind::Spot {
+                    let half = (lamp.angle.clamp(5.0, 120.0) * 0.5).to_radians().min(1.25);
+                    let cl = dist * 0.18;
+                    let cr = cl * half.tan();
+                    let u = dir.any_orthonormal_vector();
+                    let w = dir.cross(u);
+                    let c = lp + dir * cl;
+                    let pts: Vec<Pos2> = (0..=48)
+                        .filter_map(|k| {
+                            let t = k as f32 / 48.0 * tau;
+                            to_screen(&params.view_proj, rect, c + (u * t.cos() + w * t.sin()) * cr)
+                        })
+                        .collect();
+                    if pts.len() > 1 {
+                        for k in [0usize, 12, 24, 36] {
+                            if let Some(q) = pts.get(k) {
+                                painter.line_segment([sp, *q], Stroke::new(1.2_f32, lc.gamma_multiply(0.75)));
+                            }
+                        }
+                        painter.add(egui::Shape::line(pts, Stroke::new(1.5_f32, lc.gamma_multiply(0.85))));
+                    }
+                }
+            }
+            if selected {
+                if self.light_rotate_mode {
+                    let rr = dist * 0.16;
+                    let rotating = self.light_rot.map(|r| r.0);
+                    for plane in 0..3 {
+                        let pts: Vec<Pos2> = (0..=96).filter_map(|k| to_screen(&params.view_proj, rect, ring_point(lp, plane, rr, k as f32 / 96.0 * tau))).collect();
+                        if pts.len() > 1 {
+                            // circle colour = colour of the axis it rotates around (XY -> Z blue ...)
+                            let ai = [2usize, 1, 0][plane];
+                            let active = light_ring_hover == Some(plane) || rotating == Some(ai);
+                            let rc = if active { Color32::from_rgb(255, 220, 60) } else { axis_col[ai] };
+                            let rw: f32 = if active { 5.0 } else { 3.0 };
+                            painter.add(egui::Shape::line(pts, Stroke::new(rw, rc)));
+                        }
+                    }
+                } else {
+                    let len = dist * 0.13;
+                    for a in 0..3 {
+                        if let Some(tp) = to_screen(&params.view_proj, rect, lp + axis_unit(a) * len) {
+                            let v = tp - sp;
+                            if v.length() > 1.0 {
+                                let active = self.light_axis == Some(a) || light_axis_hover == Some(a);
+                                let w: f32 = if active { 6.0 } else { 4.0 };
+                                let c = if active { Color32::from_rgb(255, 220, 60) } else { axis_col[a] };
+                                painter.line_segment([sp, tp], Stroke::new(w, c));
+                                let dn = v / v.length();
+                                let perp = EV::new(-dn.y, dn.x);
+                                painter.add(egui::Shape::convex_polygon(vec![tp + dn * 6.0, tp - dn * 14.0 + perp * 8.0, tp - dn * 14.0 - perp * 8.0], c, Stroke::NONE));
+                                painter.text(tp + dn * 18.0, Align2::CENTER_CENTER, ["X", "Y", "Z"][a], FontId::proportional(15.0), c);
+                            }
+                        }
+                    }
+                }
+            }
+            // label on a dark background: readable on a white or black model
+            let g = painter.layout_no_wrap(format!("{} · {:.1} lux", lamp.name, lamp.power), FontId::proportional(13.0), Color32::WHITE);
+            let pos = sp + EV::new(sz + 12.0, -sz - 20.0);
+            painter.rect_filled(Rect::from_min_size(pos - EV::splat(4.0), g.size() + EV::splat(8.0)), 4.0, Color32::from_black_alpha(175));
+            painter.galley(pos, g, Color32::WHITE);
+        }
+        // in Rotate mode: the current direction (azimuth / tilt) under the light
+        if let (Some((li, lp, ..)), true) = (light_g, self.light_rotate_mode) {
+            if let Some(sp) = to_screen(&params.view_proj, rect, lp) {
+                let lamp = &self.lights[li];
+                let msg = if lamp.kind == crate::lights::LightKind::Point {
+                    "Point light: drag a circle to turn it into a Spot light and aim it".to_string()
+                } else {
+                    let (az, tilt) = lamp.aim_angles();
+                    format!("Azimuth {az:.0}° · Tilt {tilt:.0}°  (drag a circle)")
+                };
+                let g = painter.layout_no_wrap(msg, FontId::proportional(12.5), Color32::WHITE);
+                let pos = sp + EV::new(-g.size().x * 0.5, 34.0);
+                painter.rect_filled(Rect::from_min_size(pos - EV::splat(4.0), g.size() + EV::splat(8.0)), 4.0, Color32::from_black_alpha(190));
+                painter.galley(pos, g, Color32::WHITE);
+            }
+        }
+    }
+
+    /// Clicks in the 3D view: select / deselect elements (Ctrl adds, Shift toggles), double-click to focus or
+    /// finish a walk path, and the right-click menu.
+    #[allow(clippy::too_many_arguments)]
+    fn vp_clicks(&mut self, ui: &mut egui::Ui, rect: Rect, resp: &egui::Response, params: &crate::render::FrameParams, mods: egui::Modifiers, snap: Option<Vec3>, blocked: bool) {
+        let uv = |p: Pos2| Vec2::new((p.x - rect.left()) / rect.width(), (p.y - rect.top()) / rect.height());
+        let aspect = rect.width() / rect.height().max(1.0);
+        if resp.clicked() && !blocked {
             if let Some(p) = resp.interact_pointer_pos() {
                 match self.tool {
                     Tool::Measure(k) => {
@@ -1122,8 +1137,10 @@ impl App {
                         // as in Navisworks: click on a surface = light placed there
                         let (o, d) = self.cam.ray(uv(p), aspect);
                         if let Some((_, _, hit, n)) = self.pick(o, d) {
-                            let mut l = crate::lights::SceneLight::default();
-                            l.name = format!("Point light {}", self.lights.len() + 1);
+                            let mut l = crate::lights::SceneLight {
+                                name: format!("Point light {}", self.lights.len() + 1),
+                                ..Default::default()
+                            };
                             let nv = n[0];
                             l.pos = (hit + nv * 0.15).to_array();
                             l.target = (hit - nv).to_array();
@@ -1225,8 +1242,14 @@ impl App {
                 ui.close_menu();
             }
         });
+    }
 
-        // --------------------------------------------------------- overlays
+    /// The 2D overlays drawn over the 3D view: section planes and box, grids and levels, axes being picked,
+    /// measurements, walk paths, clash focus, the small axis tripod, redlines, load progress and the tool hints.
+    #[allow(clippy::too_many_arguments)]
+    fn viewport_overlays(&mut self, ui: &mut egui::Ui, painter: &egui::Painter, rect: Rect, resp: &egui::Response, params: &crate::render::FrameParams, overlays: bool, pal: &crate::theme::Palette, hover: Option<Pos2>, snap: Option<Vec3>, snap_kind: u8) {
+        let aspect = rect.width() / rect.height().max(1.0);
+        let uv = |p: Pos2| Vec2::new((p.x - rect.left()) / rect.width(), (p.y - rect.top()) / rect.height());
         let vp = params.view_proj;
         let line = |a: Vec3, b: Vec3, col: Color32, w: f32| {
             if let (Some(sa), Some(sb)) = (to_screen(&vp, rect, a), to_screen(&vp, rect, b)) {
@@ -1234,7 +1257,7 @@ impl App {
             }
         };
         // section planes: transparent green surfaces, as large as the scene
-        if self.section.enabled && self.section.mode == SectionMode::Planes && self.show_section_plane && self.report_job.is_none() {
+        if self.section.enabled && self.section.mode == SectionMode::Planes && self.sec.show_plane && self.report_job.is_none() {
             let bb = self.scene_aabb();
             if bb.is_valid() {
                 let (lo, hi) = (bb.min - Vec3::splat(0.5), bb.max + Vec3::splat(0.5));
@@ -1510,7 +1533,7 @@ impl App {
                         continue;
                     };
                     placed.push(y);
-                    label_bg(&painter, Pos2::new(s.x, y), &text, Color32::from_rgb(235, 200, 120));
+                    label_bg(painter, Pos2::new(s.x, y), &text, Color32::from_rgb(235, 200, 120));
                 }
                 if skipped > 0 {
                     let tip = format!("{skipped} level label(s) hidden to avoid overlap - zoom in, or see View › Levels");
@@ -1541,9 +1564,9 @@ impl App {
         let mcol = Color32::from_rgb(255, 220, 70);
         for m in &self.measures {
             let pts: Vec<Vec3> = m.pts.iter().map(|p| Vec3::from(*p)).collect();
-            self.draw_measure(&painter, &vp, rect, m.kind, &pts, mcol);
+            self.draw_measure(painter, &vp, rect, m.kind, &pts, mcol);
             if let Some(lp) = pts.last().and_then(|p| to_screen(&vp, rect, *p)) {
-                label_bg(&painter, lp, &m.value(), mcol);
+                label_bg(painter, lp, &m.value(), mcol);
             }
         }
         if let Tool::Measure(k) = self.tool {
@@ -1551,11 +1574,11 @@ impl App {
             if let Some(s) = snap {
                 pts.push(s);
             }
-            self.draw_measure(&painter, &vp, rect, k, &pts, Color32::from_rgb(120, 230, 255));
+            self.draw_measure(painter, &vp, rect, k, &pts, Color32::from_rgb(120, 230, 255));
             if pts.len() >= 2 {
                 let m = Measure { kind: k, pts: pts.iter().map(|p| p.to_array()).collect() };
                 if let Some(lp) = to_screen(&vp, rect, *pts.last().unwrap()) {
-                    label_bg(&painter, lp, &m.value(), Color32::from_rgb(120, 230, 255));
+                    label_bg(painter, lp, &m.value(), Color32::from_rgb(120, 230, 255));
                 }
             }
             // capture zone around the cursor (like the AutoCAD aperture): the OSNAP radius, faint
@@ -1632,7 +1655,7 @@ impl App {
                 for k in 1..self.walk_path.len() {
                     let (a, b) = (self.walk_path[k - 1], self.walk_path[k]);
                     if let Some(s) = to_screen(&vp, rect, (a + b) * 0.5 + lift) {
-                        label_bg_center(&painter, s + EV::new(0.0, -6.0), &crate::app::fmt_len((b - a).length() as f64), pc);
+                        label_bg_center(painter, s + EV::new(0.0, -6.0), &crate::app::fmt_len((b - a).length() as f64), pc);
                     }
                 }
                 // 3D preview of the next segment, on the floor, with its length
@@ -1650,7 +1673,7 @@ impl App {
                             if let (Some(a), Some(b)) = (to_screen(&vp, rect, last + lift), to_screen(&vp, rect, q + lift)) {
                                 painter.extend(egui::Shape::dashed_line(&[a, b], Stroke::new(2.0_f32, pc.gamma_multiply(0.8)), 8.0, 5.0));
                                 painter.circle_stroke(b, 6.0, Stroke::new(2.0_f32, pc));
-                                label_bg_center(&painter, b + EV::new(0.0, -12.0), &crate::app::fmt_len((q - last).length() as f64), pc);
+                                label_bg_center(painter, b + EV::new(0.0, -12.0), &crate::app::fmt_len((q - last).length() as f64), pc);
                             }
                         }
                     }
@@ -1676,13 +1699,13 @@ impl App {
             if let Some(r) = &self.path_run {
                 let len = r.length();
                 let t = format!("{} Walk path  {:.0} / {:.0} m  ·  {:.1} m/s  ·  Space: {}  ·  Esc: stop", if r.paused { "⏸" } else { "▶" }, r.dist, len, self.settings.walk_speed, if r.paused { "play" } else { "pause" });
-                label_bg(&painter, rect.center_top() + EV::new(0.0, 22.0), &t, pc);
+                label_bg(painter, rect.center_top() + EV::new(0.0, 22.0), &t, pc);
             }
         }
         if self.tool == Tool::WalkPath {
             let n = self.walk_path.len();
             let len = crate::app::walk::PathRun::new(&self.walk_path).map(|r| r.length()).unwrap_or(0.0);
-            label_bg_center(&painter, rect.center_top() + EV::new(0.0, 30.0), &format!("Walk path · {n} points · {len:.1} m  —  click the floor: add · drag a point: move · click the line: insert · right-click a point: delete · Shift: 45° · Enter: done"), Color32::from_rgb(60, 200, 255));
+            label_bg_center(painter, rect.center_top() + EV::new(0.0, 30.0), &format!("Walk path · {n} points · {len:.1} m  —  click the floor: add · drag a point: move · click the line: insert · right-click a point: delete · Shift: 45° · Enter: done"), Color32::from_rgb(60, 200, 255));
         }
         if let Some(f) = self.clash_focus_active() {
             let big = f.points.len() == 1;
@@ -1700,7 +1723,7 @@ impl App {
         if let Some((d, p)) = self.min_dist_result {
             if let Some(sp) = to_screen(&vp, rect, p) {
                 painter.circle_filled(sp, 4.0, Color32::from_rgb(255, 0, 200));
-                label_bg(&painter, sp, &format!("dist. min. {}", crate::app::fmt_len(d as f64)), Color32::from_rgb(255, 0, 200));
+                label_bg(painter, sp, &format!("dist. min. {}", crate::app::fmt_len(d as f64)), Color32::from_rgb(255, 0, 200));
             }
         }
         // the render frame (Render tab)
@@ -1739,7 +1762,7 @@ impl App {
         if let Some(d) = &self.red_draft {
             reds.push(d.clone());
         }
-        draw_redlines(&painter, rect, &reds);
+        draw_redlines(painter, rect, &reds);
         if let Some(i) = self.active_vp.filter(|_| self.report_job.is_none()) {
             if let Some(v) = self.viewpoints.get(i) {
                 let t = format!("Viewpoint: {}  ·  {}  ·  {} markups", v.name, v.issue.status, v.redlines.len());
@@ -1841,5 +1864,23 @@ impl App {
         for p in sp.into_iter().flatten() {
             painter.circle_filled(p, 3.5, col);
         }
+    }
+}
+
+/// The unit vector of axis `a` (0 = X, 1 = Y, 2 = Z).
+fn axis_unit(a: usize) -> Vec3 {
+    let mut v = Vec3::ZERO;
+    v[a] = 1.0;
+    v
+}
+
+/// A point of a light's rotation circle of radius `r` around `lp`, at angle `t`, in plane 0 = XY (rotation
+/// around Z), 1 = XZ (around Y), 2 = YZ (around X).
+fn ring_point(lp: Vec3, plane: usize, r: f32, t: f32) -> Vec3 {
+    let (u, v) = (t.cos() * r, t.sin() * r);
+    match plane {
+        0 => lp + Vec3::new(u, v, 0.0),
+        1 => lp + Vec3::new(u, 0.0, v),
+        _ => lp + Vec3::new(0.0, u, v),
     }
 }

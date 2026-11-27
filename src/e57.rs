@@ -358,7 +358,7 @@ pub fn parse(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, R
     let xml_off = u64le(&data, 24);
     let xml_len = u64le(&data, 32) as usize;
     let page = u64le(&data, 40);
-    if page < 64 || page > 1 << 20 {
+    if !(64..=1 << 20).contains(&page) {
         return Err("E57: invalid page size".into());
     }
     let f = File { data, page };
@@ -694,10 +694,17 @@ pub fn parse_las(b: &[u8], progress: &dyn Fn(f32, &str)) -> Result<(RawModel, Ra
         7 | 8 | 10 => Some(30),
         _ => None,
     };
-    let min_rec = match rgb_at {
-        Some(o) => o + 6,
-        None => 14,
+    // the attributes of each point (formats 0-5 vs 6-10): classification, intensity, returns, GPS time
+    let new_fmt = fmt >= 6;
+    let class_at = if new_fmt { 16 } else { 15 };
+    let gps_at: Option<usize> = match fmt {
+        1 | 3 | 4 | 5 => Some(20),
+        6..=10 => Some(22),
+        _ => None,
     };
+    // every field read from a point must lie inside its record (a damaged header could declare records too short
+    // for the format: reading past the end of the file closed ManageBIM - found by the extended robustness test)
+    let min_rec = [rgb_at.map(|o| o + 6), gps_at.map(|o| o + 8), Some(class_at + 1)].into_iter().flatten().max().unwrap_or(class_at + 1);
     if rec < min_rec || offset >= b.len() {
         return Err(format!("LAS: unsupported point record (format {fmt}, {rec} bytes)."));
     }
@@ -716,14 +723,6 @@ pub fn parse_las(b: &[u8], progress: &dyn Fn(f32, &str)) -> Result<(RawModel, Ra
     let base = DVec3::new(i32::from_le_bytes(b[offset..offset + 4].try_into().unwrap()) as f64, i32::from_le_bytes(b[offset + 4..offset + 8].try_into().unwrap()) as f64, i32::from_le_bytes(b[offset + 8..offset + 12].try_into().unwrap()) as f64) * scale + off;
     let mut cloud = RawCloud { base, pos: Vec::with_capacity(count / stride + 1), col: Vec::with_capacity(count / stride + 1), scans: Vec::new() };
     let (mut lo, mut hi) = (DVec3::splat(f64::INFINITY), DVec3::splat(f64::NEG_INFINITY));
-    // the attributes of each point (formats 0-5 vs 6-10): classification, intensity, returns, GPS time
-    let new_fmt = fmt >= 6;
-    let class_at = if new_fmt { 16 } else { 15 };
-    let gps_at: Option<usize> = match fmt {
-        1 | 3 | 4 | 5 => Some(20),
-        6..=10 => Some(22),
-        _ => None,
-    };
     let mut classes: Vec<u8> = Vec::with_capacity(count / stride + 1);
     let mut stats: std::collections::BTreeMap<u8, ClassStats> = std::collections::BTreeMap::new();
     let mut i = 0;

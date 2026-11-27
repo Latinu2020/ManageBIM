@@ -181,30 +181,6 @@ pub fn plan_length(pts: &[glam::Vec3]) -> Option<f64> {
     l.is_finite().then_some(l)
 }
 
-#[cfg(test)]
-mod length_tests {
-    use glam::Vec3;
-
-    fn wall(len: f32, thick: f32, ang_deg: f32) -> Vec<Vec3> {
-        let (c, s) = (ang_deg.to_radians().cos(), ang_deg.to_radians().sin());
-        let mut v = Vec::new();
-        for (x, y) in [(0.0, 0.0), (len, 0.0), (len, thick), (0.0, thick)] {
-            for z in [0.0, 3.0] {
-                v.push(Vec3::new(x * c - y * s, x * s + y * c, z));
-            }
-        }
-        v
-    }
-
-    #[test]
-    fn diagonal_wall_keeps_its_length() {
-        for ang in [0.0, 30.0, 45.0, 90.0, 137.0] {
-            let l = super::plan_length(&wall(10.0, 0.25, ang)).unwrap();
-            assert!((l - 10.0).abs() < 1e-3, "angle {ang}: {l}");
-        }
-    }
-}
-
 // ====================================================================== result
 
 pub struct QtoRow {
@@ -402,5 +378,29 @@ impl QtoResult {
         let from = 5 + self.setup.group_by.len();
         let detail = Sheet { name: "Items".into(), title: format!("{title} - items"), headers: ih, widths: iw, rows: items, total_from: Some(from) };
         xlsx(&[summary, detail])
+    }
+}
+
+#[cfg(test)]
+mod length_tests {
+    use glam::Vec3;
+
+    fn wall(len: f32, thick: f32, ang_deg: f32) -> Vec<Vec3> {
+        let (c, s) = (ang_deg.to_radians().cos(), ang_deg.to_radians().sin());
+        let mut v = Vec::new();
+        for (x, y) in [(0.0, 0.0), (len, 0.0), (len, thick), (0.0, thick)] {
+            for z in [0.0, 3.0] {
+                v.push(Vec3::new(x * c - y * s, x * s + y * c, z));
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn diagonal_wall_keeps_its_length() {
+        for ang in [0.0, 30.0, 45.0, 90.0, 137.0] {
+            let l = super::plan_length(&wall(10.0, 0.25, ang)).unwrap();
+            assert!((l - 10.0).abs() < 1e-3, "angle {ang}: {l}");
+        }
     }
 }

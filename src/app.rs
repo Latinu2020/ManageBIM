@@ -1,7 +1,7 @@
 //! Application state and logic (without the panel drawing, which lives in ui.rs).
 use crate::camera::Camera;
 use crate::clash::{self, ClashStatus, ClashType};
-use crate::model::{Aabb, ElemId, Element, Model};
+use crate::model::{Aabb, CadSegs, ElemId, Element, Model};
 use crate::render::{self, FrameParams, Renderer, Upload};
 use crate::timeline::{self, SimState, Task};
 use glam::{DVec3, Mat4, Vec3, Vec4};
@@ -340,6 +340,9 @@ pub enum Action {
     RemoveModel(usize),
 }
 
+/// A grid import waiting for confirmation: (file, (layer, count) rows, chosen layer).
+pub type GridImport = (String, Vec<(String, usize)>, String);
+
 pub struct App {
     pub models: Vec<Option<Arc<Model>>>,
     pub trees: Vec<Option<ModelTree>>,
@@ -359,13 +362,6 @@ pub struct App {
     pub light_rotate_mode: bool,
     /// the search filter in the classification catalog
     pub class_search: String,
-    /// update check (GitHub): in progress, the result, the installer download
-    pub update_rx: Option<std::sync::mpsc::Receiver<crate::update::CheckResult>>,
-    pub update_info: Option<crate::update::UpdateInfo>,
-    pub update_dl_rx: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
-    pub update_checked: bool,
-    pub update_manual: bool,
-    pub update_open: bool,
     /// the coordination objects (clearance / provision for void / placeholder) and their virtual model
     pub coord_objects: Vec<crate::coord_objects::CoordObject>,
     pub coord_slot: Option<usize>,
@@ -386,15 +382,6 @@ pub struct App {
     pub class_open: bool,
     /// 0 = local catalog, 1 = online bSDD
     pub class_tab: usize,
-    pub bsdd_query: String,
-    /// URI of the chosen bSDD dictionary (empty = all)
-    pub bsdd_dict: String,
-    pub bsdd_results: Vec<crate::bsdd::BsddClass>,
-    pub bsdd_total: usize,
-    pub bsdd_status: String,
-    pub bsdd_rx: Option<std::sync::mpsc::Receiver<crate::bsdd::SearchResult>>,
-    pub bsdd_dicts: Vec<crate::bsdd::BsddDictionary>,
-    pub bsdd_dicts_rx: Option<std::sync::mpsc::Receiver<Result<Vec<crate::bsdd::BsddDictionary>, String>>>,
     pub selected: BTreeSet<ElemId>,
     pub primary: Option<ElemId>,
     pub hidden: HashSet<ElemId>,
@@ -430,14 +417,6 @@ pub struct App {
     pub float_max: std::collections::HashSet<crate::layout::Panel>,
     pub tasks: Vec<Task>,
     pub cur_task: Option<usize>,
-    pub sim_active: bool,
-    pub sim_day: f32,
-    pub sim_play: bool,
-    pub sim_speed: f32,
-    pub sim_cache: HashMap<ElemId, SimState>,
-    pub sim_cache_day: i32,
-    /// 4D: shows only the elements linked to tasks (the rest of the model is hidden)
-    pub sim_only_linked: bool,
     pub loads: Vec<LoadJob>,
     pub toasts: Vec<(String, Instant, bool)>,
     pub log: Vec<String>,
@@ -451,18 +430,8 @@ pub struct App {
     pub show_about: bool,
     /// the Lighting window (View › Scene)
     pub show_light: bool,
-    /// point clouds: displayed density (0..1), point size (px), control window
-    pub cloud_density: f32,
-    /// point clouds: 0 = scan colors, 1 = by elevation, 2 = gray
-    pub cloud_mode: u8,
-    /// round points with relief (otherwise square, as before)
-    pub cloud_round: bool,
-    /// the real point size (mm) - close to the cloud the points grow and fill the gaps; 0 = pixels only
-    pub cloud_world_mm: f32,
     /// physical pixels per logical point (for the point size)
     pub ppp: f32,
-    pub point_size: f32,
-    pub show_cloud: bool,
     /// grids and levels on the model (computed once per model)
     pub grid_cache: std::cell::RefCell<HashMap<usize, (usize, Arc<GridData>)>>,
     /// levels: the user's own levels, the project zero and the display switches
@@ -470,8 +439,6 @@ pub struct App {
     pub show_grids: bool,
     /// autosave + recovery after an unexpected close
     pub autosave: Autosave,
-    /// section: the cut faces filled (hatched caps)
-    pub section_caps: bool,
     /// the shared folder for issues (network / SharePoint); None = not shared
     pub shared_dir: Option<String>,
     pub shared: crate::shared::SharedState,
@@ -484,16 +451,9 @@ pub struct App {
     pub grid_bubble: f32,
     pub grid_ext: f32,
     pub show_grids_editor: bool,
-    /// the section plane drawn as a transparent green surface
-    pub show_section_plane: bool,
     /// the panel opened from an auto-hide area and the last time the mouse was over it
     pub flyout: Option<(crate::layout::Dock, crate::layout::Panel)>,
     pub flyout_seen: Instant,
-    /// the current level section (for PgUp / PgDn), the level box margins (m) and the plan cut height
-    pub section_level: Option<usize>,
-    pub level_below: f32,
-    pub level_above: f32,
-    pub plan_cut_h: f32,
     /// relocation in progress (move / rotate / align to face)
     pub xform: Option<XformPick>,
     pub relocate_selection: bool,
@@ -535,7 +495,7 @@ pub struct App {
     /// the 2D drawing: the hidden edges, with a dashed line
     pub cad_hidden_edges: bool,
     /// the cache of the visible / hidden lines (key = the view + the models), the computation is expensive
-    pub hlr_cache: std::sync::Mutex<Option<(String, Vec<(String, [f64; 4])>)>>,
+    pub hlr_cache: std::sync::Mutex<Option<(String, CadSegs)>>,
     /// picking a face of the section box with the mouse, for the 2D drawing
     pub face_pick: bool,
     /// the view history (Undo / Redo): the states, the current position, the signature of the last state
@@ -551,16 +511,9 @@ pub struct App {
 
     pub hist_pos: usize,
     pub hist_sig: u64,
-    /// the viewpoint folders: the current one (where new viewpoints go), the ones created empty, the export filter
-    pub vp_folder_cur: String,
-    pub vp_folders: Vec<String>,
-    pub vp_filter: Option<String>,
-    pub vp_rename_pending: Option<(String, String)>,
     /// 2D drawings overlaid on the model and their window
     pub overlays: Vec<CadOverlay>,
     pub overlay_open: bool,
-    /// the small 2D preview window of the section (before export), closable
-    pub section_preview_open: bool,
     /// the Multi view window: the ticked views (Front, Right, Back, Left, Top, Bottom), distance (m, 0 = auto), titles
     pub mv_open: bool,
     pub mv_views: [bool; 6],
@@ -577,7 +530,7 @@ pub struct App {
     pub box_drag: Option<usize>,
     pub show_clash_matrix: bool,
     /// the last grid import from DWG / DXF: the file, the layers with lines, the layer used
-    pub grid_import: Option<(String, Vec<(String, usize)>, String)>,
+    pub grid_import: Option<GridImport>,
     /// the grid generator (the origin and direction can be picked with a click in the model)
     pub grid_gen: GridGen,
     /// picking in 3D: 0 nothing, 1 the origin, 2 the direction of the first grid
@@ -809,11 +762,29 @@ pub struct App {
     pub qto_result: Option<crate::qto::QtoResult>,
     /// the signature of the state for which the result was computed (setup + selection / hidden)
     pub qto_sig: u64,
+    /// 4D simulation: the day shown, playback and the element states of that day
+    pub sim: Sim4dState,
+    /// point cloud display: density, point size and shape
+    pub cloud: CloudState,
+    /// the update check and download (Help › Check for updates)
+    pub upd: UpdateState,
+    /// the bSDD search (Classification window)
+    pub bsdd: BsddState,
+    /// the viewpoint folders shown, filter and pending rename
+    pub vp: ViewpointUi,
+    /// section options: caps, plane display, level cuts and the 2D preview
+    pub sec: SectionUi,
 }
 
 impl App {
     pub fn new(files: Vec<String>) -> App {
         let mut app = App {
+            sec: SectionUi::default(),
+            vp: ViewpointUi::default(),
+            bsdd: BsddState::default(),
+            upd: UpdateState::default(),
+            cloud: CloudState::default(),
+            sim: Sim4dState::default(),
             models: Vec::new(),
             trees: Vec::new(),
             origin: Arc::new(Mutex::new(None)),
@@ -825,12 +796,6 @@ impl App {
             light_rot: None,
             light_rotate_mode: false,
             class_search: String::new(),
-            update_rx: None,
-            update_info: None,
-            update_dl_rx: None,
-            update_checked: false,
-            update_manual: false,
-            update_open: false,
             coord_objects: Vec::new(),
             coord_slot: None,
             coord_sel: None,
@@ -843,14 +808,6 @@ impl App {
             void_margin: 0.05,
             class_open: false,
             class_tab: 0,
-            bsdd_query: String::new(),
-            bsdd_dict: String::new(),
-            bsdd_results: Vec::new(),
-            bsdd_total: 0,
-            bsdd_status: String::new(),
-            bsdd_rx: None,
-            bsdd_dicts: Vec::new(),
-            bsdd_dicts_rx: None,
             selected: BTreeSet::new(),
             primary: None,
             hidden: HashSet::new(),
@@ -880,13 +837,6 @@ impl App {
             float_max: std::collections::HashSet::new(),
             tasks: Vec::new(),
             cur_task: None,
-            sim_active: false,
-            sim_day: 0.0,
-            sim_play: false,
-            sim_speed: 7.0,
-            sim_cache: HashMap::new(),
-            sim_cache_day: i32::MIN,
-            sim_only_linked: true,
             loads: Vec::new(),
             toasts: Vec::new(),
             log: Vec::new(),
@@ -899,18 +849,11 @@ impl App {
             show_help: false,
             show_about: false,
             show_light: false,
-            cloud_density: 0.5,
-            cloud_mode: 0,
-            cloud_round: true,
-            cloud_world_mm: 6.0,
             ppp: 1.0,
-            point_size: 2.0,
-            show_cloud: false,
             grid_cache: Default::default(),
             level: LevelState { show_lines: true, ..Default::default() },
             show_grids: true,
             autosave: Autosave::default(),
-            section_caps: true,
             shared_dir: None,
             shared: Default::default(),
             blank_project: false,
@@ -919,13 +862,8 @@ impl App {
             grid_bubble: 11.0,
             grid_ext: 2.0,
             show_grids_editor: false,
-            show_section_plane: true,
             flyout: None,
             flyout_seen: Instant::now(),
-            section_level: None,
-            level_below: 0.0,
-            level_above: 0.0,
-            plan_cut_h: 1.2,
             xform: None,
             relocate_selection: false,
             box_start: None,
@@ -960,13 +898,8 @@ impl App {
             vt_applied: false,
             hist_pos: 0,
             hist_sig: 0,
-            vp_folder_cur: String::new(),
-            vp_folders: Vec::new(),
-            vp_filter: None,
-            vp_rename_pending: None,
             overlays: Vec::new(),
             overlay_open: false,
-            section_preview_open: false,
             mv_open: false,
             mv_views: [true, true, true, true, true, false],
             mv_gap: 0.0,
@@ -1144,7 +1077,7 @@ impl App {
             app.clash.auto_zoom = p.auto_zoom;
             app.clash.highlight_all = p.highlight_all;
             app.group_cell = p.group_cell;
-            app.sim_only_linked = p.only_linked;
+            app.sim.only_linked = p.only_linked;
         }
         // external converters: detected at the first start (or when they are missing)
         let t = &app.settings.tools;
@@ -1177,7 +1110,7 @@ impl App {
             auto_zoom: self.clash.auto_zoom,
             highlight_all: self.clash.highlight_all,
             group_cell: self.group_cell,
-            only_linked: self.sim_only_linked,
+            only_linked: self.sim.only_linked,
             // the rest (sorting, colors, panels) is edited directly in settings.clash_ui
             ..self.settings.clash_ui.clone()
         };
@@ -1360,6 +1293,9 @@ pub struct ClashState {
     pub queue: Vec<usize>,
 }
 
+/// The material thumbnail worker: requests (material name) and results (name, thumbnail).
+pub type ThumbJob = (std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<(String, Option<crate::materials::Thumb>)>);
+
 /// Render materials: the assignment rules, the library window and its thumbnails.
 pub struct MaterialsState {
     pub assign: Vec<MatAssign>,
@@ -1374,7 +1310,7 @@ pub struct MaterialsState {
     /// the list scrolls to the selected material (after an import)
     pub scroll: bool,
     pub thumbs: HashMap<String, Option<eframe::egui::TextureHandle>>,
-    pub thumb_job: Option<(std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<(String, Option<crate::materials::Thumb>)>)>,
+    pub thumb_job: Option<ThumbJob>,
 }
 
 /// The MCP server for AI assistants: the server, its window and status, a capture waiting for its image.
@@ -1385,6 +1321,127 @@ pub struct McpState {
     pub status: String,
     /// the response to an MCP capture_view request, sent when the image is ready (after the next frame)
     pub capture: Option<std::sync::mpsc::Sender<Result<serde_json::Value, String>>>,
+}
+
+/// State of the 4D simulation (Time tab): the day shown, playback and the cached element states.
+pub struct Sim4dState {
+    pub active: bool,
+    pub day: f32,
+    pub play: bool,
+    pub speed: f32,
+    pub cache: HashMap<ElemId, SimState>,
+    pub cache_day: i32,
+    /// 4D: shows only the elements linked to tasks (the rest of the model is hidden)
+    pub only_linked: bool,
+}
+
+impl Default for Sim4dState {
+    fn default() -> Self {
+        Sim4dState {
+            active: false,
+            day: 0.0,
+            play: false,
+            speed: 7.0,
+            cache: HashMap::new(),
+            cache_day: i32::MIN,
+            only_linked: true,
+        }
+    }
+}
+
+/// How point clouds are drawn (View › Point Cloud).
+pub struct CloudState {
+    /// point clouds: displayed density (0..1), point size (px), control window
+    pub density: f32,
+    /// point clouds: 0 = scan colors, 1 = by elevation, 2 = gray
+    pub mode: u8,
+    /// round points with relief (otherwise square, as before)
+    pub round: bool,
+    /// the real point size (mm) - close to the cloud the points grow and fill the gaps; 0 = pixels only
+    pub world_mm: f32,
+    pub point_size: f32,
+    pub show: bool,
+}
+
+impl Default for CloudState {
+    fn default() -> Self {
+        CloudState {
+            density: 0.5,
+            mode: 0,
+            round: true,
+            world_mm: 6.0,
+            point_size: 2.0,
+            show: false,
+        }
+    }
+}
+
+/// The check for a newer ManageBIM on GitHub and its download.
+#[derive(Default)]
+pub struct UpdateState {
+    /// update check (GitHub): in progress, the result, the installer download
+    pub rx: Option<std::sync::mpsc::Receiver<crate::update::CheckResult>>,
+    pub info: Option<crate::update::UpdateInfo>,
+    pub dl_rx: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
+    pub checked: bool,
+    pub manual: bool,
+    pub open: bool,
+}
+
+
+/// The buildingSMART Data Dictionary search: query, chosen dictionary, results and the requests in flight.
+#[derive(Default)]
+pub struct BsddState {
+    pub query: String,
+    /// URI of the chosen bSDD dictionary (empty = all)
+    pub dict: String,
+    pub results: Vec<crate::bsdd::BsddClass>,
+    pub total: usize,
+    pub status: String,
+    pub rx: Option<std::sync::mpsc::Receiver<crate::bsdd::SearchResult>>,
+    pub dicts: Vec<crate::bsdd::BsddDictionary>,
+    pub dicts_rx: Option<std::sync::mpsc::Receiver<Result<Vec<crate::bsdd::BsddDictionary>, String>>>,
+}
+
+
+/// How the Saved Viewpoints panel is browsed: current folder, folder list, filter and a rename waiting to be applied.
+#[derive(Default)]
+pub struct ViewpointUi {
+    /// the viewpoint folders: the current one (where new viewpoints go), the ones created empty, the export filter
+    pub folder_cur: String,
+    pub folders: Vec<String>,
+    pub filter: Option<String>,
+    pub rename_pending: Option<(String, String)>,
+}
+
+
+/// Options of the section tools: caps, the visible plane, the plan cut at a level and the 2D preview window.
+pub struct SectionUi {
+    /// section: the cut faces filled (hatched caps)
+    pub caps: bool,
+    /// the section plane drawn as a transparent green surface
+    pub show_plane: bool,
+    /// the current level section (for PgUp / PgDn), the level box margins (m) and the plan cut height
+    pub level: Option<usize>,
+    pub level_below: f32,
+    pub level_above: f32,
+    pub plan_cut_h: f32,
+    /// the small 2D preview window of the section (before export), closable
+    pub preview_open: bool,
+}
+
+impl Default for SectionUi {
+    fn default() -> Self {
+        SectionUi {
+            caps: true,
+            show_plane: true,
+            level: None,
+            level_below: 0.0,
+            level_above: 0.0,
+            plan_cut_h: 1.2,
+            preview_open: false,
+        }
+    }
 }
 
 /// The final path-traced render (Render › Path Trace).
@@ -1540,6 +1597,7 @@ pub fn grid_label(first: &str, i: usize) -> String {
 
 /// Grid system: `nx` vertical grids (along Y) at spacing `dx`, labels from `fx`; `ny` horizontal grids
 /// (along X) at `dy`, labels from `fy`. Origin = intersection of the first grids; `ext` = how far the lines extend.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_grid(origin: [f64; 2], nx: usize, dx: f64, fx: &str, ny: usize, dy: f64, fy: &str, ext: f64) -> Vec<UserGrid> {
     let (lx, ly) = (dx * nx.saturating_sub(1) as f64, dy * ny.saturating_sub(1) as f64);
     let mut out = Vec::new();
@@ -1864,14 +1922,17 @@ pub fn cut_dxf_layers(segs: &[(String, [f64; 4])], extra: &[&str]) -> String {
         // 27.11: technical drawing palette (Inventor style), not random colors:
         //   7 = white/black (context), 8 = gray, 5 = blue, 1 = red (accents).
         let lower = l.to_ascii_lowercase();
-        let color = if behind { 8 }
-            else if lower == "hatch" { 8 }              // hatch: light gray
-            else if lower == "dims" || lower == "dims_text" { 5 } // dimensions: blue
-            else if lower == "levels" || lower == "levels_text" { 8 } // levels: gray
-            else if lower == "grids" || lower == "grid_text" { 8 }    // grids: gray
-            else if lower == "sheet" || lower == "sheet_text" { 7 }   // border/title block: black
-            else if lower == "tags" { 1 }                // labels: subtle red
-            else { 7 };                                  // the cut and the elements: black
+        let color = if behind {
+            8
+        } else {
+            match lower.as_str() {
+                "dims" | "dims_text" => 5, // dimensions: blue
+                "sheet" | "sheet_text" => 7, // border / title block: black
+                "tags" => 1, // labels: subtle red
+                "hatch" | "levels" | "levels_text" | "grids" | "grid_text" => 8, // hatch, levels, grids: gray
+                _ => 7, // the cut and the elements: black
+            }
+        };
         s.push_str(&format!("0\nLAYER\n2\n{l}\n70\n0\n62\n{color}\n6\n{ltype}\n"));
     }
     s.push_str("0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
@@ -1932,7 +1993,7 @@ pub fn cut_sheet_dxf_annot(segs: &[(String, [f64; 4])], texts: &[CadText], tb: &
     // the title block stay in paper mm, and the drawing texts stay 1:1.
     let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
     let (ox, oy) = (MARGIN + 5.0 + aw / 2.0, MARGIN + TB_H + 5.0 + ah / 2.0);
-    let mut out: Vec<(String, [f64; 4])> = segs.iter().map(|(l, p)| (l.clone(), [ox + p[0] - cx, oy + p[1] - cy, ox + p[2] - cx, oy + p[3] - cy])).collect();
+    let mut out: CadSegs = segs.iter().map(|(l, p)| (l.clone(), [ox + p[0] - cx, oy + p[1] - cy, ox + p[2] - cx, oy + p[3] - cy])).collect();
     let mut line = |a: f64, b: f64, c: f64, d: f64| out.push(("SHEET".to_string(), [a, b, c, d]));
     let rect = |l: &mut dyn FnMut(f64, f64, f64, f64), a: f64, b: f64, c: f64, d: f64| {
         l(a, b, c, b);
@@ -2079,7 +2140,7 @@ pub fn cut_tag(e: &crate::model::Element) -> Option<String> {
     None
 }
 
-fn circle_segs(layer: &str, c: [f64; 2], r: f64, out: &mut Vec<(String, [f64; 4])>) {
+fn circle_segs(layer: &str, c: [f64; 2], r: f64, out: &mut CadSegs) {
     const N: usize = 20;
     for i in 0..N {
         let (a, b) = (i as f64 / N as f64 * std::f64::consts::TAU, (i + 1) as f64 / N as f64 * std::f64::consts::TAU);
@@ -2105,9 +2166,10 @@ fn text_w(s: &str, mm: f64, u: f64) -> f64 {
 
 /// The grids in plan: the grid line, the bubble with the label at one end and dimension chains between the parallel grids
 /// (plus the overall dimension) at the other end. Coordinates in meters.
-pub fn plan_grid_annotations(grids: &[UserGrid], u: f64, segs: &mut Vec<(String, [f64; 4])>, texts: &mut Vec<CadText>) {
+pub fn plan_grid_annotations(grids: &[UserGrid], u: f64, segs: &mut CadSegs, texts: &mut Vec<CadText>) {
     let r_b = 4.5 * u;
-    let mut items: Vec<([f64; 2], [f64; 2], [f64; 2], &str)> = Vec::new();
+    type DimItem<'a> = ([f64; 2], [f64; 2], [f64; 2], &'a str);
+    let mut items: Vec<DimItem<'_>> = Vec::new();
     for g in grids {
         let (dx, dy) = (g.b[0] - g.a[0], g.b[1] - g.a[1]);
         let l = (dx * dx + dy * dy).sqrt();
@@ -2156,7 +2218,7 @@ pub fn plan_grid_annotations(grids: &[UserGrid], u: f64, segs: &mut Vec<(String,
         let tmax = rows.iter().map(|r| r.2).fold(f64::MIN, f64::max);
         let rot = read_angle(n[0], n[1]);
         let (rc, rs) = (rot.to_radians().cos(), rot.to_radians().sin());
-        let chain = |t: f64, idx: &[usize], segs: &mut Vec<(String, [f64; 4])>, texts: &mut Vec<CadText>| {
+        let chain = |t: f64, idx: &[usize], segs: &mut CadSegs, texts: &mut Vec<CadText>| {
             let (a, b) = (p(rows[idx[0]].0, t), p(rows[idx[idx.len() - 1]].0, t));
             segs.push(("DIMS".into(), [a[0], a[1], b[0], b[1]]));
             for &k in idx {
@@ -2193,7 +2255,8 @@ pub fn plan_grid_annotations(grids: &[UserGrid], u: f64, segs: &mut Vec<(String,
 /// On a vertical section: the level lines with name and elevation (m) and the grids cut by the plane (with the bubble on top).
 /// `axis` = 0 (plane at X = value, horizontal = Y) or 1 (plane at Y = value, horizontal = X);
 /// `bbox` = [x0, y0, x1, y1] of the cut in the drawing coordinates.
-pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: usize, value: f64, bbox: [f64; 4], u: f64, dims: bool, levels_on: bool, segs: &mut Vec<(String, [f64; 4])>, texts: &mut Vec<CadText>) {
+#[allow(clippy::too_many_arguments)]
+pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: usize, value: f64, bbox: [f64; 4], u: f64, dims: bool, levels_on: bool, segs: &mut CadSegs, texts: &mut Vec<CadText>) {
     let [x0, y0, x1, y1] = bbox;
     if levels_on { for (name, z) in levels {
         if *z < y0 - 5.0 || *z > y1 + 5.0 {
@@ -2228,7 +2291,7 @@ pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: u
     // ---- CHAIN DIMENSIONS (technical drawing): dimension line + extension lines + 45° tick + text.
     // Vertical: between consecutive levels; Horizontal: between the grid lines cut by the plane.
     if !dims { return; }
-    let tick = |x: f64, y: f64, segs: &mut Vec<(String, [f64; 4])>| {
+    let tick = |x: f64, y: f64, segs: &mut CadSegs| {
         segs.push(("DIMS".into(), [x - 1.2 * u, y - 1.2 * u, x + 1.2 * u, y + 1.2 * u]));
     };
     // vertical (left of the drawing)
@@ -2449,6 +2512,7 @@ pub fn apply_user_params(m: &mut Model, params: &[UserParam]) {
 ///    the "User" tab, putting back the original values they had replaced;
 /// 2. writes the current parameters; if the element already had the property (from IFC / Revit), the original value
 ///    is kept in `sh.orig` and comes back when the override is deleted.
+///
 /// Only the elements with parameters are touched - the properties of the others stay unchanged.
 pub fn apply_user_params_shadow(m: &mut Model, params: &[UserParam], prev: &HashSet<(String, String, String)>, sh: &mut UserShadow) {
     let model = m.name.clone();

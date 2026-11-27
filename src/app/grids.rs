@@ -286,13 +286,14 @@ impl App {
     /// one layer per element type (Walls, Doors, IfcColumn...), real coordinates in metres.
     /// Builds EXACTLY the 2D drawing of the cut: segments (layer, x1,y1,x2,y2) + texts.
     /// Used both by the DWG / PDF export and by the preview window, so they are identical.
-    pub fn section_drawing(&self) -> Option<(Vec<(String, [f64; 4])>, Vec<CadText>, usize, f32)> {
+    pub fn section_drawing(&self) -> Option<(CadSegs, Vec<CadText>, usize, f32)> {
         let view = self.settings.cad_view;
         if view == crate::app::CadView::Current && !self.section.enabled {
             return None;
         }
         // the cut plane: the axis (0 = X, 1 = Y, 2 = Z), the value (local coordinates) and the zone (box only)
-        let (axis, value, clip): (usize, f32, Option<([f32; 3], [f32; 3])>) = if view.axis().is_some() {
+        type SectionCut = (usize, f32, Option<([f32; 3], [f32; 3])>);
+        let (axis, value, clip): SectionCut = if view.axis().is_some() {
             let (a, v) = self.cad_cut_plane()?;
             let box_clip = if self.section.enabled && self.section.mode == crate::app::SectionMode::Box {
                 Some((self.section.bmin, self.section.bmax))
@@ -317,7 +318,7 @@ impl App {
         let o = self.origin_f64();
         let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
         // (layer, x1, y1, x2, y2) in sheet coordinates
-        let mut segs: Vec<(String, [f64; 4])> = Vec::new();
+        let mut segs: CadSegs = Vec::new();
         // the cut elements: (first segment, past the last, hatched, label)
         let mut cut_elems: Vec<(usize, usize, bool, Option<String>)> = Vec::new();
         // from the back / right the horizontal axis is flipped (as in the view from that direction)
@@ -428,7 +429,7 @@ impl App {
                 x1 = x1.max(p[0]).max(p[2]);
                 y1 = y1.max(p[1]).max(p[3]);
             }
-            let mut extra: Vec<(String, [f64; 4])> = Vec::new();
+            let mut extra: CadSegs = Vec::new();
             let mut tag_boxes: Vec<[f64; 4]> = Vec::new();
             // doors / windows first (their numbers matter), then the walls
             let mut cut_elems = cut_elems;
@@ -498,7 +499,7 @@ impl App {
         clip: Option<([f32; 3], [f32; 3])>,
         models: &[(usize, Arc<Model>)],
         to2d: &dyn Fn(Vec3) -> [f64; 2],
-    ) -> Vec<(String, [f64; 4])> {
+    ) -> CadSegs {
         use crate::app::CadView;
         // viewing direction: what is "beyond" the plane (the chosen box face looks toward its interior)
         let sign = match view {
@@ -612,7 +613,7 @@ impl App {
         }
         let order = [CadView::Front, CadView::Right, CadView::Back, CadView::Left, CadView::Top, CadView::Bottom];
         let (old_view, old_pos) = (self.settings.cad_view, self.settings.cad_view_pos);
-        let mut views: Vec<(CadView, Vec<(String, [f64; 4])>, Vec<CadText>)> = Vec::new();
+        let mut views: Vec<(CadView, CadSegs, Vec<CadText>)> = Vec::new();
         for (k, v) in order.iter().enumerate() {
             if !self.mv_views[k] {
                 continue;
@@ -652,7 +653,7 @@ impl App {
             }
             [x0, y0, x1, y1]
         };
-        let views: Vec<(CadView, Vec<(String, [f64; 4])>, Vec<CadText>, [f64; 4])> = views.into_iter().map(|(v, s, t)| { let b = bbox_full(&s, &t); (v, s, t, b) }).collect();
+        let views: Vec<(CadView, CadSegs, Vec<CadText>, [f64; 4])> = views.into_iter().map(|(v, s, t)| { let b = bbox_full(&s, &t); (v, s, t, b) }).collect();
         // the spacing between views: chosen by the user, or 15% of the largest width (minimum 2 m)
         let maxw = views.iter().map(|v| { let b = v.3; (b[2] - b[0]).max(b[3] - b[1]) }).fold(0.0, f64::max);
         let gap = if self.mv_gap > 0.0 { self.mv_gap as f64 } else { (maxw * 0.15).max(2.0) };
@@ -746,7 +747,7 @@ impl App {
         // PDF: the same cut, a vector drawing on the sheet with a title block and the same annotations
         if path.to_lowercase().ends_with(".pdf") {
             let n = segs.len();
-            let level = self.section_level.and_then(|i| self.scene_grids().levels.get(i).map(|l| l.0.clone()));
+            let level = self.sec.level.and_then(|i| self.scene_grids().levels.get(i).map(|l| l.0.clone()));
             let title = if view != crate::app::CadView::Current {
                 format!("{} section", view.label())
             } else {
@@ -768,7 +769,7 @@ impl App {
         let n = segs.len();
         // default: 2D in Model space, real coordinates (m); optional: on an A3 sheet with a title block, to scale
         let mut content = if self.cad_sheet {
-            let level = self.section_level.and_then(|i| self.scene_grids().levels.get(i).map(|l| l.0.clone()));
+            let level = self.sec.level.and_then(|i| self.scene_grids().levels.get(i).map(|l| l.0.clone()));
             let title = if view != crate::app::CadView::Current {
                 format!("{} section", view.label())
             } else {
@@ -864,9 +865,9 @@ impl App {
         self.section.enabled = true;
         self.section.mode = SectionMode::Box;
         // the margins: below the level (e.g. the slab below) and below the next level (e.g. without the slab above)
-        self.section.bmin = [bb.min.x - 0.5, bb.min.y - 0.5, l.1 - self.level_below.max(0.0) - 0.01];
-        self.section.bmax = [bb.max.x + 0.5, bb.max.y + 0.5, top + self.level_above - 0.02];
-        self.section_level = Some(li);
+        self.section.bmin = [bb.min.x - 0.5, bb.min.y - 0.5, l.1 - self.sec.level_below.max(0.0) - 0.01];
+        self.section.bmax = [bb.max.x + 0.5, bb.max.y + 0.5, top + self.sec.level_above - 0.02];
+        self.sec.level = Some(li);
         self.colors_dirty = true;
         self.toast(format!("Section: {} (to {})", l.0, g.levels.get(li + 1).map(|n| n.0.clone()).unwrap_or_else(|| "the top".into())));
     }
@@ -877,10 +878,10 @@ impl App {
         if n == 0 {
             return;
         }
-        let cur = self.section_level.unwrap_or(0) as i32;
+        let cur = self.sec.level.unwrap_or(0) as i32;
         let li = (cur + delta).clamp(0, n as i32 - 1) as usize;
         if self.section.enabled && self.section.mode == SectionMode::Planes {
-            self.section_plan_cut(li, self.plan_cut_h);
+            self.section_plan_cut(li, self.sec.plan_cut_h);
         } else {
             self.section_level_box(li);
         }
@@ -903,7 +904,7 @@ impl App {
         }
         let n = keep.len();
         self.apply(Action::Isolate(keep));
-        self.section_level = Some(li);
+        self.sec.level = Some(li);
         self.toast(format!("{}: {n} items shown, the rest hidden (Unhide All to undo)", l.0));
     }
 
@@ -914,8 +915,8 @@ impl App {
         self.section.enabled = true;
         self.section.mode = SectionMode::Planes;
         self.section.planes = vec![PlaneDef { enabled: true, dir: 0, offset: l.1 + h }];
-        self.section_level = Some(li);
-        self.plan_cut_h = h;
+        self.sec.level = Some(li);
+        self.sec.plan_cut_h = h;
         self.colors_dirty = true;
         self.toast(format!("Plan cut: {} + {h:.2} m", l.0));
     }

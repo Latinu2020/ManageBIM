@@ -1,0 +1,25 @@
+# Same line endings on every computer: text files are stored with LF in the repository and checked out
+# with the computer's own line endings (CRLF on Windows), whatever core.autocrlf is set to.
+* text=auto
+
+# Windows scripts always CRLF, shell scripts always LF
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.sh  text eol=lf
+
+# Binary files: never touched
+*.png  binary
+*.gif  binary
+*.jpg  binary
+*.ico  binary
+*.ttf  binary
+*.exe  binary
+*.dll  binary
+*.bimc binary
+*.e57  binary
+*.laz  binary
+*.las  binary
+*.glb  binary
+*.hdr  binary
+*.exr  binary

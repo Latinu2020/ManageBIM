@@ -32,7 +32,7 @@ pub fn html(items: &[(&Model, &Element)], title: &str, date: &str) -> (String, W
     let mut ids: Vec<u8> = Vec::with_capacity(vc * 4);
     let mut elems: Vec<serde_json::Value> = Vec::with_capacity(items.len());
     for (k, (m, e)) in items.iter().enumerate() {
-        let mi = models.iter().position(|p| *p == *m as *const Model).unwrap_or(0);
+        let mi = models.iter().position(|p| std::ptr::eq(*p, *m)).unwrap_or(0);
         for t in e.tri_start..e.tri_start + e.tri_count {
             let c = m.tri_color.get(t as usize).copied().unwrap_or([200, 200, 200, 255]);
             for v in 0..3 {

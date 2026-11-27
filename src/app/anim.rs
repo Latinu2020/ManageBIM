@@ -1,6 +1,9 @@
 //! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
+/// An image overlay: (title, coloured legend rows, visible).
+pub type ImageOverlay = (String, Vec<([u8; 4], String)>, bool);
+
 impl App {
     // ------------------------------------------------------------------ timeliner
     pub fn sim_range(&self) -> Option<(i32, i32)> {
@@ -9,33 +12,33 @@ impl App {
 
     pub fn update_sim(&mut self, dt: f32) {
         if !self.sim_view() {
-            self.sim_play = false;
-            if !self.sim_cache.is_empty() {
-                self.sim_cache.clear();
-                self.sim_cache_day = i32::MIN;
+            self.sim.play = false;
+            if !self.sim.cache.is_empty() {
+                self.sim.cache.clear();
+                self.sim.cache_day = i32::MIN;
                 self.colors_dirty = true;
             }
             return;
         }
         let Some((s, e)) = self.sim_range() else { return };
-        if self.sim_play {
-            self.sim_day += dt * self.sim_speed;
-            if self.sim_day >= e as f32 + 1.0 {
-                self.sim_day = e as f32 + 1.0;
-                self.sim_play = false;
+        if self.sim.play {
+            self.sim.day += dt * self.sim.speed;
+            if self.sim.day >= e as f32 + 1.0 {
+                self.sim.day = e as f32 + 1.0;
+                self.sim.play = false;
             }
         }
-        self.sim_day = self.sim_day.clamp(s as f32 - 1.0, e as f32 + 1.0);
-        let d = self.sim_day.floor() as i32;
-        if d != self.sim_cache_day {
-            self.sim_cache = timeline::state_at(&self.tasks, d);
-            self.sim_cache_day = d;
+        self.sim.day = self.sim.day.clamp(s as f32 - 1.0, e as f32 + 1.0);
+        let d = self.sim.day.floor() as i32;
+        if d != self.sim.cache_day {
+            self.sim.cache = timeline::state_at(&self.tasks, d);
+            self.sim.cache_day = d;
             self.colors_dirty = true;
         }
     }
 
     pub fn invalidate_sim(&mut self) {
-        self.sim_cache_day = i32::MIN;
+        self.sim.cache_day = i32::MIN;
     }
 
     // ------------------------------------------------------------------ animation / render
@@ -45,7 +48,7 @@ impl App {
             if let Some((s, e)) = self.sim_range() {
                 let dur = a.duration().max(1e-3);
                 self.anim_sim_active = true;
-                self.sim_day = s as f32 + (e - s + 1) as f32 * (t / dur).clamp(0.0, 1.0);
+                self.sim.day = s as f32 + (e - s + 1) as f32 * (t / dur).clamp(0.0, 1.0);
                 return;
             }
         }
@@ -325,10 +328,10 @@ impl App {
 
     /// What is written on the exported images / frames: (title, color + text rows, bottom).
     /// 4D: the simulation date and the tasks in progress (top); Appearance Profiler: the color legend (bottom).
-    pub fn image_overlays(&self) -> Vec<(String, Vec<([u8; 4], String)>, bool)> {
+    pub fn image_overlays(&self) -> Vec<ImageOverlay> {
         let mut out = Vec::new();
         if self.render.overlay_4d && self.sim_view() && !self.tasks.is_empty() {
-            let day = self.sim_day.floor() as i32;
+            let day = self.sim.day.floor() as i32;
             let col = |k: timeline::TaskKind| match k {
                 timeline::TaskKind::Construct => timeline::COL_CONSTRUCT,
                 timeline::TaskKind::Demolish => timeline::COL_DEMOLISH,

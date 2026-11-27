@@ -323,7 +323,8 @@ impl App {
         let mut view: usize = ctx.data(|d| d.get_temp(vid)).unwrap_or(0);
         let mut goto: Option<usize> = None;
         let mut export = false;
-        let mut create: Option<(Vec<(Selector, Selector)>, ClashType, f32)> = None;
+        type NewTest = (Vec<(Selector, Selector)>, ClashType, f32);
+        let mut create: Option<NewTest> = None;
         egui::Window::new("▦ Clash Matrix").open(&mut open).default_width(720.0).default_height(520.0).show(ctx, |ui| {
             const VIEWS: [&str; 8] = ["Open (New + Active)", "Total", "New", "Active", "Reviewed", "Approved", "Resolved", "Tests"];
             ui.horizontal(|ui| {

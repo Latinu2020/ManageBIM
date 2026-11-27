@@ -106,9 +106,9 @@ fn demo_project_end_to_end() {
     assert!(errors(&mut app).is_empty());
 
     // ---- 5. viewpoints in folders + Navisworks export
-    app.vp_folder_cur = "Level 1/MEP".into();
+    app.vp.folder_cur = "Level 1/MEP".into();
     app.save_viewpoint();
-    app.vp_folder_cur.clear();
+    app.vp.folder_cur.clear();
     app.save_viewpoint();
     assert_eq!(app.viewpoints[0].folder, "Level 1/MEP");
     app.export_navis_xml(&s(&o("viewpoints.xml")));

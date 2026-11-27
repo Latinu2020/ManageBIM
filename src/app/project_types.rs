@@ -186,9 +186,9 @@ pub struct Viewpoint {
 /// The computed Multi view sheet: segments (layer, x0 y0 x1 y1 in m), texts, the frame of each view.
 #[derive(Clone, Default)]
 pub struct MultiViewSheet {
-    pub segs: Vec<(String, [f64; 4])>,
+    pub segs: CadSegs,
     pub texts: Vec<CadText>,
-    pub frames: Vec<(String, [f64; 4])>,
+    pub frames: CadSegs,
     pub gap: f64,
 }
 

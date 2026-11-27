@@ -4,139 +4,107 @@
 
 # ManageBIM
 
-### Federated BIM review, coordination and presentation — fast, light, free
+**Federated BIM review, coordination and presentation for Windows, Linux and FreeBSD.**
 
-Open **IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP, CityJSON, 3D Tiles, USD and point clouds** together, run clash detection and model checks,<br>
-plan voids and clearance zones, produce **Inventor-style 2D drawings**, render with **scanned PBR materials** — and stay in sync with Revit and Navisworks.
+Open IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP, point clouds and open city formats together; run clash detection and model checks;<br>
+produce 2D drawings, reports and path-traced renders — and stay in sync with Revit and Navisworks.
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.29.0-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.29.0/ManageBIM-Setup-0.29.0.exe)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.29-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/latest)
 &nbsp;
-[![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Build%20from%20source-334155?style=for-the-badge&logo=linux&logoColor=white)](#building-from-source)
+[![All releases](https://img.shields.io/badge/All%20releases-Linux%20%C2%B7%20FreeBSD%20%C2%B7%20Windows-334155?style=for-the-badge&logo=github)](https://github.com/Latinu2020/ManageBIM/releases)
 
 [![Build](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml/badge.svg)](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-0.29.0-blue)
+![Version](https://img.shields.io/badge/version-0.29-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20FreeBSD-0078d4)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-b7410e)
-![No admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 <img src="docs/images/main-window.png" alt="ManageBIM main window" width="920">
-
-**[Download](#download) · [In action](#see-it-in-action) · [What's new](#whats-new) · [Highlights](#highlights) · [Features](#features) · [Add-ins](#add-ins-windows) · [Build from source](#building-from-source)**
 
 </div>
 
 ---
 
-## Why ManageBIM
+## Contents
+
+- [Overview](#overview)
+- [Download and install](#download-and-install)
+- [What's new in 0.29](#whats-new-in-029)
+- [Features](#features)
+- [Supported formats](#supported-formats)
+- [Gallery](#gallery)
+- [Add-ins for Autodesk products](#add-ins-for-autodesk-products)
+- [AI connection (MCP)](#ai-connection-mcp)
+- [System requirements](#system-requirements)
+- [Building from source](#building-from-source)
+- [Project status and support](#project-status-and-support)
+- [License](#license)
+
+---
+
+## Overview
+
+ManageBIM is a native desktop application for reviewing and coordinating federated building models. It follows the workflow of Navisworks — Selection Tree, Find Items, Clash Detective, TimeLiner, viewpoints — and adds drawing production, open-standard data exchange and physically based rendering, in a single program that installs without administrator rights.
 
 | | |
 |---|---|
-| ⚡ **Fast and light** | Native Rust + OpenGL. Opens large federated models in seconds; adaptive level of detail keeps navigation fluid. |
-| 🔗 **Works with your tools** | Add-ins for **Revit**, **Navisworks** and **AutoCAD / Plant 3D**: send models, bring issues back, sync the selection live, load ManageBIM models as references. |
-| 🧭 **Familiar** | Ribbon, Selection Tree, Find Items, Clash Detective, TimeLiner, viewpoints — the workflow you know from Navisworks. |
-| 🧱 **Coordination, not just viewing** | Clearance zones, provisions for void (found automatically where services cross walls and slabs) and placeholder volumes take part in clash detection. |
-| 📐 **Drawings and presentation** | Pick a face of the section box and get a 2D view with visible and hidden lines (PDF / DWG); photoreal renders with 28 scanned PBR materials, lights and sun. |
-| 🌐 **Open standards** | IFC 2x3 / IFC4 in and out (MVD), **ifcJSON / ifcXML**, **BCF 2.1 / 3.0**, **buildingSMART IDS 1.0**, **bSDD**, **CityJSON**, **3D Tiles**, **USD**, **3MF**, DWG / DXF, E57 / LAS / LAZ, glTF (with structural metadata), MaterialX. |
-| 🆓 **Free and open** | MIT licence, no account, no subscription, no administrator rights to install. |
-
----
-
-## See it in action
+| **Fast and light** | Native Rust and OpenGL. Large federated models open in seconds; adaptive level of detail keeps navigation fluid. |
+| **Connected to your tools** | Add-ins for Revit, Navisworks and AutoCAD / Plant 3D send models, bring issues back, sync the selection live and load ManageBIM models as references. |
+| **Coordination, not only viewing** | Clash detection with rules and severity, clearance zones, automatic provisions for void, model checking against buildingSMART IDS. |
+| **Drawings and presentation** | 2D views with visible and hidden lines (PDF / DWG), sheets with title blocks, GPU path tracing with scanned PBR materials. |
+| **Open standards** | IFC 2x3 / IFC4 (MVD), BCF 2.1 / 3.0, IDS 1.0, bSDD, CityJSON, 3D Tiles, USD, 3MF, E57 / LAS / LAZ, glTF, MaterialX. |
+| **Free and open source** | MIT licence. No account and no subscription. |
 
 <table>
 <tr>
-<td width="50%"><img src="docs/gifs/compare-heatmap.gif" alt="Compare with deviation heatmap"><br><sub><b>Geometric diff between revisions</b> — Compare measures how far every surface moved and paints a <b>deviation heatmap</b> per triangle (green in place → red at the scale): a building moved 600 mm, a roof raised 2.5 m, one removed, one added.</sub></td>
-<td width="50%"><img src="docs/gifs/multiview.gif" alt="Multi-view drawing"><br><sub><b>Multi-view drawing</b> — all faces of the section box on one sheet like Inventor: choose the views and the spacing, see the live preview, export PDF or DWG at 1:1.</sub></td>
+<td width="50%"><img src="docs/gifs/compare-heatmap.gif" alt="Compare with deviation heatmap"><br><sub><b>Revision comparison</b> — every surface is measured against the previous version and painted with a deviation heatmap.</sub></td>
+<td width="50%"><img src="docs/gifs/multiview.gif" alt="Multi-view drawing"><br><sub><b>Multi-view drawing</b> — all faces of the section box on one sheet, with live preview and export to PDF or DWG at 1:1.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/gifs/walk-path-scan.gif" alt="Walk path on a point cloud"><br><sub><b>Walk path on a scan</b> — click on the floor of a point cloud (snaps onto scan points), drag points, insert on the line; segment lengths, direction arrows and a live preview.</sub></td>
-<td width="50%"><img src="docs/gifs/viewcube.gif" alt="ViewCube"><br><sub><b>ViewCube</b> — 26 directions with chamfered edges and corners, a compass ring, and arrows to the neighbouring faces when you look straight at one.</sub></td>
+<td width="50%"><img src="docs/gifs/walk-path-scan.gif" alt="Walk path on a point cloud"><br><sub><b>Walk paths on scans</b> — points snap onto the point cloud; segment lengths, directions and a live preview.</sub></td>
+<td width="50%"><img src="docs/gifs/viewcube.gif" alt="ViewCube"><br><sub><b>ViewCube</b> — 26 directions with a compass ring and arrows to the neighbouring faces.</sub></td>
 </tr>
 </table>
 
 ---
 
-## Highlights
-
-<table>
-<tr>
-<td width="50%"><img src="docs/images/drawing-2d.png" alt="2D drawing preview"><br><sub><b>2D drawings like Inventor</b> — the view from a face of the section box: thick cut outline, visible edges, dashed hidden lines, levels and dimensions on a sheet with a title block. Export to PDF or DWG in real coordinates (attach it back as an overlay and it lands in place).</sub></td>
-<td width="50%"><img src="docs/images/pick-face.png" alt="Pick a face of the section box"><br><sub><b>Pick face</b> — hover a face of the section box, it turns light green; click it and the drawing is made from that face (Top, Bottom, Front, Back, Left, Right).</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/images/coordination-objects.png" alt="Coordination objects"><br><sub><b>Coordination objects</b> — <b>Auto voids</b> proposes a provision for void wherever a duct, pipe or cable tray crosses a wall or slab; clearance zones and placeholder volumes complete the set. They appear in the tree, in Clash Detective and in the IFC export.</sub></td>
-<td width="50%"><img src="docs/images/materials-pbr.png" alt="Scanned PBR materials"><br><sub><b>Scanned PBR materials included</b> — 28 ambientCG (CC0) materials with colour, normal, roughness, metallic, AO and height maps, applied in one click by IFC type. OpenPBR / MaterialX import and export.</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/images/lighting.png" alt="Lighting panel"><br><sub><b>Lighting like Navisworks</b> — Point, Spot and Distant lights lit in real time, a Move / Rotate gizmo, unlimited power and range, and Sun & sky (position by date, time and location, shadows, night mode) in one panel.</sub></td>
-<td width="50%"><img src="docs/images/bsdd.png" alt="bSDD classification"><br><sub><b>bSDD classification</b> — search the buildingSMART Data Dictionary online (IFC, Uniclass, ETIM, NL-SfB…) or a local catalogue and assign codes to the selection; exported as <code>IfcClassificationReference</code> with the bSDD URI.</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/images/hidden-line.png" alt="Hidden line style"><br><sub><b>Hidden line style</b> — white technical-drawing look with every edge of the shapes in black and a light grey tone by face orientation.</sub></td>
-<td width="50%"><img src="docs/images/installer.png" alt="Setup wizard"><br><sub><b>Setup wizard</b> — per user, no administrator rights, choose the folder with Browse, Revit / AutoCAD / Navisworks add-ins detected automatically.</sub></td>
-</tr>
-</table>
-
----
-
-## Screenshots
-
-<table>
-<tr>
-<td width="50%"><img src="docs/images/clash-detective.png" alt="Clash Detective"><br><sub><b>Clash Detective like Navisworks</b> — tests with New / Active / Reviewed / Approved / Resolved columns, Add Test, Reset / Compact / Delete All, <b>Update All</b>; the clash is shown in the model and the elements' properties next to it.</sub></td>
-<td width="50%"><img src="docs/images/clash-update-all.png" alt="Update All summary"><br><sub><b>Update All</b> runs every test again and shows what changed: new, still active and resolved clashes per test.</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/images/clash-matrix.png" alt="Clash matrix by test"><br><sub><b>Clash matrix by test</b> — Selection A on the rows, Selection B on the columns, the tests and their statuses in each cell; Excel export with a sheet per status. Tests are created from a <b>sets matrix</b> and imported / exported as <b>Navisworks XML</b> or CSV.</sub></td>
-<td width="50%"><img src="docs/images/animations-4d.png" alt="Animations window"><br><sub><b>Animations</b> in their own window — Record, Orbit 360°, viewpoints, walk path and <b>Import 4D</b>; ▶ Play on each one, then <b>export the video</b>, optionally rendered with materials.</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/images/light-theme.png" alt="Light theme"><br><sub><b>Five themes</b> — Studio, Dark, Light, Tokyo Night, Nord. Card ribbon in three sizes, vector icons, panels that slide up from the status bar.</sub></td>
-<td width="50%"><img src="docs/images/concept-style.png" alt="Concept visual style"><br><sub><b>Visual styles</b> — Realistic (materials, textures), Shaded, Concept (white study model with edges) and Wireframe.</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/images/pdf-sheet.png" alt="PDF sheet"><br><sub><b>PDF sheets</b> from viewpoints — A3 to A0, with an editable title block. Section cuts go to <b>DWG</b> the same way.</sub></td>
-<td width="50%"><img src="docs/images/web-viewer.png" alt="Web viewer"><br><sub><b>Web viewer</b> — the model in a single .html file: tree, search, properties, section, measure. Opens offline in any browser.</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/images/start-page.png" alt="Start page"><br><sub><b>Start page</b> with recent projects, a demo project and the integrated manual.</sub></td>
-<td width="50%"><img src="docs/images/point-cloud.png" alt="Point cloud"><br><sub><b>Point clouds</b> (E57, LAS) next to the model, with the <b>as-built check</b>: built, partial, missing.</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/images/plan-2d-sheet.png" alt="2D plan on sheet"><br><sub><b>Complete 2D plans</b> from a section — hatched cut walls and columns, door / window and wall tags, grid bubbles and dimension chains, on a sheet with the title block (DWG).</sub></td>
-<td width="50%"><img src="docs/images/romanian-ui.png" alt="Romanian interface"><br><sub><b>English / Română</b> — the interface language switches from View › Language, the File menu or Ctrl+K.</sub></td>
-</tr>
-</table>
-
----
-
-## Download
+## Download and install
 
 | Platform | Package | Notes |
 |---|---|---|
-| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.29.0.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.29.0/ManageBIM-Setup-0.29.0.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime, Intel Open Image Denoise and the scanned PBR material library. Per-user, **no administrator rights**, folder of your choice. |
-| **Linux** (x86-64) | [**ManageBIM-0.29.0-x86_64.AppImage**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.29.0/ManageBIM-0.29.0-x86_64.AppImage) | Single file: `chmod +x` and run. Or [build from source](#building-from-source). |
-| **FreeBSD** (x86-64) | [**ManageBIM-0.29.0-freebsd-x86_64.tar.gz**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.29.0/ManageBIM-0.29.0-freebsd-x86_64.tar.gz) | Unpack and run `./ManageBIM`. Needs `pkg install mesa-libs libxkbcommon`. |
+| **Windows 10 / 11** (x64) | [ManageBIM-Setup-0.29.x.exe](https://github.com/Latinu2020/ManageBIM/releases/latest) | Setup wizard with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime, Intel Open Image Denoise, a software OpenGL fallback and the scanned PBR material library. Per-user install, no administrator rights. |
+| **Linux** (x86-64) | [ManageBIM-0.29.x-x86_64.AppImage](https://github.com/Latinu2020/ManageBIM/releases/latest) | Single file: `chmod +x` and run. |
+| **FreeBSD** (x86-64) | [ManageBIM-0.29.x-freebsd-x86_64.tar.gz](https://github.com/Latinu2020/ManageBIM/releases/latest) | Unpack and run `./ManageBIM`; requires `pkg install mesa-libs libxkbcommon`. |
 
-## What's new
+**Windows notes**
 
-> **0.29.0** — **path tracing on the graphics card** and an **interactive Ray Trace view** that refines while you look (clean while you move, indirect light, stops at once when you switch it off); **every length unit** incl. ft-in; **OSNAP up to 40 px**; a **Light** button on the navigation bar; the **Level & Storey Manager** with a navigable elevation; a **detailed Dashboard report** (clash and viewpoint sheets with pictures); IFC Mapping in its own window; **add-ins that never close Revit, AutoCAD or Navisworks**, tested automatically; damaged files and point clouds can no longer close ManageBIM; **nothing else to install** - the Visual C++ runtime and a software OpenGL (Mesa) for PCs without a capable graphics card are included.
->
-> **0.28.9** — the **level preview** zooms (wheel), pans and lets you drag the model levels too; a **tidier ribbon** with every command on one tab; the **add-ins can no longer close Revit, AutoCAD / Plant 3D or Navisworks** (errors are logged with a short message) and are checked for every supported version, with an automated test for AutoCAD and Navisworks.
->
-> **0.28.8** — a **detailed Dashboard report**: every clash test with its groups and every clash, a **sheet with a picture for every open clash** (clashing elements highlighted, a red ring at the clash point) and **every viewpoint with its markups drawn on the model**; a **Level & Storey Manager** with the storey schedule next to an **orthographic elevation of the model** (±0.00 in red, storey heights, drag a line to move a level); **levels sent to Plant 3D / AutoCAD and Navisworks**; stability: damaged files never crash, a warning for files too big for the memory, a clear message on graphics drivers without OpenGL 3.3.
->
-> **0.28.7** — a **Dashboard** of the whole project (models, clashes, issues, checks, levels) exported as a **PDF or Word report**; **Smart sets** - pick property values with live counts, suggestions from the selection, plain-language search ("ducts level 2"), straight into clash exclusions, "ignore everything like this" from a clash result; **Undo for model changes** (properties, colours, materials); **walk paths to Navisworks** as viewpoint animations; Headroom / Egress set up before running; the model no longer stays transparent after Clash Detective.
+- The installer is not yet code-signed. If SmartScreen appears, choose *More info › Run anyway*.
+- Silent install: `ManageBIM-Setup-<version>.exe /S` — add `/NoAddins` to install the application only.
+- Installing over an older version replaces the application and the add-ins and keeps your settings.
 
-Older versions: see the full **[CHANGELOG](CHANGELOG.md)**. What comes next: **[ROADMAP](ROADMAP.md)**.
+**Linux / FreeBSD notes** — the Autodesk add-ins and the native STEP / IGES reader are Windows-only; everything else is identical.
 
-> **Windows:** the installer is not digitally signed yet — if SmartScreen asks, choose *More info › Run anyway*.
-> Silent install: `ManageBIM-Setup-0.29.0.exe /S` (add `/NoAddins` for the application only).
->
-> **Linux / FreeBSD:** the add-ins (Revit, Navisworks, AutoCAD) and the native STEP / IGES reader exist only on Windows; everything else is the same.
+**First steps** — open **Help › Demo** for a sample project (architecture, structure, MEP and a 4D schedule), press **Ctrl+K** for the command palette, or read **Help › Manual**.
 
-New here? Open **Help › Demo** for a sample project (architecture, structure, MEP and a 4D schedule), press **Ctrl+K** for the command palette, or read **Help › Manual**.
+---
+
+## What's new in 0.29
+
+**0.29.1**
+- **Multi-bounce indirect light** in renders and the Ray Trace view (CPU and GPU): sun and lamp light bounces up to four times between surfaces, so interiors are brighter and corners are no longer dark. Adjustable in the Path Trace window.
+- **Faster Ray Trace refinement** on fast graphics cards — up to 64 samples per frame within the frame budget.
+- **Stability**: damaged LAS point clouds, out-of-memory on the graphics card and missing data in quantities, 4D and reports no longer close the application; robustness testing extended to over 6,500 damaged files.
+- **AI connection**: new `render_settings` tool for Ray Trace, light bounces, brightness and sun.
+- Code quality: clippy warnings reduced from 130 to 33, the 3D view and application state restructured.
+
+**0.29.0**
+- **Path tracing on the graphics card** and an **interactive Ray Trace view** that refines while the camera stands still, with an edge-aware filter while moving and Intel Open Image Denoise when converged.
+- **All length units** including feet-inches; **OSNAP** up to 40 px with a visible capture zone.
+- **Level & Storey Manager**, a **detailed Dashboard report** with clash and viewpoint sheets, IFC Mapping in its own window.
+- **Add-ins that never close the host program**, tested automatically; damaged files of every supported format are handled without crashing.
+- **Nothing else to install on Windows** — the C runtime and a software OpenGL fallback (Mesa) are included.
+
+Full history: [CHANGELOG](CHANGELOG.md) · Planned work: [ROADMAP](ROADMAP.md)
 
 ---
 
@@ -145,80 +113,159 @@ New here? Open **Help › Demo** for a sample project (architecture, structure, 
 <details open>
 <summary><b>Model review</b></summary>
 
-- **Federated models** — IFC 2x3 / IFC4 (`.ifczip`, **ifcXML**, **ifcJSON** too) with openings cut, systems, classifications and georeference, Revit and Navisworks (through the add-ins), AutoCAD / Plant 3D DWG with Plant 3D properties, DXF (with block attributes and XDATA), STEP / IGES / BREP / FCStd, FBX, glTF / GLB (with EXT_structural_metadata), OBJ, STL, PLY (with segments and properties).
-- **Open city and web formats** — **CityJSON / CityJSONSeq** (attributes, LoD, semantic surfaces), **3D Tiles 1.1 / 1.0** (tilesets, b3dm batch tables, shown upright from ECEF), **USD** text (.usda: prims, transforms, customData), **3MF** (objects, materials, metadata).
-- **Point clouds** — E57, LAS and **LAZ**; one item per scan, LAS split **by classification** (Ground, Building, Vegetation…) with intensity / returns / GPS time; round points with relief, real point size, colour by **elevation**; Measure snaps onto scan points.
-- **Selection Tree** (group by any property, category colours, counts), **Property Tree**, **Find Items** with condition chips, selection and search **sets**, **Select Same Type / Category**.
-- **Navigation** like Navisworks — orbit, pan, walk with gravity and collision, ViewCube, walk paths, viewpoints, animations; adaptive LOD on large models.
-- **Visual styles** — Realistic, Shaded, Concept, Wireframe and **Hidden line** (technical-drawing look, every edge in black); fine edges, soft contact shadows, **sun shadows by date, time and location**.
-- **Professional PBR materials included** — 28 scanned materials from ambientCG (CC0): concrete, exposed concrete, brick, plaster, steel, aluminium, zinc, copper, oak, parquet, tiles, clay roof tiles, asphalt, grass, marble, granite, paving… with colour, normal, roughness, metallic, AO and height maps, applied automatically by IFC type. Optional 2K download; import your own `.zip` packs (freepbr.com, Poly Haven, Poliigon) and **OpenPBR / MaterialX** `.mtlx`.
-- **Lighting like Navisworks** — Point, Spot and Distant lights lit in **real time** in the 3D view, with a **Move / Rotate gizmo** (drag the arrows to move, drag the circles to aim), unlimited power and range, and **Sun & sky** (brightness, ambient, sun position by date / time / location, shadows) plus a **Night** mode — all in one Lighting panel.
-- **Command palette** (Ctrl+K) — every command and every element name, in one search box.
-- **Arrangeable panels** — dock left / right / bottom or float, auto-hide, and a **Blender-style Properties bar**: add any panel as a tab there; **Model focus** hides the ribbon and panels but keeps Properties floating. UI settings (clash filter, groups, visual style, 4D) are saved between sessions.
-- **Interface in English or Romanian** (View › Language).
-- **Undo / Redo** of the view (Ctrl+Z / Ctrl+Y) and **DWG / DXF overlay**: lay a 2D drawing over the model at a level.
+- **Federated models** from IFC, Revit and Navisworks (through the add-ins), AutoCAD / Plant 3D, STEP, glTF, point clouds and open city formats — see [Supported formats](#supported-formats).
+- **Selection Tree** grouped by any property, **Property Tree**, **Find Items** with conditions, selection and search **sets**, **Smart sets** with live value counts and plain-language search, **Select Same Type / Category**.
+- **Navigation** like Navisworks: orbit, pan, walk with gravity and collision, ViewCube, viewpoints, walk paths and animations; adaptive level of detail on large models.
+- **Visual styles**: Realistic, Shaded, Concept, Wireframe and Hidden line; sun shadows by date, time and location.
+- **Point clouds**: one item per scan, LAS split by classification with intensity, returns and GPS time; colour by elevation; measurements snap to scan points.
+- **Command palette** (Ctrl+K), dockable and floating panels, five themes, interface in **English or Romanian**.
+- **Undo / Redo** for the view and for model changes (properties, colours, materials).
 </details>
 
 <details open>
 <summary><b>Coordination</b></summary>
 
-- **Clash Detective** like Navisworks — test list with New / Active / Reviewed / Approved / Resolved columns and test status (New / Done / Old), **Add Test, Reset All, Compact All, Delete All, Update All** (with a summary of what changed), Rules / Select / Results / Report tabs; hard and clearance tests with **severity levels** (Critical / Major / Minor) and **ready-made templates** by discipline, **smart rules** (normal connections ignored, responsible discipline assigned automatically, grouping by system), grouping by level / grid location / type / model / assignee / status; **Filter by Selection** (inclusive / exclusive); Approved / Resolved keep **who and when**; **SwitchBack** sends a clash to Revit / Navisworks with the camera and the two elements; **Scan vs Model** turns as-built discrepancies into clashes; **import / export of clash tests** as Navisworks XML (with the selection sets) or CSV / Excel; **clash matrix by test** (Selection A × Selection B, a sheet per status) and tests created from a **sets matrix**; HTML, CSV, BCF and Navisworks reports.
-- **Model Checker** — rules or **buildingSMART IDS 1.0** files (import **and export**): properties, attributes, classifications, materials; exact values, lists, patterns, ranges, optional / prohibited, **unique values** (duplicate marks, GUIDs). Excel and BCF reports. **Quick checks without IDS**: no level, name, classification, material or geometry, duplicates, duplicate GUIDs.
-- **Classification & bSDD** — search the **buildingSMART Data Dictionary** online (IFC 4.3, Uniclass, ETIM, NL-SfB… with a dictionary filter) or a local Uniclass / OmniClass catalogue, and assign codes to the selection; exported to IFC as `IfcClassificationReference` with the bSDD URI.
-- **Coordination objects** — **clearance zones** around equipment, **provisions for void** (Auto voids where pipes, ducts and cable trays cross walls and slabs, with the host element) and **placeholder volumes** for equipment not modelled yet; part of Clash Detective, saved with the project, exported to IFC.
-- **Live Link** — the selection follows **Revit** and **Navisworks** both ways (matched by UniqueId / IFC GUID).
-- **As-built check** — the model against the point cloud: built, partial, missing, not scanned; colours on the model and an Excel report.
-- **Sections & Annotation** — boxes with stretch arrows (like Revit), planes, **sections by level** from the status bar, filled cuts (solid cap hatched on the cut plane). The **Annotation** tab exports the cut to **DWG / DXF / PDF** with hatching, element tags, grid bubbles and **dimension chains**; separate **Dimensions** / **Levels** toggles let you drop what you don't need. **Pick face**: click a face of the section box (it turns light green) to draw the view from it, **like an Inventor drawing view** — thick cut outline, visible edges beyond the cut and dashed **hidden lines**, with technical line weights. The **2D Drawing Preview** (cream sheet, title block, zoom / pan) shows exactly what is exported, in real coordinates.
-- **Grids and levels** — from IFC, from DWG / DXF, or created in the app; clash locations like **“C-4 / Level 2”**.
-- **Measure** with snapping, **relocate** models (point to point, rotate, align to a face), **compare** model versions (geometry and **parameter by parameter**, old → new, with a per-triangle **deviation heatmap**), **TimeLiner** 4D (CSV, **MS Project** and **Primavera P6** XML; videos with date and legend) and **quantities**.
-- **Colour by parameter** with a legend in the view and on images / videos.
-- **User data like Navisworks** — Properties › Custom › Add User Data Tab / Insert New Property: your own properties and values on any element (also on geometry without data: STEP, DWG, OBJ), saved with the project, used by Find, Profiler, Model Checker and IFC export. **Import properties from Excel / CSV** (matched by GlobalId, Name or any property) and export an Excel template.
+- **Clash Detective** — hard and clearance tests with severity, discipline templates and smart rules (normal connections ignored, responsible discipline assigned, grouping by system, level, grid location, type or assignee); New / Active / Reviewed / Approved / Resolved workflow with audit trail; **Update All** with a change summary; **SwitchBack** to Revit and Navisworks; clash matrix; import and export of tests as Navisworks XML or CSV; HTML, CSV, Excel, BCF and Navisworks reports.
+- **Model Checker** — rule sets or **buildingSMART IDS 1.0** (import and export) covering properties, attributes, classifications and materials, with Excel and BCF reports; quick checks without IDS (missing level, name, classification, material or geometry; duplicate GUIDs).
+- **Coordination objects** — clearance zones, **automatic provisions for void** where ducts, pipes and cable trays cross walls and slabs, and placeholder volumes; part of clash detection and of the IFC export.
+- **Classification and bSDD** — search the buildingSMART Data Dictionary online or a local Uniclass / OmniClass catalogue and assign codes, exported as `IfcClassificationReference`.
+- **Grids and levels** from IFC, DWG / DXF or created in the application; **Level & Storey Manager**; levels sent to Plant 3D / AutoCAD and Navisworks.
+- **Live Link** — the selection follows Revit and Navisworks in both directions.
+- **As-built check** — the model against the point cloud: built, partial, missing, not scanned.
+- **Compare** model revisions by geometry (per-triangle deviation heatmap) and parameter by parameter.
+- **TimeLiner 4D** from CSV, MS Project or Primavera P6 XML, with videos showing date and legend; **quantity take-off**; **colour by parameter**.
+- **User data** like Navisworks — custom tabs and properties on any element, import from Excel / CSV.
 </details>
 
 <details open>
-<summary><b>Issues & collaboration</b></summary>
+<summary><b>Drawings, rendering and output</b></summary>
 
-- **Viewpoints and issues** — status, priority, assignee, comments and markups (line, arrow, rectangle, ellipse, cloud, text). **Folders** (drag and drop, export per folder, kept in Navisworks).
-- **BCF 2.1 / 3.0** import and export (Revit, ACC, Solibri, BIMcollab); **Navisworks XML** viewpoints, search sets and clash tests.
-- **Shared issues** through a common folder (network drive, SharePoint / OneDrive) with automatic sync.
-- **AI connection (MCP)** — a local Model Context Protocol server (Share › AI connection, token-protected, 127.0.0.1 only) lets **Claude Code / Claude Desktop, OpenCode, VS Code** or local **Ollama** models (through an MCP client) find elements, read properties, select, hide / isolate, set properties, run clash tests and scripts; ready-to-copy client configurations, read-only mode.
-- **Projects** — `.bimr` (references, like NWF) and `.bimd` (everything in one file, like NWD); autosave and crash recovery.
+- **Sections** — section boxes with stretch handles, planes, sections by level, filled and hatched cuts.
+- **2D drawings** — pick a face of the section box for an Inventor-style view: cut outline, visible edges and dashed hidden lines with technical line weights; complete plans with hatching, element tags, grid bubbles and dimension chains; multi-view sheets.
+- **DWG / DXF / PDF** — model space or A3 – A0 sheets at standard scales with an editable title block, written directly in AutoCAD 2018 format.
+- **Rendering** — GPU path tracing (CPU fallback) with soft sun shadows, sky and HDRI light, lamps, GGX reflections, clearcoat, sheen, glass and multi-bounce indirect light, denoised with Intel Open Image Denoise; interactive Ray Trace view.
+- **Materials** — 28 scanned PBR materials (ambientCG, CC0) applied by IFC type; import of PBR packs and **OpenPBR / MaterialX**.
+- **Lighting** — point, spot and distant lights with a move / rotate gizmo; sun and sky by date, time and location; night mode.
+- **Images and video** — PNG, path-traced images, MP4, AVI, GIF and PNG frames, optionally rendered with materials.
+- **Reports** — project **Dashboard** exported to PDF or Word with a sheet and picture for every open clash and every viewpoint.
+- **Web viewer** — the model in a single offline `.html` file with tree, search, properties, section and measurement.
 </details>
 
 <details open>
-<summary><b>Output</b></summary>
+<summary><b>Issues and collaboration</b></summary>
 
-- **IFC4 export** of the visible items or the selection — closed solids, colours, levels, original GUIDs, all properties.
-- **Complete 2D plans** — hatch on cut walls / columns / slabs, door / window numbers and wall types, grid bubbles with dimension chains; level lines and cut grids on sections.
-- **DWG / DXF** — section cuts as 2D in model space, or on an **A3 / A2 / A1 / A0 sheet** at a standard scale with the **title block**; written directly (AutoCAD 2018 format), no converter needed. Grid axes too.
-- **PDF sheets** from viewpoints with the title block; HTML / Excel reports.
-- **Web viewer** — one offline `.html` file with the model.
-- **Reference models** for Revit and AutoCAD / Plant 3D (`.mbref`) with Load / Reload / Unload.
-- **Animations window** — Record your navigation, Orbit 360°, walkthrough of viewpoints, walk path, **Import 4D** (the TimeLiner sequence); ▶ Play each one with a full player (loop, ping-pong), animate objects (colour, transparency, visibility).
-- **Images and path tracing** — quick PNG of the current view, or **progressive CPU path tracing** (GGX, HDRI environment, lamps with soft shadows, Intel Open Image Denoise) in a separate window (resolution, samples, time limit, Cancel, export the current image at any time).
-- Images and **videos** (MP4, AVI, GIF, PNG frames), optionally **rendered with materials** (Realistic style, textures, sun shadows).
+- **Viewpoints and issues** with status, priority, assignee, comments, markups and folders.
+- **BCF 2.1 / 3.0** import and export (Revit, ACC, Solibri, BIMcollab); Navisworks XML viewpoints, search sets and clash tests.
+- **Shared issues** through a common folder (network drive, SharePoint / OneDrive) with automatic synchronisation.
+- **Projects** — `.bimr` (references, like NWF) and `.bimd` (single file, like NWD); autosave and crash recovery.
 </details>
 
 ---
 
-## Add-ins (Windows)
+## Supported formats
 
-| Program | Commands |
-|---|---|
-| **Revit 2023 – 2026** | *Export BIMC*, *Send to ManageBIM* (live update), *ManageBIM Issues*, *ManageBIM Reference*, *Sync Selection* |
-| **Navisworks Manage / Simulate 2022 – 2026** | *Export BIMC*, *Send to ManageBIM*, *ManageBIM Issues*, *Sync Selection* |
-| **AutoCAD / Plant 3D 2021+** | `BIMCEXPORT`, `BIMCSEND`, `MBREFERENCE`, `MBREFRELOAD`, `MBREFUNLOAD` |
+| Format | Import | Export | Notes |
+|---|:---:|:---:|---|
+| IFC 2x3 / IFC4 (`.ifc`, `.ifczip`, ifcXML, ifcJSON) | ● | ● | Openings, systems, classifications, georeference; export with MVD selection |
+| Revit / Navisworks | ● | | Through the add-ins (`.bimc`); `.nwd` / `.nwc` / `.nwf` through Navisworks |
+| DWG / DXF (AutoCAD, Plant 3D) | ● | ● | Plant 3D properties, block attributes, XDATA; 2D drawings and sheets on export |
+| STEP / IGES / BREP / FCStd | ● | | OpenCascade runtime (Windows) |
+| glTF / GLB | ● | ● | `EXT_structural_metadata` |
+| FBX, OBJ, STL, PLY | ● | | |
+| CityJSON / CityJSONSeq, 3D Tiles 1.0 / 1.1 | ● | | Attributes, LoD, semantic surfaces, batch tables |
+| USD (`.usda`), 3MF | ● | | |
+| E57, LAS, LAZ | ● | | Per-scan items, classification, intensity, GPS time |
+| BCF 2.1 / 3.0 | ● | ● | Issues, viewpoints, markups |
+| buildingSMART IDS 1.0 | ● | ● | Model Checker rules |
+| MaterialX / OpenPBR | ● | ● | Material parameters and texture paths |
+| Navisworks XML | ● | ● | Clash tests, selection and search sets, viewpoints |
+| PDF, Word, Excel, CSV, HTML | | ● | Sheets, reports, schedules, web viewer |
+| MP4, AVI, GIF, PNG | | ● | Images, animations, 4D videos |
 
-The setup installs them per user — no administrator rights.
+---
+
+## Gallery
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/drawing-2d.png" alt="2D drawing preview"><br><sub><b>2D drawing</b> — the view from a face of the section box, with levels and dimensions on a sheet.</sub></td>
+<td width="50%"><img src="docs/images/clash-detective.png" alt="Clash Detective"><br><sub><b>Clash Detective</b> — tests, statuses and the clashing elements with their properties.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/coordination-objects.png" alt="Coordination objects"><br><sub><b>Coordination objects</b> — automatic provisions for void, clearance zones and placeholder volumes.</sub></td>
+<td width="50%"><img src="docs/images/materials-pbr.png" alt="Scanned PBR materials"><br><sub><b>PBR materials</b> — 28 scanned materials applied by IFC type.</sub></td>
+</tr>
+</table>
+
+<details>
+<summary><b>More screenshots</b></summary>
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/pick-face.png" alt="Pick face"><br><sub><b>Pick face</b> — choose the drawing view directly on the section box.</sub></td>
+<td width="50%"><img src="docs/images/lighting.png" alt="Lighting panel"><br><sub><b>Lighting</b> — point, spot and distant lights, sun and sky.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/clash-update-all.png" alt="Update All"><br><sub><b>Update All</b> — new, active and resolved clashes per test.</sub></td>
+<td width="50%"><img src="docs/images/clash-matrix.png" alt="Clash matrix"><br><sub><b>Clash matrix</b> — selections against selections, statuses per cell, Excel export.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/bsdd.png" alt="bSDD classification"><br><sub><b>bSDD classification</b> — search the buildingSMART Data Dictionary and assign codes.</sub></td>
+<td width="50%"><img src="docs/images/animations-4d.png" alt="Animations"><br><sub><b>Animations and 4D</b> — record, orbit, walk paths and TimeLiner sequences, exported as video.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/plan-2d-sheet.png" alt="2D plan on a sheet"><br><sub><b>2D plans</b> — hatched cuts, tags, grid bubbles and dimension chains on a sheet.</sub></td>
+<td width="50%"><img src="docs/images/pdf-sheet.png" alt="PDF sheet"><br><sub><b>PDF sheets</b> from viewpoints, A3 to A0, with title block.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/point-cloud.png" alt="Point cloud"><br><sub><b>Point clouds</b> next to the model, with the as-built check.</sub></td>
+<td width="50%"><img src="docs/images/web-viewer.png" alt="Web viewer"><br><sub><b>Web viewer</b> — a single offline HTML file.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/hidden-line.png" alt="Hidden line style"><br><sub><b>Hidden line</b> visual style.</sub></td>
+<td width="50%"><img src="docs/images/concept-style.png" alt="Concept style"><br><sub><b>Concept</b> visual style.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/light-theme.png" alt="Light theme"><br><sub><b>Themes</b> — Studio, Dark, Light, Tokyo Night, Nord.</sub></td>
+<td width="50%"><img src="docs/images/start-page.png" alt="Start page"><br><sub><b>Start page</b> with recent projects, demo and manual.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/installer.png" alt="Setup wizard"><br><sub><b>Setup wizard</b> — per user, add-ins detected automatically.</sub></td>
+<td width="50%"><img src="docs/images/romanian-ui.png" alt="Romanian interface"><br><sub><b>English / Română</b> interface.</sub></td>
+</tr>
+</table>
+</details>
+
+---
+
+## Add-ins for Autodesk products
+
+| Program | Versions | Commands |
+|---|---|---|
+| **Revit** | 2023 – 2026 | *Export BIMC*, *Send to ManageBIM* (live update), *ManageBIM Issues*, *ManageBIM Reference*, *Sync Selection* |
+| **Navisworks Manage / Simulate** | 2022 – 2026 | *Export BIMC*, *Send to ManageBIM*, *ManageBIM Issues*, *ManageBIM Levels*, *Walk path*, *Sync Selection* |
+| **AutoCAD / Plant 3D** | 2021 and later | `BIMCEXPORT`, `BIMCSEND`, `MBLEVELS`, `MBREFERENCE`, `MBREFRELOAD`, `MBREFUNLOAD` |
+
+The add-ins are installed per user by the setup wizard. Every command runs inside an error guard: an unexpected error is logged to `%LOCALAPPDATA%\ManageBIM\addin.log` and shown in ManageBIM, and never closes the host program.
+
+---
+
+## AI connection (MCP)
+
+ManageBIM includes a local [Model Context Protocol](https://modelcontextprotocol.io) server (**Share › AI connection**). Assistants such as Claude Code, Claude Desktop, OpenCode, VS Code or local Ollama models can find elements, read properties, select, hide and isolate, set properties, run clash tests and scripts, change the render settings and capture the 3D view.
+
+- Off by default; listens on `127.0.0.1` only and requires a bearer token.
+- Ready-to-copy client configurations in the AI connection window; `ManageBIM.exe --mcp-stdio` bridges clients that use stdio.
+- A read-only mode blocks every tool that changes the model.
 
 ---
 
 ## System requirements
 
-- **Windows** 10 / 11 64-bit, **Linux** x86-64 (X11 or Wayland), or **FreeBSD** 14 x86-64
-- OpenGL 3.3 graphics (any recent integrated or dedicated GPU) - without it (virtual machines, old Remote Desktop) Windows uses the included software OpenGL (Mesa), slower but complete
-- 8 GB RAM recommended for large federated models and point clouds
-- **Nothing else to install on Windows**: the installer includes everything (no Visual C++ Redistributable, no .NET, no administrator rights). The add-ins use the .NET of Revit / AutoCAD / Navisworks itself.
+- **Operating system**: Windows 10 / 11 64-bit, Linux x86-64 (X11 or Wayland) or FreeBSD 14 x86-64.
+- **Graphics**: OpenGL 3.3. On Windows, systems without it (virtual machines, older Remote Desktop) fall back automatically to the included software OpenGL.
+- **Memory**: 8 GB RAM recommended for large federated models and point clouds.
+- **Windows dependencies**: none — no Visual C++ Redistributable, no .NET, no administrator rights. The add-ins use the .NET runtime of the host program.
 
 ---
 
@@ -229,45 +276,42 @@ Requirements: [Rust](https://rustup.rs) (stable). On Windows also Visual Studio 
 ```bash
 git clone https://github.com/Latinu2020/ManageBIM.git
 cd ManageBIM
-cargo build --release --features addins   # application, bimc-convert and the three add-in installers
-cargo test --release       # the test suite
+cargo build --release        # the application and bimc-convert
+cargo test --release         # the test suite
 ```
 
-The repository is self-contained: everything needed to build the application is in it. OpenCascade (STEP / IGES / BREP solids) and the Autodesk add-ins are optional and built with the scripts below; without them the application still builds and runs (those formats report that the runtime is missing).
+The repository is self-contained. OpenCascade (STEP / IGES / BREP) and the Autodesk add-ins are optional; without them the application builds and runs, and those formats report that the runtime is missing.
 
 <details>
-<summary>Windows installer from Linux (cross-compile)</summary>
-
-```bash
-rustup target add x86_64-pc-windows-gnu
-sudo apt install gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
-cargo build --release --target x86_64-pc-windows-gnu --bin ManageBIM --bin bimc-convert
-```
-The icon is compiled with `x86_64-w64-mingw32-windres` when `rc.exe` (Windows SDK) is not available.
-</details>
-
-<details>
-<summary>Windows: add-ins, OpenCascade and the installer</summary>
+<summary><b>Windows: add-ins, OpenCascade and the installer</b></summary>
 
 ```powershell
 # OpenCascade runtime (STEP / IGES / BREP / ACIS solids), once
 powershell -ExecutionPolicy Bypass -File tools\build-occt.ps1
-
-# default PBR material library (28 ambientCG CC0 materials, ~84 MB -> third_party\pbr-library), once
-cargo run --release --bin fetch_pro_library
 
 # add-ins (the Autodesk API reference assemblies are restored by the scripts)
 powershell -ExecutionPolicy Bypass -File revit-addin\build.ps1
 powershell -ExecutionPolicy Bypass -File acad-addin\build.ps1
 powershell -ExecutionPolicy Bypass -File navis-addin\build.ps1
 
-# single-file installer (builds with --features addins)
-powershell -ExecutionPolicy Bypass -File tools\make-backup.ps1
+# application and add-in installers
+cargo build --release --features addins
+
+# PBR material library, denoiser and software OpenGL, once
+cargo run --release --bin fetch_pro_library
+powershell -ExecutionPolicy Bypass -File tools\get-oidn.ps1
+powershell -ExecutionPolicy Bypass -File tools\get-mesa.ps1
+
+# setup wizard -> ManageBIM-Setup-<version>.exe
+powershell -ExecutionPolicy Bypass -File tools\make-setup.ps1
+
+# automated add-in test (AutoCAD / Plant 3D, Navisworks, Revit)
+powershell -ExecutionPolicy Bypass -File tools\test-addins.ps1
 ```
 </details>
 
 <details>
-<summary>Linux and FreeBSD packages</summary>
+<summary><b>Linux and FreeBSD packages</b></summary>
 
 ```bash
 # Debian / Ubuntu build dependencies
@@ -280,24 +324,41 @@ pkg install rust pkgconf libxkbcommon wayland mesa-libs
 cargo build --release --bin ManageBIM
 sh packaging/freebsd/build-tarball.sh       # -> dist/ManageBIM-<version>-freebsd-x86_64.tar.gz
 ```
-
-Every push is built and tested on Windows, Linux and FreeBSD by [GitHub Actions](.github/workflows/build.yml); a `v*` tag publishes the Windows setup to Releases (the Linux and FreeBSD packages are added again once their builds pass).
 </details>
+
+<details>
+<summary><b>Cross-compiling the Windows application from Linux</b></summary>
+
+```bash
+rustup target add x86_64-pc-windows-gnu
+sudo apt install gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+cargo build --release --target x86_64-pc-windows-gnu --bin ManageBIM --bin bimc-convert
+```
+</details>
+
+**Continuous integration** — every push is built and tested on Windows, Linux and FreeBSD with [GitHub Actions](.github/workflows/build.yml), together with clippy and licence checks. A `v*` tag publishes the Windows setup, the Linux AppImage and the FreeBSD package to [Releases](https://github.com/Latinu2020/ManageBIM/releases).
 
 | Folder | Content |
 |---|---|
-| `src/` | application (egui / OpenGL), readers (IFC, DWG / DXF, E57, LAS, FBX…), clash (`clash.rs`, `clash_io.rs`: Navisworks XML / CSV, matrix), model checker, animations, IFC / DWG / PDF export, renderer |
-| `src/bin/` | `bimc-convert` (command-line converter) |
+| `src/` | Application (egui / OpenGL), file readers, clash detection, model checker, renderer and path tracer, exporters |
+| `src/bin/` | `bimc-convert` command-line converter and build tools |
 | `revit-addin/`, `acad-addin/`, `navis-addin/` | C# add-ins |
 | `installers/`, `packaging/` | Windows setup wizard; Linux AppImage and FreeBSD packaging |
-| `tests/` | integration tests |
+| `tests/` | Integration, robustness and endurance tests |
+| `tools/` | Build, packaging and add-in test scripts |
 
-File formats: [BIMC_FORMAT.md](BIMC_FORMAT.md) · changes: [CHANGELOG.md](CHANGELOG.md) · third-party components: [THIRD_PARTY.md](THIRD_PARTY.md)
+Further documentation: [BIMC file format](BIMC_FORMAT.md) · [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md) · [Third-party components](THIRD_PARTY.md)
+
+---
+
+## Project status and support
+
+ManageBIM is under active development; releases follow [the changelog](CHANGELOG.md). Bug reports and feature requests are welcome in [GitHub Issues](https://github.com/Latinu2020/ManageBIM/issues) — please include the ManageBIM version (**Help › About**), the operating system and, for crashes, `crash.log` from `%APPDATA%\ManageBIM` (Windows).
 
 ---
 
 ## License
 
-ManageBIM is released under the [MIT License](LICENSE). Third-party components keep their own licences — Open CASCADE (LGPL-2.1, dynamically linked), ufbx (MIT), Inter (SIL OFL 1.1), Phosphor icons (MIT) and Rust crates under MIT / Apache-2.0; see [THIRD_PARTY.md](THIRD_PARTY.md).
+ManageBIM is released under the [MIT License](LICENSE). Third-party components keep their own licences — Open CASCADE (LGPL-2.1, dynamically linked), Intel Open Image Denoise (Apache-2.0), Mesa (MIT), ufbx (MIT), Inter (SIL OFL 1.1), Phosphor icons (MIT) and Rust crates under MIT / Apache-2.0; see [THIRD_PARTY.md](THIRD_PARTY.md).
 
-<sub>Autodesk, Revit, Navisworks, AutoCAD and Plant 3D are trademarks of Autodesk, Inc. ManageBIM is an independent project and is not affiliated with Autodesk.</sub>
+<sub>Autodesk, Revit, Navisworks, AutoCAD and Plant 3D are trademarks of Autodesk, Inc. ManageBIM is an independent project and is not affiliated with or endorsed by Autodesk.</sub>

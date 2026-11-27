@@ -4,10 +4,13 @@
 //! (the `gltf` crate does not expose the extensions) and the binary data from the bufferViews.
 use serde_json::Value;
 
+/// A metadata table: (name, rows of (key, value)).
+pub type MetaTable = (String, Vec<Vec<(String, String)>>);
+
 /// The property tables: (class name, rows [(property, value)]).
 #[derive(Default, Debug)]
 pub struct Meta {
-    pub tables: Vec<(String, Vec<Vec<(String, String)>>)>,
+    pub tables: Vec<MetaTable>,
 }
 
 /// The object IDs of a primitive: the per-vertex value, the associated table, the "no object" value.

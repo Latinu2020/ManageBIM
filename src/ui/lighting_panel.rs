@@ -22,9 +22,11 @@ impl App {
                         crate::lights::LightKind::Distant => "Parallel rays, like the sun - no distance falloff",
                     };
                     if ui.button(RichText::new(k.label()).strong()).on_hover_text(tip).clicked() {
-                        let mut l = crate::lights::SceneLight::default();
-                        l.kind = k;
-                        l.name = format!("{} {}", k.label(), self.lights.len() + 1);
+                        let mut l = crate::lights::SceneLight {
+                            kind: k,
+                            name: format!("{} {}", k.label(), self.lights.len() + 1),
+                            ..Default::default()
+                        };
                         // above the model, pointing down at the roof: the light and its spot are visible
                         // immediately from outside (it used to be at the model center = inside the building)
                         let bb = self.scene_aabb();
@@ -209,8 +211,8 @@ impl App {
                 if lamp.kind != crate::lights::LightKind::Point {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("Target").small());
-                        for axis in 0..3 {
-                            ui.add(egui::DragValue::new(&mut lamp.target[axis]).speed(0.05).max_decimals(2).suffix(" m"));
+                        for v in lamp.target.iter_mut() {
+                            ui.add(egui::DragValue::new(v).speed(0.05).max_decimals(2).suffix(" m"));
                         }
                     });
                     // numeric orientation (as with Rotate in the gizmo): azimuth in plan + tilt from the horizontal

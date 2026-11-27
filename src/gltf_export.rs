@@ -51,11 +51,13 @@ pub fn write_glb(items: &[Item], generator: &str) -> (Vec<u8>, Stats) {
     let mut mat_ix: HashMap<([u8; 4], [u8; 2]), usize> = HashMap::new();
     let mut nodes: Vec<Value> = Vec::new();
     // model -> level -> the children (node indices)
-    let mut tree: Vec<(String, Vec<(String, Vec<usize>)>)> = Vec::new();
+    type NodeTree = Vec<(String, Vec<(String, Vec<usize>)>)>;
+    let mut tree: NodeTree = Vec::new();
 
     for it in items {
         // the triangles grouped by material (one primitive per material)
-        let mut groups: Vec<(([u8; 4], [u8; 2]), Vec<usize>)> = Vec::new();
+        type ColorGroups = Vec<(([u8; 4], [u8; 2]), Vec<usize>)>;
+        let mut groups: ColorGroups = Vec::new();
         for t in 0..it.tris.len() / 3 {
             let (a, b, c) = (it.tris[t * 3], it.tris[t * 3 + 1], it.tris[t * 3 + 2]);
             if (b - a).cross(c - a).length_squared() < 1e-14 || !a.is_finite() || !b.is_finite() || !c.is_finite() {
@@ -172,11 +174,11 @@ pub fn write_glb(items: &[Item], generator: &str) -> (Vec<u8>, Stats) {
     });
     if meshes_empty(&gltf) {
         // glTF without geometry: no zero-length bufferViews (invalid)
-        gltf.as_object_mut().map(|o| {
+        if let Some(o) = gltf.as_object_mut() {
             o.remove("bufferViews");
             o.remove("buffers");
             o.remove("accessors");
-        });
+        }
     }
     let mut js = serde_json::to_vec(&gltf).unwrap_or_default();
     while !js.len().is_multiple_of(4) {

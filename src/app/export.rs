@@ -78,7 +78,7 @@ impl App {
                 }
             })
             .collect();
-        self.vp_filter = None;
+        self.vp.filter = None;
         let n_red: usize = views.iter().map(|v| v.redlines.len()).sum();
         let units = self.navis_units();
         match std::fs::write(&path, crate::markup::navis_viewpoints_xml(&views, &units)) {
@@ -309,8 +309,10 @@ impl App {
             wanted += t.selected.len();
             let selected: Vec<ElemId> = t.selected.iter().filter_map(|g| by_guid.get(g).copied()).collect();
             found += selected.len();
-            let mut issue = crate::markup::Issue::default();
-            issue.guid = t.guid.clone();
+            let mut issue = crate::markup::Issue {
+                guid: t.guid.clone(),
+                ..Default::default()
+            };
             if !t.status.is_empty() {
                 issue.status = t.status.clone();
             }
@@ -485,7 +487,7 @@ impl App {
                 let tasks_linked = tasks.iter().filter(|t| !t.elems.is_empty()).count();
                 self.tasks.extend(tasks);
                 if let Some((s, _)) = self.sim_range() {
-                    self.sim_day = s as f32;
+                    self.sim.day = s as f32;
                 }
                 self.invalidate_sim();
                 let linked = tasks_linked;

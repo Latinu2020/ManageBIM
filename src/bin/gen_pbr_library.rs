@@ -245,7 +245,7 @@ fn main() {
             ao_map: save("ao.png", &ao),
             height_map: String::new(),
             normal_strength: 0.65, rough_mult: 1.0, metal_mult: 1.0,
-            coat: if d.kind == Kind::Glass { 0 } else { 0 }, coat_roughness: 5,
+            coat: 0, coat_roughness: 5,
             sheen: if matches!(d.kind, Kind::Fabric) { 60 } else { 0 },
             ior: match d.kind { Kind::Glass => 1.45, _ => 1.5 },
         };

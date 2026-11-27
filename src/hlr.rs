@@ -140,7 +140,8 @@ impl ZBuf {
 pub fn feature_edges(tris: &[[Vec3; 3]], view_dir: Vec3) -> Vec<(Vec3, Vec3)> {
     let key = |p: Vec3| [(p.x * 2000.0).round() as i32, (p.y * 2000.0).round() as i32, (p.z * 2000.0).round() as i32];
     // edge -> (ends, normal of the first face, normal of the second, number of faces)
-    let mut map: HashMap<([i32; 3], [i32; 3]), (Vec3, Vec3, Vec3, Option<Vec3>, u32)> = HashMap::new();
+    type EdgeMap = HashMap<([i32; 3], [i32; 3]), (Vec3, Vec3, Vec3, Option<Vec3>, u32)>;
+    let mut map: EdgeMap = HashMap::new();
     for t in tris {
         let n = (t[1] - t[0]).cross(t[2] - t[0]);
         if n.length_squared() < 1e-14 {

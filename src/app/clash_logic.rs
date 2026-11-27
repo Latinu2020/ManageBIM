@@ -22,6 +22,9 @@ pub(crate) fn apply_status(r: &mut ClashResult, st: ClashStatus) {
     r.status = st;
 }
 
+/// One clash as shown in reports: (name, status, point, item A centre, item B centre, (min, max) box, item names, description).
+pub type ClashView = (String, String, [f64; 3], [f64; 3], [f64; 3], ([f64; 3], [f64; 3]), Vec<String>, String);
+
 impl App {
     // ------------------------------------------------------------------ clash
     /// Sends the current clash to Revit / Navisworks through Outbox\issues.txt:
@@ -54,7 +57,7 @@ impl App {
             selected: vec![a, b],
             template: String::new(),
             measures: self.measures.clone(),
-            folder: self.vp_folder_cur.clone(),
+            folder: self.vp.folder_cur.clone(),
             look: Some(self.current_look()),
         });
         let n = self.viewpoints.len() - 1;
@@ -509,7 +512,7 @@ impl App {
 
     /// The results of a clash test as "views": an isometric camera on the clash, the box of the two elements
     /// (for the section box), their GUIDs and the description. WORLD coordinates, metres.
-    pub fn clash_views(&self, ti: usize) -> Vec<(String, String, [f64; 3], [f64; 3], [f64; 3], ([f64; 3], [f64; 3]), Vec<String>, String)> {
+    pub fn clash_views(&self, ti: usize) -> Vec<ClashView> {
         let Some(t) = self.clash.tests.get(ti) else { return Vec::new() };
         t.results
             .iter()

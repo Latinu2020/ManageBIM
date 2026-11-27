@@ -140,7 +140,8 @@ pub fn load_gltf_bytes(bytes: &[u8], path: &str, progress: &dyn Fn(f32, &str), b
         }
         if feats.iter().any(|f| f.is_some()) {
             // one element per object (feature), with its row from the property table
-            let mut groups: std::collections::BTreeMap<Option<(usize, u32)>, (Vec<[DVec3; 3]>, Vec<[u8; 4]>)> = std::collections::BTreeMap::new();
+            type TriGroups = std::collections::BTreeMap<Option<(usize, u32)>, (Vec<[DVec3; 3]>, Vec<[u8; 4]>)>;
+            let mut groups: TriGroups = std::collections::BTreeMap::new();
             for ((t, c), f) in tris.into_iter().zip(colors).zip(feats) {
                 let g = groups.entry(f).or_default();
                 g.0.push(t);

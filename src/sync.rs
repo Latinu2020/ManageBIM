@@ -121,27 +121,6 @@ pub fn parse_selection(text: &str) -> Option<Vec<String>> {
     Some(out)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ifc_guid_round_trip() {
-        let g = "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0";
-        let c = guid_to_ifc(g).unwrap();
-        assert_eq!(c.len(), 22);
-        assert_eq!(ifc_to_guid(&c).unwrap(), g);
-        assert!(ifc_to_guid("too short").is_none());
-    }
-
-    #[test]
-    fn parse_reads_all_ids() {
-        let v = parse_selection("MBSEL1\nabc|0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0\n\nxyz\n").unwrap();
-        assert_eq!(v, vec!["abc", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", "xyz"]);
-        assert!(parse_selection("garbage").is_none());
-    }
-}
-
 /// The link state in the application.
 pub struct SyncState {
     pub enabled_at: std::time::SystemTime,
@@ -160,5 +139,26 @@ pub struct SyncState {
 impl Default for SyncState {
     fn default() -> Self {
         SyncState { enabled_at: std::time::SystemTime::now(), last_poll: std::time::Instant::now(), sent: u64::MAX, seen: [None; 2], peer_seen: [None; 2], index: Default::default(), index_key: 0, last_msg: String::new() }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ifc_guid_round_trip() {
+        let g = "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0";
+        let c = guid_to_ifc(g).unwrap();
+        assert_eq!(c.len(), 22);
+        assert_eq!(ifc_to_guid(&c).unwrap(), g);
+        assert!(ifc_to_guid("too short").is_none());
+    }
+
+    #[test]
+    fn parse_reads_all_ids() {
+        let v = parse_selection("MBSEL1\nabc|0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0\n\nxyz\n").unwrap();
+        assert_eq!(v, vec!["abc", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", "xyz"]);
+        assert!(parse_selection("garbage").is_none());
     }
 }

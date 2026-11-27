@@ -208,7 +208,8 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
             by_col.entry(*c).or_default().push(ti);
         }
         // each color group: welded vertices (tolerance 0.1 mm), degenerate triangles removed, closed / open
-        let mut parts: Vec<([u8; 4], Vec<[f32; 3]>, Vec<[usize; 3]>, bool)> = Vec::new();
+        type MeshParts = Vec<([u8; 4], Vec<[f32; 3]>, Vec<[usize; 3]>, bool)>;
+        let mut parts: MeshParts = Vec::new();
         for (c, list) in &by_col {
             let mut map: HashMap<[i64; 3], usize> = HashMap::new();
             let mut pts: Vec<[f32; 3]> = Vec::new();

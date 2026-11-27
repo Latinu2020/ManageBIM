@@ -90,7 +90,7 @@ impl App {
         let rename_id = egui::Id::new("vp_folder_rename");
         let mut renaming: Option<(String, String)> = ui.data(|d| d.get_temp(rename_id));
         let mut rename_vp: Option<usize> = None;
-        if let Some(p) = self.vp_rename_pending.take() {
+        if let Some(p) = self.vp.rename_pending.take() {
             renaming = Some(p);
         }
         let status_col = |s: &str| match s {
@@ -182,7 +182,7 @@ impl App {
             };
             // ---- the header of a folder: drop target + menu
             let header = |ui: &mut egui::Ui, f: &str, label: &str, depth: usize, count: usize, this: &mut App, act: &mut Option<(String, &'static str)>, renaming: &mut Option<(String, String)>, move_to: &mut Option<(usize, String)>| -> bool {
-                let cur = this.vp_folder_cur == f;
+                let cur = this.vp.folder_cur == f;
                 let open_id = egui::Id::new(("vp_folder_open", f));
                 let mut open: bool = ui.data(|d| d.get_temp(open_id)).unwrap_or(true);
                 let (_, dropped) = ui.dnd_drop_zone::<usize, ()>(egui::Frame::none(), |ui| {
@@ -213,7 +213,7 @@ impl App {
                             let col = if cur { accent() } else { ui.visuals().text_color() };
                             let r = ui.add(egui::Button::new(crate::theme::icon_job(if f.is_empty() { "📋" } else { "📁" }, &format!("{label}  ({count})"), 13.0, col)).frame(false));
                             if r.clicked() {
-                                this.vp_folder_cur = f.to_string();
+                                this.vp.folder_cur = f.to_string();
                             }
                             r.on_hover_text(if f.is_empty() { "All viewpoints without a folder - drop here to take one out of its folder" } else { "Click: new viewpoints go into this folder · drop viewpoints here" });
                         }
@@ -290,7 +290,7 @@ impl App {
         }
         if let Some((f, key)) = act {
             let export = |this: &mut App, p: Purpose| {
-                this.vp_filter = Some(f.clone());
+                this.vp.filter = Some(f.clone());
                 this.request_path(p);
             };
             match key {
@@ -301,7 +301,7 @@ impl App {
                         k += 1;
                         name = if f.is_empty() { format!("New folder {k}") } else { format!("{f}/New folder {k}") };
                     }
-                    self.vp_folders.push(name.clone());
+                    self.vp.folders.push(name.clone());
                     renaming = Some((name.clone(), name.rsplit('/').next().unwrap_or("").to_string()));
                 }
                 "rename" => renaming = Some((f.clone(), f.rsplit('/').next().unwrap_or(&f).to_string())),
@@ -328,13 +328,13 @@ impl App {
                                     v.folder = n;
                                 }
                             }
-                            for x in &mut self.vp_folders {
+                            for x in &mut self.vp.folders {
                                 if let Some(n) = re(x) {
                                     *x = n;
                                 }
                             }
-                            if let Some(n) = re(&self.vp_folder_cur) {
-                                self.vp_folder_cur = n;
+                            if let Some(n) = re(&self.vp.folder_cur) {
+                                self.vp.folder_cur = n;
                             }
                         }
                     }
@@ -348,9 +348,9 @@ impl App {
                             v.folder = parent.clone();
                         }
                     }
-                    self.vp_folders.retain(|x| x != &f && !x.starts_with(&format!("{f}/")));
-                    if self.vp_folder_cur == f {
-                        self.vp_folder_cur = parent;
+                    self.vp.folders.retain(|x| x != &f && !x.starts_with(&format!("{f}/")));
+                    if self.vp.folder_cur == f {
+                        self.vp.folder_cur = parent;
                     }
                 }
                 "bcf" => export(self, Purpose::ExportBcf),
@@ -369,18 +369,18 @@ impl App {
 
     /// new folder at the root (or in the current folder)
     pub(super) fn vp_new_folder(&mut self) {
-        let base = if self.vp_folder_cur.is_empty() { String::new() } else { format!("{}/", self.vp_folder_cur) };
+        let base = if self.vp.folder_cur.is_empty() { String::new() } else { format!("{}/", self.vp.folder_cur) };
         let mut k = 1;
         let mut name = format!("{base}New folder");
         while self.vp_all_folders().contains(&name) {
             k += 1;
             name = format!("{base}New folder {k}");
         }
-        self.vp_folders.push(name.clone());
-        self.vp_folder_cur = name.clone();
+        self.vp.folders.push(name.clone());
+        self.vp.folder_cur = name.clone();
         let short = name.rsplit('/').next().unwrap_or("").to_string();
         // you rename it immediately
-        self.vp_rename_pending = Some((name, short));
+        self.vp.rename_pending = Some((name, short));
     }
 
     /// The overlaid 2D drawings: lines projected over the model (above it, like a plan on the table).
@@ -440,6 +440,8 @@ impl App {
 
     /// The DWG / DXF overlays window: visibility, elevation (level), offset, rotation, color.
     /// The window for managing the view templates: apply, rename, delete.
+    // the template index drives the selection, the buttons and the rename of each row
+    #[allow(clippy::needless_range_loop)]
     pub(super) fn view_templates_window(&mut self, ctx: &egui::Context) {
         if !self.view_templates_open { return; }
         let mut open = true;
@@ -582,7 +584,7 @@ impl App {
     /// Zoom with the wheel, pan with the mouse, toggles and direct export to PDF / DWG.
     /// The drawing is EXACTLY the exported one (the same `section_drawing` function, the same real coordinates).
     pub(super) fn section_preview_window(&mut self, ctx: &egui::Context) {
-        if !self.section_preview_open {
+        if !self.sec.preview_open {
             return;
         }
         let mut open = true;
@@ -741,7 +743,7 @@ impl App {
                 // the zoom indicator, subtle
                 painter.text(egui::pos2(frame.left() + 6.0, frame.bottom() - 6.0), Align2::LEFT_BOTTOM, format!("{:.0}%  ·  wheel: zoom  ·  drag: pan  ·  double-click: fit", self.prev_zoom * 100.0), FontId::proportional(10.0), Color32::from_rgb(110, 110, 110));
             });
-        self.section_preview_open = open;
+        self.sec.preview_open = open;
         if let Some(p) = export {
             self.request_path(p);
         }
@@ -935,7 +937,7 @@ impl App {
 
     /// The segments + texts of the 2D section drawing: cut, hatch, chain dimensions, levels, grids.
     /// The same functions used by the DWG / PDF export (`hatch_lines`, `section_annotations`).
-    fn section_preview_drawing(&self) -> (Vec<(String, [f64; 4])>, Vec<crate::app::CadText>) {
+    fn section_preview_drawing(&self) -> (crate::model::CadSegs, Vec<crate::app::CadText>) {
         // EXACTLY the same source as the DWG / PDF export - there is no discrepancy anymore.
         match self.section_drawing() {
             Some((segs, texts, _, _)) => (segs, texts),

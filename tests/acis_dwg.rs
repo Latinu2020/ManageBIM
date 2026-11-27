@@ -63,6 +63,7 @@ impl Brep {
         (e, false)
     }
     /// arc (or full circle if a == b) on the circle (center, normal, major axis = radius)
+    #[allow(clippy::too_many_arguments)]
     fn arc(&mut self, a: [f64; 3], b: [f64; 3], center: [f64; 3], normal: [f64; 3], major: [f64; 3], t0: f64, t1: f64) -> i32 {
         let (ia, ib) = (self.v(a), self.v(b));
         let c = self.sat.add_ellipse_curve(center, normal, major, 1.0);
@@ -277,7 +278,7 @@ fn write(name: &str, solids: Vec<(SatDocument, &str, i16)>, fmt: Fmt, sab: bool)
 static ACIS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// None if ManageBIM was compiled without OCCT - the tests are then skipped.
-fn load(p: &PathBuf) -> Option<RawModel> {
+fn load(p: &std::path::Path) -> Option<RawModel> {
     let _guard = ACIS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if !occt::BUILT_WITH_OCCT {
         eprintln!("OpenCascade not built - skipping {}", p.display());

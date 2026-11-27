@@ -74,6 +74,8 @@ mod ffi {
         API.get_or_init(load).as_ref().map_err(|e| e.clone())
     }
 
+    // the function types of the DLL symbols come from the variables they are assigned to
+    #[allow(clippy::missing_transmute_annotations)]
     fn load() -> Result<Api, String> {
         let Some(dll) = super::search_dirs().into_iter().map(|d| d.join("OpenImageDenoise.dll")).find(|p| p.is_file()) else {
             return Err("Intel Open Image Denoise (oidn\\OpenImageDenoise.dll) is not installed next to ManageBIM.exe.".into());

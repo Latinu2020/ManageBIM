@@ -49,13 +49,13 @@ pub fn read(path: &str) -> Result<Hdri, String> {
     let (w, h) = dims.ok_or_else(|| format!("{path}: not a Radiance .hdr file (no -Y/+X header)."))?;
     let mut i = data_start;
     let mut pixels = vec![0.0f32; w * h * 3];
-    let rle = w >= 8 && w < 32768;
+    let rle = (8..32768).contains(&w);
     for y in 0..h {
         if rle && i + 4 <= d.len() && d[i] == 2 && d[i + 1] == 2 && ((d[i + 2] as usize) << 8 | d[i + 3] as usize) == w {
             i += 4;
             // each channel is encoded separately with run-length
             let mut chans = [[0u8; 8192]; 4];
-            for c in 0..4 {
+            for ch in chans.iter_mut() {
                 let mut x = 0usize;
                 while x < w {
                     if i + 2 > d.len() {
@@ -73,14 +73,14 @@ pub fn read(path: &str) -> Result<Hdri, String> {
                         let count = n - 128;
                         for k in 0..count {
                             if x + k < w {
-                                chans[c][x + k] = v;
+                                ch[x + k] = v;
                             }
                         }
                     } else {
                         if i + n > d.len() {
                             return Err(format!("{path}: truncated HDR literals."));
                         }
-                        chans[c][x..x + n].copy_from_slice(&d[i..i + n]);
+                        ch[x..x + n].copy_from_slice(&d[i..i + n]);
                         i += n;
                     }
                     x += n;

@@ -1,0 +1,206 @@
+name: Build & test
+
+# Every push / pull request: build and run the tests on Windows, Linux and FreeBSD.
+# A tag v* (e.g. v0.21.0) also publishes the Linux AppImage, the FreeBSD tarball and the
+# Windows executable to a GitHub Release.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --release
+      - name: Build
+        run: cargo build --release --bin ManageBIM --bin bimc-convert
+      - name: Package
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          New-Item -ItemType Directory -Force dist/ManageBIM | Out-Null
+          Copy-Item target/release/ManageBIM.exe, target/release/bimc-convert.exe, LICENSE, THIRD_PARTY.md dist/ManageBIM/
+          Compress-Archive -Path dist/ManageBIM -DestinationPath "dist/ManageBIM-$v-windows-x64-portable.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.zip
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: System libraries (OpenGL, X11, Wayland)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libxkbcommon-dev libwayland-dev libgl1-mesa-dev libfuse2
+      - name: Test
+        run: sh packaging/ci/run-tests.sh
+      - name: Build
+        run: cargo build --release --bin ManageBIM
+      - name: AppImage
+        run: bash packaging/linux/build-appimage.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.AppImage
+
+  freebsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test in a FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.2"
+          usesh: true
+          prepare: |
+            pkg install -y rust pkgconf libxkbcommon wayland mesa-libs libX11 libXcursor libXrandr libXi
+          run: |
+            sh packaging/ci/run-tests.sh
+            cargo build --release --bin ManageBIM
+            sh packaging/freebsd/build-tarball.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freebsd
+          path: dist/*.tar.gz
+
+  quality:
+    # "Clichet": pica doar la avertismente clippy NOI (peste packaging/ci/clippy-baseline.txt) si la fisiere .rs
+    # noi neformatate; datoria veche se reduce treptat. Release-ul nu depinde de acest job.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy and rustfmt (no new warnings, new files formatted)
+        shell: bash
+        run: bash packaging/ci/quality.sh "${{ github.event.pull_request.base.sha || github.event.before }}"
+      - name: Whole-tree format report (informational)
+        continue-on-error: true
+        shell: bash
+        run: cargo fmt --all -- --check -l | head -50
+      - name: Licences and advisories
+        continue-on-error: true
+        uses: EmbarkStudios/cargo-deny-action@v2
+
+  setup:
+    # Setup-ul Windows (.exe cu add-in-uri + OpenCascade) se construieste doar la tag,
+    # ca release-ul de GitHub sa aiba toate platformele: Windows ZIP + Setup, Linux, FreeBSD.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the three add-ins (C#, NuGet reference assemblies)
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File revit-addin\build.ps1
+          powershell -ExecutionPolicy Bypass -File acad-addin\build.ps1
+          powershell -ExecutionPolicy Bypass -File navis-addin\build.ps1
+      - name: Build the OpenCascade runtime (STEP / IGES / BREP)
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\build-occt.ps1
+      - name: Build the application and the add-in installers
+        run: cargo build --release --features addins --bin ManageBIM --bin bimc-convert --bin ManageBIM-Revit-AddIn --bin ManageBIM-AutoCAD-AddIn --bin ManageBIM-Navisworks-AddIn
+      - name: Download the default PBR material library (28 ambientCG CC0 materials)
+        run: cargo run --release --bin fetch_pro_library
+      - name: Download Intel Open Image Denoise (render denoiser) and Mesa (software OpenGL fallback)
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File tools\get-oidn.ps1
+          powershell -ExecutionPolicy Bypass -File tools\get-mesa.ps1
+      - name: Package the setup wizard
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\make-setup.ps1 -Out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setup
+          path: dist/*.exe
+
+  release:
+    # se publica daca Windows si installerul au reusit; pachetele Linux / FreeBSD se adauga cand exista
+    # (inainte, un esec pe Linux sau FreeBSD oprea tot release-ul, si installerul Windows nu ajungea pe GitHub)
+    if: startsWith(github.ref, 'refs/tags/v') && !cancelled() && needs.windows.result == 'success' && needs.setup.result == 'success'
+    needs: [windows, linux, freebsd, setup]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      # the release page shows the changes of this version from CHANGELOG.md, then the download table
+      - name: Release notes from the changelog
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" '$0 ~ "^## "v"( |$)" {f=1; next} f && /^## / {exit} f' CHANGELOG.md > notes.md
+          {
+            echo
+            echo "### Downloads"
+            echo
+            echo "| Platform | File |"
+            echo "|---|---|"
+            echo "| Windows 10 / 11 (x64) | \`ManageBIM-Setup-$v.exe\` - setup wizard with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, per user, no administrator rights |"
+            echo "| Windows portable | \`ManageBIM-$v-windows-x64-portable.zip\` |"
+            echo "| Linux (x86-64) | \`ManageBIM-$v-x86_64.AppImage\` - \`chmod +x\` and run |"
+            echo "| FreeBSD (x86-64) | \`ManageBIM-$v-freebsd-x86_64.tar.gz\` |"
+            echo
+            echo "The Windows installer is not code-signed yet: if SmartScreen appears, choose *More info > Run anyway*. Full history: [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md)."
+          } >> notes.md
+          cat notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ManageBIM ${{ github.ref_name }}
+          body_path: notes.md
+          files: artifacts/**/*
+          generate_release_notes: false
+          # v0.29.0-rc1 etc.: a pre-release - not "latest", not offered by the in-app updater
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
+      # pe GitHub raman doar ultimele 3 versiuni (release + tag); istoricul complet e in CHANGELOG.md
+      - name: Keep only the last 3 releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          # the last 3 stable releases stay, sorted by version number (createdAt is the commit date and can put a
+          # new version among old ones); release candidates (-rc / -beta) are removed once their stable release
+          # exists. Stable and pre-releases are sorted apart: sort -V puts "0.29.0-rc3" above "0.29.0".
+          all=$(gh release list --repo "$REPO" --limit 200 --json tagName,isPrerelease --jq '.[] | "\(.tagName) \(.isPrerelease)"')
+          stable=$(echo "$all" | awk '$2=="false"{print $1}' | sort -V -r)
+          newest=$(echo "$stable" | head -n 1 | sed 's/^v//')
+          {
+            echo "$stable" | tail -n +4
+            # pre-releases whose version is not newer than the newest stable one
+            echo "$all" | awk '$2=="true"{print $1}' | while read -r t; do
+              base=$(echo "$t" | sed 's/^v//; s/-.*//')
+              [ -n "$newest" ] && [ "$(printf '%s\n%s\n' "$base" "$newest" | sort -V | tail -n 1)" = "$newest" ] && echo "$t"
+            done
+          } | sed '/^$/d' |
+          while read -r tag; do
+            echo "Deleting old release $tag"
+            # o stergere esuata nu mai marcheaza tot release-ul ca esuat (fisierele sunt deja publicate)
+            gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag || echo "::warning::Could not delete release $tag"
+          done

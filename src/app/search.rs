@@ -52,7 +52,7 @@ impl App {
             if c == ITEM_CAT {
                 ps.sort_by_key(|p| ITEM_PROPS.iter().position(|x| *x == p.name).unwrap_or(99));
             } else {
-                ps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                ps.sort_by_key(|a| a.name.to_lowercase());
             }
         }
         out.sort_by(|a, b| rank(&a.0).cmp(&rank(&b.0)).then(a.0.to_lowercase().cmp(&b.0.to_lowercase())));
@@ -100,7 +100,9 @@ impl App {
             if r.or && i > 0 {
                 blocks.push(Vec::new());
             }
-            blocks.last_mut().unwrap().push(r);
+            if let Some(b) = blocks.last_mut() {
+                b.push(r);
+            }
         }
         blocks.iter().filter(|b| !b.is_empty()).any(|b| b.iter().all(|r| self.rule_match(id, r)))
     }
@@ -319,7 +321,7 @@ impl App {
                         // brings the camera closer to the clash point (large elements would push the camera too far away)
                         let bb = self.ids_aabb(&[res[0].a, res[0].b]);
                         let p = f.points[0];
-                        let r0 = (bb.size().length() * 0.5).min(4.0).max(0.6);
+                        let r0 = (bb.size().length() * 0.5).clamp(0.6, 4.0);
                         Aabb { min: p - Vec3::splat(r0), max: p + Vec3::splat(r0) }
                     } else {
                         let mut bb = Aabb::EMPTY;

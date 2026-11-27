@@ -106,6 +106,8 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.self_screenshot(ctx);
+        // the light bounces of the renders follow the setting (also for CPU renders and AI captures)
+        crate::pathtrace::set_light_bounces(self.settings.light_bounces);
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32().min(0.1);
         self.last_frame = now;
@@ -315,7 +317,7 @@ impl eframe::App for App {
         self.shared_sync(false);
 
         let walking = !ctx.wants_keyboard_input() && ctx.input(|i| [Key::W, Key::A, Key::S, Key::D, Key::Q, Key::E, Key::ArrowUp, Key::ArrowDown, Key::ArrowLeft, Key::ArrowRight].iter().any(|k| i.key_down(*k)));
-        if !self.loads.is_empty() || self.clash.job.is_some() || (self.sim_play && self.sim_view()) || walking || self.anim_play.is_some() || self.render_job.is_some() || self.pending_capture.is_some() || !self.toasts.is_empty() || self.cam_anim.is_some() || self.report_job.is_some() || (self.settings.gravity && self.nav == NavMode::Walk) || self.walk_active() {
+        if !self.loads.is_empty() || self.clash.job.is_some() || (self.sim.play && self.sim_view()) || walking || self.anim_play.is_some() || self.render_job.is_some() || self.pending_capture.is_some() || !self.toasts.is_empty() || self.cam_anim.is_some() || self.report_job.is_some() || (self.settings.gravity && self.nav == NavMode::Walk) || self.walk_active() {
             ctx.request_repaint();
         }
     }
@@ -343,7 +345,7 @@ impl App {
             self.flyout = None;
         }
         // PgUp / PgDn: the level above / below, when a level section is active
-        if !typing && self.section.enabled && self.section_level.is_some() {
+        if !typing && self.section.enabled && self.sec.level.is_some() {
             if ctx.input(|i| i.key_pressed(Key::PageUp)) {
                 self.section_level_step(1);
             }
@@ -783,12 +785,13 @@ impl App {
             0 => {
                 let i = self.report_job.as_ref().map(|j| j.list.get(j.idx).copied().unwrap_or(0)).unwrap_or(0);
                 self.restore_viewpoint(i);
-                let j = self.report_job.as_mut().unwrap();
-                j.phase = 1;
-                j.wait = 4;
+                if let Some(j) = self.report_job.as_mut() {
+                    j.phase = 1;
+                    j.wait = 4;
+                }
             }
             1 => {
-                let j = self.report_job.as_mut().unwrap();
+                let Some(j) = self.report_job.as_mut() else { return };
                 if j.wait > 0 {
                     j.wait -= 1;
                 } else {
@@ -805,7 +808,7 @@ impl App {
                 });
                 // the screenshot may never come (minimized window / driver): we do not wait forever
                 if shot.is_none() {
-                    let j = self.report_job.as_mut().unwrap();
+                    let Some(j) = self.report_job.as_mut() else { return };
                     j.shot_wait = j.shot_wait.saturating_add(1);
                     if j.shot_wait == 90 {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
@@ -945,14 +948,14 @@ impl App {
                     // current level: choosing it makes the level section (as in Navisworks / Revit)
                     let levels = self.scene_grids().levels;
                     if !levels.is_empty() {
-                        let cur = self.section_level.filter(|_| self.section.enabled).and_then(|i| levels.get(i)).map(|l| l.0.clone()).unwrap_or_else(|| "All levels".into());
+                        let cur = self.sec.level.filter(|_| self.section.enabled).and_then(|i| levels.get(i)).map(|l| l.0.clone()).unwrap_or_else(|| "All levels".into());
                         let mut pick: Option<Option<usize>> = None;
                         egui::ComboBox::from_id_salt("status_level").width(120.0).selected_text(format!("Level: {cur}")).show_ui(ui, |ui| {
                             if ui.selectable_label(!self.section.enabled, "All levels").clicked() {
                                 pick = Some(None);
                             }
                             for (i, l) in levels.iter().enumerate().rev() {
-                                if ui.selectable_label(self.section.enabled && self.section_level == Some(i), format!("{}  {:+.2}", l.0, l.1)).clicked() {
+                                if ui.selectable_label(self.section.enabled && self.sec.level == Some(i), format!("{}  {:+.2}", l.0, l.1)).clicked() {
                                     pick = Some(Some(i));
                                 }
                             }
@@ -969,15 +972,15 @@ impl App {
                 // point cloud loaded: the density right in the status bar (drag = change, click = window)
                 if self.loaded_models().any(|(_, m)| m.cloud.is_some()) {
                     ui.separator();
-                    let mut pct = (self.cloud_density * 100.0).round();
+                    let mut pct = (self.cloud.density * 100.0).round();
                     let r = ui
                         .add(egui::DragValue::new(&mut pct).range(1.0..=100.0).speed(0.5).prefix("☁ Points ").suffix(" %"))
                         .on_hover_text("Point cloud density - drag left / right to change it; double-click to type a value. Point size, colour and shape: View › Point Cloud (or click the cloud button in Analyze › Scan).");
                     if r.changed() {
-                        self.cloud_density = pct / 100.0;
+                        self.cloud.density = pct / 100.0;
                     }
                     if ui.small_button("⚙").on_hover_text("Point cloud settings (density, point size, real size, colour by elevation, shape)").clicked() {
-                        self.show_cloud = !self.show_cloud;
+                        self.cloud.show = !self.cloud.show;
                     }
                 }
                 if !self.selected.is_empty() {
@@ -1004,7 +1007,7 @@ impl App {
                 }
                 if self.sim_view() {
                     ui.separator();
-                    ui.colored_label(Color32::from_rgb(90, 200, 120), format!("Simulation: {}", timeline::fmt_date(self.sim_day.floor() as i32)));
+                    ui.colored_label(Color32::from_rgb(90, 200, 120), format!("Simulation: {}", timeline::fmt_date(self.sim.day.floor() as i32)));
                 }
                 let left_end = ui.min_rect().right();
                 let rr = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1441,40 +1444,40 @@ impl App {
             }
         }
         self.levels_manager(ctx);
-        if self.show_cloud {
+        if self.cloud.show {
             let mut open = true;
             let total: usize = self.loaded_models().filter_map(|(_, m)| m.cloud.as_ref().map(|c| c.pos.len())).sum();
             egui::Window::new("☁ Point Cloud").open(&mut open).collapsible(false).resizable(false).default_width(320.0).show(ctx, |ui| {
-                let mut pct = (self.cloud_density * 100.0).round();
+                let mut pct = (self.cloud.density * 100.0).round();
                 egui::Grid::new("cloud").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
                     ui.label("Density");
                     if ui.add(egui::Slider::new(&mut pct, 1.0..=100.0).suffix(" %").integer()).changed() {
-                        self.cloud_density = pct / 100.0;
+                        self.cloud.density = pct / 100.0;
                     }
                     ui.end_row();
                     ui.label("Point size");
-                    ui.add(egui::Slider::new(&mut self.point_size, 1.0..=8.0).suffix(" px").fixed_decimals(0).step_by(1.0)).on_hover_text("Smallest size on screen (far away)");
+                    ui.add(egui::Slider::new(&mut self.cloud.point_size, 1.0..=8.0).suffix(" px").fixed_decimals(0).step_by(1.0)).on_hover_text("Smallest size on screen (far away)");
                     ui.end_row();
                     ui.label("Real size");
-                    ui.add(egui::Slider::new(&mut self.cloud_world_mm, 0.0..=50.0).suffix(" mm").fixed_decimals(0)).on_hover_text("Size of a point in the model: close up the points grow and close the gaps (continuous surface). 0 = always the pixel size above.");
+                    ui.add(egui::Slider::new(&mut self.cloud.world_mm, 0.0..=50.0).suffix(" mm").fixed_decimals(0)).on_hover_text("Size of a point in the model: close up the points grow and close the gaps (continuous surface). 0 = always the pixel size above.");
                     ui.end_row();
                     ui.label("Colour");
                     ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.cloud_mode, 0, "Scan RGB");
-                        ui.selectable_value(&mut self.cloud_mode, 1, "Elevation").on_hover_text("Blue (low) → red (high): read heights at a glance");
-                        ui.selectable_value(&mut self.cloud_mode, 2, "Grey");
+                        ui.selectable_value(&mut self.cloud.mode, 0, "Scan RGB");
+                        ui.selectable_value(&mut self.cloud.mode, 1, "Elevation").on_hover_text("Blue (low) → red (high): read heights at a glance");
+                        ui.selectable_value(&mut self.cloud.mode, 2, "Grey");
                     });
                     ui.end_row();
                     ui.label("Shape");
-                    ui.checkbox(&mut self.cloud_round, "Round points with relief").on_hover_text("Each point drawn as a small lit sphere - smoother, more realistic surfaces");
+                    ui.checkbox(&mut self.cloud.round, "Round points with relief").on_hover_text("Each point drawn as a small lit sphere - smoother, more realistic surfaces");
                     ui.end_row();
                 });
                 ui.label(RichText::new("Measure snaps exactly onto scan points (the tool picks the nearest visible point under the cursor).").weak().small());
-                let shown = (total as f64 * self.cloud_density as f64) as usize;
+                let shown = (total as f64 * self.cloud.density as f64) as usize;
                 ui.label(RichText::new(format!("{} of {} points shown. While the camera moves only about a third of them are drawn.", fmt_count(shown), fmt_count(total))).weak().small());
                 ui.label(RichText::new("Each scan is an item in the Selection Tree: hide it, isolate it or cut it with the section box.").weak().small());
             });
-            self.show_cloud = open;
+            self.cloud.show = open;
         }
         if self.show_light {
             let mut open = true;
@@ -1650,7 +1653,7 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     if !compact {
         // full label (0.28): on one row if it fits, otherwise on two (split at the most
         // balanced space); a word that is too long gets a slightly smaller font - we no longer cut the text with „…"
-        let lines = ribbon_label_lines(ui, &label, rect.width() - 4.0);
+        let lines = ribbon_label_lines(ui, label, rect.width() - 4.0);
         let n = lines.len() as f32;
         for (k, (t, f)) in lines.iter().enumerate() {
             let y = rect.bottom() - 7.0 - (n - 1.0 - k as f32) * 11.0;
@@ -2217,7 +2220,7 @@ fn commands() -> Vec<Cmd> {
         c!("DWG overlay (2D drawing over the model)", "Annotation", "🗺", "suprapunere plan dwg dxf 2d", |a| a.overlay_open = true),
         c!("Save view template", "View", "➕", "save view template vizibilitate sectiune stil", |a| a.save_view_template()),
         c!("Apply view template", "View", "◫", "apply view template manage vizibilitate sectiune stil", |a| a.view_templates_open = !a.view_templates_open),
-        c!("2D Section Preview (map window)", "Annotation", "🗺", "preview 2d sectiune fereastra mica inainte de export", |a| a.section_preview_open = !a.section_preview_open),
+        c!("2D Section Preview (map window)", "Annotation", "🗺", "preview 2d sectiune fereastra mica inainte de export", |a| a.sec.preview_open = !a.sec.preview_open),
         c!("Section cut to PDF…", "Annotation", "📄", "sectiune export pdf plansa", |a| a.request_path(Purpose::ExportSectionPdf)),
         // ---- panels
         c!("Selection Tree", "Panels", "🌲", "arbore", |a| a.open_panel(Panel::Tree)),

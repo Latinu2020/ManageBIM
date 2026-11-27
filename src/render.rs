@@ -512,6 +512,12 @@ void main() {
 }
 "#;
 
+impl Default for Renderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Renderer {
     pub fn new() -> Renderer {
         Renderer { lists: None, prog: None, meshes: HashMap::new(), pprog: None, points: HashMap::new(), aoprog: None, ao_targets: Vec::new(), ao_vao: None, ao_failed: false, sprog: None, shadow_fbo: None, shadow_state: None, shadow_failed: false, pending: Vec::new(), error: None, capture: None, captured: None, fbo: None, tex: None, pt_live: None, gpu_live: Default::default(), pt_job: None, gpu_off: Default::default() }
@@ -611,25 +617,25 @@ impl Renderer {
                     if let Some(old) = self.meshes.remove(&slot) {
                         delete_mesh(gl, old);
                     }
-                    let vao = gl.create_vertex_array().unwrap();
+                    // out of graphics memory: the model is skipped (it stays invisible) instead of closing ManageBIM
+                    let (Ok(vao), Ok(vbo_pos), Ok(vbo_nrm), Ok(vbo_col), Ok(vbo_mat)) = (gl.create_vertex_array(), gl.create_buffer(), gl.create_buffer(), gl.create_buffer(), gl.create_buffer()) else {
+                        eprintln!("render: could not create the GPU buffers for model {slot}");
+                        continue;
+                    };
                     gl.bind_vertex_array(Some(vao));
-                    let vbo_pos = gl.create_buffer().unwrap();
                     gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo_pos));
                     gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, bytes_f32(&pos), glow::STATIC_DRAW);
                     gl.enable_vertex_attrib_array(0);
                     gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 12, 0);
-                    let vbo_nrm = gl.create_buffer().unwrap();
                     gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo_nrm));
                     let nb: &[u8] = std::slice::from_raw_parts(nrm.as_ptr() as *const u8, nrm.len());
                     gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, nb, glow::STATIC_DRAW);
                     gl.enable_vertex_attrib_array(1);
                     gl.vertex_attrib_pointer_f32(1, 4, glow::BYTE, true, 4, 0);
-                    let vbo_col = gl.create_buffer().unwrap();
                     gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo_col));
                     gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, &col, glow::DYNAMIC_DRAW);
                     gl.enable_vertex_attrib_array(2);
                     gl.vertex_attrib_pointer_f32(2, 4, glow::UNSIGNED_BYTE, true, 4, 0);
-                    let vbo_mat = gl.create_buffer().unwrap();
                     gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo_mat));
                     gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, &vec![0u8; nv * 4], glow::DYNAMIC_DRAW);
                     gl.enable_vertex_attrib_array(3);
@@ -968,7 +974,7 @@ impl Renderer {
             gl.framebuffer_renderbuffer(glow::FRAMEBUFFER, glow::DEPTH_ATTACHMENT, glow::RENDERBUFFER, Some(d));
             self.fbo = Some((fb, c, d, w, h));
         }
-        let (fb, ..) = self.fbo.unwrap();
+        let Some((fb, ..)) = self.fbo else { return Err("Off-screen framebuffer not available.".into()) };
         gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fb));
         let status = gl.check_framebuffer_status(glow::FRAMEBUFFER);
         let mut res = Err(format!("Off-screen framebuffer not available (0x{status:x})."));

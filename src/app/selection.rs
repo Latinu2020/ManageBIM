@@ -52,7 +52,7 @@ impl App {
 
     /// The 4D simulation is only shown while the TimeLiner panel is open.
     pub fn sim_view(&self) -> bool {
-        (self.sim_active && self.settings.layout.visible(Panel::TimeLiner)) || self.anim_sim_active
+        (self.sim.active && self.settings.layout.visible(Panel::TimeLiner)) || self.anim_sim_active
     }
 
     pub fn clash_focus_active(&self) -> Option<&ClashFocus> {
@@ -120,9 +120,9 @@ impl App {
             return false;
         }
         if self.sim_view() {
-            match self.sim_cache.get(&id) {
+            match self.sim.cache.get(&id) {
                 Some(SimState::Hidden) => return false,
-                None if self.sim_only_linked && !self.sim_cache.is_empty() => return false,
+                None if self.sim.only_linked && !self.sim.cache.is_empty() => return false,
                 _ => {}
             }
         }

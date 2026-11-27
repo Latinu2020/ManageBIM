@@ -333,8 +333,8 @@ pub fn xlsx_report(project: &str, items: &[ReportItem], thumbs: &[(Vec<u8>, u32,
         sheet.push_str(&cell_s(r, 8, &it.description, 2));
         sheet.push_str(&cell_s(r, 9, &comments.join("\n"), 2));
         sheet.push_str(&cell_n(r, 10, it.redlines as f64, 2));
-        for a in 0..3 {
-            sheet.push_str(&cell_n(r, 11 + a, (it.eye[a] * 1000.0).round() / 1000.0, 2));
+        for (a, v) in it.eye.iter().enumerate() {
+            sheet.push_str(&cell_n(r, 11 + a, (v * 1000.0).round() / 1000.0, 2));
         }
         sheet.push_str("</row>");
     }
@@ -1041,6 +1041,9 @@ pub fn parse_navis_viewpoints(xml: &str, aspect: f32) -> Result<Vec<NwView>, Str
 }
 
 // ---------------------------------------------------------------------------- BCF import (2.1 / 3.0)
+/// A BCF camera: (position, direction, up, field of view for perspective, ortho scale).
+pub type BcfCamera = ([f64; 3], [f64; 3], [f64; 3], Option<f32>, f64);
+
 pub struct BcfTopic {
     pub guid: String,
     pub title: String,
@@ -1052,7 +1055,7 @@ pub struct BcfTopic {
     pub description: String,
     pub comments: Vec<VpComment>,
     /// (eye, direction, up, fov in degrees or None for ortho, ortho height)
-    pub camera: Option<([f64; 3], [f64; 3], [f64; 3], Option<f32>, f64)>,
+    pub camera: Option<BcfCamera>,
     pub selected: Vec<String>,
 }
 

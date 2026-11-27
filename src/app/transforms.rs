@@ -289,7 +289,7 @@ impl App {
                 }
             }
             // a PBR pack (.zip from ambientCG, freepbr, Poly Haven...) chosen from Import Lib
-            Purpose::ImportMaterials if path.to_lowercase().ends_with(".zip") => self.import_pbr_packs(&[path.clone()]),
+            Purpose::ImportMaterials if path.to_lowercase().ends_with(".zip") => self.import_pbr_packs(std::slice::from_ref(&path)),
             Purpose::ImportMaterials if path.to_lowercase().ends_with(".csv") || path.to_lowercase().ends_with(".xlsx") => match crate::tables::read_rows(&path).and_then(|r| crate::tables::materials_from_rows(&r)) {
                 Ok(mut v) => {
                     let n = v.len();
@@ -641,7 +641,7 @@ impl App {
                 Purpose::ExportClashCsv => d.set_title("Clash report (CSV)").add_filter("CSV", &["csv"]).set_file_name("clash_report.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportClashPdf => d.set_title("Clash report (PDF)").add_filter("PDF", &["pdf"]).set_file_name("clash_report.pdf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportReference => {
-                    let dir = outbox_dir().map(|d| { let _ = std::fs::create_dir_all(&d); d }).unwrap_or_default();
+                    let dir = outbox_dir().inspect(|d| { let _ = std::fs::create_dir_all(d); }).unwrap_or_default();
                     let name = self.bimd_path.as_ref().or(self.project_path.as_ref()).and_then(|p| std::path::Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string())).unwrap_or_else(|| "reference".into());
                     d.set_title("Reference for Revit / AutoCAD / Plant 3D").add_filter("ManageBIM reference", &["mbref"]).set_directory(dir).set_file_name(format!("{name}.mbref")).save_file().map(|p| vec![p.to_string_lossy().to_string()])
                 }

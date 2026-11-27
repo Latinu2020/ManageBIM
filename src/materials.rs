@@ -359,7 +359,7 @@ fn resample_impl(w: u32, h: u32, rgba: &[u8], n: u32, flip: bool) -> Vec<u8> {
             for c in 0..4 {
                 let g = |xx: u32, yy: u32| rgba[((yy * w + xx) * 4 + c) as usize] as f32;
                 let v = (g(x0, y0) * (1.0 - tx) + g(x1, y0) * tx) * (1.0 - ty) + (g(x0, y1) * (1.0 - tx) + g(x1, y1) * tx) * ty;
-                out[((oy * n + x) * 4 + c as u32) as usize] = v.round() as u8;
+                out[((oy * n + x) * 4 + c) as usize] = v.round() as u8;
             }
         }
     }
@@ -374,7 +374,9 @@ pub fn resample(w: u32, h: u32, rgba: &[u8], n: u32) -> Vec<u8> {
 /// Splits the PBR maps into 2 GPU layers of the same size:
 /// - layer A: RGB = albedo * AO, A = roughness * rough_mult
 /// - layer B: RGB = tangent normal (xy * normal_strength), A = metalness * metal_mult
+///
 /// The shader and the path tracer decode both layers; intensity changes are visible immediately.
+#[allow(clippy::too_many_arguments)]
 pub fn pack_pbr(
     albedo: &[u8], normal: Option<&[u8]>, rough: Option<&[u8]>, metal: Option<&[u8]>, ao: Option<&[u8]>,
     normal_strength: f32, rough_mult: f32, metal_mult: f32,
@@ -667,22 +669,6 @@ pub fn import_pbr(path: &str, dest_root: &std::path::Path) -> Result<Material, S
     })
 }
 
-#[cfg(test)]
-mod bundled_tests {
-    use super::*;
-
-    #[test]
-    fn generated_procedural_textures_are_recognised() {
-        let mut m = library()[0].clone();
-        m.texture = r"C:\Users\X\AppData\Roaming\ManageBIM\Materials\PBR Library\Brick_red\albedo.png".into();
-        assert!(is_generated(&m));
-        m.texture = r"C:\Users\X\AppData\Roaming\ManageBIM\Materials\Pro Library\Bricks104\Bricks104_1K-JPG_Color.jpg".into();
-        assert!(!is_generated(&m));
-        m.texture = r"D:\textures\my_brick.png".into();
-        assert!(!is_generated(&m));
-    }
-}
-
 /// Copies the maps of an imported material (MaterialX, .bimmat) into your library
 /// (`<biblioteca>/<nume>/`) and changes the paths: the material stays whole if the downloaded folder is deleted.
 /// The maps already in the library or missing stay as they are. Returns the number of copied files.
@@ -712,4 +698,20 @@ pub fn adopt_maps(m: &mut Material) -> usize {
         }
     }
     n
+}
+
+#[cfg(test)]
+mod bundled_tests {
+    use super::*;
+
+    #[test]
+    fn generated_procedural_textures_are_recognised() {
+        let mut m = library()[0].clone();
+        m.texture = r"C:\Users\X\AppData\Roaming\ManageBIM\Materials\PBR Library\Brick_red\albedo.png".into();
+        assert!(is_generated(&m));
+        m.texture = r"C:\Users\X\AppData\Roaming\ManageBIM\Materials\Pro Library\Bricks104\Bricks104_1K-JPG_Color.jpg".into();
+        assert!(!is_generated(&m));
+        m.texture = r"D:\textures\my_brick.png".into();
+        assert!(!is_generated(&m));
+    }
 }

@@ -400,6 +400,21 @@ pub fn tools() -> Vec<Value> {
             &["action"],
             false,
         ),
+        tool(
+            "render_settings",
+            "Render settings",
+            "Read and change how the 3D view is lit and rendered: the interactive Ray Trace view (path traced on the GPU), light bounces between surfaces (1 - 4), brightness, sun direction and power. Only the values given change; the current settings are returned. Use capture_view with ray_trace to see the result.",
+            json!({
+                "ray_trace": { "type": "boolean", "description": "Interactive Ray Trace view on / off" },
+                "light_bounces": { "type": "integer", "minimum": 1, "maximum": 4, "description": "Times the sun and lamp light bounces between surfaces (renders and Ray Trace)" },
+                "brightness": { "type": "number", "description": "Overall brightness (exposure), 0.1 - 6" },
+                "sun_azimuth": { "type": "number", "description": "Sun azimuth in degrees, -180 - 180" },
+                "sun_elevation": { "type": "number", "description": "Sun height above the horizon in degrees, 1 - 90" },
+                "sun_power": { "type": "number", "description": "Sun intensity, 0 - 3" }
+            }),
+            &[],
+            false,
+        ),
         tool("zoom_to", "Zoom to", "Fit the 3D view to elements (ids / selection) or, with all=true, to the whole model.", json!({ "ids": ids, "all": { "type": "boolean" } }), &[], false),
         tool(
             "set_property",
@@ -608,7 +623,7 @@ mod tests {
         let r = post(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#, &token);
         assert!(r.starts_with("HTTP/1.1 202"), "{r}");
         let r = post(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#, &token);
-        assert!(r.contains("find_elements") && r.contains("inputSchema"));
+        assert!(r.contains("find_elements") && r.contains("render_settings") && r.contains("inputSchema"));
         let r = post(r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_selection","arguments":{}}}"#, &token);
         assert!(r.contains("get_selection") && r.contains("\"isError\":false"), "{r}");
         let r = post(r#"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#, "wrong");

@@ -1,5 +1,5 @@
 //! GPU path tracer: the same light model as the CPU path tracer (`pathtrace.rs`) - soft sun shadows,
-//! sky / HDRI light with ambient occlusion, lamps with one diffuse bounce, GGX reflections, clearcoat,
+//! sky / HDRI light with ambient occlusion, lamps and sun with up to four diffuse bounces, GGX reflections, clearcoat,
 //! sheen, glass, PBR textures and section planes - running in an OpenGL 3.3 fragment shader.
 //!
 //! The scene (triangles in BVH order + BVH nodes) lives in two RGBA32F 2D textures read with
@@ -51,6 +51,11 @@ impl PtScene {
     }
 }
 
+/// Most samples the interactive view adds in one frame. The 25 ms time budget is the real limit: a slow
+/// graphics card draws less than one sample per frame, a fast one fills the budget with up to this many
+/// samples (0.29.0 stopped at 8, which left fast cards idle most of each frame).
+const LIVE_MAX_PASSES: u32 = 64;
+
 /// One frame of path tracing: camera, sun, sky and the scene.
 #[derive(Clone)]
 pub struct PtFrame {
@@ -73,6 +78,8 @@ pub struct PtFrame {
     pub moving: bool,
     /// clean the converged image with Intel Open Image Denoise
     pub denoise: bool,
+    /// how many times the sun and lamp light bounce between surfaces (1 - 4)
+    pub bounces: u32,
     /// camera and lighting: a different key restarts the accumulation
     pub key: u64,
 }
@@ -340,6 +347,7 @@ impl GpuPt {
         }
         gl.uniform_4_f32_slice(u("u_lamp").as_ref(), &lamps);
         gl.uniform_1_i32(u("u_nlamps").as_ref(), nl as i32);
+        gl.uniform_1_i32(u("u_bounces").as_ref(), f.bounces.clamp(1, crate::pathtrace::MAX_BOUNCES) as i32);
         gl.bind_vertex_array(self.vao);
         let lf = u("u_frame");
         if self.band_h <= 0 {
@@ -474,7 +482,7 @@ impl GpuPt {
             // already converged for this view: no new samples, only check the key
             let key = f.key ^ f.scene.id.rotate_left(17) ^ ((w as u64) << 40 | (h as u64) << 20);
             key == self.key && self.scene_id == f.scene.id
-        } || self.accumulate(gl, f, w, h, f.max_samples.saturating_sub(self.samples).clamp(1, 8), tex_array, Some(25.0));
+        } || self.accumulate(gl, f, w, h, f.max_samples.saturating_sub(self.samples).clamp(1, LIVE_MAX_PASSES), tex_array, Some(25.0));
         gl.bind_framebuffer(glow::FRAMEBUFFER, prev_fb);
         gl.viewport(vp[0], vp[1], vp[2], vp[3]);
         if scissor {
@@ -610,6 +618,7 @@ uniform sampler2D u_nodes;
 uniform sampler2DArray u_tex;
 uniform sampler2D u_hdri;
 uniform int u_has_tex;
+uniform int u_bounces;
 uniform int u_has_hdri;
 uniform int u_ntris;
 uniform vec3 u_eye;
@@ -935,6 +944,40 @@ vec3 lamp_irradiance(vec3 q, vec3 n) {
     return e;
 }
 
+// indirect light arriving at p along the cosine-weighted direction hd: the sun and lamp light reflected by
+// the surfaces met along a path of up to u_bounces diffuse bounces, each surface tinting it
+vec3 indirect_light(vec3 p, vec3 n, vec3 hd) {
+    bool has_sun = dot(u_sun, u_sun) > 0.0;
+    vec3 acc = vec3(0.0);
+    if (u_nlamps == 0 && !has_sun) return acc;
+    vec3 thr = vec3(1.0);
+    vec3 o = p + n * 1e-3, dir = hd;
+    for (int b = 0; b < 4; b++) {
+        if (b >= u_bounces) break;
+        float t2; int tri2;
+        if (!hit(o, dir, 40.0, t2, tri2)) break;
+        vec3 q = o + dir * t2;
+        vec3 A2 = tri_t(tri2 * 4).xyz, B2 = tri_t(tri2 * 4 + 1).xyz, C2 = tri_t(tri2 * 4 + 2).xyz;
+        vec3 n2 = normalize(cross(B2 - A2, C2 - A2));
+        if (dot(n2, dir) > 0.0) n2 = -n2;
+        vec3 b2; float r_2, m_2;
+        surface(tri2, q, n2, b2, r_2, m_2);
+        vec3 q2 = q + n2 * 1e-3;
+        vec3 e = u_nlamps > 0 ? lamp_irradiance(q2, n2) : vec3(0.0);
+        float nl2 = has_sun ? max(dot(n2, u_sun), 0.0) : 0.0;
+        if (nl2 > 0.0) e += vec3(DIFFUSE * nl2 * transmit(q2, u_sun, 1e6));
+        thr *= b2 * 0.55;
+        acc += thr * e;
+        vec3 t, bt;
+        basis(n2, t, bt);
+        float r1 = rnd(), r2 = rnd();
+        float rr = sqrt(r1), phi = TAU * r2;
+        dir = normalize(t * (rr * cos(phi)) + bt * (rr * sin(phi)) + n2 * sqrt(max(1.0 - r1, 0.0)));
+        o = q2;
+    }
+    return acc;
+}
+
 void main() {
     ivec2 px = ivec2(gl_FragCoord.xy);
     rng_state = pcg(uint(px.x) * 1973u + uint(px.y) * 9277u + u_frame * 26699u);
@@ -991,24 +1034,9 @@ void main() {
         vec3 irr = env(hd);
         float amb = 0.30 + 0.28 * max(n.z, 0.0);
         vec3 col = base * irr * (amb * open);
-        // indirect light: sun and lamp light bounced once by the surface the hemisphere ray meets
-        // (a sunny floor lights the ceiling above it, walls tint each other)
-        bool has_sun = dot(u_sun, u_sun) > 0.0;
-        if ((u_nlamps > 0 || has_sun) && depth == 0) {
-            float t2; int tri2;
-            if (hit(p + n * 1e-3, hd, 40.0, t2, tri2)) {
-                vec3 q = p + n * 1e-3 + hd * t2;
-                vec3 A2 = tri_t(tri2 * 4).xyz, B2 = tri_t(tri2 * 4 + 1).xyz, C2 = tri_t(tri2 * 4 + 2).xyz;
-                vec3 n2 = normalize(cross(B2 - A2, C2 - A2));
-                if (dot(n2, hd) > 0.0) n2 = -n2;
-                vec3 b2; float r_2, m_2;
-                surface(tri2, q, n2, b2, r_2, m_2);
-                vec3 e = u_nlamps > 0 ? lamp_irradiance(q + n2 * 1e-3, n2) : vec3(0.0);
-                float nl2 = has_sun ? max(dot(n2, u_sun), 0.0) : 0.0;
-                if (nl2 > 0.0) e += vec3(DIFFUSE * nl2 * transmit(q + n2 * 1e-3, u_sun, 1e6));
-                col += base * b2 * e * 0.55 * (1.0 - metal);
-            }
-        }
+        // indirect light: sun and lamp light bounced by the surfaces around, up to u_bounces times
+        // (a sunny floor lights the ceiling above it, walls tint each other, corners get light)
+        if (depth == 0) col += base * indirect_light(p, n, hd) * (1.0 - metal);
         vec3 vd = -d;
         float head = abs(dot(n, vd));
         vec3 f0 = f0_of(ior, base, metal);

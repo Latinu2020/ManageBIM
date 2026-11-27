@@ -309,8 +309,8 @@ impl App {
         }
         self.clash.focus = None;
         self.min_dist_result = None;
-        self.sim_cache.clear();
-        self.sim_cache_day = i32::MIN;
+        self.sim.cache.clear();
+        self.sim.cache_day = i32::MIN;
         self.mats.cache = None;
     }
 
@@ -367,7 +367,7 @@ impl App {
         self.clash.focus = None;
         self.tasks.clear();
         self.cur_task = None;
-        self.sim_active = false;
+        self.sim.active = false;
         self.project_path = None;
         self.colors_dirty = true;
         self.cache_types.clear();
@@ -650,7 +650,7 @@ impl App {
             check_rules: self.check_rules.clone(),
             user_params: self.user_params.clone(),
             title_block: Some(self.title_block.clone()),
-            vp_folders: self.vp_folders.clone(),
+            vp_folders: self.vp.folders.clone(),
             overlays: self.overlays.clone(),
         }
     }
@@ -843,7 +843,7 @@ impl App {
             }
         }
         self.title_block = pf.title_block.unwrap_or_default();
-        self.vp_folders = pf.vp_folders;
+        self.vp.folders = pf.vp_folders;
         // the 2D drawings are re-read from their files
         let mut ovs = pf.overlays;
         for ov in &mut ovs {
@@ -852,12 +852,12 @@ impl App {
             }
         }
         self.overlays = ovs;
-        self.vp_folder_cur.clear();
+        self.vp.folder_cur.clear();
         self.check_results = None;
         self.check_sel = None;
         self.qto_result = None;
         if let Some((s, _)) = self.sim_range() {
-            self.sim_day = s as f32;
+            self.sim.day = s as f32;
         }
         // applies the View Template marked „default", if there is one
         if let Some(i) = self.view_templates.iter().position(|t| t.is_default) {
@@ -868,11 +868,11 @@ impl App {
                 self.settings.visual_style = t.visual_style;
                 self.show_grids = t.show_grids;
                 self.level.show_lines = t.show_levels;
-                self.section_caps = t.section_caps;
+                self.sec.caps = t.section_caps;
                 self.overrides = t.overrides.into_iter().collect();
                 self.selected = t.selected.into_iter().collect();
                 self.measures = t.measures;
-                self.vp_filter = t.vp_filter;
+                self.vp.filter = t.vp_filter;
                 self.vt_current = i;
                 self.vt_applied = true;
             }

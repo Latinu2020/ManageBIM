@@ -98,11 +98,13 @@ impl App {
         let light = self.render.sun_power.clamp(0.1, 3.0) * self.render.exposure.clamp(0.1, crate::anim::MAX_BRIGHTNESS);
         let hdri = self.rt_hdri();
         let sun = self.render.sun_dir();
+        let bounces = self.settings.light_bounces.clamp(1, crate::pathtrace::MAX_BOUNCES);
+        crate::pathtrace::set_light_bounces(bounces);
         let mut h = std::collections::hash_map::DefaultHasher::new();
         for v in [cam.eye(), cam.fwd(), cam.up(), sun] {
             v.to_array().map(f32::to_bits).hash(&mut h);
         }
-        (cam.fov_deg.to_bits(), light.to_bits(), env.0, env.1.to_bits(), env.2.to_bits(), self.render.night, hdri.as_ref().map(|x| Arc::as_ptr(x) as usize)).hash(&mut h);
+        (cam.fov_deg.to_bits(), light.to_bits(), env.0, env.1.to_bits(), env.2.to_bits(), self.render.night, hdri.as_ref().map(|x| Arc::as_ptr(x) as usize), bounces).hash(&mut h);
         PtFrame {
             scene,
             eye: cam.eye(),
@@ -118,6 +120,7 @@ impl App {
             max_samples,
             moving,
             denoise: self.settings.render_denoise,
+            bounces,
             key: h.finish(),
         }
     }

@@ -30,7 +30,7 @@ fn find_and_or_numeric() {
     assert!(!upper.is_empty());
     assert_eq!(upper.len(), all_upper.len());
     let no_sys = app.find(&[rule("System", SearchOp::Undefined, "", false)]);
-    assert_eq!(no_sys.len(), 120 + 33 - 33 + 0 + (33 - 33)); // only MEP items have a System
+    assert_eq!(no_sys.len(), 120); // only MEP items have a System
     println!("walls L1 {}, roof|door {}, elevation>3 {}", walls_l1.len(), roof_or_door.len(), upper.len());
 }
 

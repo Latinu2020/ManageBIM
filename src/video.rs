@@ -61,8 +61,8 @@ impl Frame {
                 for dy in 0..f {
                     for dx in 0..f {
                         let i = (((y * f + dy) * self.w + x * f + dx) * 4) as usize;
-                        for c in 0..4 {
-                            acc[c] += self.rgba[i + c] as u32;
+                        for (a, v) in acc.iter_mut().zip(&self.rgba[i..i + 4]) {
+                            *a += *v as u32;
                         }
                     }
                 }
@@ -364,9 +364,9 @@ impl Frame {
         }
         let a = (c[3] as f32 / 255.0) * cov.clamp(0.0, 1.0);
         let i = ((y as u32 * self.w + x as u32) * 4) as usize;
-        for k in 0..3 {
-            let d = self.rgba[i + k] as f32;
-            self.rgba[i + k] = (d + (c[k] as f32 - d) * a).round() as u8;
+        for (dst, &src) in self.rgba[i..i + 3].iter_mut().zip(&c[..3]) {
+            let d = *dst as f32;
+            *dst = (d + (src as f32 - d) * a).round() as u8;
         }
     }
 

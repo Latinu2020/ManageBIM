@@ -138,7 +138,7 @@ impl<'a> Conv<'a> {
                 items.push(self.xml_val(k));
             }
         }
-        let is_list = n.attrs.iter().any(|(k, v)| Self::local(k) == "cType" && v != "") || items.len() > 1;
+        let is_list = n.attrs.iter().any(|(k, v)| Self::local(k) == "cType" && !v.is_empty()) || items.len() > 1;
         if is_list {
             Dv::List(items)
         } else {

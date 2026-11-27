@@ -154,11 +154,10 @@ impl App {
                                                     });
                                                 });
                                             }
-                                            FieldKind::Path(ext) => {
-                                                if ui.small_button("📁").on_hover_text("Choose where to save").clicked() {
+                                            FieldKind::Path(ext)
+                                                if ui.small_button("📁").on_hover_text("Choose where to save").clicked() => {
                                                     pending = Some(Pending::Browse(i, fi, ext));
                                                 }
-                                            }
                                             _ => {}
                                         }
                                     });

@@ -49,7 +49,7 @@ impl App {
             template: if self.vt_applied { self.view_templates.get(self.vt_current).map(|t| t.name.clone()).unwrap_or_default() } else { String::new() },
             measures: self.measures.clone(),
             // new viewpoints go into the folder chosen in the panel
-            folder: self.vp_folder_cur.clone(),
+            folder: self.vp.folder_cur.clone(),
             look: Some(self.current_look()),
         });
         self.active_vp = Some(self.viewpoints.len() - 1);
@@ -102,7 +102,7 @@ impl App {
     /// is the viewpoint in the current export? (all, or only the chosen folder and its subfolders)
     pub fn vp_in_scope(&self, i: usize) -> bool {
         let Some(v) = self.viewpoints.get(i) else { return false };
-        match &self.vp_filter {
+        match &self.vp.filter {
             None => true,
             Some(f) => v.folder == *f || v.folder.starts_with(&format!("{f}/")),
         }
@@ -110,7 +110,7 @@ impl App {
 
     /// all folders (the ones with viewpoints and the ones created empty), sorted
     pub fn vp_all_folders(&self) -> Vec<String> {
-        let mut f: Vec<String> = self.vp_folders.clone();
+        let mut f: Vec<String> = self.vp.folders.clone();
         for v in &self.viewpoints {
             // and the parent folders ("A/B" -> "A")
             let mut p = String::new();
@@ -136,13 +136,13 @@ impl App {
         }
         let list: Vec<usize> = (0..self.viewpoints.len()).filter(|i| self.vp_in_scope(*i)).collect();
         if list.is_empty() {
-            self.vp_filter = None;
+            self.vp.filter = None;
             self.error("The folder has no viewpoints.");
             return;
         }
         let hidden = self.hidden.clone();
         self.report_job = Some(ReportJob { kind, path: path.to_string(), idx: 0, phase: 0, wait: 0, items: Vec::new(), saved_cam: self.cam, saved_section: self.section.clone(), saved_hidden: hidden, saved_vp: self.active_vp, list, shot_wait: 0 });
-        self.vp_filter = None;
+        self.vp.filter = None;
         self.toast("Capturing viewpoints for the report…");
     }
 
@@ -221,7 +221,7 @@ impl App {
                     self.apply_style_only(t.visual_style);
                     self.show_grids = t.show_grids;
                     self.level.show_lines = t.show_levels;
-                    self.section_caps = t.section_caps;
+                    self.sec.caps = t.section_caps;
                 }
                 if col {
                     self.overrides = t.overrides.into_iter().collect();
@@ -371,14 +371,14 @@ impl App {
     pub fn current_look(&self) -> crate::app::VpLook {
         let mut overrides: Vec<(ElemId, [u8; 4])> = self.overrides.iter().map(|(k, v)| (*k, *v)).collect();
         overrides.sort_by_key(|(k, _)| *k);
-        crate::app::VpLook { visual_style: self.settings.visual_style, show_grids: self.show_grids, show_levels: self.level.show_lines, section_caps: self.section_caps, overrides }
+        crate::app::VpLook { visual_style: self.settings.visual_style, show_grids: self.show_grids, show_levels: self.level.show_lines, section_caps: self.sec.caps, overrides }
     }
 
     pub fn apply_look(&mut self, l: &crate::app::VpLook) {
         self.apply_style_only(l.visual_style);
         self.show_grids = l.show_grids;
         self.level.show_lines = l.show_levels;
-        self.section_caps = l.section_caps;
+        self.sec.caps = l.section_caps;
         self.overrides = l.overrides.iter().copied().collect();
         self.colors_dirty = true;
     }

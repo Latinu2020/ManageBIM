@@ -212,10 +212,14 @@ impl UiLayout {
         self.panels.iter().find(|s| s.panel == p)
     }
     fn get_mut(&mut self, p: Panel) -> &mut PanelState {
-        if self.get(p).is_none() {
-            self.panels.push(PanelState { panel: p, dock: p.default_dock(), open: false });
-        }
-        self.panels.iter_mut().find(|s| s.panel == p).unwrap()
+        let i = match self.panels.iter().position(|s| s.panel == p) {
+            Some(i) => i,
+            None => {
+                self.panels.push(PanelState { panel: p, dock: p.default_dock(), open: false });
+                self.panels.len() - 1
+            }
+        };
+        &mut self.panels[i]
     }
     /// open and bring to front
     pub fn open(&mut self, p: Panel) {

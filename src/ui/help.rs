@@ -29,7 +29,8 @@ impl App {
         // elements in the model with the searched name (selection + zoom)
         // the element search is done only once per text (not on every frame): the result is kept in memory
         let cache_id = egui::Id::new("palette_elems");
-        let cached: Option<(String, Vec<(ElemId, String, String)>)> = ctx.data(|d| d.get_temp(cache_id));
+        type HelpCache = (String, Vec<(ElemId, String, String)>);
+        let cached: Option<HelpCache> = ctx.data(|d| d.get_temp(cache_id));
         let mut elems: Vec<(ElemId, String, String)> = Vec::new();
         if let Some((cq, v)) = cached.filter(|(cq, _)| *cq == q) {
             let _ = cq;

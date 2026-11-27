@@ -5,11 +5,11 @@ use super::*;
 impl App {
     /// Starts the check (at startup, if enabled in settings; or manually).
     pub(super) fn check_updates(&mut self, manual: bool) {
-        if self.update_rx.is_some() {
+        if self.upd.rx.is_some() {
             return;
         }
-        self.update_manual = manual;
-        self.update_rx = Some(crate::update::spawn_check());
+        self.upd.manual = manual;
+        self.upd.rx = Some(crate::update::spawn_check());
         if manual {
             self.toast("Checking for updates…");
         }
@@ -17,30 +17,30 @@ impl App {
 
     /// Called every frame: the automatic check once, then the results of the threads.
     pub(super) fn poll_updates(&mut self, ctx: &egui::Context) {
-        if !self.update_checked {
-            self.update_checked = true;
+        if !self.upd.checked {
+            self.upd.checked = true;
             if self.settings.check_updates {
                 self.check_updates(false);
             }
         }
-        if let Some(rx) = &self.update_rx {
+        if let Some(rx) = &self.upd.rx {
             if let Ok(r) = rx.try_recv() {
-                self.update_rx = None;
+                self.upd.rx = None;
                 match r {
                     Ok(Some(u)) => {
                         self.toast(format!("ManageBIM {} is available - click Update in the status bar", u.version));
-                        self.update_info = Some(u);
-                        if self.update_manual {
-                            self.update_open = true;
+                        self.upd.info = Some(u);
+                        if self.upd.manual {
+                            self.upd.open = true;
                         }
                     }
                     Ok(None) => {
-                        if self.update_manual {
+                        if self.upd.manual {
                             self.toast(format!("ManageBIM {} is up to date", env!("CARGO_PKG_VERSION")));
                         }
                     }
                     Err(e) => {
-                        if self.update_manual {
+                        if self.upd.manual {
                             self.error(format!("Could not check for updates: {e}"));
                         }
                     }
@@ -49,9 +49,9 @@ impl App {
                 ctx.request_repaint_after(std::time::Duration::from_millis(500));
             }
         }
-        if let Some(rx) = &self.update_dl_rx {
+        if let Some(rx) = &self.upd.dl_rx {
             if let Ok(r) = rx.try_recv() {
-                self.update_dl_rx = None;
+                self.upd.dl_rx = None;
                 match r {
                     Ok(p) => self.toast(format!("Installer started ({}) - save your work and close ManageBIM to finish the upgrade.", crate::file_name(&p.to_string_lossy()))),
                     Err(e) => self.error(e),
@@ -64,24 +64,24 @@ impl App {
 
     /// The badge in the status bar when there is a new version.
     pub(super) fn update_badge(&mut self, ui: &mut egui::Ui) {
-        let Some(u) = &self.update_info else { return };
+        let Some(u) = &self.upd.info else { return };
         let txt = format!("⬆ Update {}", u.version);
         if ui.add(egui::Button::new(RichText::new(txt).small().strong().color(Color32::WHITE)).fill(accent()).rounding(8.0)).on_hover_text("A new version of ManageBIM is available").clicked() {
-            self.update_open = true;
+            self.upd.open = true;
         }
     }
 
     pub(super) fn update_window(&mut self, ctx: &egui::Context) {
-        if !self.update_open {
+        if !self.upd.open {
             return;
         }
-        let Some(u) = self.update_info.clone() else {
-            self.update_open = false;
+        let Some(u) = self.upd.info.clone() else {
+            self.upd.open = false;
             return;
         };
         let mut open = true;
         let mut install = false;
-        let busy = self.update_dl_rx.is_some();
+        let busy = self.upd.dl_rx.is_some();
         egui::Window::new(crate::theme::icon_job("⬇", "Update available", 14.0, ctx.style().visuals.text_color()))
             .id(egui::Id::new("update_win"))
             .open(&mut open)
@@ -107,10 +107,10 @@ impl App {
                 ui.checkbox(&mut self.settings.check_updates, "Check for updates when ManageBIM starts");
             });
         if install {
-            self.update_dl_rx = Some(crate::update::spawn_download_and_run(u));
+            self.upd.dl_rx = Some(crate::update::spawn_download_and_run(u));
         }
         if !open {
-            self.update_open = false;
+            self.upd.open = false;
             self.settings.save();
         }
     }

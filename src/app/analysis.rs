@@ -46,8 +46,7 @@ impl App {
         let geo: Vec<GeoQty> = if need_geo {
             ids.par_iter()
                 .map(|id| {
-                    let m = models[id.m as usize].as_ref().unwrap();
-                    geo_qty(m, &m.elements[id.e as usize])
+                    models.get(id.m as usize).and_then(|m| m.as_ref()).and_then(|m| m.elements.get(id.e as usize).map(|e| geo_qty(m, e))).unwrap_or_default()
                 })
                 .collect()
         } else {
@@ -57,7 +56,7 @@ impl App {
         let mut units = vec![String::new(); ncol];
         let mut groups: HashMap<Vec<String>, QtoRow> = HashMap::new();
         for (k, id) in ids.iter().enumerate() {
-            let (m, e) = self.elem(*id).unwrap();
+            let Some((m, e)) = self.elem(*id) else { continue };
             let keys: Vec<String> = setup
                 .group_by
                 .iter()
@@ -223,7 +222,7 @@ impl App {
             }
             self.profile_map = Some(map);
         }
-        self.profile_map.as_ref().unwrap()
+        self.profile_map.get_or_insert_with(HashMap::new)
     }
 
     /// Selects the elements of a rule (click on a line in the legend).
