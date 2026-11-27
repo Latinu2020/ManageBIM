@@ -1,0 +1,140 @@
+    Checking bimrust v0.29.0 (C:\Data\Git\ManageBIM)
+src\formats.rs:733:33: warning: unnecessary `>= y + 1` or `x - 1 >=`: help: change it to: `i + n > list.len()`
+src\bimc.rs:114:21: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0`
+src\bimc.rs:173:18: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0`
+src\bimc.rs:423:13: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0.iter()`
+src\bimc.rs:718:26: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0.iter()`
+src\compare.rs:87:17: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0`
+src\compare.rs:94:17: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0.iter()`
+src\e57.rs:234:28: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<4>().0.iter()`
+src\e57.rs:235:28: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<8>().0.iter()`
+src\e57.rs:361:8: warning: manual `!RangeInclusive::contains` implementation: help: use: `!(64..=1 << 20).contains(&page)`
+src\formats.rs:337:20: warning: very complex type used. Consider factoring parts into `type` definitions
+src\formats.rs:465:21: warning: very complex type used. Consider factoring parts into `type` definitions
+src\formats.rs:648:67: warning: very complex type used. Consider factoring parts into `type` definitions
+src\formats.rs:809:13: warning: this OR pattern can be rewritten using a range: help: try: `1010..=1013`
+src\formats.rs:1927:27: warning: very complex type used. Consider factoring parts into `type` definitions
+src\formats.rs:1986:33: warning: very complex type used. Consider factoring parts into `type` definitions
+src\materials.rs:317:39: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0.iter()`
+src\materials.rs:318:50: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<2>().0.iter()`
+src\materials.rs:327:52: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0.iter()`
+src\materials.rs:329:53: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<4>().0.iter()`
+src\materials.rs:362:41: warning: casting to the same type is unnecessary (`u32` -> `u32`): help: try: `c`
+src\materials.rs:377:5: warning: doc list item without indentation
+src\materials.rs:378:1: warning: this function has too many arguments (8/7)
+src\materials.rs:573:10: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<4>().0.iter()`
+src\hlr.rs:143:18: warning: very complex type used. Consider factoring parts into `type` definitions
+src\hdri.rs:52:15: warning: manual `Range::contains` implementation: help: use: `(8..32768).contains(&w)`
+src\hdri.rs:58:22: warning: the loop variable `c` is only used to index `chans`
+src\markup.rs:336:18: warning: the loop variable `a` is used to index `it.eye`
+src\markup.rs:1055:17: warning: very complex type used. Consider factoring parts into `type` definitions
+src\gltf_export.rs:54:19: warning: very complex type used. Consider factoring parts into `type` definitions
+src\gltf_export.rs:58:25: warning: very complex type used. Consider factoring parts into `type` definitions
+src\gltf_export.rs:175:9: warning: called `map(f)` on an `Option` value where `f` is a closure that returns the unit type `()`
+src\gltf_load.rs:97:26: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0`
+src\gltf_load.rs:143:29: warning: very complex type used. Consider factoring parts into `type` definitions
+src\gltf_meta.rs:10:17: warning: very complex type used. Consider factoring parts into `type` definitions
+src\open_formats.rs:281:22: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0`
+src\usda.rs:456:90: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0.iter()`
+src\ifc_convert.rs:141:80: warning: comparison to empty slice: help: using `!is_empty` is clearer and more explicit: `!v.is_empty()`
+src\ifc.rs:347:5: warning: this `let...else` may be rewritten with the `?` operator: help: replace it with: `let rep = a[6].as_ref()?;`
+src\ifc.rs:1476:13: warning: writing `&mut Vec` instead of `&mut [_]` involves a new object where a slice will do
+src\ifc.rs:1600:22: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0`
+src\ifc_export.rs:211:24: warning: very complex type used. Consider factoring parts into `type` definitions
+src\materials.rs:671:1: warning: items after a test module
+src\model.rs:145:28: warning: very complex type used. Consider factoring parts into `type` definitions
+src\occt.rs:147:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*const i8, i32, f64, f64, std::option::Option<extern "C" fn(*mut std::ffi::c_void, f64, *const i8)>, *mut std::ffi::c_void) -> *mut occt::ffi::MboModel>`
+src\occt.rs:147:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*const occt::ffi::MboModel) -> *const i8>`
+src\occt.rs:147:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*const occt::ffi::MboModel) -> i32>`
+src\occt.rs:147:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*const occt::ffi::MboModel, i32, i32) -> *const i8>`
+src\occt.rs:147:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*const occt::ffi::MboModel, i32) -> *const i8>`
+src\occt.rs:147:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*const occt::ffi::MboModel, i32, i32) -> i32>`
+src\occt.rs:147:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*const occt::ffi::MboModel, i32) -> i32>`
+src\occt.rs:147:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*const occt::ffi::MboModel, i32) -> *const f64>`
+src\occt.rs:147:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*const occt::ffi::MboModel, i32) -> *const u8>`
+src\occt.rs:147:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*mut occt::ffi::MboModel)>`
+src\occt.rs:256:26: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<9>().0.iter()`
+src\oidn.rs:102:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(i32) -> *mut std::ffi::c_void>`
+src\oidn.rs:102:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*mut std::ffi::c_void)>`
+src\oidn.rs:102:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*mut std::ffi::c_void, *mut *const i8) -> i32>`
+src\oidn.rs:102:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*mut std::ffi::c_void, *const i8) -> *mut std::ffi::c_void>`
+src\oidn.rs:102:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*mut std::ffi::c_void, *const i8, *mut std::ffi::c_void, i32, usize, usize, usize, usize, usize)>`
+src\oidn.rs:102:36: warning: transmute used without annotations: help: consider adding missing annotations: `transmute::<*mut std::ffi::c_void, unsafe extern "C" fn(*mut std::ffi::c_void, *const i8, bool)>`
+src\pathtrace.rs:461:18: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<6>().0`
+src\pathtrace.rs:783:18: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0`
+src\gpu_pt.rs:549:34: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<6>().0`
+src\profiler.rs:117:13: warning: consider using `sort_by_key`
+src\qto.rs:131:18: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0`
+src\timeline.rs:76:36: warning: this manual char comparison can be written more succinctly: help: consider using an array of `char`: `['-', '.', '/']`
+src\web.rs:35:45: warning: use `std::ptr::eq` when comparing raw pointers: help: try: `std::ptr::eq(*p, *m)`
+src\app\search.rs:55:17: warning: consider using `sort_by_key`
+src\app\search.rs:322:34: warning: clamp-like pattern without using clamp function: help: replace with clamp: `(bb.size().length() * 0.5).clamp(0.6, 4.0)`
+src\app\transforms.rs:292:104: warning: unnecessary use of `clone` to create a slice from a reference: help: try: `std::slice::from_ref(&path)`
+src\app\transforms.rs:644:44: warning: using `map` over `inspect`
+src\app\clash_logic.rs:512:45: warning: very complex type used. Consider factoring parts into `type` definitions
+src\app\anim.rs:328:37: warning: very complex type used. Consider factoring parts into `type` definitions
+src\app\anim.rs:457:26: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0`
+src\app\anim.rs:467:26: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0`
+src\app\export.rs:313:13: warning: field assignment outside of initializer for an instance created with Default::default()
+src\app\grids.rs:289:38: warning: very complex type used. Consider factoring parts into `type` definitions
+src\app\grids.rs:295:34: warning: very complex type used. Consider factoring parts into `type` definitions
+src\app\grids.rs:615:24: warning: very complex type used. Consider factoring parts into `type` definitions
+src\app\grids.rs:655:20: warning: very complex type used. Consider factoring parts into `type` definitions
+src\app.rs:177:36: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<4>().0.iter()`
+src\app.rs:538:20: warning: very complex type used. Consider factoring parts into `type` definitions
+src\app.rs:580:22: warning: very complex type used. Consider factoring parts into `type` definitions
+src\app.rs:1377:20: warning: very complex type used. Consider factoring parts into `type` definitions
+src\app.rs:1543:1: warning: this function has too many arguments (8/7)
+src\qto.rs:185:1: warning: items after a test module
+src\app.rs:1867:31: warning: this `if` has identical blocks
+src\app.rs:1870:65: warning: this `if` has identical blocks
+src\app.rs:2048:21: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<2>().0`
+src\app.rs:2110:20: warning: very complex type used. Consider factoring parts into `type` definitions
+src\app.rs:2196:1: warning: this function has too many arguments (10/7)
+src\app.rs:2452:5: warning: doc list item without indentation
+src\clash_io.rs:301:9: warning: field assignment outside of initializer for an instance created with Default::default()
+src\clash_io.rs:347:9: warning: field assignment outside of initializer for an instance created with Default::default()
+src\sync.rs:125:1: warning: items after a test module
+src\camera.rs:78:20: warning: clamp-like pattern without using clamp function: help: replace with clamp: `(far / 30000.0).clamp(0.005, 0.1)`
+src\render.rs:516:5: warning: you should consider adding a `Default` implementation for `Renderer`
+src\render.rs:928:22: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0`
+src\render.rs:1004:35: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<4>().0.iter()`
+src\render.rs:1004:59: warning: using `chunks_exact_mut` with a constant chunk size
+src\render.rs:1376:20: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<3>().0`
+src\video.rs:45:28: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<4>().0`
+src\ui\tree_props.rs:115:18: warning: very complex type used. Consider factoring parts into `type` definitions
+src\ui\tree_props.rs:116:21: warning: very complex type used. Consider factoring parts into `type` definitions
+src\ui\tree_props.rs:153:18: warning: very complex type used. Consider factoring parts into `type` definitions
+src\ui\tree_props.rs:154:21: warning: very complex type used. Consider factoring parts into `type` definitions
+src\ui\coordination.rs:326:25: warning: very complex type used. Consider factoring parts into `type` definitions
+src\ui\tools.rs:487:30: warning: the loop variable `k` is only used to index `d.translate`
+src\ui\tools.rs:549:34: warning: the loop variable `k` is only used to index `self.move_delta`
+src\ui\tools.rs:561:34: warning: the loop variable `k` is only used to index `t`
+src\ui\help.rs:32:21: warning: very complex type used. Consider factoring parts into `type` definitions
+src\ui\output.rs:477:30: warning: the loop variable `i` is used to index `self.view_templates`
+src\ui\script_builder_ui.rs:158:49: warning: this `if` can be collapsed into the outer `match`
+src\ui\lighting_panel.rs:26:25: warning: field assignment outside of initializer for an instance created with Default::default()
+src\ui\lighting_panel.rs:212:37: warning: the loop variable `axis` is only used to index `lamp.target`
+src\ui\viewport.rs:1126:29: warning: field assignment outside of initializer for an instance created with Default::default()
+src\clash_io.rs:910:25: warning: unnecessary use of `get(&(1, 1)).is_none()`
+src\ui.rs:1653:44: warning: this expression creates a reference which is immediately dereferenced by the compiler: help: change this to: `label`
+warning: `bimrust` (lib) generated 122 warnings (7 duplicates) (run `cargo clippy --fix --lib -p bimrust -- ` to apply 44 suggestions)
+warning: `bimrust` (lib test) generated 126 warnings (122 duplicates) (run `cargo clippy --fix --lib -p bimrust --tests -- ` to apply 3 suggestions)
+tests\v07.rs:9:20: warning: using `chunks_exact` with a constant chunk size: help: consider using `as_chunks` instead: `as_chunks::<4>().0.iter()`
+tests\v07.rs:57:9: warning: field assignment outside of initializer for an instance created with Default::default()
+warning: `bimrust` (test "v07") generated 2 warnings (run `cargo clippy --fix --test "v07" -p bimrust -- ` to apply 1 suggestion)
+tests\acis_dwg.rs:66:5: warning: this function has too many arguments (8/7)
+tests\acis_dwg.rs:280:12: warning: writing `&PathBuf` instead of `&Path` involves a new object where a slice will do
+warning: `bimrust` (test "acis_dwg") generated 2 warnings
+src\bin\gen_pbr_library.rs:248:44: warning: this `if` has identical blocks
+tests\app_logic.rs:33:30: warning: this operation has no effect: help: consider reducing it to: `(120 + 33 - 33 + 0)`
+tests\app_logic.rs:33:30: warning: this operation has no effect: help: consider reducing it to: `(120 + 33 - 33)`
+tests\app_logic.rs:197:28: warning: using `chunks_exact_mut` with a constant chunk size: help: consider using `as_chunks_mut` instead: `as_chunks_mut::<4>().0.iter_mut()`
+warning: `bimrust` (bin "gen_pbr_library") generated 1 warning
+warning: `bimrust` (test "app_logic") generated 3 warnings (run `cargo clippy --fix --test "app_logic" -p bimrust -- ` to apply 3 suggestions)
+warning: `bimrust` (bin "gen_pbr_library" test) generated 1 warning (1 duplicate)
+tests\model_check.rs:256:5: warning: field assignment outside of initializer for an instance created with Default::default()
+tests\model_check.rs:311:5: warning: field assignment outside of initializer for an instance created with Default::default()
+tests\model_check.rs:423:5: warning: field assignment outside of initializer for an instance created with Default::default()
+warning: `bimrust` (test "model_check") generated 3 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 4.93s

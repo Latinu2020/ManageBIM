@@ -16,7 +16,9 @@ fn run(files: Vec<String>, depth: u8, msaa: u16) -> eframe::Result<()> {
             .with_inner_size([1500.0, 920.0])
             .with_min_inner_size([900.0, 600.0])
             .with_drag_and_drop(true)
-            .with_icon(icon()),
+            .with_icon(icon())
+            // presentation / screen recording: the whole screen, without the taskbar
+            .with_fullscreen(std::env::var_os("MANAGEBIM_FULLSCREEN").is_some()),
         depth_buffer: depth,
         multisampling: msaa,
         ..Default::default()

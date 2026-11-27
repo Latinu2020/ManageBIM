@@ -773,7 +773,7 @@ impl App {
     pub(super) fn ribbon_render(&mut self, ui: &mut egui::Ui) {
         self.style_group(ui);
         rgroup(ui, "Ray Trace", |ui| {
-            if rbtn(ui, "✨", "Ray Trace", "Interactive Ray Trace: the 3D view is path traced on the graphics card - soft shadows, reflections, sky light, materials. It refines while the camera stands still (half resolution while moving) and is denoised when it is done, like Navisworks.", self.rt.on, self.loaded_models().next().is_some()).clicked() {
+            if rbtn(ui, "✨", "Ray Trace", "Interactive Ray Trace: the 3D view is path traced on the graphics card - soft shadows, reflections, sky light, materials. It refines while the camera stands still (lower resolution while moving) and is denoised when it is done, like Navisworks.", self.rt.on, self.loaded_models().next().is_some()).clicked() {
                 self.toggle_raytrace();
             }
         });

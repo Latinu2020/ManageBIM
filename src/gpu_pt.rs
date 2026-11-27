@@ -89,6 +89,8 @@ pub struct PtStatus {
 }
 
 type Denoised = Arc<Mutex<Option<(u64, Vec<f32>)>>>;
+/// accumulation targets: framebuffer + colour / albedo / normal textures, width, height
+type Targets = (glow::Framebuffer, [glow::Texture; 3], i32, i32);
 
 #[derive(Default)]
 pub struct GpuPt {
@@ -103,13 +105,16 @@ pub struct GpuPt {
     hdri_key: usize,
     hdri_tex: Option<glow::Texture>,
     /// accumulation: framebuffer + colour / albedo / normal, size
-    fbo: Option<(glow::Framebuffer, [glow::Texture; 3], i32, i32)>,
+    fbo: Option<Targets>,
     key: u64,
     pub samples: u32,
     /// a sample is drawn in horizontal bands (a few per frame within a time budget): the next band's first row
     band_y: i32,
     /// rows per band, adapted so one band takes a few milliseconds on this graphics card
     band_h: i32,
+    /// the targets before a size change (the quarter-resolution image of a moving camera) and their samples:
+    /// shown under the rows the first full-resolution sample has not reached yet
+    prev: Option<(Targets, u32)>,
     den_tex: Option<(glow::Texture, u64)>,
     den_started: u64,
     den_result: Denoised,
@@ -207,10 +212,13 @@ impl GpuPt {
                 return Ok(false);
             }
         }
-        if let Some((fb, ts, _, _)) = self.fbo.take() {
-            gl.delete_framebuffer(fb);
-            for t in ts {
-                gl.delete_texture(t);
+        if let Some(old) = self.fbo.take() {
+            // the old image stays as the backdrop of the next first sample; the one before it goes
+            if let Some(((fb, ts, ..), _)) = self.prev.replace((old, self.samples)) {
+                gl.delete_framebuffer(fb);
+                for t in ts {
+                    gl.delete_texture(t);
+                }
             }
         }
         let fb = gl.create_framebuffer()?;
@@ -281,6 +289,10 @@ impl GpuPt {
             }
         }
         let (Some(prog), Some((fb, ..))) = (self.prog, self.fbo) else { return false };
+        // the bands below move the scissor rectangle: the caller's (egui's clip rectangle) is put back at the
+        // end, or the live view would be shown clipped to the last band (a thin strip)
+        let mut scissor_box = [0i32; 4];
+        gl.get_parameter_i32_slice(glow::SCISSOR_BOX, &mut scissor_box);
         gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fb));
         gl.draw_buffers(&[glow::COLOR_ATTACHMENT0, glow::COLOR_ATTACHMENT1, glow::COLOR_ATTACHMENT2]);
         gl.viewport(0, 0, w, h);
@@ -374,11 +386,15 @@ impl GpuPt {
                 self.samples += 1;
                 passes += 1;
             }
-            if budget_ms.is_some_and(|b| t0.elapsed().as_secs_f32() * 1000.0 >= b) {
+            // the first sample may take 4x the budget: a moving camera restarts it every frame, and a view
+            // filled only from the bottom up while orbiting is worse than a few frames per second less
+            let budget = budget_ms.map(|b| if self.samples == 0 { b * 4.0 } else { b });
+            if budget.is_some_and(|b| t0.elapsed().as_secs_f32() * 1000.0 >= b) {
                 break;
             }
         }
         gl.disable(glow::SCISSOR_TEST);
+        gl.scissor(scissor_box[0], scissor_box[1], scissor_box[2], scissor_box[3]);
         gl.bind_vertex_array(None);
         gl.disable(glow::BLEND);
         for i in 0..4 {
@@ -396,13 +412,37 @@ impl GpuPt {
     /// # Safety
     /// Call with the OpenGL context current (inside the egui_glow paint callback).
     pub unsafe fn show(&self, gl: &glow::Context) {
-        let (Some(disp), Some((_, ts, ..))) = (self.disp, self.fbo) else { return };
+        let (Some(disp), Some((_, ts, _, th))) = (self.disp, self.fbo) else { return };
         gl.use_program(Some(disp));
         gl.disable(glow::BLEND);
         gl.disable(glow::DEPTH_TEST);
-        gl.active_texture(glow::TEXTURE0);
+        gl.bind_vertex_array(self.vao);
         let den = self.den_tex.filter(|d| d.1 == self.key);
-        gl.bind_texture(glow::TEXTURE_2D, Some(den.map_or(ts[0], |d| d.0)));
+        // during the very first sample the rows above band_y hold nothing yet: the previous image (the
+        // quarter-resolution one of the moving camera) is drawn first and those rows are left to it
+        let first = den.is_none() && self.samples == 0 && self.band_y > 0;
+        if first {
+            if let Some(((_, pts, ..), pn)) = self.prev.filter(|p| p.1 > 0) {
+                self.draw(gl, disp, pts, None, pn, 0.0, false);
+            }
+        }
+        // a sample in progress (drawn in bands from the bottom): the rows below band_y already hold one more
+        // sample than the others - they are divided by n + 1, so the image has no brighter part
+        let split = if den.is_none() && th > 0 { self.band_y as f32 / th as f32 } else { 0.0 };
+        self.draw(gl, disp, ts, den.map(|d| d.0), self.samples, split, first);
+        gl.bind_vertex_array(None);
+        for i in [2, 1, 0] {
+            gl.active_texture(glow::TEXTURE0 + i);
+            gl.bind_texture(glow::TEXTURE_2D, None);
+        }
+    }
+
+    /// One full-viewport pass of the display shader over accumulation targets `ts` (`samples` each; rows
+    /// below `split` one more); with `den` the denoised texture is shown instead of the sums.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn draw(&self, gl: &glow::Context, disp: glow::Program, ts: [glow::Texture; 3], den: Option<glow::Texture>, samples: u32, split: f32, first: bool) {
+        gl.active_texture(glow::TEXTURE0);
+        gl.bind_texture(glow::TEXTURE_2D, Some(den.unwrap_or(ts[0])));
         gl.uniform_1_i32(gl.get_uniform_location(disp, "u_acc").as_ref(), 0);
         // albedo and normal guide the quick filter of the first samples (edges and textures stay sharp)
         gl.active_texture(glow::TEXTURE0 + 1);
@@ -411,20 +451,17 @@ impl GpuPt {
         gl.active_texture(glow::TEXTURE0 + 2);
         gl.bind_texture(glow::TEXTURE_2D, Some(ts[2]));
         gl.uniform_1_i32(gl.get_uniform_location(disp, "u_nrm").as_ref(), 2);
-        let n = self.samples.max(1) as f32;
+        let n = samples.max(1) as f32;
         let k = if den.is_some() { 1.0 } else { 1.0 / n };
         gl.uniform_1_f32(gl.get_uniform_location(disp, "u_scale").as_ref(), k);
         gl.uniform_1_f32(gl.get_uniform_location(disp, "u_gscale").as_ref(), 1.0 / n);
         // full filter at 1 sample, none from 48 samples on (and never on the denoised image)
         let strength = if den.is_some() { 0.0 } else { (1.0 - (n - 1.0) / 47.0).clamp(0.0, 1.0) };
         gl.uniform_1_f32(gl.get_uniform_location(disp, "u_filter").as_ref(), strength);
-        gl.bind_vertex_array(self.vao);
+        gl.uniform_1_f32(gl.get_uniform_location(disp, "u_split").as_ref(), split);
+        gl.uniform_1_f32(gl.get_uniform_location(disp, "u_extra").as_ref(), if samples == 0 { 1.0 } else { n / (n + 1.0) });
+        gl.uniform_1_i32(gl.get_uniform_location(disp, "u_first").as_ref(), first as i32);
         gl.draw_arrays(glow::TRIANGLES, 0, 3);
-        gl.bind_vertex_array(None);
-        for i in [2, 1, 0] {
-            gl.active_texture(glow::TEXTURE0 + i);
-            gl.bind_texture(glow::TEXTURE_2D, None);
-        }
     }
 
     /// The sums in the accumulation targets: (colour RGB, albedo RGB + normal XYZ), like PathTraceJob.buf / aux.
@@ -447,20 +484,28 @@ impl GpuPt {
         let (w, h) = (w as usize, h as usize);
         let mut col = vec![0f32; w * h * 3];
         let mut aux = vec![0f32; w * h * 6];
+        // a sample in progress: its rows (below band_y) hold one sample more - scaled to `samples` like the
+        // others, so callers can divide everything by `samples`; rows the very first sample has not reached
+        // hold nothing yet
+        let (n, band) = (self.samples as f32, self.band_y.max(0) as usize);
         for y in 0..h {
-            let src = (h - 1 - y) * w;
+            let g = h - 1 - y;
+            let k = if g < band { if n > 0.0 { n / (n + 1.0) } else { 1.0 } } else if n > 0.0 || band == 0 { 1.0 } else { 0.0 };
+            let src = g * w;
             for x in 0..w {
                 let (s, d) = ((src + x) * 4, y * w + x);
-                col[d * 3..d * 3 + 3].copy_from_slice(&planes[0][s..s + 3]);
-                aux[d * 6..d * 6 + 3].copy_from_slice(&planes[1][s..s + 3]);
-                aux[d * 6 + 3..d * 6 + 6].copy_from_slice(&planes[2][s..s + 3]);
+                for c in 0..3 {
+                    col[d * 3 + c] = planes[0][s + c] * k;
+                    aux[d * 6 + c] = planes[1][s + c] * k;
+                    aux[d * 6 + 3 + c] = planes[2][s + c] * k;
+                }
             }
         }
         Some((col, aux))
     }
 
     /// Interactive view: refine the image of `f` in the current viewport (vp = x, y, w, h in pixels).
-    /// Half resolution while the camera moves; once `max_samples` is reached the image is denoised
+    /// A quarter of the resolution while the camera moves; once `max_samples` is reached the image is denoised
     /// (Intel Open Image Denoise, in the background) and shown clean. Returns false if not available.
     ///
     /// # Safety
@@ -468,13 +513,19 @@ impl GpuPt {
     pub unsafe fn live(&mut self, gl: &glow::Context, f: &PtFrame, vp: [i32; 4], tex_array: Option<glow::Texture>) -> bool {
         let prev_fb = gl.get_parameter_framebuffer(glow::FRAMEBUFFER_BINDING);
         let scissor = gl.is_enabled(glow::SCISSOR_TEST);
-        let scale = if f.moving { 0.5 } else { 1.0 };
+        // a quarter of the resolution while the camera moves: one sample covers the whole view in a frame
+        let scale = if f.moving { 0.25 } else { 1.0 };
         let (w, h) = (((vp[2] as f32 * scale) as i32).max(8), ((vp[3] as f32 * scale) as i32).max(8));
         let ok = self.samples >= f.max_samples.max(1) && self.fbo.is_some_and(|x| x.2 == w && x.3 == h) && {
             // already converged for this view: no new samples, only check the key
             let key = f.key ^ f.scene.id.rotate_left(17) ^ ((w as u64) << 40 | (h as u64) << 20);
             key == self.key && self.scene_id == f.scene.id
-        } || self.accumulate(gl, f, w, h, f.max_samples.saturating_sub(self.samples).clamp(1, 8), tex_array, Some(25.0));
+        } || if f.moving {
+            // moving: one whole quarter-resolution sample per frame (cheap), so the view is never half drawn
+            self.accumulate(gl, f, w, h, 1, tex_array, None)
+        } else {
+            self.accumulate(gl, f, w, h, f.max_samples.saturating_sub(self.samples).clamp(1, 8), tex_array, Some(25.0))
+        };
         gl.bind_framebuffer(glow::FRAMEBUFFER, prev_fb);
         gl.viewport(vp[0], vp[1], vp[2], vp[3]);
         if scissor {
@@ -560,14 +611,20 @@ uniform sampler2D u_nrm;
 uniform float u_scale;
 uniform float u_gscale;
 uniform float u_filter;
+uniform float u_split;
+uniform float u_extra;
+uniform int u_first;
+// rows below u_split hold one sample more (the sample being drawn in bands)
+float rows(vec2 uv) { return uv.y < u_split ? u_extra : 1.0; }
 float aces(float x) {
     x = max(x, 0.0) * 0.6;
     return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
 }
 void main() {
-    vec3 c = texture(u_acc, v_uv).rgb * u_scale;
+    if (u_first != 0 && v_uv.y >= u_split) discard;
+    vec3 c = texture(u_acc, v_uv).rgb * u_scale * rows(v_uv);
     if (u_filter > 0.01) {
-        vec3 a0 = texture(u_alb, v_uv).rgb * u_gscale;
+        vec3 a0 = texture(u_alb, v_uv).rgb * u_gscale * rows(v_uv);
         vec3 n0 = texture(u_nrm, v_uv).rgb * u_gscale;
         // the sky (no surface) is not filtered
         if (dot(n0, n0) > 0.04) {
@@ -578,7 +635,7 @@ void main() {
             for (int y = -3; y <= 3; y++) {
                 for (int x = -3; x <= 3; x++) {
                     vec2 uv = v_uv + vec2(x, y) * px * 1.5;
-                    vec3 a = texture(u_alb, uv).rgb * u_gscale;
+                    vec3 a = texture(u_alb, uv).rgb * u_gscale * rows(uv);
                     vec3 n = texture(u_nrm, uv).rgb * u_gscale;
                     if (dot(n, n) < 0.04) continue;
                     float wn = pow(max(dot(normalize(n), n0), 0.0), 32.0);
@@ -586,7 +643,7 @@ void main() {
                     float wa = exp(-dot(da, da) * 40.0);
                     float ws = exp(-float(x * x + y * y) / 8.0);
                     float w = wn * wa * ws;
-                    vec3 irr = texture(u_acc, uv).rgb * u_scale / max(a, vec3(0.02));
+                    vec3 irr = texture(u_acc, uv).rgb * u_scale * rows(uv) / max(a, vec3(0.02));
                     sum += irr * w;
                     wsum += w;
                 }

@@ -38,7 +38,7 @@ impl App {
                 self.error("Open a model first - ray tracing needs geometry.");
                 return;
             }
-            self.toast("Ray Trace on: the view refines while the camera stands still (half resolution while moving). Click Ray Trace again to go back.");
+            self.toast("Ray Trace on: the view refines while the camera stands still (lower resolution while moving). Click Ray Trace again to go back.");
         } else {
             // free the GPU scene; it is rebuilt the next time
             self.rt.scene = None;
@@ -200,7 +200,7 @@ impl App {
         } else if status.denoising {
             format!("Ray Trace · {} samples · denoising…", status.samples)
         } else {
-            format!("Ray Trace · {} / {} samples{}{}", status.samples.min(status.max), status.max, if status.w > 0 && (status.w as f32) < rect.width() * 0.75 { " · moving (½ resolution)" } else { "" }, if building { " · updating the scene…" } else { "" })
+            format!("Ray Trace · {} / {} samples{}{}", status.samples.min(status.max), status.max, if status.w > 0 && (status.w as f32) < rect.width() * 0.75 { " · moving (¼ resolution)" } else { "" }, if building { " · updating the scene…" } else { "" })
         };
         let pos = rect.left_top() + egui::vec2(10.0, 10.0);
         let font = egui::FontId::proportional(12.0);

@@ -1810,7 +1810,8 @@ impl App {
         }
         if self.tool == Tool::Select && resp.hovered() && self.loaded_models().next().is_some() && self.report_job.is_none() {
             painter.text(
-                rect.left_top() + EV::new(10.0, 8.0),
+                // below the Ray Trace label when that is shown
+                rect.left_top() + EV::new(10.0, if self.rt.on { 34.0 } else { 8.0 }),
                 Align2::LEFT_TOP,
                 if self.nav == NavMode::Walk {
                     "Walk · drag up / down: forward / back · sideways: turn · right-drag: look · W A S D".to_string()
