@@ -242,6 +242,22 @@ impl App {
                     .response
                     .on_hover_text("BCF 3.0 places comments inside the Topic (newer BIMcollab / Solibri).");
                     ui.label(RichText::new("The cut options (view, hatch, dimensions, levels, title block) are in the Annotation tab; the IFC class mapping in BIM › Map classes.").small().weak());
+                    ui.separator();
+                    section_title(ui, "Graphics");
+                    ui.horizontal(|ui| {
+                        let avail = crate::softgl::available();
+                        let r = ui.add_enabled(avail, egui::Checkbox::new(&mut self.settings.software_gl, "Software rendering (Mesa llvmpipe)"))
+                            .on_hover_text("Draws with the processor instead of the graphics card: for virtual machines, old Remote Desktop sessions or drivers without OpenGL 3.3. Much slower. Applies when ManageBIM starts.")
+                            .on_disabled_hover_text("Mesa is not installed with this copy of ManageBIM.");
+                        if r.changed() {
+                            self.settings.save();
+                        }
+                        if self.settings.software_gl != crate::softgl::active() && ui.button("Restart now").clicked() {
+                            let on = self.settings.software_gl;
+                            self.restart_for_graphics(ui.ctx(), on);
+                        }
+                    });
+                    ui.label(RichText::new(if crate::softgl::active() { "Now: software rendering (Mesa)." } else { "Now: the graphics card." }).small().weak());
 
                     // ------------------------------------------------ navigation
                     ui.separator();

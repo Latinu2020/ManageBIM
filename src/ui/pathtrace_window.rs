@@ -189,6 +189,11 @@ impl App {
                 }
                 });
             });
+        // closing the window stops a render that is still running (nothing keeps working unseen)
+        if self.pt.open && !open && self.pt.job.as_ref().is_some_and(|j| !j.done.load(std::sync::atomic::Ordering::Relaxed)) {
+            self.cancel_pathtrace();
+            self.toast("Path trace stopped.");
+        }
         self.pt.open = open;
     }
 }

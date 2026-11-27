@@ -141,8 +141,18 @@ impl App {
         if self.rt.on && overlays && !self.gpu_render_running() {
             self.rt_overlay(ui, &painter, rect);
         }
-        if let Some(e) = self.renderer.lock().unwrap_or_else(|e| e.into_inner()).error.clone() {
+        let gl_error = self.renderer.lock().unwrap_or_else(|e| e.into_inner()).error.clone();
+        if let Some(e) = gl_error {
             painter.text(rect.center(), Align2::CENTER_CENTER, e, FontId::proportional(14.0), Color32::RED);
+            // no OpenGL 3.3 on this graphics card: offer the software renderer (Mesa) right here
+            if !crate::softgl::active() && crate::softgl::available() {
+                let b = Rect::from_center_size(rect.center() + EV::new(0.0, 46.0), EV::new(280.0, 30.0));
+                if ui.put(b, egui::Button::new("Restart with software rendering")).on_hover_text("Draws with the processor (Mesa llvmpipe): slower, but everything works. The project is saved first.").clicked() {
+                    self.settings.software_gl = true;
+                    self.settings.save();
+                    self.restart_for_graphics(ui.ctx(), true);
+                }
+            }
         }
 
         // --------------------------------------------------------- interaction

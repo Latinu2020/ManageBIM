@@ -31,6 +31,12 @@ fn main() {
             Some(res) => println!("cargo:rustc-link-arg-bins={}", res.display()),
             None => println!("cargo:warning=rc.exe (Windows SDK) not found - exes built without an icon"),
         }
+        // OpenGL is loaded on its first use, not when the process starts: that leaves main() the time to point
+        // the DLL search at Mesa (software rendering, src/softgl.rs) when the graphics card has no OpenGL 3.3
+        if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+            println!("cargo:rustc-link-arg-bin=ManageBIM=/DELAYLOAD:opengl32.dll");
+            println!("cargo:rustc-link-arg-bin=ManageBIM=delayimp.lib");
+        }
     }
     // FBX: ufbx (MIT, third_party/ufbx) + stratul C src/fbx/mbfbx.c, legate static
     println!("cargo:rerun-if-changed=src/fbx/mbfbx.c");

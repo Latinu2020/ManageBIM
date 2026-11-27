@@ -105,6 +105,7 @@ impl eframe::App for App {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.self_screenshot(ctx);
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32().min(0.1);
         self.last_frame = now;
@@ -531,6 +532,57 @@ impl App {
 
     // ================================================================== menu
     // ================================================================== ribbon
+    /// Tests: with MANAGEBIM_SCREENSHOT=<file.png> the window saves a picture of itself once it has been drawn
+    /// for a few seconds (models loaded), then closes. Nothing happens without the variable.
+    fn self_screenshot(&mut self, ctx: &egui::Context) {
+        let Some(path) = std::env::var_os("MANAGEBIM_SCREENSHOT") else { return };
+        static ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+        let start = *START.get_or_init(Instant::now);
+        let shot = ctx.input(|i| {
+            i.raw.events.iter().find_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+        });
+        if let Some(img) = shot {
+            let (w, h) = (img.size[0] as u32, img.size[1] as u32);
+            let rgba: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_array()).collect();
+            if let Ok(f) = std::fs::File::create(&path) {
+                let mut enc = png::Encoder::new(std::io::BufWriter::new(f), w, h);
+                enc.set_color(png::ColorType::Rgba);
+                enc.set_depth(png::BitDepth::Eight);
+                if let Ok(mut wr) = enc.write_header() {
+                    let _ = wr.write_image_data(&rgba);
+                }
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+        let wait = std::env::var("MANAGEBIM_SCREENSHOT_SECS").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(6.0);
+        if start.elapsed().as_secs_f32() > wait && self.loads.is_empty() && !ASKED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+        }
+        ctx.request_repaint();
+    }
+
+    /// Starts ManageBIM again with (or without) software rendering and closes this window. The project is
+    /// saved first when it has a file; without one, the same models are opened again.
+    pub(super) fn restart_for_graphics(&mut self, ctx: &egui::Context, software: bool) {
+        let mut args: Vec<String> = Vec::new();
+        if let Some(p) = self.project_path.clone() {
+            self.save_project(&p);
+            args.push(p);
+        } else {
+            args.extend(self.loaded_models().map(|(_, m)| m.path.clone()).filter(|p| std::path::Path::new(p).is_file()));
+        }
+        let Ok(exe) = std::env::current_exe() else { return self.error("Cannot find ManageBIM.exe to restart it.") };
+        match std::process::Command::new(exe).args(&args).env(crate::softgl::ENV, if software { "1" } else { "0" }).spawn() {
+            Ok(_) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Err(e) => self.error(format!("Could not restart ManageBIM: {e}")),
+        }
+    }
+
     fn save_now(&mut self) {
         // project opened from a .bimd: it is published there again (like NWD)
         if let Some(p) = self.bimd_path.clone() {
@@ -965,6 +1017,10 @@ impl App {
                     self.notes_bell(ui);
                     self.update_badge(ui);
                     ui.label(RichText::new(format!("{:.0} FPS", self.fps)).weak()).on_hover_text("Frames per second");
+                    if crate::softgl::active() {
+                        ui.label(RichText::new("Software GL").small().color(Color32::from_rgb(230, 160, 60)))
+                            .on_hover_text("The 3D view is drawn by the processor (Mesa llvmpipe) because the graphics card has no OpenGL 3.3, or Settings › Software rendering is on. Much slower than a graphics card.");
+                    }
                     // length unit: the same system as in Settings (m / mm / in / ft)
                     let cur_u = if self.settings.unit_system.is_empty() { "m".to_string() } else { self.settings.unit_system.clone() };
                     ui.menu_button(RichText::new(&cur_u).strong(), |ui| {

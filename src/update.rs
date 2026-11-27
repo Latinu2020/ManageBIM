@@ -34,8 +34,10 @@ struct Release {
     assets: Vec<Asset>,
 }
 
-/// "0.27.32" < "0.28.0": numeric comparison by components (the "-rc1" suffixes are ignored).
+/// "0.27.32" < "0.28.0": numeric comparison by components; for the same numbers a release candidate
+/// ("0.29.0-rc3") is older than the release ("0.29.0"), so rc users are offered the stable version.
 pub fn newer(remote: &str, local: &str) -> bool {
+    let pre = |s: &str| s.trim().trim_start_matches('v').contains('-');
     let parse = |s: &str| -> Vec<u64> {
         s.trim().trim_start_matches('v').split(['-', '+']).next().unwrap_or("").split('.').map(|p| p.parse().unwrap_or(0)).collect()
     };
@@ -46,7 +48,8 @@ pub fn newer(remote: &str, local: &str) -> bool {
             return x > y;
         }
     }
-    false
+    // same numbers: only a release replaces a release candidate
+    pre(local) && !pre(remote)
 }
 
 /// The GitHub API response -> the update information, if it is newer than `local`.
@@ -125,6 +128,9 @@ mod tests {
         assert!(!newer("0.27.9", "0.27.32"));
         assert!(newer("1.0.0", "0.99.99"));
         assert!(!newer("0.28.0-rc1", "0.28.0"));
+        // a release candidate is older than its release
+        assert!(newer("v0.29.0", "0.29.0-rc3"));
+        assert!(!newer("v0.29.0-rc3", "0.29.0-rc3"));
     }
 
     #[test]

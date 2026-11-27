@@ -124,6 +124,9 @@ fn revit(job: &Job, out: &mut Vec<String>) {
             out.push(format!("Revit {y}: ManageBIM.addin missing from this package"));
             continue;
         };
+        // an upgrade starts from an empty folder: nothing of an older version stays behind
+        remove(&target);
+        remove(&dir.join("ManageBIM.addin"));
         let mut ok = write(&target.join("ManageBIM.RevitExporter.dll"), dll);
         ok &= write(&dir.join("ManageBIM.addin"), addin);
         for png in ["managebim16.png", "managebim32.png"] {
@@ -158,6 +161,8 @@ fn acad(job: &Job, out: &mut Vec<String>) {
         out.push("AutoCAD: no add-in DLL in this package".into());
         return;
     }
+    // an upgrade starts from an empty bundle: nothing of an older version stays behind
+    remove(&bundle);
     let mut ok = false;
     if let Some(xml) = payload(job.files, "PackageContents.xml") {
         ok |= write(&bundle.join("PackageContents.xml"), xml);
@@ -186,7 +191,8 @@ fn acad(job: &Job, out: &mut Vec<String>) {
 /// AutoCAD must be closed: on exit it rewrites its profile.
 fn acad_trust(bundle: &Path, job: &Job, add: bool) -> Option<usize> {
     let real = std::env::var_os("APPDATA").map(PathBuf::from)?;
-    if real != job.appdata {
+    // install.ps1 -TestRoot redirects APPDATA into a test folder: the real AutoCAD profiles are not touched
+    if real != job.appdata || std::env::var_os("MANAGEBIM_ADDIN_TEST").is_some() {
         return None;
     }
     if !cfg!(windows) {
@@ -281,6 +287,10 @@ fn navisworks(job: &Job, out: &mut Vec<String>) {
     if installed.is_empty() {
         out.push("Navisworks: no installed version found".into());
         return;
+    }
+    // an upgrade starts clean: older copies (in either the new or the old folder layout) go first
+    for root in navisworks_roots(job.appdata) {
+        remove(&root.join("Plugins").join("ManageBIM.NwExporter"));
     }
     for (edition, year) in installed {
         let Some(dll) = payload(job.files, &format!("{year}/ManageBIM.NwExporter.dll")) else {
@@ -390,6 +400,35 @@ mod tests {
         );
         assert_eq!(run(&Job { kind: Kind::Navisworks, files, appdata: &root, program_files: &pf, uninstall: true }), vec!["Navisworks: removed"]);
         assert!(!root.join("Autodesk Navisworks Manage 2023/Plugins/ManageBIM.NwExporter").exists());
+    }
+
+    #[test]
+    fn upgrade_leaves_nothing_of_the_old_version() {
+        let root = tmp("upgrade");
+        let pf = root.join("pf");
+        std::fs::create_dir_all(pf.join("Autodesk/Revit 2024")).unwrap();
+        std::fs::create_dir_all(pf.join("Autodesk/Navisworks Manage 2025")).unwrap();
+        // files an older version left behind
+        let stale = [
+            root.join("Autodesk/Revit/Addins/2024/ManageBIM/Old.Helper.dll"),
+            root.join("Autodesk/ApplicationPlugins/ManageBIM.bundle/Contents/R23/ManageBIM.AcadExporter.dll"),
+            root.join("Autodesk/Navisworks Manage 2025/Plugins/ManageBIM.NwExporter/Old.dll"),
+            root.join("Autodesk Navisworks Manage 2025/Plugins/ManageBIM.NwExporter/ManageBIM.NwExporter.dll"),
+        ];
+        for f in &stale {
+            assert!(write(f, b"old"));
+        }
+        let acad: &[(&str, &[u8])] = &[("PackageContents.xml", b"<ApplicationPackage/>"), ("ManageBIM.AcadExporter.R25.dll", b"r25")];
+        let navis: &[(&str, &[u8])] = &[("2025/ManageBIM.NwExporter.dll", b"n25")];
+        run(&Job { kind: Kind::Revit, files: REVIT, appdata: &root, program_files: &pf, uninstall: false });
+        run(&Job { kind: Kind::Acad, files: acad, appdata: &root, program_files: &pf, uninstall: false });
+        run(&Job { kind: Kind::Navisworks, files: navis, appdata: &root, program_files: &pf, uninstall: false });
+        for f in &stale {
+            assert!(!f.exists(), "left behind: {}", f.display());
+        }
+        assert!(root.join("Autodesk/Revit/Addins/2024/ManageBIM/ManageBIM.RevitExporter.dll").is_file());
+        assert!(root.join("Autodesk/ApplicationPlugins/ManageBIM.bundle/Contents/R25/ManageBIM.AcadExporter.dll").is_file());
+        assert!(root.join("Autodesk/Navisworks Manage 2025/Plugins/ManageBIM.NwExporter/ManageBIM.NwExporter.dll").is_file());
     }
 
     #[test]

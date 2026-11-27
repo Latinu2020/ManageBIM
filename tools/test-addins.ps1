@@ -23,7 +23,7 @@
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File tools\test-addins.ps1
 #>
-param([int]$TimeoutSec = 300)
+param([int]$TimeoutSec = 300, [switch]$SkipRevit)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $work = Join-Path $root 'target\addin-test'
@@ -139,6 +139,7 @@ try {
 # opens a sample model, the add-in exports its 3D view like "Send to ManageBIM", writes revit.result and
 # closes Revit. Only the Revit process started here is ever stopped.
 $revits = Get-ChildItem (Join-Path $pf 'Autodesk') -Directory -Filter 'Revit 20*' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^Revit (\d{4})$' -and (Test-Path (Join-Path $_.FullName 'Revit.exe')) }
+if ($SkipRevit) { $revits = @() }
 foreach ($r in $revits) {
     $year = [int]($r.Name -replace '\D', '')
     $name = "Revit $year"

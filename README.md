@@ -9,12 +9,12 @@
 Open **IFC, Revit, Navisworks, AutoCAD / Plant 3D, STEP, CityJSON, 3D Tiles, USD and point clouds** together, run clash detection and model checks,<br>
 plan voids and clearance zones, produce **Inventor-style 2D drawings**, render with **scanned PBR materials** — and stay in sync with Revit and Navisworks.
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.28.9-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.9/ManageBIM-Setup-0.28.9.exe)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer%200.29.0-2563eb?style=for-the-badge&logo=windows)](https://github.com/Latinu2020/ManageBIM/releases/download/v0.29.0/ManageBIM-Setup-0.29.0.exe)
 &nbsp;
 [![Linux & FreeBSD](https://img.shields.io/badge/Linux%20%C2%B7%20FreeBSD-Build%20from%20source-334155?style=for-the-badge&logo=linux&logoColor=white)](#building-from-source)
 
 [![Build](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml/badge.svg)](https://github.com/Latinu2020/ManageBIM/actions/workflows/build.yml)
-![Version](https://img.shields.io/badge/version-0.28.9-blue)
+![Version](https://img.shields.io/badge/version-0.29.0-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20FreeBSD-0078d4)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-b7410e)
 ![No admin](https://img.shields.io/badge/install-no%20admin%20rights-16a34a)
@@ -115,13 +115,13 @@ plan voids and clearance zones, produce **Inventor-style 2D drawings**, render w
 
 | Platform | Package | Notes |
 |---|---|---|
-| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.28.9.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.9/ManageBIM-Setup-0.28.9.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime, Intel Open Image Denoise and the scanned PBR material library. Per-user, **no administrator rights**, folder of your choice. |
-| **Linux** (x86-64) | [**ManageBIM-0.28.9-x86_64.AppImage**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.9/ManageBIM-0.28.9-x86_64.AppImage) | Single file: `chmod +x` and run. Or [build from source](#building-from-source). |
-| **FreeBSD** (x86-64) | [**ManageBIM-0.28.9-freebsd-x86_64.tar.gz**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.28.9/ManageBIM-0.28.9-freebsd-x86_64.tar.gz) | Unpack and run `./ManageBIM`. Needs `pkg install mesa-libs libxkbcommon`. |
+| **Windows 10 / 11** (x64) | [**ManageBIM-Setup-0.29.0.exe**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.29.0/ManageBIM-Setup-0.29.0.exe) | Wizard installer with the Revit, Navisworks and AutoCAD / Plant 3D add-ins, the OpenCascade runtime, Intel Open Image Denoise and the scanned PBR material library. Per-user, **no administrator rights**, folder of your choice. |
+| **Linux** (x86-64) | [**ManageBIM-0.29.0-x86_64.AppImage**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.29.0/ManageBIM-0.29.0-x86_64.AppImage) | Single file: `chmod +x` and run. Or [build from source](#building-from-source). |
+| **FreeBSD** (x86-64) | [**ManageBIM-0.29.0-freebsd-x86_64.tar.gz**](https://github.com/Latinu2020/ManageBIM/releases/download/v0.29.0/ManageBIM-0.29.0-freebsd-x86_64.tar.gz) | Unpack and run `./ManageBIM`. Needs `pkg install mesa-libs libxkbcommon`. |
 
 ## What's new
 
-> **0.29.0-rc3** (release candidate, [download](https://github.com/Latinu2020/ManageBIM/releases/tag/v0.29.0-rc3)) — **path tracing on the graphics card** and an **interactive Ray Trace view** that refines while you look (like Navisworks); all length units incl. **ft-in**; OSNAP up to 40 px; a **Light** button in the top bar; IFC Mapping in its own window; add-in errors shown in ManageBIM. rc2 / rc3: the Ray Trace view refreshes the whole frame and is clean sooner while moving, indirect light (one sun bounce), no dark blotches in renders, Light / Ray Trace on the navigation bar, all units in measurements, damaged point clouds no longer close the app.
+> **0.29.0** — **path tracing on the graphics card** and an **interactive Ray Trace view** that refines while you look (clean while you move, indirect light, stops at once when you switch it off); **every length unit** incl. ft-in; **OSNAP up to 40 px**; a **Light** button on the navigation bar; the **Level & Storey Manager** with a navigable elevation; a **detailed Dashboard report** (clash and viewpoint sheets with pictures); IFC Mapping in its own window; **add-ins that never close Revit, AutoCAD or Navisworks**, tested automatically; damaged files and point clouds can no longer close ManageBIM; **nothing else to install** - the Visual C++ runtime and a software OpenGL (Mesa) for PCs without a capable graphics card are included.
 >
 > **0.28.9** — the **level preview** zooms (wheel), pans and lets you drag the model levels too; a **tidier ribbon** with every command on one tab; the **add-ins can no longer close Revit, AutoCAD / Plant 3D or Navisworks** (errors are logged with a short message) and are checked for every supported version, with an automated test for AutoCAD and Navisworks.
 >
@@ -132,7 +132,7 @@ plan voids and clearance zones, produce **Inventor-style 2D drawings**, render w
 Older versions: see the full **[CHANGELOG](CHANGELOG.md)**. What comes next: **[ROADMAP](ROADMAP.md)**.
 
 > **Windows:** the installer is not digitally signed yet — if SmartScreen asks, choose *More info › Run anyway*.
-> Silent install: `ManageBIM-Setup-0.28.9.exe /S` (add `/NoAddins` for the application only).
+> Silent install: `ManageBIM-Setup-0.29.0.exe /S` (add `/NoAddins` for the application only).
 >
 > **Linux / FreeBSD:** the add-ins (Revit, Navisworks, AutoCAD) and the native STEP / IGES reader exist only on Windows; everything else is the same.
 
@@ -216,8 +216,9 @@ The setup installs them per user — no administrator rights.
 ## System requirements
 
 - **Windows** 10 / 11 64-bit, **Linux** x86-64 (X11 or Wayland), or **FreeBSD** 14 x86-64
-- OpenGL 3.3 graphics (any recent integrated or dedicated GPU)
+- OpenGL 3.3 graphics (any recent integrated or dedicated GPU) - without it (virtual machines, old Remote Desktop) Windows uses the included software OpenGL (Mesa), slower but complete
 - 8 GB RAM recommended for large federated models and point clouds
+- **Nothing else to install on Windows**: the installer includes everything (no Visual C++ Redistributable, no .NET, no administrator rights). The add-ins use the .NET of Revit / AutoCAD / Navisworks itself.
 
 ---
 

@@ -524,7 +524,7 @@ impl Renderer {
         // graphics card / driver too old (or Remote Desktop without acceleration): an explanation, not just the shader error
         let v = gl.version();
         let hint = format!(
-            "The 3D view needs OpenGL 3.3; this graphics driver offers OpenGL {}.{} ({}). Update the graphics driver, or run ManageBIM on the dedicated graphics card.",
+            "The 3D view needs OpenGL 3.3; this graphics driver offers OpenGL {}.{} ({}). Update the graphics driver, run ManageBIM on the dedicated graphics card, or restart with software rendering.",
             v.major,
             v.minor,
             gl.get_parameter_string(glow::RENDERER)
@@ -872,7 +872,7 @@ impl Renderer {
         if !finished {
             let k = gj.step.clamp(1, target - n);
             let t0 = std::time::Instant::now();
-            let ok = self.gpu_off.accumulate(gl, &gj.frame, job.width as i32, job.height as i32, k, self.tex);
+            let ok = self.gpu_off.accumulate(gl, &gj.frame, job.width as i32, job.height as i32, k, self.tex, Some(40.0));
             gl.finish();
             restore(gl);
             if !ok {
@@ -912,7 +912,7 @@ impl Renderer {
         let mut left = spp.max(1);
         while ok && left > 0 {
             let k = left.min(16);
-            ok = self.gpu_off.accumulate(gl, f, w as i32, h as i32, k, self.tex);
+            ok = self.gpu_off.accumulate(gl, f, w as i32, h as i32, k, self.tex, None);
             gl.finish();
             left -= k;
         }

@@ -25,7 +25,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
-$version = '0.28.1'
+# stamped by tools\make-setup.ps1 from Cargo.toml (the wizard and Settings > Apps show it)
+$version = '0.29.0'
 
 # --- locatii (redirectionate in modul test)
 if ($TestRoot) {
@@ -71,13 +72,15 @@ function New-Shortcut($lnk, $target) {
 }
 
 # --- installerele add-in-urilor (.exe), din aplicatia instalata sau din pachet
-function AddinExes {
+function AddinExes([bool]$Selected = $true) {
     $dirs = @((Join-Path $AppDir 'AddIns'), (Join-Path $here 'ManageBIM\AddIns'))
     $want = @($Addins.ToLower().Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     foreach ($n in 'ManageBIM-Revit-AddIn.exe', 'ManageBIM-AutoCAD-AddIn.exe', 'ManageBIM-Navisworks-AddIn.exe') {
         if ($want.Count -gt 0) {
             $key = if ($n -like '*Revit*') { 'revit' } elseif ($n -like '*AutoCAD*') { 'acad' } else { 'navis' }
-            if ($want -notcontains $key) { continue }
+            if (($want -contains $key) -ne $Selected) { continue }
+        } elseif (-not $Selected) {
+            continue
         }
         $f = $dirs | ForEach-Object { Join-Path $_ $n } | Where-Object { Test-Path $_ } | Select-Object -First 1
         if ($f) { $f }
@@ -88,26 +91,53 @@ function Run-AddinExe($exe, $mode) {
     $old = $env:APPDATA
     try {
         $env:APPDATA = $RoamApp   # installerele scriu in %APPDATA% (redirectionat in modul test)
+        if ($TestRoot) { $env:MANAGEBIM_ADDIN_TEST = '1' }   # and leave the registry (AutoCAD trusted paths) alone
         Start-Process $exe -ArgumentList $mode -Wait -NoNewWindow -RedirectStandardOutput $tmp -RedirectStandardError "$tmp.err" | Out-Null
         @(Get-Content $tmp, "$tmp.err" -ErrorAction SilentlyContinue | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     } finally {
         $env:APPDATA = $old
+        Remove-Item Env:\MANAGEBIM_ADDIN_TEST -ErrorAction SilentlyContinue
         Remove-Item $tmp, "$tmp.err" -ErrorAction SilentlyContinue
     }
 }
 
 # --- add-in-uri: unde se instaleaza
+# --- the folder of the previous installation (Settings > Apps: InstallLocation; a file in -TestRoot mode)
+$LocFile = if ($TestRoot) { Join-Path $TestRoot 'InstallLocation.txt' } else { '' }
+function Get-PreviousLocation {
+    if ($TestRoot) { if (Test-Path $LocFile) { return (Get-Content $LocFile -Raw).Trim() } else { return '' } }
+    $v = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\ManageBIM' -ErrorAction SilentlyContinue).InstallLocation
+    if ($v) { $v } else { '' }
+}
+# a folder holding a ManageBIM installation (only such a folder is ever emptied, never one with other files)
+function Test-ManageBIMDir($d) { $d -and (Test-Path (Join-Path $d 'ManageBIM.exe')) }
+function Test-EmptyOrMissing($d) { -not (Test-Path $d) -or -not (Get-ChildItem $d -Force -ErrorAction SilentlyContinue | Select-Object -First 1) }
+function Test-SamePath($a, $b) { $a -and $b -and ([IO.Path]::GetFullPath($a).TrimEnd('\') -eq [IO.Path]::GetFullPath($b).TrimEnd('\')) }
+
+# installing into a folder that already holds other files (e.g. D:\Apps typed by hand): ManageBIM goes into a
+# ManageBIM subfolder, so the files already there are never deleted
+if (-not $Uninstall -and -not (Test-EmptyOrMissing $AppDir) -and -not (Test-ManageBIMDir $AppDir)) {
+    $AppDir = Join-Path $AppDir 'ManageBIM'
+    if (-not (Test-EmptyOrMissing $AppDir) -and -not (Test-ManageBIMDir $AppDir)) {
+        throw "The folder $AppDir already holds other files. Choose an empty folder."
+    }
+    $Exe = Join-Path $AppDir 'ManageBIM.exe'
+}
+
 function Get-RevitYears { 2023..2027 | Where-Object { Test-Path (Join-Path $PF "Autodesk\Revit $_") } }
 function Get-AcadInstalled { [bool](Get-ChildItem (Join-Path $PF 'Autodesk') -Directory -Filter 'AutoCAD*' -ErrorAction SilentlyContinue) }
 function Revit-Dll($year) { if ($year -ge 2026) { 2026 } else { $year } }
 
-if (Get-Process ManageBIM -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$AppDir*" }) {
+$Prev = Get-PreviousLocation
+if (Get-Process ManageBIM -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$AppDir\*" -or ($Prev -and $_.Path -like "$Prev\*") }) {
     Write-Warning 'Close ManageBIM first.'
     exit 1
 }
 
 # ======================================================================= dezinstalare
 if ($Uninstall) {
+    # run from the package (Uninstall-ManageBIM.cmd): the installation may be in a folder chosen in the wizard
+    if (-not (Test-ManageBIMDir $AppDir) -and (Test-ManageBIMDir $Prev)) { $AppDir = $Prev }
     Say 'Uninstalling ManageBIM...'
     # intai prin installerele .exe (stiu exact ce au pus); apoi curatenie pentru instalari mai vechi
     foreach ($a in AddinExes) {
@@ -137,7 +167,7 @@ if ($Uninstall) {
         if (-not $TestRoot) { Remove-ItemProperty "HKCU:\Software\Classes\$ext\OpenWithProgids" -Name 'ManageBIM.Ifc' -ErrorAction SilentlyContinue }
     }
     # scriptul ruleaza chiar din folderul aplicatiei: il stergem dupa iesire
-    if (Test-Path $AppDir) {
+    if (Test-ManageBIMDir $AppDir) {
         if ($here -like "$AppDir*") {
             Start-Process cmd.exe -ArgumentList "/c timeout /t 2 >nul & rmdir /s /q `"$AppDir`"" -WindowStyle Hidden
         } else {
@@ -153,8 +183,16 @@ $pkg = Join-Path $here 'ManageBIM'
 if (-not (Test-Path (Join-Path $pkg 'ManageBIM.exe'))) { throw "Folder 'ManageBIM' with ManageBIM.exe not found next to this script." }
 Say "Installing ManageBIM $version for $env:USERNAME..."
 
-# 1) aplicatia
-if (Test-Path $AppDir) { Remove-Item $AppDir -Recurse -Force }
+# 1) the application: an upgrade starts from an empty folder, so no file of an older version stays behind
+if (Test-ManageBIMDir $AppDir) {
+    Remove-Item $AppDir -Recurse -Force
+    Ok 'Previous version removed'
+}
+# installed somewhere else before: that copy goes too (only if it really is a ManageBIM installation)
+if ($Prev -and -not (Test-SamePath $Prev $AppDir) -and (Test-ManageBIMDir $Prev)) {
+    Remove-Item $Prev -Recurse -Force
+    Ok "Previous installation removed from $Prev"
+}
 New-Item -ItemType Directory -Force $AppDir | Out-Null
 Copy-Item (Join-Path $pkg '*') $AppDir -Recurse -Force
 Copy-Item (Join-Path $here 'install.ps1') (Join-Path $AppDir 'uninstall.ps1') -Force
@@ -189,6 +227,7 @@ Set-Reg $u 'DisplayName' 'ManageBIM'
 Set-Reg $u 'DisplayVersion' $version
 Set-Reg $u 'Publisher' 'ManageBIM'
 Set-Reg $u 'InstallLocation' $AppDir
+if ($TestRoot) { Set-Content $LocFile $AppDir }
 Set-Reg $u 'DisplayIcon' "`"$Exe`",0"
 Set-Reg $u 'UninstallString' "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$AppDir\uninstall.ps1`" -Uninstall"
 if (-not $TestRoot) { New-ItemProperty "HKCU:\$u" -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null; New-ItemProperty "HKCU:\$u" -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null }
@@ -208,9 +247,15 @@ if ((Test-Path $set) -and -not (Test-Path $dst)) {
 }
 
 # 6) add-in-uri: installerele .exe din AddIns (fiecare instaleaza in versiunile gasite, fara admin)
+# each add-in installer first removes its older copy. Add-ins not chosen this time are removed, so an add-in of
+# an older version never stays loaded in Revit / AutoCAD / Navisworks next to the new ManageBIM.
+$skipped = if ($NoAddins) { @(AddinExes $true) + @(AddinExes $false) } else { @(AddinExes $false) }
+foreach ($a in $skipped) {
+    foreach ($line in (Run-AddinExe $a '--uninstall')) { if ($line -match ': removed') { Ok "$line (not selected)" } }
+}
 if (-not $NoAddins) {
     foreach ($a in AddinExes) {
-        foreach ($line in (Run-AddinExe $a '--install')) { if ($line -match ': installed') { Ok $line } elseif ($line) { Write-Warning $line } }
+        foreach ($line in (Run-AddinExe $a '--install')) { if ($line -match ': installed|trusted') { Ok $line } elseif ($line) { Write-Warning $line } }
     }
 }
 

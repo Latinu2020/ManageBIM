@@ -106,6 +106,10 @@ pub struct GpuPt {
     fbo: Option<(glow::Framebuffer, [glow::Texture; 3], i32, i32)>,
     key: u64,
     pub samples: u32,
+    /// a sample is drawn in horizontal bands (a few per frame within a time budget): the next band's first row
+    band_y: i32,
+    /// rows per band, adapted so one band takes a few milliseconds on this graphics card
+    band_h: i32,
     den_tex: Option<(glow::Texture, u64)>,
     den_started: u64,
     den_result: Denoised,
@@ -244,14 +248,18 @@ impl GpuPt {
             }
         }
         self.samples = 0;
+        self.band_y = 0;
     }
 
-    /// Adds `n` samples per pixel to the accumulation (w x h). The caller restores its framebuffer.
-    /// Returns false when the GPU path tracer is not available (then `error` says why).
+    /// Adds up to `n` samples per pixel to the accumulation (w x h). The caller restores its framebuffer.
+    /// Each sample is drawn in horizontal bands; with `budget_ms`, drawing stops as soon as that time is used
+    /// (the rest of the sample continues on the next call), so a big model never blocks the interface or hits
+    /// the Windows GPU timeout. Returns false when the GPU path tracer is not available (then `error` says why).
     ///
     /// # Safety
     /// Call with the OpenGL context current (inside the egui_glow paint callback).
-    pub unsafe fn accumulate(&mut self, gl: &glow::Context, f: &PtFrame, w: i32, h: i32, n: u32, tex_array: Option<glow::Texture>) -> bool {
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn accumulate(&mut self, gl: &glow::Context, f: &PtFrame, w: i32, h: i32, n: u32, tex_array: Option<glow::Texture>, budget_ms: Option<f32>) -> bool {
         if !self.init(gl) {
             return false;
         }
@@ -334,7 +342,13 @@ impl GpuPt {
         gl.uniform_1_i32(u("u_nlamps").as_ref(), nl as i32);
         gl.bind_vertex_array(self.vao);
         let lf = u("u_frame");
-        for _ in 0..n {
+        if self.band_h <= 0 {
+            self.band_h = 64;
+        }
+        let t0 = std::time::Instant::now();
+        let mut passes = 0;
+        gl.enable(glow::SCISSOR_TEST);
+        while passes < n {
             // the first sample overwrites every pixel (no blending), the next ones add up: the targets never
             // need a clear that could miss pixels (stale memory showed as coloured blocks)
             if self.samples == 0 {
@@ -342,10 +356,29 @@ impl GpuPt {
             } else {
                 gl.enable(glow::BLEND);
             }
+            let y1 = (self.band_y + self.band_h).min(h);
+            gl.scissor(0, self.band_y, w, y1 - self.band_y);
             gl.uniform_1_u32(lf.as_ref(), self.samples.wrapping_mul(2_654_435_761).wrapping_add(self.samples));
+            let tb = std::time::Instant::now();
             gl.draw_arrays(glow::TRIANGLES, 0, 3);
-            self.samples += 1;
+            if budget_ms.is_some() {
+                // wait for the band: its time sizes the next bands (about 6 ms each)
+                gl.finish();
+                let ms = tb.elapsed().as_secs_f32() * 1000.0;
+                let rows = (y1 - self.band_y).max(1) as f32;
+                self.band_h = ((rows * 6.0 / ms.max(0.05)) as i32).clamp(8, h.max(8));
+            }
+            self.band_y = y1;
+            if self.band_y >= h {
+                self.band_y = 0;
+                self.samples += 1;
+                passes += 1;
+            }
+            if budget_ms.is_some_and(|b| t0.elapsed().as_secs_f32() * 1000.0 >= b) {
+                break;
+            }
         }
+        gl.disable(glow::SCISSOR_TEST);
         gl.bind_vertex_array(None);
         gl.disable(glow::BLEND);
         for i in 0..4 {
@@ -441,7 +474,7 @@ impl GpuPt {
             // already converged for this view: no new samples, only check the key
             let key = f.key ^ f.scene.id.rotate_left(17) ^ ((w as u64) << 40 | (h as u64) << 20);
             key == self.key && self.scene_id == f.scene.id
-        } || self.accumulate(gl, f, w, h, 1, tex_array);
+        } || self.accumulate(gl, f, w, h, f.max_samples.saturating_sub(self.samples).clamp(1, 8), tex_array, Some(25.0));
         gl.bind_framebuffer(glow::FRAMEBUFFER, prev_fb);
         gl.viewport(vp[0], vp[1], vp[2], vp[3]);
         if scissor {

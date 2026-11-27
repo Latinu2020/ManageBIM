@@ -96,6 +96,10 @@ fn main() -> eframe::Result<()> {
     }
     install_crash_log();
     let files: Vec<String> = std::env::args().skip(1).collect();
+    // software OpenGL (Mesa) when asked: the automatic restart below, or Settings › Software rendering
+    if bimrust::softgl::requested() || bimrust::theme::Settings::load().software_gl {
+        bimrust::softgl::enable();
+    }
     // tries simpler and simpler GL configurations (old video cards, VM, Remote Desktop)
     let mut last = Ok(());
     for (depth, msaa) in [(24u8, 4u16), (24, 0), (16, 0)] {
@@ -110,6 +114,10 @@ fn main() -> eframe::Result<()> {
                 }
             }
         }
+    }
+    // no configuration worked on the graphics card: start again once with software OpenGL (Mesa)
+    if last.is_err() && !bimrust::softgl::active() && bimrust::softgl::available() && bimrust::softgl::restart_with_software().is_ok() {
+        return Ok(());
     }
     // no configuration worked: an explanation instead of closing without any sign
     if let Err(e) = &last {

@@ -3,6 +3,19 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.29.0 - 2026-11-27
+The stable release of the 0.29 release candidates (rc1 - rc3, below), plus:
+- **Ray Trace stops at once**: switching the Ray Trace view off (or closing the Path Trace window during a render) stops the rendering immediately. Each sample is drawn in short bands with a time budget per frame, so even a big model never blocks the interface (and never hits the Windows graphics timeout); fast graphics cards get several samples per frame.
+- **Start page in the colours of the theme**: its own background and the theme's text colours (with a white or sky 3D background the names and dates were unreadable), vector icons on the welcome cards, the tagline no longer overflows, and the ribbon above it stays readable in the Light theme.
+- **Nothing else to install on Windows**: the programs carry the C runtime themselves and the Visual C++ runtime the denoiser needs is installed next to ManageBIM (a clean Windows used to need the Visual C++ Redistributable - even the setup wizard did).
+- **Works without a capable graphics card**: when the graphics card / driver has no OpenGL 3.3 (virtual machines, old Remote Desktop, very old drivers), ManageBIM starts with Mesa's software OpenGL (llvmpipe) by itself; the 3D view also offers *Restart with software rendering*, and Settings › Graphics has the switch. "Software GL" in the status bar says when it is in use.
+- **Release candidates update to the stable version**: the update check now knows that 0.29.0 is newer than 0.29.0-rc3; the GitHub release cleanup keeps the last three stable versions and removes the release candidates (it would have removed the stable release itself).
+- The official installer now includes the render denoiser (Intel Open Image Denoise) and Mesa (they were only in locally built installers).
+- **Clean upgrades**: installing over an older version removes the old application files first, also when the previous version was installed in another folder; the Revit, AutoCAD and Navisworks add-ins replace their whole folder (no file of an older add-in stays), and add-ins not chosen this time are removed instead of staying at the old version. A folder typed by hand that already holds other files is never emptied (ManageBIM goes into a ManageBIM subfolder). Settings > Apps and the setup wizard show the real installed version (they always said 0.28.1). Your settings and local data are kept.
+- Settings files with a byte-order mark (saved by some editors) are read correctly instead of being ignored.
+
+**From 0.28.9 to 0.29.0 in short**: GPU path tracing and the interactive Ray Trace view (progressive, denoised, indirect light); every length unit incl. ft-in; OSNAP up to 40 px with a visible capture zone; Light and Ray Trace buttons on the navigation bar, brightness up to 6; IFC Mapping in its own window and Settings with application preferences only; add-in errors shown in ManageBIM; add-ins guarded and tested automatically (AutoCAD, Navisworks, Revit self-test); damaged IFC, DXF, OBJ, PLY, FBX, STL, .bimc, LAS, E57 and glTF files never close the app; English code comments.
+
 ## 0.29.0-rc3 - 2026-11-27 (release candidate)
 - **Ray Trace view is clean sooner**: while the camera moves and in the first samples, a quick edge-aware filter (guided by each surface's colour and orientation) removes most of the grain; edges and textures stay sharp, and the filter fades out as samples add up (the converged image is not blurred).
 - **Indirect light** (CPU and GPU renders): sunlight now bounces once off the surfaces it hits - a sunny floor lights the ceiling above it, walls tint each other - so interiors and spaces under slabs are no longer flat and dark.

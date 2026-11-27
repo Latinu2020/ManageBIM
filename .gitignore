@@ -25,3 +25,6 @@
 /installers/payload/**/*.exe
 # biblioteca PBR implicita (ambientCG CC0, descarcata de cargo run --bin fetch_pro_library)
 /third_party/pbr-library/
+# Mesa software OpenGL (downloaded by tools/get-mesa.ps1)
+/third_party/mesa/
+/third_party/mesa3d-*.7z

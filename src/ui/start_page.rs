@@ -13,17 +13,23 @@ impl App {
     pub(super) fn start_page(&mut self, ui: &mut egui::Ui) {
         use crate::app::StartAction;
         let rect = ui.max_rect();
-        let pal = self.pal();
-        let side_w = 230.0f32.min(rect.width() * 0.35);
+        let side_w = 252.0f32.min(rect.width() * 0.35);
         let side = Rect::from_min_size(rect.min, EV::new(side_w, rect.height()));
-        let dark = self.settings.theme.is_dark();
-        let side_fill = if dark { Color32::from_black_alpha(70) } else { Color32::from_white_alpha(150) };
-        ui.painter().rect_filled(side, 0.0, side_fill);
+        // the colours of the theme (not of the 3D background: with a white / sky background the texts vanished)
+        let vis = ui.visuals().clone();
+        let strong = vis.strong_text_color();
+        let weak = vis.weak_text_color();
+        let card_bg = vis.faint_bg_color;
+        let card_hover = vis.widgets.hovered.weak_bg_fill;
+        let border = crate::theme::border();
+        ui.painter().rect_filled(rect, 0.0, vis.panel_fill);
+        ui.painter().rect_filled(side, 0.0, vis.window_fill);
+        ui.painter().line_segment([side.right_top(), side.right_bottom()], Stroke::new(1.0_f32, border));
         // ---- brand: isometric logo + title + tagline (subtle card, not bare text)
         {
             let p = ui.painter();
             let hero = Rect::from_min_size(side.min + EV::new(18.0, 16.0), EV::new(side_w - 36.0, 82.0));
-            p.rect_filled(hero, crate::theme::RADIUS_LG, if dark { Color32::from_white_alpha(14) } else { Color32::from_white_alpha(225) });
+            p.rect_filled(hero, crate::theme::RADIUS_LG, card_bg);
             p.rect_stroke(hero, crate::theme::RADIUS_LG, egui::Stroke::new(1.0_f32, crate::theme::border()));
             let tile = Rect::from_center_size(Pos2::new(hero.min.x + 37.0, hero.center().y), EV::new(42.0, 42.0));
             p.rect_filled(tile, crate::theme::RADIUS_MD, accent());
@@ -37,7 +43,7 @@ impl App {
             p.add(egui::Shape::convex_polygon(left.to_vec(), white.gamma_multiply(0.65), Stroke::NONE));
             p.add(egui::Shape::convex_polygon(right.to_vec(), white.gamma_multiply(0.85), Stroke::NONE));
             p.text(Pos2::new(hero.min.x + 70.0, hero.min.y + 31.0), Align2::LEFT_CENTER, "ManageBIM", FontId::proportional(19.0), accent());
-            p.text(Pos2::new(hero.min.x + 70.0, hero.min.y + 52.0), Align2::LEFT_CENTER, "Coordinate · Check · Deliver", FontId::proportional(10.5), pal.overlay_weak);
+            p.text(Pos2::new(hero.min.x + 70.0, hero.min.y + 52.0), Align2::LEFT_CENTER, "Coordinate · Check · Deliver", FontId::proportional(10.5), weak);
         }
         let mut act: Option<StartAction> = None;
         let mut forget: Option<String> = None;
@@ -53,14 +59,13 @@ impl App {
                 }
             }
             ui.add_space(98.0);
-            ui.label(RichText::new(format!("v{} · BIM coordination workspace", env!("CARGO_PKG_VERSION"))).small().color(pal.overlay_weak));
+            ui.label(RichText::new(format!("v{} · BIM coordination workspace", env!("CARGO_PKG_VERSION"))).small().color(weak));
             ui.add_space(12.0);
             let bw = side_w - 36.0;
             // vector icon + text (emojis have no glyphs in the UI font)
             let tcol = ui.visuals().text_color();
             let on_accent = match self.settings.theme { Theme::Nord | Theme::TokyoNight => Color32::from_rgb(30, 36, 48), _ => Color32::WHITE };
-            let soft = if dark { Color32::from_white_alpha(16) } else { Color32::from_white_alpha(235) };
-            let big = |t: &str| egui::Button::new(crate::theme::title_job(t, 14.0, tcol)).min_size(EV::new(bw, 34.0)).fill(soft).rounding(8.0);
+            let big = |t: &str| egui::Button::new(crate::theme::title_job(t, 14.0, tcol)).min_size(EV::new(bw, 34.0)).fill(card_bg).stroke(Stroke::new(1.0_f32, border)).rounding(8.0);
             // Open… with a menu (model / project), like the Open button in Navisworks
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
@@ -97,11 +102,11 @@ impl App {
                 self.manual_open = true;
             }
             ui.add_space(16.0);
-            ui.label(RichText::new("or drag files into the window  ·  Ctrl+K: commands").small().color(pal.overlay_weak));
+            ui.label(RichText::new("or drag files into the window  ·  Ctrl+K: commands").small().color(weak));
             // recovery after an unexpected shutdown
             if let Some((_, orig, when)) = self.autosave.recover.clone() {
                 ui.add_space(20.0);
-                egui::Frame::none().fill(Color32::from_rgba_unmultiplied(235, 170, 60, 40)).stroke(Stroke::new(1.0_f32, Color32::from_rgb(235, 170, 60))).rounding(6.0).inner_margin(8.0).show(ui, |ui| {
+                egui::Frame::none().fill(Color32::from_rgba_unmultiplied(235, 170, 60, 34)).stroke(Stroke::new(1.0_f32, Color32::from_rgb(235, 170, 60))).rounding(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.label(RichText::new("⚠ ManageBIM was closed unexpectedly").strong());
                     ui.label(RichText::new(format!("Autosaved {when}{}", orig.as_deref().map(|p| format!(" - {}", crate::file_name(p))).unwrap_or_default())).small());
                     ui.horizontal(|ui| {
@@ -118,9 +123,8 @@ impl App {
         // ---- Recent: list / grid, sorting, search
         let area = Rect::from_min_max(Pos2::new(side.right() + 28.0, rect.top() + 18.0), Pos2::new(rect.right() - 20.0, rect.bottom() - 10.0));
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(area), |ui| {
-            let soft = if dark { Color32::from_white_alpha(16) } else { Color32::from_white_alpha(235) };
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Recent").size(20.0).strong().color(pal.overlay_text));
+                ui.label(RichText::new("Recent").size(20.0).strong().color(strong));
                 ui.add_space(14.0);
                 if ui.selectable_label(self.start_list, RichText::new("☰").size(15.0)).on_hover_text("List").clicked() {
                     self.start_list = true;
@@ -129,7 +133,7 @@ impl App {
                     self.start_list = false;
                 }
                 ui.add_space(10.0);
-                ui.label("Sort by");
+                ui.label(RichText::new("Sort by").color(weak));
                 const SORTS: [&str; 4] = ["Last opened", "Name", "Date modified", "Type"];
                 egui::ComboBox::from_id_salt("start_sort").width(120.0).selected_text(SORTS[self.start_sort.min(3) as usize]).show_ui(ui, |ui| {
                     for (i, s) in SORTS.iter().enumerate() {
@@ -162,21 +166,24 @@ impl App {
             }
             if recent.is_empty() {
                 if !self.settings.recent.is_empty() {
-                    ui.label(RichText::new("Nothing matches the search.").color(pal.overlay_weak));
+                    ui.label(RichText::new("Nothing matches the search.").color(weak));
                     return;
                 }
                 // start page for a new user: clear, friendly, with real actions
                 ui.add_space((area.height() - 330.0).max(24.0));
                 ui.vertical_centered(|ui| {
-                    ui.label(RichText::new("Welcome to ManageBIM").size(30.0).strong().color(pal.overlay_text));
+                    ui.label(RichText::new("Welcome to ManageBIM").size(30.0).strong().color(strong));
                     ui.add_space(8.0);
-                    ui.label(RichText::new("Open a federated BIM model, or explore the full workflow with the demo project.").size(14.0).color(pal.overlay_weak));
+                    ui.label(RichText::new("Open a federated BIM model, or explore the full workflow with the demo project.").size(14.0).color(weak));
                     ui.add_space(28.0);
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing = EV::new(12.0, 12.0);
                         let card = |ui: &mut egui::Ui, glyph: &str, title: &str, sub: &str| {
-                            let txt = format!("{glyph}\n{title}\n{sub}");
-                            ui.add(egui::Button::new(RichText::new(txt).size(13.5)).min_size(EV::new(178.0, 90.0)).fill(soft).rounding(10.0)).clicked()
+                            let mut job = egui::text::LayoutJob { halign: egui::Align::Center, ..Default::default() };
+                            job.append(crate::theme::ph(glyph), 0.0, egui::TextFormat { font_id: crate::theme::icon_font(22.0), color: accent(), ..Default::default() });
+                            job.append(&format!("\n{title}\n"), 0.0, egui::TextFormat { font_id: FontId::proportional(14.0), color: strong, ..Default::default() });
+                            job.append(sub, 0.0, egui::TextFormat { font_id: FontId::proportional(12.0), color: weak, ..Default::default() });
+                            ui.add(egui::Button::new(job).min_size(EV::new(190.0, 96.0)).fill(card_bg).stroke(Stroke::new(1.0_f32, border)).rounding(10.0)).clicked()
                         };
                         if card(ui, "📂", "Open a model", "IFC · DWG · STEP · E57…") {
                             act = Some(StartAction::OpenModelDialog);
@@ -189,7 +196,7 @@ impl App {
                         }
                     });
                     ui.add_space(20.0);
-                    ui.label(RichText::new("Tip: drag & drop files anywhere in the window.").small().color(pal.overlay_weak));
+                    ui.label(RichText::new("Tip: drag & drop files anywhere in the window.").small().color(weak));
                 });
                 return;
             }
@@ -198,13 +205,13 @@ impl App {
                     let (r, resp) = ui.allocate_exact_size(size, Sense::click());
                     let exists = std::path::Path::new(p).exists();
                     let hov = resp.hovered() && exists;
-                    let bg = if dark { Color32::from_white_alpha(if hov { 26 } else { 14 }) } else { Color32::from_white_alpha(if hov { 255 } else { 215 }) };
+                    let bg = if hov { card_hover } else { card_bg };
                     let painter = ui.painter();
-                    painter.rect(r, 6.0, bg, Stroke::new(1.0_f32, if hov { accent() } else { Color32::from_white_alpha(if dark { 22 } else { 0 }) }));
+                    painter.rect(r, 6.0, bg, Stroke::new(1.0_f32, if hov { accent() } else { border }));
                     let (tag, col) = file_badge(p);
                     let col = if exists { col } else { col.gamma_multiply(0.35) };
                     let name = crate::file_name(p);
-                    let tc = if exists { pal.overlay_text } else { pal.overlay_weak };
+                    let tc = if exists { strong } else { weak };
                     let date = if exists { modified.map(fmt_date).unwrap_or_default() } else { "file not found".into() };
                     if self.start_list {
                         // row: small icon, name, folder, date
@@ -213,8 +220,8 @@ impl App {
                         painter.text(icon.center(), Align2::CENTER_CENTER, tag, FontId::proportional(if tag.len() > 3 { 8.0 } else { 10.0 }), Color32::WHITE);
                         painter.text(Pos2::new(r.left() + 44.0, r.center().y), Align2::LEFT_CENTER, &name, FontId::proportional(13.0), tc);
                         let folder = std::path::Path::new(p).parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
-                        painter.text(Pos2::new(r.left() + 360.0, r.center().y), Align2::LEFT_CENTER, folder, FontId::proportional(11.0), pal.overlay_weak);
-                        painter.text(Pos2::new(r.right() - 10.0, r.center().y), Align2::RIGHT_CENTER, date, FontId::proportional(11.0), pal.overlay_weak);
+                        painter.text(Pos2::new(r.left() + 360.0, r.center().y), Align2::LEFT_CENTER, folder, FontId::proportional(11.0), weak);
+                        painter.text(Pos2::new(r.right() - 10.0, r.center().y), Align2::RIGHT_CENTER, date, FontId::proportional(11.0), weak);
                     } else {
                         let icon = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 50.0), EV::new(64.0, 64.0));
                         painter.rect_filled(icon.translate(EV::new(5.0, 5.0)), 6.0, col.gamma_multiply(0.55));
@@ -225,7 +232,7 @@ impl App {
                         painter.rect_filled(small, 2.0, col);
                         let short: String = if name.chars().count() > 18 { format!("{}…", name.chars().take(17).collect::<String>()) } else { name.clone() };
                         painter.text(Pos2::new(r.left() + 30.0, r.bottom() - 41.0), Align2::LEFT_CENTER, short, FontId::proportional(12.5), tc);
-                        painter.text(Pos2::new(r.left() + 10.0, r.bottom() - 20.0), Align2::LEFT_CENTER, date, FontId::proportional(10.5), pal.overlay_weak);
+                        painter.text(Pos2::new(r.left() + 10.0, r.bottom() - 20.0), Align2::LEFT_CENTER, date, FontId::proportional(10.5), weak);
                     }
                     let resp = resp.on_hover_text(p.as_str());
                     if resp.clicked() && exists {

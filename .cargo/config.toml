@@ -1,0 +1,6 @@
+# The Rust programs (ManageBIM, bimc-convert, the add-in installers and the setup wizard) carry the C runtime
+# inside them: they start on a clean Windows without the Visual C++ Redistributable. The C++ libraries that
+# need it (Open Image Denoise / TBB) get the runtime DLLs next to ManageBIM.exe (tools/make-setup.ps1); the
+# OpenCascade shim keeps /MD and its own copies in the occt folder.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

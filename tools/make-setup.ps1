@@ -22,7 +22,10 @@ if (-not (Test-Path (Join-Path $rel 'occt\mbocct.dll'))) { Write-Warning 'OpenCa
 if (Test-Path $pkg) { Remove-Item $pkg -Recurse -Force }
 $app = Join-Path $pkg 'ManageBIM'
 New-Item -ItemType Directory -Force $app, (Join-Path $app 'AddIns'), (Join-Path $app 'docs') | Out-Null
-Copy-Item (Join-Path $root 'installers\user\install.ps1') $pkg
+# install.ps1 with this version: Settings > Apps and the wizard ("installed: x.y.z") read it
+$ver = (Select-String -Path (Join-Path $root 'Cargo.toml') -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+$ps = (Get-Content (Join-Path $root 'installers\user\install.ps1') -Raw) -replace "(?m)^\`$version = '[^']*'", "`$version = '$ver'"
+[IO.File]::WriteAllText((Join-Path $pkg 'install.ps1'), $ps, (New-Object Text.UTF8Encoding $true))
 Copy-Item (Join-Path $rel 'ManageBIM.exe'), (Join-Path $rel 'bimc-convert.exe') $app
 if (Test-Path (Join-Path $rel 'occt')) { Copy-Item (Join-Path $rel 'occt') (Join-Path $app 'occt') -Recurse }
 # Intel Open Image Denoise (Render › Denoise) - tools\get-oidn.ps1 downloads it into third_party\oidn
@@ -31,6 +34,24 @@ $oidn = Join-Path $root 'third_party\oidn'
 $pbr = Join-Path $root 'third_party\pbr-library'
 if (Test-Path (Join-Path $pbr 'library.bimmat')) { Copy-Item $pbr (Join-Path $app 'materials') -Recurse } else { Write-Warning 'Default PBR library missing (cargo run --release --bin fetch_pro_library) - only the simple built-in materials will be available.' }
 if (Test-Path (Join-Path $oidn 'OpenImageDenoise.dll')) { Copy-Item $oidn (Join-Path $app 'oidn') -Recurse } else { Write-Warning 'Open Image Denoise missing (tools\get-oidn.ps1) - Render denoise will be unavailable.' }
+# Visual C++ runtime next to ManageBIM.exe (app-local, allowed by Microsoft's redistribution terms): Open Image
+# Denoise / TBB need it; the Rust programs carry their own C runtime (.cargo\config.toml, crt-static), so a clean
+# Windows needs no Visual C++ Redistributable.
+$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+$crt = $null
+if (Test-Path $vswhere) {
+    foreach ($vs in (& $vswhere -all -products * -property installationPath)) {
+        $c = Get-ChildItem (Join-Path $vs 'VC\Redist\MSVC') -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending |
+            ForEach-Object { Get-ChildItem (Join-Path $_.FullName 'x64') -Directory -Filter 'Microsoft.VC14*.CRT' -ErrorAction SilentlyContinue } | Select-Object -First 1
+        if ($c) { $crt = $c.FullName; break }
+    }
+}
+if ($crt) {
+    Get-ChildItem $crt -Filter '*.dll' | Where-Object { $_.Name -match '^(vcruntime140(_1)?|msvcp140(_1|_2|_atomic_wait|_codecvt_ids)?|concrt140)\.dll$' } | Copy-Item -Destination $app
+} else { throw 'Visual C++ runtime (VC\Redist\MSVC\...\Microsoft.VC14x.CRT) not found - install the Visual Studio Build Tools with C++.' }
+# Mesa software OpenGL (llvmpipe) for PCs without OpenGL 3.3 - tools\get-mesa.ps1 downloads it into third_party\mesa
+$mesa = Join-Path $root 'third_party\mesa'
+if (Test-Path (Join-Path $mesa 'opengl32.dll')) { Copy-Item $mesa (Join-Path $app 'mesa') -Recurse } else { Write-Warning 'Mesa missing (tools\get-mesa.ps1) - PCs without OpenGL 3.3 will get a message instead of the 3D view.' }
 foreach ($n in 'ManageBIM-Revit-AddIn', 'ManageBIM-AutoCAD-AddIn', 'ManageBIM-Navisworks-AddIn') {
     $f = Join-Path $rel "$n.exe"
     if (Test-Path $f) { Copy-Item $f (Join-Path $app 'AddIns') } else { Write-Warning "$n.exe missing" }
@@ -59,7 +80,6 @@ $env:MB_PACKAGE_DIR = $pkg
 $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
 & cargo build --release --manifest-path (Join-Path $root 'installers\setup\Cargo.toml') --target-dir (Join-Path $root 'target\setup')
 if ($LASTEXITCODE -ne 0) { throw 'Setup build failed' }
-$ver = (Select-String -Path (Join-Path $root 'Cargo.toml') -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
 $dst = Join-Path $Out "ManageBIM-Setup-$ver.exe"
 Copy-Item (Join-Path $root 'target\setup\release\ManageBIM-Setup.exe') $dst -Force
 Write-Host ("`nSetup: {0}  ({1:N1} MB)" -f $dst, ((Get-Item $dst).Length / 1MB)) -ForegroundColor Green

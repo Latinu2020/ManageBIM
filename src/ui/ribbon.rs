@@ -125,6 +125,11 @@ impl App {
                     }
                     // start page: the ribbon is visible, but inactive until a model / project is opened
                     if self.start_screen() {
+                        // greyed out toward a tone between background and text (egui fades toward the widget
+                        // background, which is white in the Light theme: icons and active buttons vanished)
+                        let v = ui.visuals_mut();
+                        let mid = v.panel_fill.lerp_to_gamma(v.text_color(), 0.35);
+                        v.widgets.noninteractive.weak_bg_fill = mid;
                         ui.disable();
                     }
                     match self.ribbon_tab {
