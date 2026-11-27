@@ -54,7 +54,7 @@ impl Scene {
         let mut mats = Vec::new();
         let mut extra = Vec::new();
         let mat_of = |id: crate::model::ElemId| -> [f32; 4] {
-            if let Some(k) = app.mat_cache.as_ref().and_then(|c| c.get(&id).copied()) {
+            if let Some(k) = app.mats.cache.as_ref().and_then(|c| c.get(&id).copied()) {
                 if let Some(m) = app.materials.get(k as usize) {
                     return [m.coat as f32 / 100.0, m.coat_roughness as f32 / 100.0, m.sheen as f32 / 100.0, m.ior];
                 }
@@ -630,7 +630,9 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
     // 0.28: lumina reflectata de la lampi (un ricoseu difuz). Raza de emisfera de mai sus loveste o
     // suprafata apropiata; lumina directa a lampilor in acel punct, colorata de suprafata, se intoarce
     // aici. Un perete luminat de o lampa lumineaza astfel podeaua si tavanul - interioare realiste.
-    if !sc.lights.is_empty() && depth == 0 {
+    // indirect light: sun and lamp light bounced once (a sunny floor lights the ceiling, walls tint each other)
+    let sun_dir0 = job.sun.normalize_or_zero();
+    if (!sc.lights.is_empty() || sun_dir0 != Vec3::ZERO) && depth == 0 {
         if let Some((t2, tri2)) = sc.hit(p + n * 1e-3, hd, 40.0) {
             let q = p + n * 1e-3 + hd * t2;
             let j = tri2 as usize * 3;
@@ -639,7 +641,14 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
                 n2 = -n2;
             }
             let (b2, ..) = sc.surface(tri2 as usize, q, n2);
-            let e = lamp_irradiance(sc, q + n2 * 1e-3, n2, rng);
+            let mut e = if sc.lights.is_empty() { [0.0; 3] } else { lamp_irradiance(sc, q + n2 * 1e-3, n2, rng) };
+            let nl2 = n2.dot(sun_dir0).max(0.0);
+            if nl2 > 0.0 {
+                let s = DIFFUSE * nl2 * sc.transmit(q + n2 * 1e-3, sun_dir0, 1e6);
+                for v in e.iter_mut() {
+                    *v += s;
+                }
+            }
             // cos-weighted: pdf si cos se simplifica; 0.55 = albedo mediu al ricoseului (conservare)
             for (k2, v) in col.iter_mut().enumerate() {
                 *v += base[k2] * b2[k2] * e[k2] * 0.55 * (1.0 - metal);

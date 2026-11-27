@@ -43,6 +43,8 @@ namespace ManageBIM.Revit
                 B("ManageBIMCoordination", "Coordination", typeof(CoordinationCommand), "Show the clearance zones, voids and placeholders sent from ManageBIM (display only)", "In ManageBIM: Coordination › Objects › Send to Revit. A preview window lists them with a top view; they are shown as transparent Generic Models and nothing in the model is cut or changed."),
                 B("ManageBIMIssues", "Issues", typeof(IssuesCommand), "Open a ManageBIM issue / viewpoint: 3D view with the same camera and section box, its elements selected", "Reads the viewpoints saved in ManageBIM and creates a 3D view 'ManageBIM - <issue>' with the camera, the section box and the issue's elements selected."),
                 B("ManageBIMSync", "Sync selection", typeof(SyncCommand), "Live Link: the selection follows ManageBIM and Navisworks, both ways (click again to stop)", "Elements are matched by UniqueId / IFC GUID, so the ManageBIM model must come from this Revit model. In ManageBIM turn it on in Select › Live Link › Sync Selection."));
+            // tools\test-addins.ps1: only active with MANAGEBIM_AUTOTEST set
+            AutoTest.Register(app);
             return Result.Succeeded;
         }
 

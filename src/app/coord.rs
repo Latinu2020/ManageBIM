@@ -185,8 +185,8 @@ impl App {
         t.tol_mm = 0.0;
         // obiectele de coordonare nu se verifica intre ele
         t.ignore_same_file = true;
-        self.clash_tests.push(t);
-        self.cur_test = self.clash_tests.len() - 1;
+        self.clash.tests.push(t);
+        self.cur_test = self.clash.tests.len() - 1;
         self.open_panel(crate::layout::Panel::Clash);
         self.toast("Clash test created: Coordination objects vs all models - press Run Test.");
     }

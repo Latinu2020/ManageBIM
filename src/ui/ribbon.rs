@@ -310,7 +310,7 @@ impl App {
             }
             if rbtn(ui, "👁", "Unhide All", "Show all hidden elements", false, true).clicked() {
                 self.apply(Action::ShowAll);
-                self.clash_focus = None;
+                self.clash.focus = None;
             }
         });
     }
@@ -782,9 +782,9 @@ impl App {
                 }
             }
             // fereastra proprie, pe toata inaltimea: lista de materiale lunga si lata
-            if rbtn(ui, "🎨", "Materials", "Material library, image textures & assignments", self.mat_window, true).clicked() {
-                self.mat_window = !self.mat_window;
-                if self.mat_window && self.panel_shown(Panel::Render) && self.render_subtab == 1 {
+            if rbtn(ui, "🎨", "Materials", "Material library, image textures & assignments", self.mats.window, true).clicked() {
+                self.mats.window = !self.mats.window;
+                if self.mats.window && self.panel_shown(Panel::Render) && self.render_subtab == 1 {
                     // acelasi editor nu sta deschis in doua locuri
                     self.render_subtab = 0;
                 }
@@ -826,7 +826,7 @@ impl App {
 
     pub(super) fn ribbon_output(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Clash Reports", |ui| {
-            let can = !self.clash_tests.is_empty();
+            let can = !self.clash.tests.is_empty();
             if rbtn(ui, "📄", "HTML", "Export the clash report of the current test (HTML)", false, can).clicked() {
                 self.request_path(Purpose::ExportClashHtml);
             }
@@ -841,7 +841,7 @@ impl App {
             if rbtn(ui, "📷", "Viewpoints", "Export viewpoints with markups, comments and section box to Navisworks", false, !self.viewpoints.is_empty()).clicked() {
                 self.request_path(Purpose::ExportNavisXml);
             }
-            if rbtn(ui, "⚠", "Clash Tests", "Export clash tests and sets to Navisworks", false, !self.clash_tests.is_empty()).clicked() {
+            if rbtn(ui, "⚠", "Clash Tests", "Export clash tests and sets to Navisworks", false, !self.clash.tests.is_empty()).clicked() {
                 self.request_path(Purpose::ExportNavisClash);
             }
         });
@@ -874,14 +874,14 @@ impl App {
             }
         });
         rgroup(ui, "AI", |ui| {
-            let on = self.mcp.is_some();
+            let on = self.mcp.server.is_some();
             let tip = if on {
                 format!("MCP server running on {}\nAI assistants (Claude, OpenCode, Ollama clients) can read and drive the model", crate::mcp::url(self.settings.mcp.port))
             } else {
                 "Connect AI assistants (Claude Code / Desktop, OpenCode, VS Code, local Ollama via an MCP client) to ManageBIM".to_string()
             };
-            if rbtn(ui, "🤖", "AI connection", &tip, on || self.mcp_open, true).clicked() {
-                self.mcp_open = !self.mcp_open;
+            if rbtn(ui, "🤖", "AI connection", &tip, on || self.mcp.open, true).clicked() {
+                self.mcp.open = !self.mcp.open;
             }
         });
     }

@@ -74,7 +74,7 @@ fn code_block(ui: &mut egui::Ui, text: &str) -> bool {
 
 impl App {
     pub(super) fn mcp_window(&mut self, ctx: &egui::Context) {
-        if !self.mcp_open {
+        if !self.mcp.open {
             return;
         }
         let mut open = true;
@@ -90,7 +90,7 @@ impl App {
             .collapsible(false)
             .show(ctx, |ui| {
                 // ---- antet: descriere + starea serverului
-                let (state, col) = match (&self.mcp, self.mcp_status.is_empty()) {
+                let (state, col) = match (&self.mcp.server, self.mcp.status.is_empty()) {
                     (Some(_), _) => (crate::i18n::tr("Running"), GREEN),
                     (None, false) => (crate::i18n::tr("Error"), RED),
                     (None, true) => (crate::i18n::tr("Off"), ui.visuals().weak_text_color()),
@@ -115,7 +115,7 @@ impl App {
                             ui.label(crate::i18n::tr("Enable server"));
                             ui.horizontal(|ui| {
                                 if switch(ui, &mut self.settings.mcp.enabled).changed() {
-                                    self.mcp_status.clear();
+                                    self.mcp.status.clear();
                                     self.settings.save();
                                 }
                                 ui.label(RichText::new(crate::i18n::tr("Only this computer (127.0.0.1) can connect")).small().weak());
@@ -182,15 +182,15 @@ impl App {
                             ui.end_row();
 
                             ui.label(crate::i18n::tr("Activity"));
-                            match &self.mcp {
+                            match &self.mcp.server {
                                 Some(s) => {
                                     let n = s.requests.load(Ordering::Relaxed);
                                     let c = s.client.lock().map(|c| c.clone()).unwrap_or_default();
                                     let who = if c.is_empty() { crate::i18n::tr("no client connected yet").to_string() } else { format!("{}: {c}", crate::i18n::tr("last client")) };
                                     ui.label(RichText::new(format!("{n} {} Â· {who}", crate::i18n::tr("requests"))).weak());
                                 }
-                                None if !self.mcp_status.is_empty() => {
-                                    ui.label(RichText::new(&self.mcp_status).color(RED));
+                                None if !self.mcp.status.is_empty() => {
+                                    ui.label(RichText::new(&self.mcp.status).color(RED));
                                 }
                                 None => {
                                     ui.label(RichText::new(crate::i18n::tr("Server is off")).weak());
@@ -235,7 +235,7 @@ impl App {
                         if code_block(ui, cfg) {
                             self.toast(format!("{name} configuration copied."));
                         }
-                        if self.mcp.is_none() {
+                        if self.mcp.server.is_none() {
                             ui.add_space(4.0);
                             ui.label(crate::theme::icon_job(P::WARNING, crate::i18n::tr("Turn on the server above before connecting."), 14.0, Color32::from_rgb(230, 170, 60)));
                         }
@@ -264,6 +264,6 @@ impl App {
         if restart {
             self.mcp_restart(ctx);
         }
-        self.mcp_open = open;
+        self.mcp.open = open;
     }
 }

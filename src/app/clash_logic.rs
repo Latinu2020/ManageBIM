@@ -33,7 +33,7 @@ impl App {
             return;
         };
         let (name, a, b, dist) = {
-            let Some(t) = self.clash_tests.get(self.cur_test) else { return };
+            let Some(t) = self.clash.tests.get(self.cur_test) else { return };
             let Some(r) = t.results.get(i) else { return };
             (format!("SwitchBack — {}", r.name), r.a, r.b, r.dist)
         };
@@ -79,7 +79,7 @@ impl App {
     }
 
     pub fn run_clash_blocking(&mut self, t: usize) {
-        let test = self.clash_tests[t].clone();
+        let test = self.clash.tests[t].clone();
         if let Some((check, p)) = test.special {
             let items = self.special_items(&test);
             let found = Self::run_special(&self.models, &items, check, &p);
@@ -94,10 +94,10 @@ impl App {
     }
 
     pub fn run_clash(&mut self, t: usize) {
-        if self.clash_job.is_some() {
+        if self.clash.job.is_some() {
             return;
         }
-        let Some(test) = self.clash_tests.get(t) else { return };
+        let Some(test) = self.clash.tests.get(t) else { return };
         if let Some((check, p)) = test.special {
             let items = self.special_items(&test.clone());
             let models: Vec<Option<Arc<Model>>> = self.models.clone();
@@ -108,7 +108,7 @@ impl App {
                     let _ = tx.send(r);
                 }
             });
-            self.clash_job = Some(ClashJob { test: t, prog, rx, started: Instant::now() });
+            self.clash.job = Some(ClashJob { test: t, prog, rx, started: Instant::now() });
             return;
         }
         let excluded = self.excluded_items(&test.rules);
@@ -129,7 +129,7 @@ impl App {
                 let _ = tx.send(r);
             }
         });
-        self.clash_job = Some(ClashJob { test: t, prog, rx, started: Instant::now() });
+        self.clash.job = Some(ClashJob { test: t, prog, rx, started: Instant::now() });
     }
 
     /// Items that a test must never use (exclude sets + exclude rules).
@@ -184,7 +184,7 @@ impl App {
         let now = now_string();
         // reguli: perechi ignorate + elemente excluse
         // testul poate fi sters / proiectul inchis cat timp rula: rezultatul se ignora, nu crapa aplicatia
-        let Some(test_cfg) = self.clash_tests.get(t).cloned() else { return };
+        let Some(test_cfg) = self.clash.tests.get(t).cloned() else { return };
         let excluded = self.excluded_items(&test_cfg.rules);
         let set_members = self.same_set_members(&test_cfg.rules);
         let before = found.len();
@@ -202,7 +202,7 @@ impl App {
             let gb = guid(self, f.b);
             (f, ga, gb)
         }).collect();
-        let test = &mut self.clash_tests[t];
+        let test = &mut self.clash.tests[t];
         let mut old: HashMap<(String, String), ClashResult> = test.results.drain(..).map(|r| ((r.ga.clone(), r.gb.clone()), r)).collect();
         let mut next = old.values().filter_map(|r| r.name.strip_prefix("Clash").and_then(|n| n.parse::<u32>().ok())).max().unwrap_or(0) + 1;
         let mut out = Vec::new();
@@ -270,7 +270,7 @@ impl App {
 
     /// Responsabilul clash-urilor fara responsabil: disciplina care se muta (structura > arhitectura > instalatii).
     pub fn auto_assign_clashes(&mut self, t: usize) {
-        let Some(test) = self.clash_tests.get(t) else { return };
+        let Some(test) = self.clash.tests.get(t) else { return };
         let who: Vec<Option<String>> = test
             .results
             .iter()
@@ -285,7 +285,7 @@ impl App {
                 crate::clash_smart::responsible(da, db).map(|d| d.label().to_string())
             })
             .collect();
-        if let Some(test) = self.clash_tests.get_mut(t) {
+        if let Some(test) = self.clash.tests.get_mut(t) {
             for (r, w) in test.results.iter_mut().zip(who) {
                 if let Some(w) = w {
                     r.assigned = w;
@@ -297,7 +297,7 @@ impl App {
     // ------------------------------------------------------------------ clash groups
     pub fn group_names(&self, t: usize) -> Vec<String> {
         let mut v: Vec<String> = Vec::new();
-        for r in &self.clash_tests[t].results {
+        for r in &self.clash.tests[t].results {
             if !r.group.is_empty() && !v.contains(&r.group) {
                 v.push(r.group.clone());
             }
@@ -316,7 +316,7 @@ impl App {
         }
         let name = format!("Group {n}");
         for i in idx {
-            if let Some(r) = self.clash_tests[t].results.get_mut(*i) {
+            if let Some(r) = self.clash.tests[t].results.get_mut(*i) {
                 r.group = name.clone();
             }
         }
@@ -326,14 +326,14 @@ impl App {
 
     pub fn ungroup(&mut self, t: usize, idx: &[usize]) {
         for i in idx {
-            if let Some(r) = self.clash_tests[t].results.get_mut(*i) {
+            if let Some(r) = self.clash.tests[t].results.get_mut(*i) {
                 r.group.clear();
             }
         }
     }
 
     pub fn auto_group(&mut self, t: usize, by: GroupBy, cell: f32) {
-        let keys: Vec<String> = self.clash_tests[t]
+        let keys: Vec<String> = self.clash.tests[t]
             .results
             .iter()
             .map(|r| {
@@ -364,7 +364,7 @@ impl App {
         }
         let mut n = 0;
         let mut groups = HashSet::new();
-        for (r, k) in self.clash_tests[t].results.iter_mut().zip(keys.iter()) {
+        for (r, k) in self.clash.tests[t].results.iter_mut().zip(keys.iter()) {
             // un singur clash nu formeaza grup
             if count[k] > 1 {
                 r.group = k.clone();
@@ -379,7 +379,7 @@ impl App {
 
     /// Combined status of a group: the "most open" status of its members.
     pub fn group_status(&self, t: usize, members: &[usize]) -> ClashStatus {
-        let res = &self.clash_tests[t].results;
+        let res = &self.clash.tests[t].results;
         for s in ClashStatus::ALL {
             if members.iter().any(|i| res[*i].status == s) {
                 return s;
@@ -393,7 +393,7 @@ impl App {
     }
 
     pub fn clash_report_html(&self, t: usize) -> String {
-        let test = &self.clash_tests[t];
+        let test = &self.clash.tests[t];
         let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
         let mut h = String::new();
         h.push_str("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Clash report</title><style>");
@@ -441,7 +441,7 @@ impl App {
 
     /// Randurile tabelului pentru raportul PDF: (status, severitate, elemente, distanta).
     pub fn clash_report_pdf_rows(&self, t: usize) -> Vec<(String, String, String, String, String)> {
-        let test = &self.clash_tests[t];
+        let test = &self.clash.tests[t];
         test.results.iter().map(|r| {
             let la = self.elem(r.a).map(|(_, e)| e.name.clone()).unwrap_or_default();
             let rb = self.elem(r.b).map(|(_, e)| e.name.clone()).unwrap_or_default();
@@ -450,7 +450,7 @@ impl App {
     }
 
     pub fn clash_report_csv(&self, t: usize) -> String {
-        let test = &self.clash_tests[t];
+        let test = &self.clash.tests[t];
         let q = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
         let mut s = String::from("\u{feff}Group;Name;Status;Severity;Distance_m;ItemA;TypeA;ModelA;GuidA;ItemB;TypeB;ModelB;GuidB;Level;Location;X;Y;Z;Found;AssignedTo;Comment\n");
         let grids = self.scene_grids();
@@ -510,7 +510,7 @@ impl App {
     /// Rezultatele unui test de clash ca "vederi": camera izometrica pe clash, cutia celor doua elemente
     /// (pentru section box), GUID-urile lor si descrierea. Coordonate WORLD, metri.
     pub fn clash_views(&self, ti: usize) -> Vec<(String, String, [f64; 3], [f64; 3], [f64; 3], ([f64; 3], [f64; 3]), Vec<String>, String)> {
-        let Some(t) = self.clash_tests.get(ti) else { return Vec::new() };
+        let Some(t) = self.clash.tests.get(ti) else { return Vec::new() };
         t.results
             .iter()
             .filter(|r| r.status != ClashStatus::Resolved && r.status != ClashStatus::Approved)
@@ -646,7 +646,7 @@ impl App {
         models.dedup();
         let slot_ix: HashMap<u32, usize> = self.loaded_models().map(|(s, m)| (s as u32, models.iter().position(|n| *n == crate::app::model_label(&m.name)).unwrap_or(0))).collect();
         let mut cells: HashMap<(usize, usize), [usize; 3]> = HashMap::new();
-        for t in &self.clash_tests {
+        for t in &self.clash.tests {
             for r in &t.results {
                 let (Some(&i), Some(&j)) = (slot_ix.get(&r.a.m), slot_ix.get(&r.b.m)) else { continue };
                 let k = match r.status {

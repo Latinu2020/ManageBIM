@@ -1,5 +1,5 @@
 //! Robustness: truncated files or files with damaged bytes must never stop the app (panic).
-//! Formats: IFC, DXF, OBJ, PLY, FBX, STL, .bimc, LAS and glTF (.glb).
+//! Formats: IFC, DXF, OBJ, PLY, FBX, STL, .bimc, LAS, E57 and glTF (.glb).
 //! For every test file: cuts at several lengths and copies with changed bytes
 //! (deterministic generator, the same variants on every run). Error = ok; panic = bug.
 use bimrust::*;
@@ -75,6 +75,65 @@ fn las_sample() -> Vec<u8> {
     b
 }
 
+/// A small ASTM E57 point cloud: one scan of 40 points (cartesianX / Y / Z as doubles) in one compressed-vector
+/// section, 1024-byte pages (1020 data + 4 CRC bytes, left 0: the reader does not check them).
+fn e57_sample() -> Vec<u8> {
+    const N: usize = 40;
+    let phys = |l: usize| l / 1020 * 1024 + l % 1020;
+    // logical layout: header (48) | binary section at 64 | XML after it
+    let mut streams: Vec<Vec<u8>> = vec![Vec::new(); 3];
+    for i in 0..N {
+        let v = [i as f64 * 0.25, (i % 7) as f64 * 0.5, (i % 3) as f64 * 0.1];
+        for (k, s) in streams.iter_mut().enumerate() {
+            s.extend_from_slice(&v[k].to_le_bytes());
+        }
+    }
+    let mut packet = vec![1u8, 0, 0, 0];
+    packet.extend_from_slice(&3u16.to_le_bytes());
+    for st in &streams {
+        packet.extend_from_slice(&(st.len() as u16).to_le_bytes());
+    }
+    for st in &streams {
+        packet.extend_from_slice(st);
+    }
+    let plen = packet.len() as u16 - 1;
+    packet[2..4].copy_from_slice(&plen.to_le_bytes());
+    let sec_logical = 64usize;
+    let mut section = vec![0u8; 32];
+    section[0] = 1;
+    let sec_len = (32 + packet.len()) as u64;
+    section[8..16].copy_from_slice(&sec_len.to_le_bytes());
+    section.extend_from_slice(&packet);
+    let xml_logical = sec_logical + section.len();
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><e57Root type="Structure" xmlns="http://www.astm.org/COMMIT/E57/2010-e57-v1.0"><formatName type="String"><![CDATA[ASTM E57 3D Imaging Data File]]></formatName><data3D type="Vector" allowHeterogeneousChildren="1"><vectorChild type="Structure"><name type="String"><![CDATA[Scan 1]]></name><points type="CompressedVector" fileOffset="{}" recordCount="{N}"><prototype type="Structure"><cartesianX type="Float"/><cartesianY type="Float"/><cartesianZ type="Float"/></prototype><codecs type="Vector" allowHeterogeneousChildren="1"></codecs></points></vectorChild></data3D></e57Root>"#,
+        phys(sec_logical)
+    );
+    let mut logical = vec![0u8; sec_logical];
+    logical.extend_from_slice(&section);
+    logical.extend_from_slice(xml.as_bytes());
+    logical[..8].copy_from_slice(b"ASTM-E57");
+    logical[8..12].copy_from_slice(&1u32.to_le_bytes());
+    let total_phys = phys(logical.len()).div_ceil(1024) * 1024;
+    logical[16..24].copy_from_slice(&(total_phys as u64).to_le_bytes());
+    logical[24..32].copy_from_slice(&(phys(xml_logical) as u64).to_le_bytes());
+    logical[32..40].copy_from_slice(&(xml.len() as u64).to_le_bytes());
+    logical[40..48].copy_from_slice(&1024u64.to_le_bytes());
+    let mut out = Vec::with_capacity(total_phys);
+    for chunk in logical.chunks(1020) {
+        out.extend_from_slice(chunk);
+        out.resize(out.len() + (1020 - chunk.len()), 0);
+        out.extend_from_slice(&[0; 4]);
+    }
+    out
+}
+
+#[test]
+fn e57_sample_reads_back() {
+    let (_, cloud) = e57::parse(e57_sample(), &|_, _| {}).expect("generated E57");
+    assert_eq!(cloud.pos.len(), 40);
+}
+
 /// A binary glTF (.glb) written by ManageBIM's own exporter from a small IFC.
 fn glb_sample() -> Vec<u8> {
     let raw = load_any("tests/data/wall_opening.ifc", &|_, _| {}).expect("test IFC");
@@ -131,6 +190,7 @@ fn corrupt_files_never_panic() {
         .collect();
     inputs.push(("generated.las".into(), las_sample(), "las".into()));
     inputs.push(("generated.glb".into(), glb_sample(), "glb".into()));
+    inputs.push(("generated.e57".into(), e57_sample(), "e57".into()));
     for (fi, (f, data, ext)) in inputs.iter().enumerate() {
         for (name, bytes) in variants(data, 0x9E37_79B9_7F4A_7C15 ^ fi as u64) {
             let p = dir.join(format!("{fi}_{name}.{ext}"));
@@ -142,6 +202,10 @@ fn corrupt_files_never_panic() {
                 // point clouds have their own reader (they do not go through load_any)
                 if path.ends_with(".las") {
                     let _ = e57::read_las(&path, &|_, _| {});
+                    return;
+                }
+                if path.ends_with(".e57") {
+                    let _ = e57::read(&path, &|_, _| {});
                     return;
                 }
                 let raw = if path.ends_with(".bimc") { bimc::read(&path) } else { load_any(&path, &|_, _| {}) };
@@ -169,5 +233,9 @@ fn corrupt_files_never_panic() {
 fn one_file() {
     let Some(p) = std::env::var_os("MB_ONE") else { return };
     let p = p.to_string_lossy().to_string();
+    if p.ends_with(".e57") {
+        let _ = e57::read(&p, &|_, _| {});
+        return;
+    }
     let _ = load_any(&p, &|_, _| {}).map(|raw| build_model(raw, &p, glam::DVec3::ZERO));
 }

@@ -148,9 +148,9 @@ fn viewpoints_roundtrip_and_sets_clash_export() {
     assert!(warn.is_empty(), "{warn:?}");
     assert!(xml.contains("name=\"Uși\"") && xml.contains("LcOaSceneBaseClassUserName") && xml.contains("flags=\"74\""));
     assert_eq!(xml.matches("LcOaNodeGuid").count(), doors.len());
-    app.clash_tests[0].a = Selector { kind: SelKind::Set, value: "Uși".into() };
-    app.clash_tests[0].b = Selector { kind: SelKind::Model, value: "Block_A_MEP.ifc".into() };
-    app.clash_tests[0].tol_mm = 10.0;
+    app.clash.tests[0].a = Selector { kind: SelKind::Set, value: "Uși".into() };
+    app.clash.tests[0].b = Selector { kind: SelKind::Model, value: "Block_A_MEP.ifc".into() };
+    app.clash.tests[0].tol_mm = 10.0;
     app.export_navis_sets(&dir.join("sets.xml").to_string_lossy());
     app.export_navis_clash(&dir.join("clash.xml").to_string_lossy());
     let c = std::fs::read_to_string(dir.join("clash.xml")).unwrap();
@@ -167,11 +167,11 @@ fn clashes_to_bcf_and_navisworks_and_bcf_import() {
     let dir = std::env::temp_dir().join(format!("mb_bcf_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let mut app = app();
-    app.clash_tests[0].a = Selector { kind: SelKind::Model, value: "Block_A_Architecture_Structure.ifc".into() };
-    app.clash_tests[0].b = Selector { kind: SelKind::Model, value: "Block_A_MEP.ifc".into() };
+    app.clash.tests[0].a = Selector { kind: SelKind::Model, value: "Block_A_Architecture_Structure.ifc".into() };
+    app.clash.tests[0].b = Selector { kind: SelKind::Model, value: "Block_A_MEP.ifc".into() };
     app.run_clash_blocking(0);
     app.cur_test = 0;
-    let n = app.clash_tests[0].results.len();
+    let n = app.clash.tests[0].results.len();
     assert!(n > 0);
     let bcf = dir.join("clashes.bcf");
     app.export_clash_bcf(&bcf.to_string_lossy());
@@ -188,7 +188,7 @@ fn clashes_to_bcf_and_navisworks_and_bcf_import() {
     assert_eq!(app.viewpoints.len(), before + n);
     // ordinea topic-urilor in BCF urmeaza GUID-urile (aleatoare): caut viewpoint-ul clash-ului 0
     assert!(app.viewpoints[before..].iter().all(|v| v.selected.len() == 2), "both clashing elements selected");
-    let r = &app.clash_tests[0].results[0];
+    let r = &app.clash.tests[0].results[0];
     let v = app.viewpoints[before..].iter().find(|v| v.selected.contains(&r.a) && v.selected.contains(&r.b)).expect("viewpoint for clash 0");
     let p = glam::Vec3::from(r.point);
     assert!(v.cam.fwd().dot((p - v.cam.eye()).normalize()) > 0.99, "camera looks at the clash");
@@ -560,12 +560,12 @@ fn relocate_model_point_to_point_and_rotate() {
 #[test]
 fn clash_matrix_counts_pairs_of_models() {
     let mut app = app();
-    app.clash_tests[0].a = Selector { kind: SelKind::Model, value: "Block_A_Architecture_Structure.ifc".into() };
-    app.clash_tests[0].b = Selector { kind: SelKind::Model, value: "Block_A_MEP.ifc".into() };
+    app.clash.tests[0].a = Selector { kind: SelKind::Model, value: "Block_A_Architecture_Structure.ifc".into() };
+    app.clash.tests[0].b = Selector { kind: SelKind::Model, value: "Block_A_MEP.ifc".into() };
     app.run_clash_blocking(0);
-    let n = app.clash_tests[0].results.len();
+    let n = app.clash.tests[0].results.len();
     assert!(n > 0);
-    app.clash_tests[0].results[0].status = bimrust::clash::ClashStatus::Resolved;
+    app.clash.tests[0].results[0].status = bimrust::clash::ClashStatus::Resolved;
     let m = app.clash_matrix();
     assert_eq!(m.models, vec!["Block_A_Architecture_Structure".to_string(), "Block_A_MEP".to_string()]);
     let c = m.get(1, 0);

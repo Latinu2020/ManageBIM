@@ -410,24 +410,18 @@ pub struct App {
     pub sets: Vec<SelSet>,
     pub find_rules: Vec<SearchRule>,
     pub find_count: Option<usize>,
-    pub clash_tests: Vec<ClashTest>,
+    /// Clash Detective: the tests, the running job and the display of the results.
+    pub clash: ClashState,
+    /// Render materials: the assignment rules, the library window and its thumbnails.
+    pub mats: MaterialsState,
+    /// The MCP server for AI assistants: the server, its window and status, a capture waiting for its image.
+    pub mcp: McpState,
     pub cur_test: usize,
-    pub clash_job: Option<ClashJob>,
     pub cur_result: Option<usize>,
-    pub clash_focus: Option<ClashFocus>,
     pub sel_results: BTreeSet<usize>,
-    pub clash_others: Others,
-    pub clash_highlight_all: bool,
-    pub clash_auto_zoom: bool,
     pub open_groups: HashSet<String>,
-    pub clash_subtab: u8,
     pub find_in_selection: bool,
     pub group_cell: f32,
-    pub clash_filter: Option<ClashStatus>,
-    /// Filter by Selection: 0 = off, 1 = inclusive, 2 = exclusive (ca in Navisworks)
-    pub clash_filter_sel: u8,
-    /// Clash Detective in mod Focus: fereastra maximizata, cu tot spatiul pentru teste si rezultate
-    pub clash_focus_mode: bool,
     /// Model focus: ribon si panouri ascunse, proprietatile raman plutitoare (maximum de spatiu pentru model)
     pub immersive_mode: bool,
     /// layout-ul salvat inainte de Model focus, ca sa se poata restaura exact
@@ -681,12 +675,9 @@ pub struct App {
     pub key_step: f32,
     pub proj_sel: Option<usize>,
     pub materials: Vec<Material>,
-    pub mat_assign: Vec<MatAssign>,
     pub materials_on: bool,
-    pub mat_sel: usize,
     /// numele materialelor din biblioteca utilizatorului (cache; None = de recitit)
     pub user_lib_cache: Option<std::collections::HashSet<String>>,
-    pub mat_cache: Option<HashMap<ElemId, u16>>,
     pub render_subtab: u8,
     pub show_tools: bool,
     pub sets_sig: u64,
@@ -699,14 +690,6 @@ pub struct App {
     pub pending_mat_assign: Vec<String>,
     /// descarcarea bibliotecii profesionale ambientCG (CC0) in curs
     pub pro_lib_job: Option<std::sync::Arc<std::sync::Mutex<crate::pro_materials::Progress>>>,
-    /// previzualizarea hartii de culoare a materialului selectat
-    pub mat_preview: Option<(String, eframe::egui::TextureHandle)>,
-    /// filtrul listei de materiale si miniaturile texturilor (cale -> imagine; None = in lucru / esuat)
-    pub mat_filter: String,
-    /// fereastra mare Materials (pe toata inaltimea ferestrei aplicatiei)
-    pub mat_window: bool,
-    /// lista deruleaza pana la materialul selectat (dupa un import)
-    pub mat_scroll: bool,
     /// istoricul notificarilor (clopotelul din bara de stare): (cand, eroare, mesaj) si cate au fost vazute
     pub notes: Vec<(Instant, bool, String)>,
     pub notes_seen: usize,
@@ -721,14 +704,11 @@ pub struct App {
     pub set_snap: HashMap<String, std::collections::HashSet<String>>,
     /// exportul Dashboard cu imaginile clash-urilor (o captura pe cadru)
     pub dash_job: Option<crate::dashboard::CaptureJob>,
-    pub mat_thumbs: HashMap<String, Option<eframe::egui::TextureHandle>>,
-    pub mat_thumb_job: Option<(std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<(String, Option<crate::materials::Thumb>)>)>,
     pub tex_failed: HashSet<String>,
     pub pending_csv: Vec<String>,
     pub settings: crate::theme::Settings,
     pub theme_dirty: bool,
     pub last_mode: (bool, bool),
-    pub clash_queue: Vec<usize>,
     /// Update All: starile dinainte (pentru sumar) si sumarul de la final
     pub update_all_before: Option<Vec<(String, [usize; 5])>>,
     pub update_summary: Option<crate::clash_io::UpdateSummary>,
@@ -829,12 +809,6 @@ pub struct App {
     pub qto_result: Option<crate::qto::QtoResult>,
     /// semnatura starii pentru care s-a calculat rezultatul (setup + selectie / ascunse)
     pub qto_sig: u64,
-    /// serverul MCP pornit (asistenti AI) si fereastra lui de conectare
-    pub mcp: Option<crate::mcp::Server>,
-    pub mcp_open: bool,
-    pub mcp_status: String,
-    /// raspunsul unei cereri MCP capture_view, trimis cand imaginea e gata (dupa cadrul urmator)
-    pub mcp_capture: Option<std::sync::mpsc::Sender<Result<serde_json::Value, String>>>,
 }
 
 impl App {
@@ -892,22 +866,15 @@ impl App {
             sets: Vec::new(),
             find_rules: vec![SearchRule::new(ITEM_CAT, "IFC Type", SearchOp::Equals, "", false)],
             find_count: None,
-            clash_tests: vec![ClashTest::new("Test 1".into())],
+            clash: ClashState { tests: vec![ClashTest::new("Test 1".into())], job: None, focus: None, others: Others::Dim, highlight_all: false, auto_zoom: true, subtab: 0, filter: None, filter_sel: 0, focus_mode: false, queue: Vec::new() },
+            mats: MaterialsState { assign: Vec::new(), sel: 0, cache: None, preview: None, filter: String::new(), window: false, scroll: false, thumbs: HashMap::new(), thumb_job: None },
+            mcp: McpState { server: None, open: false, status: String::new(), capture: None },
             cur_test: 0,
-            clash_job: None,
             cur_result: None,
-            clash_focus: None,
             sel_results: BTreeSet::new(),
-            clash_others: Others::Dim,
-            clash_highlight_all: false,
-            clash_auto_zoom: true,
             open_groups: HashSet::new(),
-            clash_subtab: 0,
             find_in_selection: false,
             group_cell: 5.0,
-            clash_filter: None,
-            clash_filter_sel: 0,
-            clash_focus_mode: false,
             immersive_mode: false,
             saved_layout: None,
             float_max: std::collections::HashSet::new(),
@@ -1077,11 +1044,8 @@ impl App {
             key_step: 3.0,
             proj_sel: None,
             materials: crate::materials::full_library(),
-            mat_assign: Vec::new(),
             materials_on: true,
-            mat_sel: 0,
             user_lib_cache: None,
-            mat_cache: None,
             render_subtab: 0,
             show_tools: false,
             sets_sig: 0,
@@ -1090,10 +1054,6 @@ impl App {
             tex_loaded_res: crate::materials::tex_size(),
             pending_mat_assign: Vec::new(),
             pro_lib_job: None,
-            mat_preview: None,
-            mat_filter: String::new(),
-            mat_window: false,
-            mat_scroll: false,
             notes: Vec::new(),
             notes_seen: 0,
             keys_open: false,
@@ -1102,14 +1062,11 @@ impl App {
             dash: None,
             set_snap: HashMap::new(),
             dash_job: None,
-            mat_thumbs: HashMap::new(),
-            mat_thumb_job: None,
             tex_failed: HashSet::new(),
             pending_csv: Vec::new(),
             settings: crate::theme::Settings::load(),
             theme_dirty: true,
             last_mode: (false, false),
-            clash_queue: Vec::new(),
             update_all_before: None,
             update_summary: None,
             update_all_cur: None,
@@ -1177,19 +1134,15 @@ impl App {
             qto: Default::default(),
             qto_result: None,
             qto_sig: 0,
-            mcp: None,
-            mcp_open: false,
-            mcp_status: String::new(),
-            mcp_capture: None,
         };
         {
             let p = &app.settings.clash_ui;
-            app.clash_subtab = p.subtab;
-            app.clash_filter = p.filter;
-            app.clash_filter_sel = p.filter_sel;
-            app.clash_others = p.others;
-            app.clash_auto_zoom = p.auto_zoom;
-            app.clash_highlight_all = p.highlight_all;
+            app.clash.subtab = p.subtab;
+            app.clash.filter = p.filter;
+            app.clash.filter_sel = p.filter_sel;
+            app.clash.others = p.others;
+            app.clash.auto_zoom = p.auto_zoom;
+            app.clash.highlight_all = p.highlight_all;
             app.group_cell = p.group_cell;
             app.sim_only_linked = p.only_linked;
         }
@@ -1217,12 +1170,12 @@ impl App {
     /// Salveaza preferintele UI (Clash / 4D) cand se schimba, fara a scrie fisierul la fiecare cadru.
     pub fn sync_ui_prefs(&mut self) {
         let p = crate::theme::ClashUiPrefs {
-            subtab: self.clash_subtab,
-            filter: self.clash_filter,
-            filter_sel: self.clash_filter_sel,
-            others: self.clash_others,
-            auto_zoom: self.clash_auto_zoom,
-            highlight_all: self.clash_highlight_all,
+            subtab: self.clash.subtab,
+            filter: self.clash.filter,
+            filter_sel: self.clash.filter_sel,
+            others: self.clash.others,
+            auto_zoom: self.clash.auto_zoom,
+            highlight_all: self.clash.highlight_all,
             group_cell: self.group_cell,
             only_linked: self.sim_only_linked,
             // restul (sortare, culori, panouri) se editeaza direct in settings.clash_ui
@@ -1390,6 +1343,50 @@ pub fn grid_location_in(g: &GridData, p: Vec3) -> String {
 }
 
 /// Nivel definit de utilizator: nume si cota (m) fata de ±0.00 al proiectului.
+/// Clash Detective: the tests, the running job and the display of the results.
+pub struct ClashState {
+    pub tests: Vec<ClashTest>,
+    pub job: Option<ClashJob>,
+    pub focus: Option<ClashFocus>,
+    pub others: Others,
+    pub highlight_all: bool,
+    pub auto_zoom: bool,
+    pub subtab: u8,
+    pub filter: Option<ClashStatus>,
+    /// Filter by Selection: 0 = off, 1 = inclusive, 2 = exclusive (ca in Navisworks)
+    pub filter_sel: u8,
+    /// Clash Detective in mod Focus: fereastra maximizata, cu tot spatiul pentru teste si rezultate
+    pub focus_mode: bool,
+    pub queue: Vec<usize>,
+}
+
+/// Render materials: the assignment rules, the library window and its thumbnails.
+pub struct MaterialsState {
+    pub assign: Vec<MatAssign>,
+    pub sel: usize,
+    pub cache: Option<HashMap<ElemId, u16>>,
+    /// previzualizarea hartii de culoare a materialului selectat
+    pub preview: Option<(String, eframe::egui::TextureHandle)>,
+    /// filtrul listei de materiale si miniaturile texturilor (cale -> imagine; None = in lucru / esuat)
+    pub filter: String,
+    /// fereastra mare Materials (pe toata inaltimea ferestrei aplicatiei)
+    pub window: bool,
+    /// lista deruleaza pana la materialul selectat (dupa un import)
+    pub scroll: bool,
+    pub thumbs: HashMap<String, Option<eframe::egui::TextureHandle>>,
+    pub thumb_job: Option<(std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<(String, Option<crate::materials::Thumb>)>)>,
+}
+
+/// The MCP server for AI assistants: the server, its window and status, a capture waiting for its image.
+pub struct McpState {
+    /// serverul MCP pornit (asistenti AI) si fereastra lui de conectare
+    pub server: Option<crate::mcp::Server>,
+    pub open: bool,
+    pub status: String,
+    /// raspunsul unei cereri MCP capture_view, trimis cand imaginea e gata (dupa cadrul urmator)
+    pub capture: Option<std::sync::mpsc::Sender<Result<serde_json::Value, String>>>,
+}
+
 /// The final path-traced render (Render › Path Trace).
 pub struct PathTraceState {
     /// the render running or finished (CPU or GPU)

@@ -33,7 +33,7 @@ fn main() {
     let mut t = ClashTest::new("Structure vs HVAC".into());
     t.a = Selector { kind: SelKind::Set, value: "Structure (columns + beams + slabs)".into() };
     t.b = Selector { kind: SelKind::Set, value: "HVAC".into() };
-    app.clash_tests = vec![t];
+    app.clash.tests = vec![t];
     app.run_clash_blocking(0);
     app.auto_group(0, GroupBy::Level, 5.0);
     // schedule + camera + viewpoint + animation
@@ -51,5 +51,5 @@ fn main() {
     app.assign_material(bimrust::materials::MatTarget::Type("IfcWall".into()), "Brick red");
     let path = app.project_path.clone().unwrap();
     app.save_project(&path);
-    println!("{} - {} clashes, {} tasks, log: {:?}", path, app.clash_tests[0].results.len(), app.tasks.len(), app.log);
+    println!("{} - {} clashes, {} tasks, log: {:?}", path, app.clash.tests[0].results.len(), app.tasks.len(), app.log);
 }

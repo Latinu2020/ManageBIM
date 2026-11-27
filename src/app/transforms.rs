@@ -146,7 +146,7 @@ impl App {
             }
             Purpose::ExportClashPdf => {
                 let rows = self.clash_report_pdf_rows(self.cur_test);
-                let test = self.clash_tests.get(self.cur_test).map(|t| t.name.clone()).unwrap_or_default();
+                let test = self.clash.tests.get(self.cur_test).map(|t| t.name.clone()).unwrap_or_default();
                 let pdf = crate::pdf::clash_report_pdf(&self.project_path.clone().unwrap_or_default(), &test, &rows, &super::now_string(), &self.title_block);
                 match std::fs::write(&path, pdf) {
                     Ok(()) => self.toast(format!("Clash report PDF exported: {}", crate::file_name(&path))),
@@ -253,7 +253,7 @@ impl App {
             Purpose::ExportNavisClash => self.export_navis_clash(&path),
             Purpose::MaterialNormal | Purpose::MaterialRoughness | Purpose::MaterialMetallic | Purpose::MaterialAo | Purpose::MaterialHeight => {
                 if crate::materials::load_texture(&path).is_ok() {
-                    if let Some(m) = self.materials.get_mut(self.mat_sel) {
+                    if let Some(m) = self.materials.get_mut(self.mats.sel) {
                         match purpose {
                             Purpose::MaterialNormal => m.normal_map = path.clone(),
                             Purpose::MaterialRoughness => m.roughness_map = path.clone(),
@@ -270,7 +270,7 @@ impl App {
             }
             Purpose::MaterialTexture => {
                 if crate::materials::load_texture(&path).is_ok() {
-                    if let Some(m) = self.materials.get_mut(self.mat_sel) {
+                    if let Some(m) = self.materials.get_mut(self.mats.sel) {
                         m.texture = path.clone();
                         m.color = [255, 255, 255];
                     }
@@ -312,7 +312,7 @@ impl App {
                 self.dashboard_export(pdf, path.clone());
             }
             Purpose::ExportMaterialOne => {
-                let Some(m) = self.materials.get(self.mat_sel).cloned() else { return };
+                let Some(m) = self.materials.get(self.mats.sel).cloned() else { return };
                 let mut p = path.clone();
                 if !p.to_ascii_lowercase().ends_with(".mtlx") {
                     p.push_str(".mtlx");
@@ -390,10 +390,10 @@ impl App {
                     // materialul importat e selectat in lista (si vizibil, chiar daca era un filtru)
                     if let Some(f) = first {
                         if let Some(i) = self.materials.iter().position(|m| m.name == f) {
-                            self.mat_sel = i;
+                            self.mats.sel = i;
                         }
-                        self.mat_filter.clear();
-                        self.mat_scroll = true;
+                        self.mats.filter.clear();
+                        self.mats.scroll = true;
                     }
                     self.pending_mat_assign.clear();
                     self.materials_changed();
@@ -438,7 +438,7 @@ impl App {
                     let prev = (self.settings.visual_style, self.materials_on, std::mem::take(&mut self.selected));
                     if self.render.with_materials {
                         self.settings.visual_style = crate::render::VisualStyle::Realistic;
-                        if self.mat_assign.is_empty() && self.loaded_models().next().is_some() {
+                        if self.mats.assign.is_empty() && self.loaded_models().next().is_some() {
                             self.auto_materials();
                         }
                         self.materials_on = true;
@@ -699,7 +699,7 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                 Purpose::ExportMaterials => d.set_title("Export material library").add_filter("ManageBIM materials", &["bimmat"]).add_filter("Excel workbook", &["xlsx"]).add_filter("CSV (Excel)", &["csv"]).set_file_name("materials.bimmat").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportMaterials => d.set_title("Import material library").add_filter("Materials, PBR packs (ambientCG / freepbr .zip), Excel / CSV", &["bimmat", "json", "zip", "xlsx", "csv"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportMaterialX => d.set_title("Export MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx"]).set_file_name("materials.mtlx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
-                Purpose::ExportMaterialOne => d.set_title("Save material as file (MaterialX + textures)").add_filter("MaterialX", &["mtlx"]).set_file_name(format!("{}.mtlx", self.materials.get(self.mat_sel).map(|m| m.name.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")).unwrap_or_else(|| "material".into()))).save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportMaterialOne => d.set_title("Save material as file (MaterialX + textures)").add_filter("MaterialX", &["mtlx"]).set_file_name(format!("{}.mtlx", self.materials.get(self.mats.sel).map(|m| m.name.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")).unwrap_or_else(|| "material".into()))).save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportDashboardPdf => d.set_title("Export dashboard (PDF)").add_filter("PDF", &["pdf"]).set_file_name("dashboard.pdf").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportDashboardDocx => d.set_title("Export dashboard (Word)").add_filter("Word document", &["docx"]).set_file_name("dashboard.docx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ImportMaterialX => d.set_title("Import MaterialX (OpenPBR Surface)").add_filter("MaterialX", &["mtlx", "xml"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),

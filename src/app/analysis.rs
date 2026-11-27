@@ -364,23 +364,23 @@ impl App {
             self.toast("No scan discrepancies to add (only Missing / Partial are clashes).");
             return;
         }
-        let idx = if let Some(i) = self.clash_tests.iter().position(|t| t.name == "Scan vs Model") {
+        let idx = if let Some(i) = self.clash.tests.iter().position(|t| t.name == "Scan vs Model") {
             i
         } else {
-            self.clash_tests.push(ClashTest::new("Scan vs Model".into()));
-            self.clash_tests.len() - 1
+            self.clash.tests.push(ClashTest::new("Scan vs Model".into()));
+            self.clash.tests.len() - 1
         };
         let now = now_string();
         let mut added = 0;
         for r in bad {
             let Some((_, e)) = self.elem(r.id) else { continue };
             let ga = e.guid.clone();
-            if self.clash_tests[idx].results.iter().any(|x| x.b_is_scan && x.ga == ga) {
+            if self.clash.tests[idx].results.iter().any(|x| x.b_is_scan && x.ga == ga) {
                 continue;
             }
             let c = (e.aabb.min + e.aabb.max) * 0.5;
-            let n = self.clash_tests[idx].results.len() + 1;
-            self.clash_tests[idx].results.push(ClashResult {
+            let n = self.clash.tests[idx].results.len() + 1;
+            self.clash.tests[idx].results.push(ClashResult {
                 name: format!("Scan {n}"),
                 a: r.id,
                 b: r.id,
@@ -403,7 +403,7 @@ impl App {
             added += 1;
         }
         self.cur_test = idx;
-        self.clash_subtab = 0;
+        self.clash.subtab = 0;
         self.colors_dirty = true;
         self.toast(format!("{added} scan discrepancies added to Clash Detective › Scan vs Model."));
     }

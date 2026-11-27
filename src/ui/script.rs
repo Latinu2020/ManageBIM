@@ -175,8 +175,8 @@ impl App {
                     self.toast(format!("Set {name} on {changed} elements."));
                 }
                 ScriptAction::CreateClash(name, tol) => {
-                    self.clash_tests.push(crate::app::ClashTest::new(name));
-                    if let Some(t) = self.clash_tests.last_mut() {
+                    self.clash.tests.push(crate::app::ClashTest::new(name));
+                    if let Some(t) = self.clash.tests.last_mut() {
                         t.tol_mm = tol as f32;
                     }
                 }

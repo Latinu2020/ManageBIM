@@ -284,7 +284,7 @@ impl App {
             }
             Action::FocusClash(t, r) => self.apply(Action::FocusClashes(t, vec![r])),
             Action::FocusClashes(t, rs) => {
-                let Some(test) = self.clash_tests.get(t) else { return };
+                let Some(test) = self.clash.tests.get(t) else { return };
                 let res: Vec<ClashResult> = rs.iter().filter_map(|r| test.results.get(*r).cloned()).collect();
                 if res.is_empty() {
                     return;
@@ -314,7 +314,7 @@ impl App {
                         self.cam_anim = None;
                         self.cam = v;
                     }
-                } else if self.clash_auto_zoom {
+                } else if self.clash.auto_zoom {
                     let bb = if res.len() == 1 {
                         // apropie camera de punctul de clash (elementele mari ar indeparta prea mult camera)
                         let bb = self.ids_aabb(&[res[0].a, res[0].b]);
@@ -338,7 +338,7 @@ impl App {
                         self.cam.fit(&bb);
                     }
                 }
-                self.clash_focus = Some(f);
+                self.clash.focus = Some(f);
                 self.colors_dirty = true;
             }
         }

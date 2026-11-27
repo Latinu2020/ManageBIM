@@ -232,7 +232,7 @@ impl App {
                 self.vt_current = ti;
             }
             self.vt_applied = tpl.is_some();
-            self.clash_focus = None;
+            self.clash.focus = None;
             self.colors_dirty = true;
         }
     }
@@ -279,7 +279,7 @@ impl App {
             (&m.name, m.color, m.transparency, m.gloss, m.metal, &m.texture, &m.normal_map, &m.roughness_map, m.coat, m.sheen).hash(&mut h);
             ((m.scale * 1000.0) as i64, (m.ior * 1000.0) as i64).hash(&mut h);
         }
-        for a in &self.mat_assign {
+        for a in &self.mats.assign {
             (&a.material, a.enabled, a.target.label()).hash(&mut h);
         }
         h.finish()
@@ -299,7 +299,7 @@ impl App {
         // datele de model: refolosite din instantaneul curent daca nu s-au schimbat (fara copii inutile)
         let model = match self.hist.get(self.hist_pos) {
             Some(prev) if prev.model.sig == msig => prev.model.clone(),
-            _ => Arc::new(ModelSnap { sig: msig, user_params: self.user_params.clone(), overrides: self.overrides.clone(), materials: self.materials.clone(), mat_assign: self.mat_assign.clone() }),
+            _ => Arc::new(ModelSnap { sig: msig, user_params: self.user_params.clone(), overrides: self.overrides.clone(), materials: self.materials.clone(), mat_assign: self.mats.assign.clone() }),
         };
         let snap = ViewSnap { selected: self.selected.clone(), hidden: Arc::new(self.hidden.clone()), section: self.section.clone(), cam: self.cam, model };
         self.hist.truncate(self.hist_pos + 1);
@@ -347,7 +347,7 @@ impl App {
             self.user_params = m.user_params.clone();
             self.overrides = m.overrides.clone();
             self.materials = m.materials.clone();
-            self.mat_assign = m.mat_assign.clone();
+            self.mats.assign = m.mat_assign.clone();
             if params_changed {
                 let slots: Vec<usize> = self.loaded_models().map(|(i, _)| i).collect();
                 for slot in slots {
@@ -389,7 +389,7 @@ impl App {
             return;
         }
         self.settings.visual_style = s;
-        if s == crate::render::VisualStyle::Realistic && !self.materials_on && !self.mat_assign.is_empty() {
+        if s == crate::render::VisualStyle::Realistic && !self.materials_on && !self.mats.assign.is_empty() {
             self.materials_on = true;
             self.materials_changed();
         }
@@ -400,7 +400,7 @@ impl App {
         self.settings.save();
         if s == crate::render::VisualStyle::Realistic {
             // realist = cu materiale / texturi; fara atribuiri inca: automat dupa tipul IFC (pereti, sticla, beton...)
-            if self.mat_assign.is_empty() && self.loaded_models().next().is_some() {
+            if self.mats.assign.is_empty() && self.loaded_models().next().is_some() {
                 self.auto_materials();
             } else if !self.materials_on {
                 self.materials_on = true;

@@ -4,16 +4,16 @@ use super::*;
 impl App {
     pub(super) fn clash_ui(&mut self, ui: &mut egui::Ui) {
         use crate::clash_io::{status_counts, test_state, TestState};
-        if self.clash_tests.is_empty() {
-            self.clash_tests.push(ClashTest::new("Test 1".into()));
+        if self.clash.tests.is_empty() {
+            self.clash.tests.push(ClashTest::new("Test 1".into()));
         }
-        if self.cur_test >= self.clash_tests.len() {
+        if self.cur_test >= self.clash.tests.len() {
             self.cur_test = 0;
         }
         let ti = self.cur_test;
         // ---- antet: testul curent, ultima rulare, totalul (ca in Navisworks)
         {
-            let t = &self.clash_tests[ti];
+            let t = &self.clash.tests[ti];
             let k = status_counts(t);
             let open = k[0] + k[1];
             ui.horizontal(|ui| {
@@ -33,7 +33,7 @@ impl App {
         let mut renaming: Option<usize> = ui.data(|d| d.get_temp(rename_key));
         let mut rename_to: Option<(usize, String)> = None;
         egui::Frame::group(ui.style()).inner_margin(2.0).show(ui, |ui| {
-            let h = (24.0 + 20.0 * self.clash_tests.len() as f32).clamp(70.0, 190.0);
+            let h = (24.0 + 20.0 * self.clash.tests.len() as f32).clamp(70.0, 190.0);
             super::table::table(ui)
                 .id_salt("clash_tests_tbl")
                 .max_scroll_height(h)
@@ -64,13 +64,13 @@ impl App {
                     }
                 })
                 .body(|body| {
-                    let n = self.clash_tests.len();
+                    let n = self.clash.tests.len();
                     body.rows(20.0, n, |mut row| {
                         let i = row.index();
-                        let t = &self.clash_tests[i];
+                        let t = &self.clash.tests[i];
                         let k = status_counts(t);
                         let state = test_state(t);
-                        let running = self.clash_job.as_ref().is_some_and(|j| j.test == i);
+                        let running = self.clash.job.as_ref().is_some_and(|j| j.test == i);
                         row.set_selected(i == ti);
                         row.col(|ui| {
                             if let Some(new) = super::table::name_cell(ui, egui::Id::new("mb_clash_tests"), i, &mut renaming, &t.name) {
@@ -123,13 +123,13 @@ impl App {
                 self.cur_test = i;
                 self.cur_result = None;
                 self.sel_results.clear();
-                self.clash_focus = None;
+                self.clash.focus = None;
                 self.colors_dirty = true;
             }
         }
         // numele se aplica dupa randul de tabel (in interior s-a citit doar `&self`)
         if let Some((i, name)) = rename_to {
-            if let Some(t) = self.clash_tests.get_mut(i) {
+            if let Some(t) = self.clash.tests.get_mut(i) {
                 t.name = name;
             }
         }
@@ -145,68 +145,68 @@ impl App {
         });
         // Duplicate / Delete cat ruleaza un test ar muta indicii: rezultatul ar ajunge la alt test
         let ctx_action = match ctx_action {
-            Some((_, a)) if a >= 3 && (self.clash_job.is_some() || !self.clash_queue.is_empty()) => {
+            Some((_, a)) if a >= 3 && (self.clash.job.is_some() || !self.clash.queue.is_empty()) => {
                 self.toast("A clash test is running - wait for it to finish (or Cancel) before duplicating or deleting tests.");
                 None
             }
             other => other,
         };
-        if let Some((i, a)) = ctx_action.filter(|(i, _)| *i < self.clash_tests.len()) {
+        if let Some((i, a)) = ctx_action.filter(|(i, _)| *i < self.clash.tests.len()) {
             match a {
                 0 => {
                     self.cur_test = i;
                     self.run_clash(i);
                 }
                 1 => {
-                    let t = &mut self.clash_tests[i];
+                    let t = &mut self.clash.tests[i];
                     t.results.clear();
                     t.last_run.clear();
                     t.run_key = 0;
                     self.colors_dirty = true;
                 }
-                2 => self.clash_tests[i].results.retain(|r| r.status != ClashStatus::Resolved),
+                2 => self.clash.tests[i].results.retain(|r| r.status != ClashStatus::Resolved),
                 3 => {
-                    let mut t = self.clash_tests[i].clone();
+                    let mut t = self.clash.tests[i].clone();
                     t.name = format!("{} (copy)", t.name);
                     t.results.clear();
                     t.last_run.clear();
                     t.run_key = 0;
-                    self.clash_tests.insert(i + 1, t);
+                    self.clash.tests.insert(i + 1, t);
                     self.cur_test = i + 1;
                 }
                 _ => {
-                    self.clash_tests.remove(i);
-                    if self.clash_tests.is_empty() {
-                        self.clash_tests.push(ClashTest::new("Test 1".into()));
+                    self.clash.tests.remove(i);
+                    if self.clash.tests.is_empty() {
+                        self.clash.tests.push(ClashTest::new("Test 1".into()));
                     }
-                    self.cur_test = self.cur_test.min(self.clash_tests.len() - 1);
+                    self.cur_test = self.cur_test.min(self.clash.tests.len() - 1);
                     self.cur_result = None;
                     self.sel_results.clear();
-                    self.clash_focus = None;
+                    self.clash.focus = None;
                     self.colors_dirty = true;
                 }
             }
         }
         // ---- butoanele de sub lista (Navisworks: Add Test, Reset All, Compact All, Delete All, Update All, Import / Export)
-        let idle = self.clash_job.is_none();
+        let idle = self.clash.job.is_none();
         ui.horizontal_wrapped(|ui| {
             if ui.add_enabled(idle, egui::Button::new("➕ Add Test")).clicked() {
-                let mut n = self.clash_tests.len() + 1;
-                while self.clash_tests.iter().any(|t| t.name == format!("Test {n}")) {
+                let mut n = self.clash.tests.len() + 1;
+                while self.clash.tests.iter().any(|t| t.name == format!("Test {n}")) {
                     n += 1;
                 }
-                self.clash_tests.push(ClashTest::new(format!("Test {n}")));
-                self.cur_test = self.clash_tests.len() - 1;
+                self.clash.tests.push(ClashTest::new(format!("Test {n}")));
+                self.cur_test = self.clash.tests.len() - 1;
                 self.cur_result = None;
                 self.sel_results.clear();
-                self.clash_subtab = 2;
+                self.clash.subtab = 2;
             }
             ui.menu_button("📋 Templates ⏷", |ui| {
                 ui.label(RichText::new("Add a ready-made test").strong());
                 for (name, about, t) in ClashTest::templates() {
                     if ui.button(name).on_hover_text(about).clicked() {
-                        self.clash_tests.push(t);
-                        self.cur_test = self.clash_tests.len() - 1;
+                        self.clash.tests.push(t);
+                        self.cur_test = self.clash.tests.len() - 1;
                         self.cur_result = None;
                         self.sel_results.clear();
                         ui.close_menu();
@@ -214,8 +214,8 @@ impl App {
                 }
                 ui.separator();
                 if ui.button("All of the above").clicked() {
-                    self.clash_tests.extend(ClashTest::templates().into_iter().map(|t| t.2));
-                    self.cur_test = self.clash_tests.len() - 1;
+                    self.clash.tests.extend(ClashTest::templates().into_iter().map(|t| t.2));
+                    self.cur_test = self.clash.tests.len() - 1;
                     self.cur_result = None;
                     self.sel_results.clear();
                     ui.close_menu();
@@ -224,11 +224,11 @@ impl App {
             .response
             .on_hover_text("Test templates: Structure vs MEP, clearances, duplicates - disciplines are recognised automatically");
             ui.separator();
-            let has_res = self.clash_tests.iter().any(|t| !t.results.is_empty());
+            let has_res = self.clash.tests.iter().any(|t| !t.results.is_empty());
             if ui.add_enabled(idle && has_res, egui::Button::new("Reset All")).on_hover_text("Remove the results of every test (the tests stay, status New)").clicked() {
                 self.clash_reset_all();
             }
-            if ui.add_enabled(idle && self.clash_tests.iter().any(|t| t.results.iter().any(|r| r.status == ClashStatus::Resolved)), egui::Button::new("Compact All")).on_hover_text("Remove the Resolved clashes from every test").clicked() {
+            if ui.add_enabled(idle && self.clash.tests.iter().any(|t| t.results.iter().any(|r| r.status == ClashStatus::Resolved)), egui::Button::new("Compact All")).on_hover_text("Remove the Resolved clashes from every test").clicked() {
                 self.clash_compact_all();
             }
             let del = ui.add_enabled(idle, egui::Button::new("Delete All")).on_hover_text("Delete every clash test");
@@ -238,7 +238,7 @@ impl App {
             }
             egui::popup_below_widget(ui, pid, &del, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
                 ui.set_min_width(200.0);
-                ui.label(format!("Delete all {} clash tests?", self.clash_tests.len()));
+                ui.label(format!("Delete all {} clash tests?", self.clash.tests.len()));
                 ui.horizontal(|ui| {
                     if ui.button(RichText::new("Delete All").color(Color32::from_rgb(230, 80, 70))).clicked() {
                         self.clash_delete_all();
@@ -283,10 +283,10 @@ impl App {
                 }
             });
         });
-        if let Some(job) = &self.clash_job {
-            let left = self.clash_queue.len();
+        if let Some(job) = &self.clash.job {
+            let left = self.clash.queue.len();
             ui.horizontal(|ui| {
-                let name = self.clash_tests.get(job.test).map(|t| t.name.clone()).unwrap_or_default();
+                let name = self.clash.tests.get(job.test).map(|t| t.name.clone()).unwrap_or_default();
                 ui.label(format!("Running {name}{}", if left > 0 { format!("  ({left} more)") } else { String::new() }));
                 ui.add(egui::ProgressBar::new(job.prog.frac()).desired_width(220.0).show_percentage());
                 if ui.button("Cancel").clicked() {
@@ -295,17 +295,17 @@ impl App {
             });
         }
         // ---- tab-urile: Rules | Select | Results | Report
-        let ti = self.cur_test.min(self.clash_tests.len() - 1);
+        let ti = self.cur_test.min(self.clash.tests.len() - 1);
         ui.horizontal(|ui| {
-            let nres = self.clash_tests[ti].results.len();
-            let nrules = self.clash_tests[ti].rules.count(self.clash_tests[ti].ignore_same_file);
-            ui.selectable_value(&mut self.clash_subtab, 1, format!("Rules ({nrules})"));
-            ui.selectable_value(&mut self.clash_subtab, 2, "Select");
-            ui.selectable_value(&mut self.clash_subtab, 0, format!("Results ({nres})"));
-            ui.selectable_value(&mut self.clash_subtab, 3, "Report");
+            let nres = self.clash.tests[ti].results.len();
+            let nrules = self.clash.tests[ti].rules.count(self.clash.tests[ti].ignore_same_file);
+            ui.selectable_value(&mut self.clash.subtab, 1, format!("Rules ({nrules})"));
+            ui.selectable_value(&mut self.clash.subtab, 2, "Select");
+            ui.selectable_value(&mut self.clash.subtab, 0, format!("Results ({nres})"));
+            ui.selectable_value(&mut self.clash.subtab, 3, "Report");
         });
         ui.separator();
-        match self.clash_subtab {
+        match self.clash.subtab {
             1 => self.clash_rules_ui(ui, ti),
             2 => self.clash_select_ui(ui, ti),
             3 => self.clash_report_ui(ui, ti),
@@ -318,7 +318,7 @@ impl App {
     pub(super) fn clash_matrix_window(&mut self, ctx: &egui::Context) {
         use crate::clash_io::{status_counts, test_matrix};
         let mut open = true;
-        let m = test_matrix(&self.clash_tests);
+        let m = test_matrix(&self.clash.tests);
         let vid = egui::Id::new("cm_view");
         let mut view: usize = ctx.data(|d| d.get_temp(vid)).unwrap_or(0);
         let mut goto: Option<usize> = None;
@@ -339,7 +339,7 @@ impl App {
             if m.cells.is_empty() {
                 ui.label(RichText::new("No clash tests yet.").weak());
             } else {
-                let maxv = m.cells.keys().filter_map(|(r, c)| m.counts(&self.clash_tests, *r, *c)).map(|k| k[0] + k[1]).max().unwrap_or(1).max(1) as f32;
+                let maxv = m.cells.keys().filter_map(|(r, c)| m.counts(&self.clash.tests, *r, *c)).map(|k| k[0] + k[1]).max().unwrap_or(1).max(1) as f32;
                 egui::ScrollArea::both().id_salt("cm_scroll").max_height(300.0).show(ui, |ui| {
                     egui::Grid::new("cm_grid").spacing([4.0, 4.0]).show(ui, |ui| {
                         ui.label(RichText::new("A \\ B").weak().small());
@@ -359,7 +359,7 @@ impl App {
                                     });
                                     continue;
                                 };
-                                let k = m.counts(&self.clash_tests, r, c).unwrap_or([0; 5]);
+                                let k = m.counts(&self.clash.tests, r, c).unwrap_or([0; 5]);
                                 let open_n = k[0] + k[1];
                                 let total: usize = k.iter().sum();
                                 let v = match view {
@@ -369,7 +369,7 @@ impl App {
                                     _ => open_n,
                                 };
                                 row_tot += v;
-                                let run = ix.iter().all(|&i| !self.clash_tests[i].last_run.is_empty());
+                                let run = ix.iter().all(|&i| !self.clash.tests[i].last_run.is_empty());
                                 let t = open_n as f32 / maxv;
                                 let fill = if !run {
                                     Color32::from_rgba_unmultiplied(120, 120, 140, 50)
@@ -388,7 +388,7 @@ impl App {
                                             let big = if !run { "not run".to_string() } else if view == 7 { format!("{open_n} / {total}") } else { v.to_string() };
                                             ui.label(RichText::new(big).strong());
                                             for &i in ix {
-                                                ui.label(RichText::new(&self.clash_tests[i].name).small());
+                                                ui.label(RichText::new(&self.clash.tests[i].name).small());
                                             }
                                         });
                                     })
@@ -397,7 +397,7 @@ impl App {
                                 let tip: Vec<String> = ix
                                     .iter()
                                     .map(|&i| {
-                                        let t = &self.clash_tests[i];
+                                        let t = &self.clash.tests[i];
                                         let q = status_counts(t);
                                         format!("{} ({}, {} mm)\nNew {}  Active {}  Reviewed {}  Approved {}  Resolved {}  -  total {}\nLast run: {}", t.name, t.ty.label(), t.tol_mm, q[0], q[1], q[2], q[3], q[4], t.results.len(), if t.last_run.is_empty() { "never" } else { &t.last_run })
                                     })
@@ -417,14 +417,14 @@ impl App {
                     if ui.button("📊 Export Excel").on_hover_text("The matrix with the tests of each cell, one sheet per status, and the list of tests").clicked() {
                         export = true;
                     }
-                    if ui.add_enabled(self.clash_job.is_none() && self.loaded_models().next().is_some(), egui::Button::new("⟳ Update All")).clicked() {
+                    if ui.add_enabled(self.clash.job.is_none() && self.loaded_models().next().is_some(), egui::Button::new("⟳ Update All")).clicked() {
                         self.clash_update_all();
                     }
                 });
             }
             ui.separator();
             // ---- matricea de seturi: bifezi perechile, se creeaza testele
-            egui::CollapsingHeader::new(RichText::new("Create tests from a sets matrix").strong()).default_open(m.cells.is_empty() || self.clash_tests.iter().all(|t| t.results.is_empty() && t.last_run.is_empty())).show(ui, |ui| {
+            egui::CollapsingHeader::new(RichText::new("Create tests from a sets matrix").strong()).default_open(m.cells.is_empty() || self.clash.tests.iter().all(|t| t.results.is_empty() && t.last_run.is_empty())).show(ui, |ui| {
                 let mut cands: Vec<Selector> = self.sets.iter().map(|s| Selector { kind: SelKind::Set, value: s.name.clone() }).collect();
                 for d in ["Structure", "Architecture", "MEP - HVAC", "MEP - Plumbing", "MEP - Electrical"] {
                     cands.push(Selector { kind: SelKind::Discipline, value: d.into() });
@@ -447,7 +447,7 @@ impl App {
                         for a in &cands {
                             ui.label(RichText::new(a.label()).small());
                             for b in &cands {
-                                let exists = self.clash_tests.iter().any(|t| (&t.a, &t.b) == (a, b));
+                                let exists = self.clash.tests.iter().any(|t| (&t.a, &t.b) == (a, b));
                                 if exists {
                                     ui.label(RichText::new("✔").color(Color32::from_rgb(70, 170, 90)));
                                     continue;
@@ -493,7 +493,7 @@ impl App {
             self.cur_test = i;
             self.cur_result = None;
             self.sel_results.clear();
-            self.clash_subtab = 0;
+            self.clash.subtab = 0;
             self.open_panel(crate::layout::Panel::Clash);
         }
         if let Some((pairs, ty, tol)) = create {
@@ -556,11 +556,11 @@ impl App {
             }
         });
         if let Some(i) = goto {
-            if i < self.clash_tests.len() {
+            if i < self.clash.tests.len() {
                 self.cur_test = i;
                 self.cur_result = None;
                 self.sel_results.clear();
-                self.clash_subtab = 0;
+                self.clash.subtab = 0;
             }
         }
         if !open || close {
@@ -570,7 +570,7 @@ impl App {
 
     /// Tab-ul Select: Selection A / Selection B, tipul testului, toleranta, Run Test.
     pub(super) fn clash_select_ui(&mut self, ui: &mut egui::Ui, ti: usize) {
-        let mut test = self.clash_tests[ti].clone();
+        let mut test = self.clash.tests[ti].clone();
         let mut run = false;
         egui::ScrollArea::vertical().id_salt("csel").auto_shrink([false, false]).show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -616,7 +616,7 @@ impl App {
                     });
                     ui.label(RichText::new("Hidden items are left out - hide what should not count (e.g. the roof or an external stair).").small().weak());
                     ui.add_space(6.0);
-                    if ui.add_enabled(self.clash_job.is_none() && self.loaded_models().next().is_some(), egui::Button::new(RichText::new("▶ Run Test").strong().color(Color32::WHITE)).fill(accent())).clicked() {
+                    if ui.add_enabled(self.clash.job.is_none() && self.loaded_models().next().is_some(), egui::Button::new(RichText::new("▶ Run Test").strong().color(Color32::WHITE)).fill(accent())).clicked() {
                         run = true;
                     }
                 });
@@ -674,13 +674,13 @@ impl App {
                     }
                 });
                 ui.add_space(6.0);
-                if ui.add_enabled(self.clash_job.is_none() && self.loaded_models().next().is_some(), egui::Button::new(RichText::new("▶ Run Test").strong().color(Color32::WHITE)).fill(accent())).clicked() {
+                if ui.add_enabled(self.clash.job.is_none() && self.loaded_models().next().is_some(), egui::Button::new(RichText::new("▶ Run Test").strong().color(Color32::WHITE)).fill(accent())).clicked() {
                     run = true;
                 }
             });
             }
         });
-        let t = &mut self.clash_tests[ti];
+        let t = &mut self.clash.tests[ti];
         t.special = test.special;
         t.name = test.name;
         t.a = test.a;
@@ -690,13 +690,13 @@ impl App {
         t.sev_mm = test.sev_mm;
         if run {
             self.run_clash(ti);
-            self.clash_subtab = 0;
+            self.clash.subtab = 0;
         }
     }
 
     /// Tab-ul Report: rapoartele si exporturile testului curent / tuturor testelor.
     pub(super) fn clash_report_ui(&mut self, ui: &mut egui::Ui, ti: usize) {
-        let has = !self.clash_tests[ti].results.is_empty();
+        let has = !self.clash.tests[ti].results.is_empty();
         egui::Grid::new("creport").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
             ui.strong("Current test");
             ui.horizontal_wrapped(|ui| {
@@ -761,8 +761,8 @@ impl App {
     }
 
     pub(super) fn clash_rules_ui(&mut self, ui: &mut egui::Ui, ti: usize) {
-        let mut rules = self.clash_tests[ti].rules.clone();
-        let mut same_file = self.clash_tests[ti].ignore_same_file;
+        let mut rules = self.clash.tests[ti].rules.clone();
+        let mut same_file = self.clash.tests[ti].ignore_same_file;
         let set_names: Vec<String> = self.sets.iter().map(|s| s.name.clone()).collect();
         let props = self.cache_props.clone();
         let idx = std::mem::take(&mut self.prop_index);
@@ -804,31 +804,31 @@ impl App {
             ui.separator();
             ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new("Rules apply when the test runs. Existing results that a rule now excludes are removed.").weak());
-                if self.clash_job.is_none() && ui.button("▶ Re-run test with these rules").clicked() {
-                    self.clash_tests[ti].rules = rules.clone();
-                    self.clash_tests[ti].ignore_same_file = same_file;
+                if self.clash.job.is_none() && ui.button("▶ Re-run test with these rules").clicked() {
+                    self.clash.tests[ti].rules = rules.clone();
+                    self.clash.tests[ti].ignore_same_file = same_file;
                     self.run_clash(ti);
-                    self.clash_subtab = 0;
+                    self.clash.subtab = 0;
                 }
             });
         });
         self.prop_index = idx;
-        self.clash_tests[ti].rules = rules;
-        self.clash_tests[ti].ignore_same_file = same_file;
+        self.clash.tests[ti].rules = rules;
+        self.clash.tests[ti].ignore_same_file = same_file;
     }
 
     pub(super) fn clash_results(&mut self, ui: &mut egui::Ui, ti: usize) {
         // ---- display options
         ui.horizontal_wrapped(|ui| {
             ui.label("Display:");
-            let before = (self.clash_others, self.clash_highlight_all);
-            egui::ComboBox::from_id_salt("others").width(190.0).selected_text(self.clash_others.label()).show_ui(ui, |ui| {
+            let before = (self.clash.others, self.clash.highlight_all);
+            egui::ComboBox::from_id_salt("others").width(190.0).selected_text(self.clash.others.label()).show_ui(ui, |ui| {
                 for o in [Others::Dim, Others::Hide, Others::Normal] {
-                    ui.selectable_value(&mut self.clash_others, o, o.label());
+                    ui.selectable_value(&mut self.clash.others, o, o.label());
                 }
             });
-            ui.checkbox(&mut self.clash_highlight_all, "Highlight all clashes").on_hover_text("Colour the items of every open clash (A light red, B light green)");
-            ui.checkbox(&mut self.clash_auto_zoom, "Auto-zoom");
+            ui.checkbox(&mut self.clash.highlight_all, "Highlight all clashes").on_hover_text("Colour the items of every open clash (A light red, B light green)");
+            ui.checkbox(&mut self.clash.auto_zoom, "Auto-zoom");
             let mut prefs = self.settings.clash_ui.clone();
             ui.checkbox(&mut prefs.animate, "Animate").on_hover_text("The camera flies smoothly to each clash (Animate transitions)");
             ui.checkbox(&mut prefs.items_panel, "Items").on_hover_text("Show Item 1 / Item 2 with their properties under the results");
@@ -865,13 +865,13 @@ impl App {
                     self.colors_dirty = true;
                 }
             }
-            if before != (self.clash_others, self.clash_highlight_all) {
+            if before != (self.clash.others, self.clash.highlight_all) {
                 self.colors_dirty = true;
             }
             if ui.button("Show all clashes").on_hover_text("Select every open clash in the list and show only them").clicked() {
-                let idx: Vec<usize> = self.clash_tests[ti].results.iter().enumerate().filter(|(_, r)| r.status != ClashStatus::Resolved && self.clash_filter.is_none_or(|f| r.status == f)).map(|(i, _)| i).collect();
+                let idx: Vec<usize> = self.clash.tests[ti].results.iter().enumerate().filter(|(_, r)| r.status != ClashStatus::Resolved && self.clash.filter.is_none_or(|f| r.status == f)).map(|(i, _)| i).collect();
                 self.sel_results = idx.iter().copied().collect();
-                self.clash_others = Others::Hide;
+                self.clash.others = Others::Hide;
                 self.apply(Action::FocusClashes(ti, idx));
             }
             if ui.button("⇄ SwitchBack").on_hover_text("Send this clash back to Revit / Navisworks: camera + the two elements, as a ManageBIM issue viewpoint").clicked() {
@@ -881,19 +881,19 @@ impl App {
         // ---- status / grouping / export
         ui.horizontal_wrapped(|ui| {
             for s in ClashStatus::ALL {
-                let n = self.clash_tests[ti].count(s);
+                let n = self.clash.tests[ti].count(s);
                 ui.label(RichText::new(format!("{} {}", s.label(), n)).color(c32(s.color())));
             }
             ui.separator();
-            let fl = self.clash_filter.map(|s| s.label()).unwrap_or("All statuses");
-            let before = self.clash_filter;
+            let fl = self.clash.filter.map(|s| s.label()).unwrap_or("All statuses");
+            let before = self.clash.filter;
             egui::ComboBox::from_id_salt("cfilter").selected_text(fl).show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.clash_filter, None, "All statuses");
+                ui.selectable_value(&mut self.clash.filter, None, "All statuses");
                 for s in ClashStatus::ALL {
-                    ui.selectable_value(&mut self.clash_filter, Some(s), s.label());
+                    ui.selectable_value(&mut self.clash.filter, Some(s), s.label());
                 }
             });
-            if before != self.clash_filter {
+            if before != self.clash.filter {
                 self.colors_dirty = true;
             }
             ui.separator();
@@ -903,7 +903,7 @@ impl App {
                 (1, "Inclusive", "Clashes involving at least one selected item"),
                 (2, "Exclusive", "Clashes involving ALL the selected items"),
             ] {
-                if ui.selectable_value(&mut self.clash_filter_sel, m, lbl).on_hover_text(tip).clicked() {
+                if ui.selectable_value(&mut self.clash.filter_sel, m, lbl).on_hover_text(tip).clicked() {
                     self.colors_dirty = true;
                 }
             }
@@ -932,7 +932,7 @@ impl App {
                 }
                 ui.separator();
                 if ui.button("Remove all groups").clicked() {
-                    let all: Vec<usize> = (0..self.clash_tests[ti].results.len()).collect();
+                    let all: Vec<usize> = (0..self.clash.tests[ti].results.len()).collect();
                     self.ungroup(ti, &all);
                     ui.close_menu();
                 }
@@ -943,7 +943,7 @@ impl App {
             if ui.small_button("Collapse all").clicked() {
                 self.open_groups.clear();
             }
-            let lr = self.clash_tests[ti].last_run.clone();
+            let lr = self.clash.tests[ti].last_run.clone();
             if !lr.is_empty() {
                 ui.label(RichText::new(format!("Last run: {lr}")).weak().small());
             }
@@ -959,10 +959,10 @@ impl App {
             Group(String, Vec<usize>),
             Item(usize, bool),
         }
-        let filter = self.clash_filter;
-        let sel_mode = self.clash_filter_sel;
+        let filter = self.clash.filter;
+        let sel_mode = self.clash.filter_sel;
         let picked: std::collections::BTreeSet<ElemId> = self.selected.iter().copied().collect();
-        let res_len = self.clash_tests[ti].results.len();
+        let res_len = self.clash.tests[ti].results.len();
         let pass = |r: &ClashResult| {
             if filter.is_some_and(|f| r.status != f) {
                 return false;
@@ -978,7 +978,7 @@ impl App {
         let use_grid = !grids.grids.is_empty();
         let labels: Vec<(String, String, String)> = (0..res_len)
             .map(|i| {
-                let r = &self.clash_tests[ti].results[i];
+                let r = &self.clash.tests[ti].results[i];
                 let la = self.elem(r.a).map(|(m, e)| format!("{} [{}]", e.name, m.name)).unwrap_or_default();
                 let lb = if r.b_is_scan { "Point cloud (scan)".to_string() } else { self.elem(r.b).map(|(m, e)| format!("{} [{}]", e.name, m.name)).unwrap_or_default() };
                 let lv = if use_grid { crate::app::grid_location_in(&grids, glam::Vec3::from(r.point)) } else { self.elem(r.a).map(|(_, e)| e.storey.clone()).unwrap_or_default() };
@@ -989,7 +989,7 @@ impl App {
         let (sort_col, sort_asc) = (self.settings.clash_ui.sort_col, self.settings.clash_ui.sort_asc);
         let mut order: Vec<usize> = (0..res_len).collect();
         if let Some(c) = sort_col {
-            let results = &self.clash_tests[ti].results;
+            let results = &self.clash.tests[ti].results;
             // "Clash12" -> ("Clash", 12): Clash2 inaintea lui Clash10
             let nat = |s: &str| {
                 let p = s.trim_end_matches(|ch: char| ch.is_ascii_digit());
@@ -1017,7 +1017,7 @@ impl App {
         let mut rows: Vec<Row> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
         {
-            let results = &self.clash_tests[ti].results;
+            let results = &self.clash.tests[ti].results;
             for &i in &order {
                 let r = &results[i];
                 if r.group.is_empty() {
@@ -1064,14 +1064,14 @@ impl App {
         let mut like_this: Option<(usize, u8)> = None;
         let mut toggle: Option<String> = None;
         let mut rename: Option<(String, String)> = None;
-        let (sty, stol, ssev) = (self.clash_tests[ti].ty, self.clash_tests[ti].tol_mm, self.clash_tests[ti].sev_mm);
+        let (sty, stol, ssev) = (self.clash.tests[ti].ty, self.clash.tests[ti].tol_mm, self.clash.tests[ti].sev_mm);
         let sev_of = |d: f32| crate::app::severity_of(sty, stol, ssev, d);
         let mut sort_click: Option<u8> = None;
         // panoul Item 1 / Item 2 ia partea de jos cand e un rezultat curent
         let show_items = self.settings.clash_ui.items_panel && self.cur_result.is_some_and(|c| c < res_len);
         let avail = ui.available_height();
         let items_h = if show_items { (avail * 0.38).clamp(120.0, 260.0) } else { 0.0 };
-        let test = &mut self.clash_tests[ti];
+        let test = &mut self.clash.tests[ti];
         let mh = (avail - 26.0 - items_h).max(60.0);
         TableBuilder::new(ui)
             .max_scroll_height(mh)
@@ -1242,7 +1242,7 @@ impl App {
                 });
             });
         if let Some((i, which)) = like_this {
-            if let Some(r) = self.clash_tests[ti].results.get(i) {
+            if let Some(r) = self.clash.tests[ti].results.get(i) {
                 let ids: Vec<ElemId> = match which {
                     0 => vec![r.a],
                     1 => vec![r.b],
@@ -1263,7 +1263,7 @@ impl App {
             }
         }
         if let Some((old, new)) = rename {
-            for r in self.clash_tests[ti].results.iter_mut() {
+            for r in self.clash.tests[ti].results.iter_mut() {
                 if r.group == old {
                     r.group = new.clone();
                 }
@@ -1293,7 +1293,7 @@ impl App {
                 }
                 let v: Vec<usize> = self.sel_results.iter().copied().collect();
                 if v.is_empty() {
-                    self.clash_focus = None;
+                    self.clash.focus = None;
                     self.colors_dirty = true;
                 } else {
                     let keep = self.cur_result;
@@ -1339,7 +1339,7 @@ impl App {
     /// Item 1 / Item 2 (ca in Navisworks): datele si proprietatile celor doua elemente ale
     /// rezultatului curent, cu Select / Zoom / Hide si viewpoint-ul salvat al rezultatului.
     fn clash_items_panel(&mut self, ui: &mut egui::Ui, ti: usize, i: usize) {
-        let Some(r) = self.clash_tests.get(ti).and_then(|t| t.results.get(i)).cloned() else { return };
+        let Some(r) = self.clash.tests.get(ti).and_then(|t| t.results.get(i)).cloned() else { return };
         let mut act: Option<Action> = None;
         ui.horizontal(|ui| {
             ui.label(RichText::new(&r.name).strong());
@@ -1348,7 +1348,7 @@ impl App {
             ui.separator();
             let cam = self.cam_anim.map(|(_, to, _)| to).unwrap_or(self.cam);
             if ui.button(if r.view.is_some() { "📷 Update viewpoint" } else { "📷 Save viewpoint" }).on_hover_text("Save the current camera on this clash: selecting it again (and the BCF / Navisworks export) uses this view").clicked() {
-                if let Some(x) = self.clash_tests.get_mut(ti).and_then(|t| t.results.get_mut(i)) {
+                if let Some(x) = self.clash.tests.get_mut(ti).and_then(|t| t.results.get_mut(i)) {
                     x.view = Some(cam);
                 }
                 self.toast(format!("Viewpoint saved on {}.", r.name));
@@ -1356,7 +1356,7 @@ impl App {
             if r.view.is_some() {
                 ui.label(RichText::new("● saved view").small().color(Color32::from_rgb(80, 200, 120)));
                 if ui.small_button("✖").on_hover_text("Forget the saved viewpoint (use auto-zoom again)").clicked() {
-                    if let Some(x) = self.clash_tests.get_mut(ti).and_then(|t| t.results.get_mut(i)) {
+                    if let Some(x) = self.clash.tests.get_mut(ti).and_then(|t| t.results.get_mut(i)) {
                         x.view = None;
                     }
                 }

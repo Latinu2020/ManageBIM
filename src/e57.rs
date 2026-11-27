@@ -106,7 +106,7 @@ pub(crate) fn parse_xml(s: &str) -> Result<Node, String> {
                 let key = rest[..eq].trim().to_string();
                 let after = rest[eq + 1..].trim_start();
                 let q = after.chars().next().unwrap_or('"');
-                let Some(end) = after[1..].find(q) else { break };
+                let Some(end) = after.get(1..).and_then(|r| r.find(q)) else { break };
                 n.attrs.push((key, unesc(&after[1..1 + end])));
                 rest = &after[end + 2..];
             }
@@ -136,6 +136,11 @@ impl File {
     }
     /// `len` octeti logici incepand de la adresa fizica `phys`
     fn read(&self, phys: u64, len: usize) -> Result<Vec<u8>, String> {
+        // a length from a damaged header can be absurd (terabytes): check it against the file before
+        // allocating, otherwise the allocation itself aborts the whole application
+        if len > self.data.len() || phys > self.data.len() as u64 {
+            return Err("E57: the file is truncated or damaged".into());
+        }
         let mut out = Vec::with_capacity(len);
         let mut pos = phys;
         let data_per_page = self.page - 4;
@@ -218,6 +223,13 @@ fn field_of(n: &Node) -> Result<Field, String> {
 
 /// Decodeaza `count` valori dintr-un flux de octeti (bitii in ordine little-endian).
 fn decode(kind: Kind, bytes: &[u8], count: usize) -> Vec<f64> {
+    // `count` (recordCount) comes from the file: a damaged value must not allocate terabytes
+    let count = match kind {
+        Kind::F32 => count.min(bytes.len() / 4),
+        Kind::F64 => count.min(bytes.len() / 8),
+        Kind::Int { bits: 0, .. } => count.min(point_budget()),
+        Kind::Int { bits, .. } => count.min(bytes.len().saturating_mul(8) / bits as usize),
+    };
     match kind {
         Kind::F32 => bytes.chunks_exact(4).take(count).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]) as f64).collect(),
         Kind::F64 => bytes.chunks_exact(8).take(count).map(|c| f64::from_le_bytes(c.try_into().unwrap())).collect(),
@@ -642,11 +654,14 @@ pub fn laz_to_las(b: &[u8]) -> Result<Vec<u8>, String> {
     if offset >= b.len() || rec == 0 {
         return Err("LAZ: no point data.".into());
     }
-    let mut out = Vec::with_capacity(offset + count * rec);
+    // the point count comes from the header: a damaged one must not allocate terabytes (LASzip compresses
+    // about 7-10 times, so more than 100 times the file size is not real)
+    let points = count.checked_mul(rec).filter(|n| *n / 100 <= b.len()).ok_or("LAZ: the point count does not match the file (damaged header).")?;
+    let mut out = Vec::with_capacity(offset + points);
     out.extend_from_slice(&b[..offset]);
     out[104] &= 0x7f;
     let start = out.len();
-    out.resize(start + count * rec, 0);
+    out.resize(start + points, 0);
     let mut cur = std::io::Cursor::new(b);
     cur.set_position(offset as u64);
     let mut dec = laz::LasZipDecompressor::new(cur, vlr).map_err(|e| format!("LAZ: {e}"))?;

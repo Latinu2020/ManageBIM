@@ -65,8 +65,8 @@ impl App {
                     }
                 });
                 // deschis din Clash Detective: excluderea din testul acela, la un click
-                if let Some(ti) = self.smart.target_test.filter(|t| *t < self.clash_tests.len()) {
-                    let tname = self.clash_tests[ti].name.clone();
+                if let Some(ti) = self.smart.target_test.filter(|t| *t < self.clash.tests.len()) {
+                    let tname = self.clash.tests[ti].name.clone();
                     let n = self.smart.count.map(|c| c.1).unwrap_or(0);
                     egui::Frame::none().fill(Color32::from_rgb(230, 120, 40).gamma_multiply(0.15)).rounding(6.0).inner_margin(egui::Margin::same(8.0)).show(ui, |ui| {
                         ui.horizontal_wrapped(|ui| {
@@ -194,7 +194,7 @@ impl App {
                     if ui.add_enabled(can, egui::Button::new(RichText::new(crate::i18n::tr("Save search set")).strong())).on_hover_text(crate::i18n::tr("Saved with the project; updates itself when the models change")).clicked() {
                         action = Some(2);
                     }
-                    let tests: Vec<String> = self.clash_tests.iter().map(|t| t.name.clone()).collect();
+                    let tests: Vec<String> = self.clash.tests.iter().map(|t| t.name.clone()).collect();
                     ui.add_enabled_ui(can && !tests.is_empty(), |ui| {
                         ui.menu_button(crate::i18n::tr("Save & exclude from clash test ⏷"), |ui| {
                             for (i, t) in tests.iter().enumerate() {
@@ -246,7 +246,7 @@ impl App {
         let msg = match a {
             3 => {
                 let ti = exclude_test.unwrap_or(self.cur_test);
-                if let Some(t) = self.clash_tests.get_mut(ti) {
+                if let Some(t) = self.clash.tests.get_mut(ti) {
                     if !t.rules.exclude_sets.contains(&name) {
                         t.rules.exclude_sets.push(name.clone());
                     }
@@ -256,8 +256,8 @@ impl App {
                 }
             }
             4 | 5 => {
-                let ti = self.cur_test.min(self.clash_tests.len().saturating_sub(1));
-                if let Some(t) = self.clash_tests.get_mut(ti) {
+                let ti = self.cur_test.min(self.clash.tests.len().saturating_sub(1));
+                if let Some(t) = self.clash.tests.get_mut(ti) {
                     let sel = Selector { kind: SelKind::Set, value: name.clone() };
                     if a == 4 {
                         t.a = sel;

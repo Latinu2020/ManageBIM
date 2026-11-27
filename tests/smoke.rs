@@ -8,7 +8,7 @@ static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn wait(app: &mut App) {
     let t0 = std::time::Instant::now();
-    while (!app.loads.is_empty() || app.clash_job.is_some()) && t0.elapsed().as_secs() < 120 {
+    while (!app.loads.is_empty() || app.clash.job.is_some()) && t0.elapsed().as_secs() < 120 {
         app.poll_jobs();
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
@@ -76,14 +76,14 @@ fn demo_project_end_to_end() {
     let mut t = bimrust::app::ClashTest::new("Arch vs MEP".into());
     t.a = bimrust::app::Selector { kind: bimrust::app::SelKind::Model, value: app.models[models[0]].as_ref().unwrap().name.clone() };
     t.b = bimrust::app::Selector { kind: bimrust::app::SelKind::Model, value: app.models[models[1]].as_ref().unwrap().name.clone() };
-    app.clash_tests.push(t);
-    let ti = app.clash_tests.len() - 1;
+    app.clash.tests.push(t);
+    let ti = app.clash.tests.len() - 1;
     app.cur_test = ti;
     app.run_clash_blocking(ti);
     wait(&mut app);
     assert!(errors(&mut app).is_empty());
-    let n_clash = app.clash_tests[ti].results.len();
-    let n_tests = app.clash_tests.len();
+    let n_clash = app.clash.tests[ti].results.len();
+    let n_tests = app.clash.tests.len();
     if n_clash > 0 {
         app.export_clash_bcf(&s(&o("clashes.bcf")));
         file_ok(&o("clashes.bcf"), 200);
@@ -151,8 +151,8 @@ fn demo_project_end_to_end() {
     assert_eq!(b.viewpoints.len(), 2);
     assert_eq!(b.viewpoints[0].folder, "Level 1/MEP");
     assert_eq!(b.check_rules.len(), n_rules);
-    assert_eq!(b.clash_tests.len(), n_tests);
-    assert_eq!(b.clash_tests[ti].results.len(), n_clash, "clash results kept");
+    assert_eq!(b.clash.tests.len(), n_tests);
+    assert_eq!(b.clash.tests[ti].results.len(), n_clash, "clash results kept");
 
     let _ = std::fs::remove_dir_all(&root);
 }

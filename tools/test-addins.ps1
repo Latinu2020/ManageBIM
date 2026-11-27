@@ -13,7 +13,8 @@
      to .bimc with the ManageBIM add-in (nwd2bimc.exe) and checks the file; then runs ManageBIM Levels
      (selection sets + plan viewpoints), Walk path (viewpoint animation) and Issues (viewpoints with
      section box and markups) on it.
-   - Revit has no headless mode: the script prints the manual checklist instead.
+   - Revit (every installed year with the add-in): starts Revit with a sample model and the add-in's
+     self-test (MANAGEBIM_AUTOTEST), which exports the 3D view like "Send to ManageBIM" and closes Revit.
   Exit code: 0 all passed, 1 a test failed, 2 nothing to test.
 
   Build the add-ins first (revit-addin\build.ps1, acad-addin\build.ps1, navis-addin\build.ps1).
@@ -133,16 +134,51 @@ try {
     Add-Result "$name Issues" ($txt -match 'ISSUES=0') $(if ($txt -match 'ISSUES=(\d+)') { "plugin returned $($matches[1]) (0 = both viewpoints added, with section box and markup)" } else { "see $log" })
 }
 
-# ------------------------------------------------------------------ Revit (manual)
-$revits = Get-ChildItem (Join-Path $pf 'Autodesk') -Directory -Filter 'Revit 20*' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^Revit \d{4}$' }
-if ($revits) {
-    Write-Host ''
-    Write-Host "Revit ($(($revits.Name) -join ', ')) has no headless mode - check by hand (ManageBIM tab):" -ForegroundColor Yellow
-    Write-Host '  1. Export BIMC: the .bimc opens in ManageBIM with categories, levels and properties.'
-    Write-Host '  2. Send / Send selection: the model (or only the selection) appears in ManageBIM; send again = live update.'
-    Write-Host '  3. Sync selection: select in Revit -> selected in ManageBIM, and back.'
-    Write-Host '  4. Issues: ManageBIM viewpoints become 3D views with camera, section box and comments.'
-    Write-Host '  5. Coordination objects and Reference: shown and removed again.'
+# ------------------------------------------------------------------ Revit (self-test)
+# Revit has no headless mode: the add-in has a self-test that runs only with MANAGEBIM_AUTOTEST set - Revit
+# opens a sample model, the add-in exports its 3D view like "Send to ManageBIM", writes revit.result and
+# closes Revit. Only the Revit process started here is ever stopped.
+$revits = Get-ChildItem (Join-Path $pf 'Autodesk') -Directory -Filter 'Revit 20*' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^Revit (\d{4})$' -and (Test-Path (Join-Path $_.FullName 'Revit.exe')) }
+foreach ($r in $revits) {
+    $year = [int]($r.Name -replace '\D', '')
+    $name = "Revit $year"
+    if (-not (Test-Path "$env:APPDATA\Autodesk\Revit\Addins\$year\ManageBIM.addin")) { Add-Result $name $false 'ManageBIM add-in not installed for this version'; continue }
+    if (Get-Process Revit -ErrorAction SilentlyContinue) { Add-Result $name $false 'Revit is already running - close it to run this test'; continue }
+    $model = @(
+        (Join-Path $r.FullName 'Samples\Snowdon Towers Sample Structural.rvt'),
+        "$env:USERPROFILE\Documents\Snowdon Towers Sample Structural.rvt",
+        (Join-Path $r.FullName 'Samples\Snowdon Towers Sample Architectural.rvt')
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $model) { Add-Result $name $false 'no sample model found'; continue }
+    $dir = Join-Path $work "revit$year"
+    Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    $env:MANAGEBIM_AUTOTEST = $dir
+    $p = Start-Process (Join-Path $r.FullName 'Revit.exe') -ArgumentList "`"$model`"" -PassThru
+    Remove-Item Env:\MANAGEBIM_AUTOTEST -ErrorAction SilentlyContinue
+    $resFile = Join-Path $dir 'revit.result'
+    $limit = [Math]::Max($TimeoutSec, 600)
+    $t0 = Get-Date
+    while (-not (Test-Path $resFile) -and -not $p.HasExited -and ((Get-Date) - $t0).TotalSeconds -lt $limit) { Start-Sleep -Seconds 3 }
+    $res = if (Test-Path $resFile) { (Get-Content $resFile -Raw).Trim() } else { $null }
+    $closedByItself = $p.HasExited
+    # Revit closes itself after the test; if it is still there after a minute, stop it (only this process)
+    if (-not $p.WaitForExit(60000)) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+    $err = Test-Bimc (Join-Path $dir 'revit.bimc')
+    if (-not $res) {
+        # the newest Revit journal says what Revit was waiting for
+        $jdir = "$env:LOCALAPPDATA\Autodesk\Revit\Autodesk Revit $year\Journals"
+        $j = Get-ChildItem $jdir -Filter 'journal*.txt' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        $jt = if ($j) { Get-Content $j.FullName -Raw -ErrorAction SilentlyContinue } else { '' }
+        $res = if ($jt -match 'TaskDialog_Security_Unsigned_File_Loading') {
+            'Revit waits for you to allow the unsigned ManageBIM add-in: open Revit once, choose "Always Load", then run the test again'
+        } elseif ($closedByItself) {
+            'Revit closed without a result (see %LOCALAPPDATA%\ManageBIM\addin.log)'
+        } else {
+            "no result after $limit s - Revit was waiting (a dialog or a slow start); stopped"
+        }
+    }
+    Add-Result "$name Send (3D view)" ($res -like 'OK*' -and -not $err) $(if ($err -and $res -like 'OK*') { $err } else { $res })
 }
 
 Write-Host ''

@@ -41,6 +41,8 @@ mod dashboard;
 mod levels;
 mod ribbon;
 mod viewport;
+mod nav_bar;
+mod view_cube;
 mod start_page;
 mod docking;
 mod ifc_mapping;
@@ -297,7 +299,7 @@ impl eframe::App for App {
         };
         if sig != self.sets_sig {
             self.sets_sig = sig;
-            if self.mat_assign.iter().any(|a| matches!(a.target, crate::materials::MatTarget::Set(_))) {
+            if self.mats.assign.iter().any(|a| matches!(a.target, crate::materials::MatTarget::Set(_))) {
                 self.materials_changed();
             }
         }
@@ -312,7 +314,7 @@ impl eframe::App for App {
         self.shared_sync(false);
 
         let walking = !ctx.wants_keyboard_input() && ctx.input(|i| [Key::W, Key::A, Key::S, Key::D, Key::Q, Key::E, Key::ArrowUp, Key::ArrowDown, Key::ArrowLeft, Key::ArrowRight].iter().any(|k| i.key_down(*k)));
-        if !self.loads.is_empty() || self.clash_job.is_some() || (self.sim_play && self.sim_view()) || walking || self.anim_play.is_some() || self.render_job.is_some() || self.pending_capture.is_some() || !self.toasts.is_empty() || self.cam_anim.is_some() || self.report_job.is_some() || (self.settings.gravity && self.nav == NavMode::Walk) || self.walk_active() {
+        if !self.loads.is_empty() || self.clash.job.is_some() || (self.sim_play && self.sim_view()) || walking || self.anim_play.is_some() || self.render_job.is_some() || self.pending_capture.is_some() || !self.toasts.is_empty() || self.cam_anim.is_some() || self.report_job.is_some() || (self.settings.gravity && self.nav == NavMode::Walk) || self.walk_active() {
             ctx.request_repaint();
         }
     }
@@ -802,11 +804,11 @@ impl App {
 
     /// Clash Detective in mod Focus: o fereastra aproape cat ecranul, cu spatiu pentru multe teste / clashuri.
     fn clash_focus_window(&mut self, ctx: &egui::Context) {
-        if !self.clash_focus_mode {
+        if !self.clash.focus_mode {
             return;
         }
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
-            self.clash_focus_mode = false;
+            self.clash.focus_mode = false;
             return;
         }
         let screen = ctx.screen_rect();
@@ -826,7 +828,7 @@ impl App {
                     ui.label(RichText::new("Focus mode · press Esc to return to the model").weak().small());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("✖ Exit focus").clicked() {
-                            self.clash_focus_mode = false;
+                            self.clash.focus_mode = false;
                         }
                     });
                 });
@@ -834,7 +836,7 @@ impl App {
                 self.clash_ui(ui);
             });
         if !open {
-            self.clash_focus_mode = false;
+            self.clash.focus_mode = false;
         }
     }
 

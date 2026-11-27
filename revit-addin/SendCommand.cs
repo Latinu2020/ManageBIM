@@ -28,17 +28,39 @@ namespace ManageBIM.Revit
             UIDocument uidoc = commandData.Application.ActiveUIDocument;
             if (uidoc == null) { message = "Open a project first."; return Result.Failed; }
             Document doc = uidoc.Document;
-            View3D view = uidoc.ActiveView as View3D;
-            if (view == null || view.IsTemplate)
-            {
-                view = new FilteredElementCollector(doc).OfClass(typeof(View3D)).Cast<View3D>()
-                    .Where(v => !v.IsTemplate)
-                    .OrderByDescending(v => v.Name == "{3D}")
-                    .FirstOrDefault();
-            }
+            View3D view = View3DToSend(uidoc);
             if (view == null) { message = "The project has no 3D view. Create one and try again."; return Result.Failed; }
 
             string path = ManageBimLink.InboxPath("Revit - " + doc.Title);
+            try
+            {
+                Export(doc, view, path, commandData.Application.Application.VersionNumber);
+                ManageBimLink.EnsureRunning(path);
+                return Result.Succeeded;
+            }
+            catch (Exception ex)
+            {
+                ManageBimLink.Log("Revit Send", ex.ToString());
+                message = "Send to ManageBIM failed: " + ex.Message;
+                return Result.Failed;
+            }
+        }
+
+        /// <summary>The active 3D view, or {3D}, or the first 3D view of the project (null if there is none).</summary>
+        internal static View3D View3DToSend(UIDocument uidoc)
+        {
+            Document doc = uidoc.Document;
+            View3D view = uidoc.ActiveView as View3D;
+            if (view != null && !view.IsTemplate) return view;
+            return new FilteredElementCollector(doc).OfClass(typeof(View3D)).Cast<View3D>()
+                .Where(v => !v.IsTemplate)
+                .OrderByDescending(v => v.Name == "{3D}")
+                .FirstOrDefault();
+        }
+
+        /// <summary>Writes the 3D view to `path` (.bimc, through a temporary file); returns the number of elements.</summary>
+        internal static int Export(Document doc, View3D view, string path, string revitVersion)
+        {
             string tmp = ManageBimLink.TempPath(path);
             try
             {
@@ -47,7 +69,7 @@ namespace ManageBIM.Revit
                 exporter.Export(view);
                 var info = new List<KeyValuePair<string, string>>
                 {
-                    new KeyValuePair<string, string>("Source application", "Autodesk Revit " + commandData.Application.Application.VersionNumber),
+                    new KeyValuePair<string, string>("Source application", "Autodesk Revit " + revitVersion),
                     new KeyValuePair<string, string>("Project", doc.ProjectInformation?.Name ?? doc.Title),
                     new KeyValuePair<string, string>("Revit file", doc.Title),
                     new KeyValuePair<string, string>("Exported view", view.Name),
@@ -57,15 +79,12 @@ namespace ManageBIM.Revit
                 };
                 BimcWriter.Write(tmp, info, context.Warnings, context.Elements);
                 ManageBimLink.Commit(tmp, path);
-                ManageBimLink.EnsureRunning(path);
-                return Result.Succeeded;
+                return context.Elements.Count;
             }
-            catch (Exception ex)
+            catch
             {
-                ManageBimLink.Log("Revit Send", ex.ToString());
                 try { System.IO.File.Delete(tmp); } catch { }
-                message = "Send to ManageBIM failed: " + ex.Message;
-                return Result.Failed;
+                throw;
             }
         }
     }

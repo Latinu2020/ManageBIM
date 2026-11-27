@@ -57,7 +57,7 @@ impl App {
 
     pub fn clash_focus_active(&self) -> Option<&ClashFocus> {
         if self.clash_view() {
-            self.clash_focus.as_ref()
+            self.clash.focus.as_ref()
         } else {
             None
         }
@@ -69,15 +69,15 @@ impl App {
         if !self.clash_view() {
             return roles;
         }
-        if self.clash_highlight_all {
-            if let Some(t) = self.clash_tests.get(self.cur_test) {
-                for r in t.results.iter().filter(|r| r.status != ClashStatus::Resolved && self.clash_filter.is_none_or(|f| r.status == f)) {
+        if self.clash.highlight_all {
+            if let Some(t) = self.clash.tests.get(self.cur_test) {
+                for r in t.results.iter().filter(|r| r.status != ClashStatus::Resolved && self.clash.filter.is_none_or(|f| r.status == f)) {
                     roles.entry(r.a).or_insert(3);
                     roles.entry(r.b).or_insert(4);
                 }
             }
         }
-        if let Some(f) = &self.clash_focus {
+        if let Some(f) = &self.clash.focus {
             for a in &f.a {
                 roles.insert(*a, 1);
             }
@@ -102,7 +102,7 @@ impl App {
                 self.cam = c;
             }
         }
-        if let Some(f) = &self.clash_focus {
+        if let Some(f) = &self.clash.focus {
             let pair: BTreeSet<ElemId> = f.a.iter().chain(f.b.iter()).copied().collect();
             let first = f.a.first().copied();
             if was_clash && !mode.0 && self.selected == pair {
@@ -142,13 +142,13 @@ impl App {
     pub fn clear_selection(&mut self) {
         self.selected.clear();
         self.primary = None;
-        self.clash_focus = None;
+        self.clash.focus = None;
         self.colors_dirty = true;
     }
 
     pub fn refresh_caches(&mut self) {
         self.cache_types = self.types();
-        self.mat_cache = None;
+        self.mats.cache = None;
         self.profile_map = None;
         self.qto_result = None;
         // modelele s-au schimbat (incarcare / Refresh / eliminare) -> rezultatul Compare nu mai e valabil

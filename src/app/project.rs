@@ -290,7 +290,7 @@ impl App {
             }
         }
         let mut stale = 0;
-        for t in self.clash_tests.iter_mut() {
+        for t in self.clash.tests.iter_mut() {
             for r in t.results.iter_mut() {
                 match (rid(r.a), rid(r.b)) {
                     (Some(a), Some(b)) => {
@@ -307,11 +307,11 @@ impl App {
         if stale > 0 {
             self.log.push(format!("Refresh {}: {stale} clash result(s) refer to removed elements - run the clash tests again", new.name));
         }
-        self.clash_focus = None;
+        self.clash.focus = None;
         self.min_dist_result = None;
         self.sim_cache.clear();
         self.sim_cache_day = i32::MIN;
-        self.mat_cache = None;
+        self.mats.cache = None;
     }
 
     pub fn reset(&mut self) {
@@ -341,10 +341,10 @@ impl App {
         self.elem_offsets.clear();
         self.xf_draft.clear();
         self.animations.clear();
-        self.mat_assign.clear();
+        self.mats.assign.clear();
         self.materials = crate::materials::full_library();
         self.home = None;
-        self.mat_cache = None;
+        self.mats.cache = None;
         self.cur_anim = 0;
         self.anim_play = None;
         self.anim_sim_active = false;
@@ -361,10 +361,10 @@ impl App {
         self.lights.clear();
         self.light_sel = None;
         self.sets.clear();
-        self.clash_tests = vec![ClashTest::new("Test 1".into())];
+        self.clash.tests = vec![ClashTest::new("Test 1".into())];
         self.cur_test = 0;
         self.cur_result = None;
-        self.clash_focus = None;
+        self.clash.focus = None;
         self.tasks.clear();
         self.cur_task = None;
         self.sim_active = false;
@@ -387,10 +387,10 @@ impl App {
         self.check_sel = None;
         self.qto_result = None;
         // lucrarile in curs se refera la proiectul vechi (indici de teste / viewpoints / elemente)
-        if let Some(j) = self.clash_job.take() {
+        if let Some(j) = self.clash.job.take() {
             j.prog.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
         }
-        self.clash_queue.clear();
+        self.clash.queue.clear();
         self.update_all_before = None;
         self.report_job = None;
         self.batch_queue.clear();
@@ -544,12 +544,12 @@ impl App {
             }
         }
         // clash
-        if let Some(job) = &self.clash_job {
+        if let Some(job) = &self.clash.job {
             let msg = job.rx.try_recv();
             // firul de clash s-a oprit fara rezultat (eroare interna): nu ramane blocat pe "ruleaza"
             if let Err(std::sync::mpsc::TryRecvError::Disconnected) = msg {
-                self.clash_job = None;
-                self.clash_queue.clear();
+                self.clash.job = None;
+                self.clash.queue.clear();
                 self.error("Internal error while running the clash test; the test was stopped.".to_string());
                 return;
             }
@@ -557,15 +557,15 @@ impl App {
                 let t = job.test;
                 let secs = job.started.elapsed().as_secs_f32();
                 let cancelled = job.prog.cancel.load(std::sync::atomic::Ordering::Relaxed);
-                self.clash_job = None;
+                self.clash.job = None;
                 if cancelled {
-                    self.clash_queue.clear();
+                    self.clash.queue.clear();
                     self.update_all_before = None;
                     self.toast("Clash test cancelled.");
                 } else {
                     self.merge_clash(t, found, secs);
                     // ca in Navisworks: dupa Run Test se deschide automat tabul Results
-                    self.clash_subtab = 0; // 0 = Results (vezi ordinea tab-urilor din clash_ui)
+                    self.clash.subtab = 0; // 0 = Results (vezi ordinea tab-urilor din clash_ui)
                     self.cur_test = t;
                     self.clash_queue_next();
                 }
@@ -596,7 +596,7 @@ impl App {
             viewpoints: self.viewpoints.clone(),
             view_templates: self.view_templates.clone(),
             sets: self.sets.clone(),
-            clash_tests: self.clash_tests.clone(),
+            clash_tests: self.clash.tests.clone(),
             tasks: self.tasks.clone(),
             hidden,
             overrides,
@@ -641,7 +641,7 @@ impl App {
             grid_bubble: self.grid_bubble,
             grid_ext: self.grid_ext,
             materials: self.materials.clone(),
-            mat_assign: self.mat_assign.clone(),
+            mat_assign: self.mats.assign.clone(),
             materials_on: Some(self.materials_on),
             home: self.home,
             walk_path: self.walk_path.iter().map(|p| p.to_array()).collect(),
@@ -811,13 +811,13 @@ impl App {
                 }
             }
         }
-        self.mat_assign = pf.mat_assign;
+        self.mats.assign = pf.mat_assign;
         self.materials_on = pf.materials_on.unwrap_or(true);
-        self.mat_cache = None;
+        self.mats.cache = None;
         self.viewpoints = pf.viewpoints;
         self.view_templates = pf.view_templates;
         self.sets = pf.sets;
-        self.clash_tests = if pf.clash_tests.is_empty() { vec![ClashTest::new("Test 1".into())] } else { pf.clash_tests };
+        self.clash.tests = if pf.clash_tests.is_empty() { vec![ClashTest::new("Test 1".into())] } else { pf.clash_tests };
         self.cur_test = 0;
         self.tasks = pf.tasks;
         // datele activitatilor: aceleasi limite ca in interfata (1900-2200); o data stricata ar bloca TimeLiner-ul

@@ -311,7 +311,7 @@ impl App {
         let saved_style = if self.render.with_materials {
             let prev = (self.settings.visual_style, self.materials_on);
             self.settings.visual_style = crate::render::VisualStyle::Realistic;
-            if self.mat_assign.is_empty() && self.loaded_models().next().is_some() {
+            if self.mats.assign.is_empty() && self.loaded_models().next().is_some() {
                 self.auto_materials();
             }
             self.materials_on = true;
@@ -381,13 +381,13 @@ impl App {
         // „Render with materials”: materialele (auto dupa tipul IFC daca nu exista) intra in scena,
         // apoi vederea 3D revine cum era
         let restore = if self.render.with_materials && !self.materials_on {
-            if self.mat_assign.is_empty() {
+            if self.mats.assign.is_empty() {
                 self.auto_materials();
             }
             self.materials_on = true;
             Some(false)
         } else {
-            if self.render.with_materials && self.mat_assign.is_empty() {
+            if self.render.with_materials && self.mats.assign.is_empty() {
                 self.auto_materials();
             }
             None
@@ -524,7 +524,7 @@ impl App {
                 return;
             }
             // captura ceruta de un asistent AI (MCP capture_view)
-            if self.still_path.is_none() && self.render_job.is_none() && self.mcp_capture.is_some() {
+            if self.still_path.is_none() && self.render_job.is_none() && self.mcp.capture.is_some() {
                 self.mcp_capture_done(&r);
                 return;
             }

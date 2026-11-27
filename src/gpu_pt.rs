@@ -371,12 +371,27 @@ impl GpuPt {
         let den = self.den_tex.filter(|d| d.1 == self.key);
         gl.bind_texture(glow::TEXTURE_2D, Some(den.map_or(ts[0], |d| d.0)));
         gl.uniform_1_i32(gl.get_uniform_location(disp, "u_acc").as_ref(), 0);
-        let k = if den.is_some() { 1.0 } else { 1.0 / self.samples.max(1) as f32 };
+        // albedo and normal guide the quick filter of the first samples (edges and textures stay sharp)
+        gl.active_texture(glow::TEXTURE0 + 1);
+        gl.bind_texture(glow::TEXTURE_2D, Some(ts[1]));
+        gl.uniform_1_i32(gl.get_uniform_location(disp, "u_alb").as_ref(), 1);
+        gl.active_texture(glow::TEXTURE0 + 2);
+        gl.bind_texture(glow::TEXTURE_2D, Some(ts[2]));
+        gl.uniform_1_i32(gl.get_uniform_location(disp, "u_nrm").as_ref(), 2);
+        let n = self.samples.max(1) as f32;
+        let k = if den.is_some() { 1.0 } else { 1.0 / n };
         gl.uniform_1_f32(gl.get_uniform_location(disp, "u_scale").as_ref(), k);
+        gl.uniform_1_f32(gl.get_uniform_location(disp, "u_gscale").as_ref(), 1.0 / n);
+        // full filter at 1 sample, none from 48 samples on (and never on the denoised image)
+        let strength = if den.is_some() { 0.0 } else { (1.0 - (n - 1.0) / 47.0).clamp(0.0, 1.0) };
+        gl.uniform_1_f32(gl.get_uniform_location(disp, "u_filter").as_ref(), strength);
         gl.bind_vertex_array(self.vao);
         gl.draw_arrays(glow::TRIANGLES, 0, 3);
         gl.bind_vertex_array(None);
-        gl.bind_texture(glow::TEXTURE_2D, None);
+        for i in [2, 1, 0] {
+            gl.active_texture(glow::TEXTURE0 + i);
+            gl.bind_texture(glow::TEXTURE_2D, None);
+        }
     }
 
     /// The sums in the accumulation targets: (colour RGB, albedo RGB + normal XYZ), like PathTraceJob.buf / aux.
@@ -500,17 +515,52 @@ void main() {
 "#;
 
 /// accumulated sums / count -> ACES tone map -> gamma 2.2 (as pathtrace::to_srgb)
+/// A quick edge-aware filter for the first samples (while the camera moves): the light (colour / albedo)
+/// is averaged over 7 x 7 neighbours with weights from distance, normal and albedo similarity, then the
+/// albedo is put back - noise goes, textures and edges stay. Fades out as samples add up.
 const FS_SHOW: &str = r#"
 in vec2 v_uv;
 out vec4 o_col;
 uniform sampler2D u_acc;
+uniform sampler2D u_alb;
+uniform sampler2D u_nrm;
 uniform float u_scale;
+uniform float u_gscale;
+uniform float u_filter;
 float aces(float x) {
     x = max(x, 0.0) * 0.6;
     return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
 }
 void main() {
     vec3 c = texture(u_acc, v_uv).rgb * u_scale;
+    if (u_filter > 0.01) {
+        vec3 a0 = texture(u_alb, v_uv).rgb * u_gscale;
+        vec3 n0 = texture(u_nrm, v_uv).rgb * u_gscale;
+        // the sky (no surface) is not filtered
+        if (dot(n0, n0) > 0.04) {
+            n0 = normalize(n0);
+            vec2 px = 1.0 / vec2(textureSize(u_acc, 0));
+            vec3 sum = vec3(0.0);
+            float wsum = 0.0;
+            for (int y = -3; y <= 3; y++) {
+                for (int x = -3; x <= 3; x++) {
+                    vec2 uv = v_uv + vec2(x, y) * px * 1.5;
+                    vec3 a = texture(u_alb, uv).rgb * u_gscale;
+                    vec3 n = texture(u_nrm, uv).rgb * u_gscale;
+                    if (dot(n, n) < 0.04) continue;
+                    float wn = pow(max(dot(normalize(n), n0), 0.0), 32.0);
+                    vec3 da = a - a0;
+                    float wa = exp(-dot(da, da) * 40.0);
+                    float ws = exp(-float(x * x + y * y) / 8.0);
+                    float w = wn * wa * ws;
+                    vec3 irr = texture(u_acc, uv).rgb * u_scale / max(a, vec3(0.02));
+                    sum += irr * w;
+                    wsum += w;
+                }
+            }
+            if (wsum > 1e-4) c = mix(c, sum / wsum * max(a0, vec3(0.02)), u_filter);
+        }
+    }
     o_col = vec4(pow(vec3(aces(c.r), aces(c.g), aces(c.b)), vec3(1.0 / 2.2)), 1.0);
 }
 "#;
@@ -908,8 +958,10 @@ void main() {
         vec3 irr = env(hd);
         float amb = 0.30 + 0.28 * max(n.z, 0.0);
         vec3 col = base * irr * (amb * open);
-        // lamp light bounced once by the surface the hemisphere ray meets
-        if (u_nlamps > 0 && depth == 0) {
+        // indirect light: sun and lamp light bounced once by the surface the hemisphere ray meets
+        // (a sunny floor lights the ceiling above it, walls tint each other)
+        bool has_sun = dot(u_sun, u_sun) > 0.0;
+        if ((u_nlamps > 0 || has_sun) && depth == 0) {
             float t2; int tri2;
             if (hit(p + n * 1e-3, hd, 40.0, t2, tri2)) {
                 vec3 q = p + n * 1e-3 + hd * t2;
@@ -918,7 +970,10 @@ void main() {
                 if (dot(n2, hd) > 0.0) n2 = -n2;
                 vec3 b2; float r_2, m_2;
                 surface(tri2, q, n2, b2, r_2, m_2);
-                col += base * b2 * lamp_irradiance(q + n2 * 1e-3, n2) * 0.55 * (1.0 - metal);
+                vec3 e = u_nlamps > 0 ? lamp_irradiance(q + n2 * 1e-3, n2) : vec3(0.0);
+                float nl2 = has_sun ? max(dot(n2, u_sun), 0.0) : 0.0;
+                if (nl2 > 0.0) e += vec3(DIFFUSE * nl2 * transmit(q + n2 * 1e-3, u_sun, 1e6));
+                col += base * b2 * e * 0.55 * (1.0 - metal);
             }
         }
         vec3 vd = -d;

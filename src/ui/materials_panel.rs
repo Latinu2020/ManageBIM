@@ -10,8 +10,8 @@ fn section(ui: &mut egui::Ui, title: &str, tip: &str) {
 
 impl App {
     pub(super) fn materials_ui(&mut self, ui: &mut egui::Ui) {
-        if self.mat_sel >= self.materials.len() {
-            self.mat_sel = 0;
+        if self.mats.sel >= self.materials.len() {
+            self.mats.sel = 0;
         }
         let mut changed = false;
         let mut pick_tex: Option<Purpose> = None;
@@ -71,23 +71,23 @@ impl App {
         // ---- toolbar
         ui.horizontal_wrapped(|ui| {
             if ui.small_button("➕ New").clicked() {
-                let mut m = self.materials.get(self.mat_sel).cloned().unwrap_or_else(|| crate::materials::library()[0].clone());
+                let mut m = self.materials.get(self.mats.sel).cloned().unwrap_or_else(|| crate::materials::library()[0].clone());
                 m.name = format!("Material {}", self.materials.len() + 1);
                 self.materials.push(m);
-                self.mat_sel = self.materials.len() - 1;
+                self.mats.sel = self.materials.len() - 1;
             }
             if ui.small_button("Duplicate").clicked() {
-                if let Some(m) = self.materials.get(self.mat_sel).cloned() {
+                if let Some(m) = self.materials.get(self.mats.sel).cloned() {
                     let mut m = m;
                     m.name.push_str(" copy");
                     self.materials.push(m);
-                    self.mat_sel = self.materials.len() - 1;
+                    self.mats.sel = self.materials.len() - 1;
                 }
             }
             if ui.add_enabled(self.materials.len() > 1, egui::Button::new("🗑").small()).clicked() {
-                let n = self.materials.remove(self.mat_sel).name;
-                self.mat_assign.retain(|a| a.material != n);
-                self.mat_sel = 0;
+                let n = self.materials.remove(self.mats.sel).name;
+                self.mats.assign.retain(|a| a.material != n);
+                self.mats.sel = 0;
                 changed = true;
             }
             ui.separator();
@@ -103,7 +103,7 @@ impl App {
                     ui.close_menu();
                 }
                 if ui.button("★ Save selected to my library").clicked() {
-                    let i = self.mat_sel;
+                    let i = self.mats.sel;
                     self.save_material_to_library(i);
                     ui.close_menu();
                 }
@@ -183,11 +183,11 @@ impl App {
             ui.horizontal(|ui| {
                 section(ui, "Library", "Click a material to edit it");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add(egui::TextEdit::singleline(&mut self.mat_filter).hint_text(crate::i18n::tr("Filter…")).desired_width(130.0));
+                    ui.add(egui::TextEdit::singleline(&mut self.mats.filter).hint_text(crate::i18n::tr("Filter…")).desired_width(130.0));
                 });
             });
             let mine = self.user_library_names();
-            let filter = self.mat_filter.to_lowercase();
+            let filter = self.mats.filter.to_lowercase();
             egui::ScrollArea::vertical().id_salt("matlib").auto_shrink([false, false]).max_height(ui.available_height()).show(ui, |ui| {
                 for i in 0..self.materials.len() {
                     if !filter.is_empty() && !self.materials[i].name.to_lowercase().contains(&filter) {
@@ -195,7 +195,7 @@ impl App {
                     }
                     let in_lib = mine.contains(&self.materials[i].name);
                     if self.mat_row(ui, i, in_lib) {
-                        self.mat_sel = i;
+                        self.mats.sel = i;
                     }
                 }
             });
@@ -203,7 +203,7 @@ impl App {
 
         // ---- editor
         egui::ScrollArea::vertical().id_salt("mated_scroll").auto_shrink([false, false]).max_height(r1.height()).show(&mut c1, |ui| {
-            let i = self.mat_sel;
+            let i = self.mats.sel;
             if i >= self.materials.len() {
                 return;
             }
@@ -317,22 +317,22 @@ impl App {
             // numele schimbat se aplica regulilor dupa ce terminam de editat materialul
             let new_name = m.name.clone();
             // previzualizare
-            let mat = &self.materials[self.mat_sel];
+            let mat = &self.materials[self.mats.sel];
             let tex = if !mat.texture.is_empty() && self.tex_loaded_res == crate::materials::tex_size() {
                 self.tex_layers.iter().find(|(k, _)| k == &mat.texture).map(|(_, px)| px.clone())
             } else {
                 None
             };
-            let need = self.mat_preview.as_ref().map(|(p, _)| p != &mat.texture).unwrap_or(true);
+            let need = self.mats.preview.as_ref().map(|(p, _)| p != &mat.texture).unwrap_or(true);
             if !mat.texture.is_empty() && need {
                 if let Some(px) = tex {
                     let n = crate::materials::tex_size() as usize;
                     let img = eframe::egui::ColorImage::from_rgba_unmultiplied([n, n], &px);
                     let t = ui.ctx().load_texture(format!("mat_preview_{}", mat.texture), img, egui::TextureOptions::LINEAR);
-                    self.mat_preview = Some((mat.texture.clone(), t));
+                    self.mats.preview = Some((mat.texture.clone(), t));
                 }
             }
-            if let Some((p, t)) = &self.mat_preview {
+            if let Some((p, t)) = &self.mats.preview {
                 if p == &mat.texture {
                     ui.horizontal(|ui| {
                         ui.image((t.id(), egui::vec2(96.0, 96.0)));
@@ -345,7 +345,7 @@ impl App {
                 }
             }
             if new_name != old_name {
-                for a in self.mat_assign.iter_mut().filter(|a| a.material == old_name) {
+                for a in self.mats.assign.iter_mut().filter(|a| a.material == old_name) {
                     a.material = new_name.clone();
                 }
                 changed = true;
@@ -357,7 +357,7 @@ impl App {
             // ---- asignari (coloana din dreapta; sub editor cand panoul e ingust)
             let ui = &mut c2;
             section(ui, "Assignments", "Rules lower in the list win");
-            let mname = self.materials.get(self.mat_sel).map(|m| m.name.clone()).unwrap_or_default();
+            let mname = self.materials.get(self.mats.sel).map(|m| m.name.clone()).unwrap_or_default();
             ui.horizontal_wrapped(|ui| {
                 if ui.add_enabled(!self.selected.is_empty(), egui::Button::new(format!("🎯 Selection ({})", self.selected.len()))).clicked() {
                     let v: Vec<_> = self.selected.iter().copied().collect();
@@ -384,15 +384,15 @@ impl App {
                 if ui.button("⚡ Auto by IFC type").clicked() {
                     self.auto_materials();
                 }
-                if ui.add_enabled(!self.mat_assign.is_empty(), egui::Button::new("Clear all")).clicked() {
-                    self.mat_assign.clear();
+                if ui.add_enabled(!self.mats.assign.is_empty(), egui::Button::new("Clear all")).clicked() {
+                    self.mats.assign.clear();
                     changed = true;
                 }
             });
             let mut del = None;
             let mut up = None;
             egui::ScrollArea::vertical().id_salt("matassign").max_height(ui.available_height().max(80.0)).show(ui, |ui| {
-                for (k, a) in self.mat_assign.iter_mut().enumerate() {
+                for (k, a) in self.mats.assign.iter_mut().enumerate() {
                     ui.horizontal(|ui| {
                         changed |= ui.checkbox(&mut a.enabled, "").changed();
                         ui.add_sized([130.0, 18.0], egui::Label::new(a.target.label()).truncate());
@@ -412,11 +412,11 @@ impl App {
                 }
             });
             if let Some(k) = del {
-                self.mat_assign.remove(k);
+                self.mats.assign.remove(k);
                 changed = true;
             }
             if let Some(k) = up {
-                self.mat_assign.swap(k, k - 1);
+                self.mats.assign.swap(k, k - 1);
                 changed = true;
             }
         }
@@ -435,7 +435,7 @@ impl App {
         let key = egui::Id::new("mat_lib_autosave");
         let now = ui.input(|i| i.time);
         if changed {
-            if let Some(m) = self.materials.get(self.mat_sel) {
+            if let Some(m) = self.materials.get(self.mats.sel) {
                 let name = m.name.clone();
                 if self.user_library_names().contains(&name) {
                     ui.data_mut(|d| d.insert_temp(key, (name, now)));
@@ -478,7 +478,7 @@ impl App {
                         None => self.materials.push(m.clone()),
                     }
                 }
-                if self.mat_assign.is_empty() {
+                if self.mats.assign.is_empty() {
                     self.auto_materials();
                 }
                 self.materials_on = true;
@@ -535,7 +535,7 @@ impl App {
     /// Miniaturile terminate de firul de lucru devin texturi egui.
     pub(super) fn mat_thumbs_poll(&mut self, ctx: &egui::Context) {
         let mut done = Vec::new();
-        if let Some((_, rx)) = &self.mat_thumb_job {
+        if let Some((_, rx)) = &self.mats.thumb_job {
             while let Ok(r) = rx.try_recv() {
                 done.push(r);
             }
@@ -545,7 +545,7 @@ impl App {
                 let img = egui::ColorImage::from_rgba_unmultiplied([t.size, t.size], &t.rgba);
                 ctx.load_texture(format!("mat_thumb_{path}"), img, egui::TextureOptions::LINEAR)
             });
-            self.mat_thumbs.insert(path, tex);
+            self.mats.thumbs.insert(path, tex);
         }
     }
 
@@ -555,10 +555,10 @@ impl App {
             return None;
         }
         let path = self.texture_path(tex);
-        if let Some(t) = self.mat_thumbs.get(&path) {
+        if let Some(t) = self.mats.thumbs.get(&path) {
             return t.clone();
         }
-        if self.mat_thumb_job.is_none() {
+        if self.mats.thumb_job.is_none() {
             let (tx, rx) = std::sync::mpsc::channel::<String>();
             let (otx, orx) = std::sync::mpsc::channel();
             std::thread::Builder::new()
@@ -572,11 +572,11 @@ impl App {
                     }
                 })
                 .ok();
-            self.mat_thumb_job = Some((tx, orx));
+            self.mats.thumb_job = Some((tx, orx));
         }
         // marcat "in lucru" (None) ca sa nu fie cerut din nou la fiecare cadru
-        self.mat_thumbs.insert(path.clone(), None);
-        if let Some((tx, _)) = &self.mat_thumb_job {
+        self.mats.thumbs.insert(path.clone(), None);
+        if let Some((tx, _)) = &self.mats.thumb_job {
             let _ = tx.send(path);
         }
         None
@@ -597,13 +597,13 @@ impl App {
             if m.transparency > 0 {
                 sub.push_str(&format!(" · {}% transp.", m.transparency));
             }
-            let used = self.mat_assign.iter().filter(|a| a.material == m.name).count();
+            let used = self.mats.assign.iter().filter(|a| a.material == m.name).count();
             (m.texture.clone(), m.name.clone(), sub, m.color, used, m.is_pbr() || m.coat > 0 || m.sheen > 0)
         };
         let thumb = self.mat_thumb(&tex);
         let row_h = 46.0;
         let (r, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_h), egui::Sense::click());
-        let sel = i == self.mat_sel;
+        let sel = i == self.mats.sel;
         let vis = ui.visuals();
         if sel {
             ui.painter().rect_filled(r, 4.0, vis.selection.bg_fill);
@@ -639,9 +639,9 @@ impl App {
         ui.painter().with_clip_rect(egui::Rect::from_min_max(egui::pos2(tx, r.min.y), egui::pos2(x_end, r.max.y))).galley(egui::pos2(tx, r.min.y + 6.0), galley, name_col);
         let sub = if used > 0 { format!("{sub} · used ×{used}") } else { sub };
         ui.painter().with_clip_rect(egui::Rect::from_min_max(egui::pos2(tx, r.min.y), egui::pos2(x_end, r.max.y))).text(egui::pos2(tx, r.min.y + 8.0 + name_h), Align2::LEFT_TOP, sub, FontId::proportional(11.5), vis.weak_text_color());
-        if sel && self.mat_scroll {
+        if sel && self.mats.scroll {
             resp.scroll_to_me(Some(egui::Align::Center));
-            self.mat_scroll = false;
+            self.mats.scroll = false;
         }
         let resp = if in_lib { resp.on_hover_text("★ In your material library - available in every project; changes are saved there too") } else { resp };
         resp.clicked()
@@ -652,7 +652,7 @@ impl App {
     /// Fereastra Materials: ocupa inaltimea ferestrei aplicatiei (sub ribbon) si ~80% din latime;
     /// se poate muta si redimensiona, iar lista foloseste toata inaltimea.
     pub(super) fn materials_window(&mut self, ctx: &egui::Context) {
-        if !self.mat_window {
+        if !self.mats.window {
             return;
         }
         let screen = ctx.screen_rect();
@@ -675,6 +675,6 @@ impl App {
                 ui.set_min_size(r.size());
                 self.materials_ui(ui);
             });
-        self.mat_window = open;
+        self.mats.window = open;
     }
 }

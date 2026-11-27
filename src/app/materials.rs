@@ -7,9 +7,9 @@ impl App {
     // ------------------------------------------------------------------ materials
     /// element -> material index, resolved from the assignment rules (later rules win)
     pub fn material_map(&mut self) -> &HashMap<ElemId, u16> {
-        if self.mat_cache.is_none() {
+        if self.mats.cache.is_none() {
             let mut map: HashMap<ElemId, u16> = HashMap::new();
-            for a in self.mat_assign.iter().filter(|a| a.enabled) {
+            for a in self.mats.assign.iter().filter(|a| a.enabled) {
                 let Some(mi) = self.materials.iter().position(|m| m.name == a.material) else { continue };
                 let ids: Vec<ElemId> = match &a.target {
                     MatTarget::Set(n) => self.sets.iter().find(|s| &s.name == n).map(|s| self.resolve_set(s)).unwrap_or_default(),
@@ -23,9 +23,9 @@ impl App {
                     map.insert(id, mi as u16);
                 }
             }
-            self.mat_cache = Some(map);
+            self.mats.cache = Some(map);
         }
-        self.mat_cache.as_ref().unwrap()
+        self.mats.cache.as_ref().unwrap()
     }
 
     /// Calea reala a unei texturi (daca fisierul a fost mutat, o cauta langa proiect).
@@ -159,8 +159,8 @@ impl App {
         }
         if !added.is_empty() {
             let last = added.last().map(|m| m.name.clone()).unwrap_or_default();
-            self.mat_sel = self.materials.iter().position(|m| m.name == last).unwrap_or(0);
-            self.mat_scroll = true;
+            self.mats.sel = self.materials.iter().position(|m| m.name == last).unwrap_or(0);
+            self.mats.scroll = true;
             self.keep_in_library(&mut added.clone());
             self.toast(format!("{} texture materials added and saved to your library - set the real size of the image in \"Texture size\".", added.len()));
         }
@@ -214,8 +214,8 @@ impl App {
             }
         }
         let last = added.last().map(|m| m.name.clone()).unwrap_or_default();
-        self.mat_scroll = true;
-        self.mat_sel = self.materials.iter().position(|m| m.name == last).unwrap_or(0);
+        self.mats.scroll = true;
+        self.mats.sel = self.materials.iter().position(|m| m.name == last).unwrap_or(0);
         self.pending_mat_assign = added.iter().map(|m| m.name.clone()).collect();
         self.materials_changed();
         self.toast(format!("{} PBR material(s) added: {} - choose where to apply them in the Materials panel.", added.len(), added.iter().map(|m| m.name.clone()).collect::<Vec<_>>().join(", ")));
@@ -232,16 +232,16 @@ impl App {
     }
 
     pub fn materials_changed(&mut self) {
-        self.mat_cache = None;
+        self.mats.cache = None;
         self.colors_dirty = true;
     }
 
     pub fn assign_material(&mut self, target: MatTarget, material: &str) {
         // aceeasi tinta: inlocuieste materialul
-        if let Some(a) = self.mat_assign.iter_mut().find(|a| a.target == target) {
+        if let Some(a) = self.mats.assign.iter_mut().find(|a| a.target == target) {
             a.material = material.to_string();
         } else {
-            self.mat_assign.push(MatAssign { target, material: material.to_string(), enabled: true });
+            self.mats.assign.push(MatAssign { target, material: material.to_string(), enabled: true });
         }
         self.materials_on = true;
         self.materials_changed();
@@ -251,8 +251,8 @@ impl App {
         let mut n = 0;
         for (kw, m) in crate::materials::AUTO_RULES {
             let present = self.cache_types.iter().any(|t| t.to_lowercase().contains(&kw.to_lowercase()));
-            if present && self.materials.iter().any(|x| x.name == m) && !self.mat_assign.iter().any(|a| a.target == MatTarget::Type(kw.to_string())) {
-                self.mat_assign.insert(n, MatAssign { target: MatTarget::Type(kw.to_string()), material: m.to_string(), enabled: true });
+            if present && self.materials.iter().any(|x| x.name == m) && !self.mats.assign.iter().any(|a| a.target == MatTarget::Type(kw.to_string())) {
+                self.mats.assign.insert(n, MatAssign { target: MatTarget::Type(kw.to_string()), material: m.to_string(), enabled: true });
                 n += 1;
             }
         }
@@ -276,7 +276,7 @@ impl App {
         }
         // DOAR materialele folosite in reguli ocupa straturi GPU: o biblioteca mare altfel epuizeaza
         // array-ul de texturi, desi majoritatea materialelor nu sunt atribuite nimanui.
-        let used: std::collections::HashSet<String> = self.mat_assign.iter().filter(|a| a.enabled).map(|a| a.material.clone()).collect();
+        let used: std::collections::HashSet<String> = self.mats.assign.iter().filter(|a| a.enabled).map(|a| a.material.clone()).collect();
         let mat_gpu: Vec<[u8; 4]> = (0..self.materials.len())
             .map(|i| {
                 let m = self.materials[i].clone();
@@ -290,7 +290,7 @@ impl App {
             .collect();
         let roles = self.clash_roles();
         let ghost = !roles.is_empty();
-        let others = self.clash_others;
+        let others = self.clash.others;
         // culorile clash-ului (Settings in fila Results): A, B si cele „palide” ale celorlalte clash-uri deschise
         let (ca, cb, dim_a) = (self.settings.clash_ui.col_a, self.settings.clash_ui.col_b, self.settings.clash_ui.dim_alpha);
         let pale = |c: [u8; 3]| [((c[0] as u16 + 255) / 2) as u8, ((c[1] as u16 + 255) / 2) as u8, ((c[2] as u16 + 255) / 2) as u8, 235];
@@ -298,7 +298,7 @@ impl App {
         let sim = self.sim_view();
         let empty = HashMap::new();
         let empty_p: HashMap<ElemId, u16> = HashMap::new();
-        let matmap = if self.materials_on { self.mat_cache.as_ref().unwrap_or(&empty) } else { &empty };
+        let matmap = if self.materials_on { self.mats.cache.as_ref().unwrap_or(&empty) } else { &empty };
         let (hidden_set, overrides, sim_cache, selected, materials) = (&self.hidden, &self.overrides, &self.sim_cache, &self.selected, &self.materials);
         let sim_only_linked = self.sim_only_linked && !sim_cache.is_empty();
         let anim_obj = &self.anim_obj;
@@ -444,7 +444,7 @@ impl App {
         let inv = Vec3::new(1.0 / d.x, 1.0 / d.y, 1.0 / d.z);
         let mut best: Option<(ElemId, f32, Vec3, [Vec3; 3])> = None;
         // in Clash Detective (dim / hide other) only the clashing items can be picked
-        let roles = if self.clash_others != Others::Normal { Some(self.clash_roles()).filter(|r| !r.is_empty()) } else { None };
+        let roles = if self.clash.others != Others::Normal { Some(self.clash_roles()).filter(|r| !r.is_empty()) } else { None };
         for (mi, m) in self.loaded_models() {
             if !m.aabb.ray(o, inv, f32::INFINITY) {
                 continue;

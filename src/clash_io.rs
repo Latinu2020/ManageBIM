@@ -438,7 +438,7 @@ impl App {
 
     /// Reset All: sterge rezultatele tuturor testelor (testele raman, cu starea New).
     pub fn clash_reset_all(&mut self) {
-        for t in &mut self.clash_tests {
+        for t in &mut self.clash.tests {
             t.results.clear();
             t.last_run.clear();
             t.run_key = 0;
@@ -450,7 +450,7 @@ impl App {
     /// Compact All: sterge clash-urile Resolved din toate testele.
     pub fn clash_compact_all(&mut self) {
         let mut n = 0;
-        for t in &mut self.clash_tests {
+        for t in &mut self.clash.tests {
             let before = t.results.len();
             t.results.retain(|r| r.status != ClashStatus::Resolved);
             n += before - t.results.len();
@@ -461,8 +461,8 @@ impl App {
 
     /// Delete All: sterge toate testele (ramane un test gol).
     pub fn clash_delete_all(&mut self) {
-        self.clash_tests.clear();
-        self.clash_tests.push(ClashTest::new("Test 1".into()));
+        self.clash.tests.clear();
+        self.clash.tests.push(ClashTest::new("Test 1".into()));
         self.after_clash_edit();
         self.toast("All clash tests deleted.");
     }
@@ -471,22 +471,22 @@ impl App {
         self.cur_test = 0;
         self.cur_result = None;
         self.sel_results.clear();
-        self.clash_focus = None;
+        self.clash.focus = None;
         self.colors_dirty = true;
     }
 
     /// Update All: ruleaza toate testele unul dupa altul; la final apare sumarul (ce e nou, ce e activ, ce s-a rezolvat).
     pub fn clash_update_all(&mut self) {
-        if self.clash_job.is_some() || self.clash_tests.is_empty() {
+        if self.clash.job.is_some() || self.clash.tests.is_empty() {
             return;
         }
-        self.update_all_before = Some(self.clash_tests.iter().map(|t| (t.name.clone(), status_counts(t))).collect());
+        self.update_all_before = Some(self.clash.tests.iter().map(|t| (t.name.clone(), status_counts(t))).collect());
         self.update_summary = None;
         self.update_all_cur = Some(self.cur_test);
-        self.clash_queue = (1..self.clash_tests.len()).collect();
+        self.clash.queue = (1..self.clash.tests.len()).collect();
         self.cur_test = 0;
         self.run_clash(0);
-        if self.clash_job.is_none() {
+        if self.clash.job.is_none() {
             // primul test nu a putut porni (selectie goala): trecem la urmatorul
             self.clash_queue_next();
         }
@@ -494,15 +494,15 @@ impl App {
 
     /// urmatorul test din coada; la final, sumarul Update All
     pub fn clash_queue_next(&mut self) {
-        while !self.clash_queue.is_empty() && self.clash_job.is_none() {
-            let n = self.clash_queue.remove(0);
+        while !self.clash.queue.is_empty() && self.clash.job.is_none() {
+            let n = self.clash.queue.remove(0);
             self.cur_test = n;
             self.run_clash(n);
         }
-        if self.clash_job.is_none() && self.clash_queue.is_empty() {
+        if self.clash.job.is_none() && self.clash.queue.is_empty() {
             if let Some(before) = self.update_all_before.take() {
                 let sum: UpdateSummary = self
-                    .clash_tests
+                    .clash.tests
                     .iter()
                     .map(|t| {
                         let b = before.iter().find(|x| x.0 == t.name).map(|x| x.1).unwrap_or([0; 5]);
@@ -512,7 +512,7 @@ impl App {
                 self.update_summary = Some(sum);
                 // inapoi la testul pe care il aveai deschis
                 if let Some(c) = self.update_all_cur.take() {
-                    self.cur_test = c.min(self.clash_tests.len().saturating_sub(1));
+                    self.cur_test = c.min(self.clash.tests.len().saturating_sub(1));
                     self.cur_result = None;
                     self.sel_results.clear();
                 }
@@ -543,8 +543,8 @@ impl App {
             }
         }
         // testul gol implicit ("Test 1" fara rezultate) e inlocuit
-        if self.clash_tests.len() == 1 && self.clash_tests[0].results.is_empty() && self.clash_tests[0].last_run.is_empty() && !imp.tests.iter().any(|t| t.name == self.clash_tests[0].name) {
-            self.clash_tests.clear();
+        if self.clash.tests.len() == 1 && self.clash.tests[0].results.is_empty() && self.clash.tests[0].last_run.is_empty() && !imp.tests.iter().any(|t| t.name == self.clash.tests[0].name) {
+            self.clash.tests.clear();
         }
         let (mut added, mut updated) = (0, 0);
         let mut missing: Vec<String> = Vec::new();
@@ -554,13 +554,13 @@ impl App {
                     missing.push(s.value.clone());
                 }
             }
-            if let Some(t) = self.clash_tests.iter_mut().find(|t| t.name == d.name) {
+            if let Some(t) = self.clash.tests.iter_mut().find(|t| t.name == d.name) {
                 d.apply(t);
                 updated += 1;
             } else {
                 let mut t = ClashTest::new(d.name.clone());
                 d.apply(&mut t);
-                self.clash_tests.push(t);
+                self.clash.tests.push(t);
                 added += 1;
             }
         }
@@ -580,7 +580,7 @@ impl App {
     /// Seturile cerute de selectiile testelor, care nu exista ca seturi: Model / Type / Discipline -> search sets.
     fn selector_sets(&self) -> Vec<SelSet> {
         let mut out: Vec<SelSet> = Vec::new();
-        for t in &self.clash_tests {
+        for t in &self.clash.tests {
             for s in [&t.a, &t.b] {
                 let name = s.label();
                 if out.iter().any(|x| x.name == name) {
@@ -623,7 +623,7 @@ impl App {
             }
         };
         let mut tests = String::new();
-        for t in &self.clash_tests {
+        for t in &self.clash.tests {
             let side = |tag: &str, s: &Selector| format!("<{tag}><clashselection selfintersect=\"0\" primtypes=\"1\"><locator>{}</locator></clashselection></{tag}>", esc(&locator(s)));
             // regulile ManageBIM nu au echivalent sigur in schema Navisworks: raman in comentariul managebim-tests
             let rules = "<rules/>";
@@ -638,7 +638,7 @@ impl App {
         }
         // seturile proiectului + cele generate din selectii
         let (sets, warn) = self.navis_selectionsets_xml_with(&extra);
-        let defs: Vec<TestDef> = self.clash_tests.iter().map(TestDef::of).collect();
+        let defs: Vec<TestDef> = self.clash.tests.iter().map(TestDef::of).collect();
         let json = serde_json::to_vec(&defs).unwrap_or_default();
         let x = format!(
             "{}<batchtest name=\"ManageBIM\" internal_name=\"ManageBIM\" units=\"m\">\n  <clashtests>\n{tests}  </clashtests>\n{sets}<!--managebim-tests:{}-->\n</batchtest>\n</exchange>\n",
@@ -649,14 +649,14 @@ impl App {
     }
 
     pub fn export_clash_tests_xml(&mut self, path: &str) {
-        if self.clash_tests.is_empty() {
+        if self.clash.tests.is_empty() {
             return self.error("No clash tests to export.");
         }
         let (x, warn) = self.clash_tests_xml();
         let path = if path.to_lowercase().ends_with(".xml") { path.to_string() } else { format!("{path}.xml") };
         match std::fs::write(&path, x) {
             Ok(()) => {
-                self.toast(format!("{} clash tests exported: {} - in Navisworks: Clash Detective > Import / Export > Import Clash Tests.", self.clash_tests.len(), crate::file_name(&path)));
+                self.toast(format!("{} clash tests exported: {} - in Navisworks: Clash Detective > Import / Export > Import Clash Tests.", self.clash.tests.len(), crate::file_name(&path)));
                 for w in warn.into_iter().take(3) {
                     self.log.push(w);
                 }
@@ -668,7 +668,7 @@ impl App {
     pub fn clash_tests_csv(&self) -> String {
         let yn = |b: bool| if b { "Yes" } else { "No" }.to_string();
         let rows: Vec<Vec<String>> = self
-            .clash_tests
+            .clash.tests
             .iter()
             .map(|t| {
                 let c = status_counts(t);
@@ -704,7 +704,7 @@ impl App {
     pub fn export_clash_tests_csv(&mut self, path: &str) {
         let path = if path.to_lowercase().ends_with(".csv") { path.to_string() } else { format!("{path}.csv") };
         match std::fs::write(&path, self.clash_tests_csv()) {
-            Ok(()) => self.toast(format!("{} clash tests exported: {} (edit in Excel, then Import Clash Tests).", self.clash_tests.len(), crate::file_name(&path))),
+            Ok(()) => self.toast(format!("{} clash tests exported: {} (edit in Excel, then Import Clash Tests).", self.clash.tests.len(), crate::file_name(&path))),
             Err(e) => self.error(format!("Cannot write {path}: {e}")),
         }
     }
@@ -715,11 +715,11 @@ impl App {
     /// si foaia "Tests" (fiecare test cu toate starile).
     pub fn export_test_matrix(&mut self, path: &str) {
         use crate::qto::{Cell, Sheet};
-        let m = test_matrix(&self.clash_tests);
+        let m = test_matrix(&self.clash.tests);
         if m.cells.is_empty() {
             return self.error("No clash tests yet.");
         }
-        let tests = &self.clash_tests;
+        let tests = &self.clash.tests;
         let mut headers = vec!["Selection A \\ Selection B".to_string()];
         headers.extend(m.cols.iter().cloned());
         headers.push("Total".into());
@@ -804,11 +804,11 @@ impl App {
     /// Testele noi din matricea de seturi: cate un test pentru fiecare pereche bifata care nu are inca test.
     pub fn create_tests_from_matrix(&mut self, pairs: &[(Selector, Selector)], ty: ClashType, tol_mm: f32) -> usize {
         let mut n = 0;
-        if self.clash_tests.len() == 1 && self.clash_tests[0].results.is_empty() && self.clash_tests[0].last_run.is_empty() && !pairs.is_empty() {
-            self.clash_tests.clear();
+        if self.clash.tests.len() == 1 && self.clash.tests[0].results.is_empty() && self.clash.tests[0].last_run.is_empty() && !pairs.is_empty() {
+            self.clash.tests.clear();
         }
         for (a, b) in pairs {
-            if self.clash_tests.iter().any(|t| (&t.a, &t.b) == (a, b)) {
+            if self.clash.tests.iter().any(|t| (&t.a, &t.b) == (a, b)) {
                 continue;
             }
             let short = |s: &Selector| if s.kind == SelKind::All { "All".to_string() } else { s.value.clone() };
@@ -817,7 +817,7 @@ impl App {
             t.b = b.clone();
             t.ty = ty;
             t.tol_mm = tol_mm;
-            self.clash_tests.push(t);
+            self.clash.tests.push(t);
             n += 1;
         }
         self.after_clash_edit();
@@ -871,14 +871,14 @@ mod tests {
     #[test]
     fn csv_round_trip() {
         let mut a = App::new(vec![]);
-        a.clash_tests.clear();
+        a.clash.tests.clear();
         let mut t = ClashTest::new("S vs M".into());
         t.a = selector_from_label("Discipline: Structure");
         t.b = selector_from_label("Set: Ducts");
         t.ty = ClashType::Clearance;
         t.tol_mm = 50.0;
         t.rules.same_level = true;
-        a.clash_tests.push(t);
+        a.clash.tests.push(t);
         let csv = a.clash_tests_csv();
         let imp = parse_tests_rows(&crate::tables::csv_rows(&csv)).unwrap();
         let d = &imp.tests[0];

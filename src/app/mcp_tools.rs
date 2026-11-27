@@ -9,14 +9,14 @@ impl App {
     /// Porneste / opreste serverul dupa setari si raspunde cererilor sosite (apelat in fiecare cadru).
     pub fn mcp_step(&mut self, ctx: &eframe::egui::Context) {
         let want = self.settings.mcp.enabled;
-        if want && self.mcp.is_none() && self.mcp_status.is_empty() {
+        if want && self.mcp.server.is_none() && self.mcp.status.is_empty() {
             self.mcp_start(ctx);
-        } else if !want && self.mcp.is_some() {
-            self.mcp = None;
-            self.mcp_status.clear();
+        } else if !want && self.mcp.server.is_some() {
+            self.mcp.server = None;
+            self.mcp.status.clear();
         }
         let mut calls = Vec::new();
-        if let Some(s) = &self.mcp {
+        if let Some(s) = &self.mcp.server {
             while let Ok(c) = s.rx.try_recv() {
                 calls.push(c);
             }
@@ -26,7 +26,7 @@ impl App {
             if c.tool == "capture_view" {
                 match self.mcp_capture_start(&c.args) {
                     Ok(()) => {
-                        self.mcp_capture = Some(c.reply);
+                        self.mcp.capture = Some(c.reply);
                         ctx.request_repaint();
                     }
                     Err(e) => {
@@ -52,19 +52,19 @@ impl App {
         let c = ctx.clone();
         match crate::mcp::start(self.settings.mcp.port, &self.settings.mcp.token, move || c.request_repaint()) {
             Ok(s) => {
-                self.mcp = Some(s);
-                self.mcp_status.clear();
+                self.mcp.server = Some(s);
+                self.mcp.status.clear();
             }
             Err(e) => {
                 // nu reincercam in fiecare cadru: utilizatorul schimba portul sau apasa Restart
-                self.mcp_status = e;
+                self.mcp.status = e;
             }
         }
     }
 
     pub fn mcp_restart(&mut self, ctx: &eframe::egui::Context) {
-        self.mcp = None;
-        self.mcp_status.clear();
+        self.mcp.server = None;
+        self.mcp.status.clear();
         if self.settings.mcp.enabled {
             self.mcp_start(ctx);
         }
@@ -127,7 +127,7 @@ impl App {
                     "models": models,
                     "selected": self.selected.len(),
                     "hidden": self.hidden.len(),
-                    "clash_tests": self.clash_tests.len(),
+                    "clash_tests": self.clash.tests.len(),
                     "units": "metres",
                 }))
             }
@@ -260,7 +260,7 @@ impl App {
                 Ok(json!(format!("Set {name} = {value:?} on {n} element(s).")))
             }
             "list_clash_tests" => {
-                let tests: Vec<Value> = self.clash_tests.iter().enumerate().map(|(i, t)| self.mcp_clash_summary(i, t, 0)).collect();
+                let tests: Vec<Value> = self.clash.tests.iter().enumerate().map(|(i, t)| self.mcp_clash_summary(i, t, 0)).collect();
                 Ok(json!({ "tests": tests }))
             }
             "run_clash_test" => {
@@ -269,21 +269,21 @@ impl App {
                     .trim()
                     .parse::<usize>()
                     .ok()
-                    .filter(|i| *i < self.clash_tests.len())
-                    .or_else(|| self.clash_tests.iter().position(|t| t.name.eq_ignore_ascii_case(key.trim())))
+                    .filter(|i| *i < self.clash.tests.len())
+                    .or_else(|| self.clash.tests.iter().position(|t| t.name.eq_ignore_ascii_case(key.trim())))
                     .ok_or_else(|| format!("no clash test {key:?}; use list_clash_tests"))?;
-                if self.clash_job.is_some() {
+                if self.clash.job.is_some() {
                     return Err("a clash test is already running in ManageBIM".into());
                 }
                 self.run_clash_blocking(idx);
                 self.cur_test = idx;
                 self.colors_dirty = true;
                 let max = args.get("max_results").and_then(|v| v.as_u64()).unwrap_or(25).min(500) as usize;
-                Ok(self.mcp_clash_summary(idx, &self.clash_tests[idx], max))
+                Ok(self.mcp_clash_summary(idx, &self.clash.tests[idx], max))
             }
             "get_clash_results" => {
                 let ti = self.mcp_test_idx(args)?;
-                let t = &self.clash_tests[ti];
+                let t = &self.clash.tests[ti];
                 let st = s("status").to_lowercase();
                 let sev = s("severity").to_lowercase();
                 let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
@@ -310,7 +310,7 @@ impl App {
                 if status.is_none() && assignee.is_none() && comment.is_none() && group.is_none() {
                     return Err("nothing to change: give status, assignee, comment and / or group".into());
                 }
-                let t = &mut self.clash_tests[ti];
+                let t = &mut self.clash.tests[ti];
                 for &i in &idx {
                     let r = &mut t.results[i];
                     if let Some(st) = status {
@@ -332,7 +332,7 @@ impl App {
                     }
                 }
                 self.colors_dirty = true;
-                self.toast(format!("AI assistant updated {} clash result(s) in {}.", idx.len(), self.clash_tests[ti].name));
+                self.toast(format!("AI assistant updated {} clash result(s) in {}.", idx.len(), self.clash.tests[ti].name));
                 Ok(json!(format!("Updated {} result(s).", idx.len())))
             }
             "focus_clash" => {
@@ -443,7 +443,7 @@ fn r3(v: f32) -> f64 {
 impl App {
     /// capture_view: pregateste camera (optional) si cere o captura la marimea dorita.
     fn mcp_capture_start(&mut self, args: &Value) -> Result<(), String> {
-        if self.mcp_capture.is_some() || self.pending_capture.is_some() || self.render_job.is_some() || self.still_path.is_some() {
+        if self.mcp.capture.is_some() || self.pending_capture.is_some() || self.render_job.is_some() || self.still_path.is_some() {
             return Err("ManageBIM is busy capturing another image - try again in a moment".into());
         }
         if self.loaded_models().next().is_none() {
@@ -501,7 +501,7 @@ impl App {
 
     /// Imaginea capturata -> raspunsul MCP (JPEG in base64). Intoarce true daca a fost folosita.
     pub fn mcp_capture_done(&mut self, r: &Result<crate::video::Frame, String>) -> bool {
-        let Some(tx) = self.mcp_capture.take() else { return false };
+        let Some(tx) = self.mcp.capture.take() else { return false };
         if std::mem::take(&mut self.rt.off_after_capture) && self.rt.on {
             self.rt.on = false;
             self.rt.scene = None;
@@ -538,19 +538,19 @@ impl App {
     fn mcp_test_idx(&self, args: &Value) -> Result<usize, String> {
         let key = args.get("test").map(|v| v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string())).unwrap_or_default();
         let key = key.trim();
-        if key.is_empty() && self.clash_tests.len() == 1 {
+        if key.is_empty() && self.clash.tests.len() == 1 {
             return Ok(0);
         }
         key.parse::<usize>()
             .ok()
-            .filter(|i| *i < self.clash_tests.len())
-            .or_else(|| self.clash_tests.iter().position(|t| t.name.eq_ignore_ascii_case(key)))
+            .filter(|i| *i < self.clash.tests.len())
+            .or_else(|| self.clash.tests.iter().position(|t| t.name.eq_ignore_ascii_case(key)))
             .ok_or_else(|| format!("no clash test {key:?}; use list_clash_tests"))
     }
 
     /// rezultatele cerute: "results" = indexi / nume, sau "all", sau filtrul "status"
     fn mcp_result_idx(&self, ti: usize, args: &Value) -> Result<Vec<usize>, String> {
-        let t = &self.clash_tests[ti];
+        let t = &self.clash.tests[ti];
         let mut out = Vec::new();
         match args.get("results") {
             Some(Value::String(s)) if s.eq_ignore_ascii_case("all") => out.extend(0..t.results.len()),
@@ -573,7 +573,7 @@ impl App {
     }
 
     fn mcp_clash_item(&self, ti: usize, i: usize) -> Value {
-        let t = &self.clash_tests[ti];
+        let t = &self.clash.tests[ti];
         let r = &t.results[i];
         json!({
             "index": i,

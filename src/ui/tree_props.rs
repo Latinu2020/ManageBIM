@@ -366,14 +366,14 @@ impl App {
                     let set_name = self.sets[i].name.clone();
                     ui.menu_button("⛔", |ui| {
                         ui.label(RichText::new("Use in Clash Detective").small().weak());
-                        if self.clash_tests.is_empty() {
+                        if self.clash.tests.is_empty() {
                             ui.label(RichText::new("No clash tests yet").weak());
                         }
-                        for ti in 0..self.clash_tests.len() {
-                            let excluded = self.clash_tests[ti].rules.exclude_sets.contains(&set_name);
-                            let label = format!("{} Exclude from \"{}\"", if excluded { "✔" } else { "  " }, self.clash_tests[ti].name);
+                        for ti in 0..self.clash.tests.len() {
+                            let excluded = self.clash.tests[ti].rules.exclude_sets.contains(&set_name);
+                            let label = format!("{} Exclude from \"{}\"", if excluded { "✔" } else { "  " }, self.clash.tests[ti].name);
                             if ui.button(label).clicked() {
-                                let ex = &mut self.clash_tests[ti].rules.exclude_sets;
+                                let ex = &mut self.clash.tests[ti].rules.exclude_sets;
                                 if excluded {
                                     ex.retain(|s| s != &set_name);
                                 } else {
@@ -382,16 +382,16 @@ impl App {
                                 ui.close_menu();
                             }
                         }
-                        if !self.clash_tests.is_empty() {
+                        if !self.clash.tests.is_empty() {
                             ui.separator();
-                            let ti = self.cur_test.min(self.clash_tests.len() - 1);
-                            let tname = self.clash_tests[ti].name.clone();
+                            let ti = self.cur_test.min(self.clash.tests.len() - 1);
+                            let tname = self.clash.tests[ti].name.clone();
                             if ui.button(format!("Selection A of \"{tname}\"")).clicked() {
-                                self.clash_tests[ti].a = Selector { kind: SelKind::Set, value: set_name.clone() };
+                                self.clash.tests[ti].a = Selector { kind: SelKind::Set, value: set_name.clone() };
                                 ui.close_menu();
                             }
                             if ui.button(format!("Selection B of \"{tname}\"")).clicked() {
-                                self.clash_tests[ti].b = Selector { kind: SelKind::Set, value: set_name.clone() };
+                                self.clash.tests[ti].b = Selector { kind: SelKind::Set, value: set_name.clone() };
                                 ui.close_menu();
                             }
                         }

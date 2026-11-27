@@ -13,7 +13,7 @@ impl App {
         }
         if p == Panel::Clash && ui.button("⛶ Focus mode").clicked() {
             self.settings.layout.open(p);
-            self.clash_focus_mode = true;
+            self.clash.focus_mode = true;
             ui.close_menu();
         }
         ui.separator();
@@ -203,7 +203,7 @@ impl App {
                         }
                         if a == Panel::Clash && ui.button("⛶ Focus").on_hover_text("Open Clash Detective in a large focus window (Esc to exit)").clicked() {
                             self.settings.layout.open(Panel::Clash);
-                            self.clash_focus_mode = true;
+                            self.clash.focus_mode = true;
                         }
                         if ui.button("⧉ Float").on_hover_text("Open this panel in a large resizable floating window").clicked() {
                             self.settings.layout.move_to(a, Dock::Float);

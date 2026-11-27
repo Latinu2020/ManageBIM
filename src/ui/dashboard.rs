@@ -61,7 +61,7 @@ impl App {
         let oz = self.origin_f64().z;
         let zero = if self.level.custom { self.level.zero } else { 0.0 };
         s.levels = self.scene_grids().levels.iter().map(|(n, z)| (n.clone(), *z as f64 + oz - zero)).collect();
-        for t in &self.clash_tests {
+        for t in &self.clash.tests {
             let mut by_status = [0usize; 5];
             let mut by_sev = [0usize; 3];
             for r in &t.results {
@@ -153,7 +153,7 @@ impl App {
         }
         s.sets = self.sets.len();
         s.coord_objects = self.coord_objects.len();
-        s.materials = self.mat_assign.len();
+        s.materials = self.mats.assign.len();
         s.tasks = self.tasks.len();
         s.hidden = self.hidden.len();
         s
@@ -347,7 +347,7 @@ impl App {
     /// Exportul Dashboard: intai capturile (fisele de clash si viewpoint-urile cu markup-uri), apoi fisierul.
     pub(crate) fn dashboard_export(&mut self, pdf: bool, path: String) {
         let tests: Vec<(Vec<String>, Vec<bool>)> = self
-            .clash_tests
+            .clash.tests
             .iter()
             .map(|t| (t.results.iter().map(|r| r.group.clone()).collect(), t.results.iter().map(|r| matches!(r.status, ClashStatus::New | ClashStatus::Active | ClashStatus::Reviewed)).collect()))
             .collect();
@@ -400,7 +400,7 @@ impl App {
             self.active_vp = j.saved_vp;
             self.settings.layout.bottom_open = j.saved_bottom;
             self.cur_test = j.saved_test;
-            self.clash_focus = None;
+            self.clash.focus = None;
             self.colors_dirty = true;
             self.dashboard_write(j.pdf, &j.path, j.images, j.view_images);
             return;
@@ -415,7 +415,7 @@ impl App {
                 let vi = j.views[j.idx - j.queue.len()];
                 // viewpoint-urile fara modul clash (zona de jos coborata), cu camera / sectiunea / ascunsele lor
                 self.settings.layout.bottom_open = false;
-                self.clash_focus = None;
+                self.clash.focus = None;
                 self.restore_viewpoint(vi);
             }
             if let Some((_, to, _)) = self.cam_anim.take() {
@@ -442,7 +442,7 @@ impl App {
         let mark = match (view, r) {
             (None, Ok(f)) => {
                 let (ti, ri) = j.queue[j.idx];
-                self.clash_tests.get(ti).and_then(|t| t.results.get(ri)).and_then(|cr| {
+                self.clash.tests.get(ti).and_then(|t| t.results.get(ri)).and_then(|cr| {
                     let vp = self.frame_params(f.w as f32 / f.h.max(1) as f32).view_proj;
                     let c = vp * Vec3::from(cr.point).extend(1.0);
                     (c.w > 1e-6).then(|| [(c.x / c.w * 0.5 + 0.5) * f.w as f32, (0.5 - c.y / c.w * 0.5) * f.h as f32])

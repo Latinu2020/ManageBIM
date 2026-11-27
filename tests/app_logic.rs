@@ -37,28 +37,28 @@ fn find_and_or_numeric() {
 #[test]
 fn clash_rules_and_groups() {
     let mut app = app();
-    app.clash_tests[0].a = Selector { kind: SelKind::Model, value: "Block_A_Architecture_Structure.ifc".into() };
-    app.clash_tests[0].b = Selector { kind: SelKind::Model, value: "Block_A_MEP.ifc".into() };
+    app.clash.tests[0].a = Selector { kind: SelKind::Model, value: "Block_A_Architecture_Structure.ifc".into() };
+    app.clash.tests[0].b = Selector { kind: SelKind::Model, value: "Block_A_MEP.ifc".into() };
     app.run_clash_blocking(0);
-    let n0 = app.clash_tests[0].results.len();
+    let n0 = app.clash.tests[0].results.len();
     assert!(n0 > 0);
     // exclude beams: those results disappear (not "Resolved")
-    app.clash_tests[0].rules.exclude_rules.push(rule("IFC Type", SearchOp::Equals, "IfcBeam", false));
+    app.clash.tests[0].rules.exclude_rules.push(rule("IFC Type", SearchOp::Equals, "IfcBeam", false));
     app.run_clash_blocking(0);
-    let t = &app.clash_tests[0];
+    let t = &app.clash.tests[0];
     let beams = t.results.iter().filter(|r| app.elem(r.a).map(|x| x.1.ifc_type == "IfcBeam").unwrap_or(false)).count();
     assert_eq!(beams, 0);
     assert_eq!(t.count(ClashStatus::Resolved), 0);
     let n1 = t.results.len();
     assert!(n1 < n0);
     // ignore same level
-    app.clash_tests[0].rules.exclude_rules.clear();
-    app.clash_tests[0].rules.same_level = true;
+    app.clash.tests[0].rules.exclude_rules.clear();
+    app.clash.tests[0].rules.same_level = true;
     app.run_clash_blocking(0);
-    let n2 = app.clash_tests[0].results.iter().filter(|r| r.status != ClashStatus::Resolved).count();
+    let n2 = app.clash.tests[0].results.iter().filter(|r| r.status != ClashStatus::Resolved).count();
     assert!(n2 < n0);
     // groups
-    app.clash_tests[0].rules.same_level = false;
+    app.clash.tests[0].rules.same_level = false;
     app.run_clash_blocking(0);
     app.auto_group(0, GroupBy::Level, 5.0);
     let groups = app.group_names(0);
@@ -73,35 +73,35 @@ fn clash_status_follows_navisworks_lifecycle() {
     let mut app = app();
     let mep = "Block_A_MEP.ifc";
     let arch = "Block_A_Architecture_Structure.ifc";
-    app.clash_tests[0].a = Selector { kind: SelKind::Model, value: arch.into() };
-    app.clash_tests[0].b = Selector { kind: SelKind::Model, value: mep.into() };
+    app.clash.tests[0].a = Selector { kind: SelKind::Model, value: arch.into() };
+    app.clash.tests[0].b = Selector { kind: SelKind::Model, value: mep.into() };
 
     // prima rulare: totul e New
     app.run_clash_blocking(0);
-    let n = app.clash_tests[0].results.len();
+    let n = app.clash.tests[0].results.len();
     assert!(n > 0);
-    assert_eq!(app.clash_tests[0].count(ClashStatus::New), n);
+    assert_eq!(app.clash.tests[0].count(ClashStatus::New), n);
 
     // a doua rulare, configuratie identica: aceleasi clash-uri devin Active
     app.run_clash_blocking(0);
-    assert_eq!(app.clash_tests[0].results.len(), n);
-    assert_eq!(app.clash_tests[0].count(ClashStatus::Active), n);
-    assert_eq!(app.clash_tests[0].count(ClashStatus::New), 0);
+    assert_eq!(app.clash.tests[0].results.len(), n);
+    assert_eq!(app.clash.tests[0].count(ClashStatus::Active), n);
+    assert_eq!(app.clash.tests[0].count(ClashStatus::New), 0);
 
     // Approved isi pastreaza statusul la re-rulare (ca in Navisworks)
-    app.clash_tests[0].results[0].status = ClashStatus::Approved;
+    app.clash.tests[0].results[0].status = ClashStatus::Approved;
     app.run_clash_blocking(0);
-    assert_eq!(app.clash_tests[0].results[0].status, ClashStatus::Approved);
+    assert_eq!(app.clash.tests[0].results[0].status, ClashStatus::Approved);
 
     // daca nimic nu mai e gasit, vechiul clash devine Resolved
-    app.clash_tests[0].b = Selector { kind: SelKind::Model, value: "no-such-model.ifc".into() };
+    app.clash.tests[0].b = Selector { kind: SelKind::Model, value: "no-such-model.ifc".into() };
     app.run_clash_blocking(0);
-    assert_eq!(app.clash_tests[0].count(ClashStatus::Resolved), n);
+    assert_eq!(app.clash.tests[0].count(ClashStatus::Resolved), n);
 
     // daca geometria reapare, Resolved revine la New
-    app.clash_tests[0].b = Selector { kind: SelKind::Model, value: mep.into() };
+    app.clash.tests[0].b = Selector { kind: SelKind::Model, value: mep.into() };
     app.run_clash_blocking(0);
-    assert!(app.clash_tests[0].count(ClashStatus::New) > 0);
+    assert!(app.clash.tests[0].count(ClashStatus::New) > 0);
 }
 
 #[test]
