@@ -1,4 +1,4 @@
-//! Reproduce incarcarea ca in aplicatie: open_path -> poll_jobs -> culori / arbore / cantitati, cu panic-uri prinse.
+//! Reproduces the loading as in the application: open_path -> poll_jobs -> colors / tree / quantities, with panics caught.
 use bimrust::app::*;
 fn main() {
     std::env::set_var("RUST_BACKTRACE", "1");

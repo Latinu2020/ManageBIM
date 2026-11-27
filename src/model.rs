@@ -1,4 +1,4 @@
-//! Structurile de date comune: model federat, elemente, BVH.
+//! The shared data structures: federated model, elements, BVH.
 use glam::{DVec3, Vec3};
 
 #[derive(Clone, Copy, Debug)]
@@ -34,7 +34,7 @@ impl Aabb {
             && self.min.z <= o.max.z + tol
             && self.max.z + tol >= o.min.z
     }
-    /// distanta minima intre doua cutii (0 daca se suprapun)
+    /// the minimum distance between two boxes (0 if they overlap)
     pub fn dist(&self, o: &Aabb) -> f32 {
         let d = (self.min - o.max).max(o.min - self.max).max(Vec3::ZERO);
         d.length()
@@ -63,7 +63,7 @@ pub struct ElemId {
     pub e: u32,
 }
 
-/// Element incarcat, in coordonate f64 (inainte de mutarea in originea locala).
+/// A loaded element, in f64 coordinates (before moving to the local origin).
 pub struct RawElement {
     pub name: String,
     pub ifc_type: String,
@@ -82,9 +82,9 @@ pub struct RawModel {
 }
 
 impl RawModel {
-    /// Repune un desen 2D (extras prin „Cut to DWG”) in planul 3D de taiere.
-    /// Coordonatele 2D sint in metri, in spatiul lumii; aplicatia le pastreaza
-    /// locale, deci scadem origin-ul (ca in tot restul modelului).
+    /// Puts a 2D drawing (extracted via „Cut to DWG”) back into the 3D cut plane.
+    /// The 2D coordinates are in metres, in world space; the application keeps them
+    /// local, so we subtract the origin (as in the rest of the model).
     pub fn place_on_cut_plane(&mut self, axis: usize, value: f32, mirror: bool, origin: glam::DVec3) {
         let v = value as f64;
         for e in &mut self.elements {
@@ -93,8 +93,8 @@ impl RawModel {
                     let (mut a, b) = (p.x, p.y);
                     if mirror { a = -a; }
                     let local = match axis {
-                        // 2D-ul exportat e in coordonatele LUMII (local + origin).
-                        // `value` e deja local, deci nu i se scade origin-ul.
+                        // the exported 2D is in WORLD coordinates (local + origin).
+                        // `value` is already local, so the origin is not subtracted from it.
                         0 => glam::DVec3::new(v, a - origin.y, b - origin.z),
                         1 => glam::DVec3::new(a - origin.x, v, b - origin.z),
                         _ => glam::DVec3::new(a - origin.x, b - origin.y, v),
@@ -105,9 +105,9 @@ impl RawModel {
         }
     }
 
-    /// Gratar plat (toate triunghiurile in acelasi plan, grosime < 1 mm): devine placa de `thick` metri,
-    /// in jos fata de suprafata de calcare: fata de sus, cea de jos (normale inversate) si laturile pe
-    /// conturul exterior (muchiile folosite o singura data).
+    /// Flat grating (all triangles in the same plane, thickness < 1 mm): becomes a plate of `thick` metres,
+    /// downward from the walking surface: the top face, the bottom face (reversed normals) and the sides along
+    /// the outer contour (the edges used only once).
     pub fn thicken_flat_gratings(&mut self, thick: f64) {
         for e in &mut self.elements {
             let t = e.ifc_type.to_lowercase();
@@ -115,7 +115,7 @@ impl RawModel {
             if !is_grating || e.tris.is_empty() || e.tris.len() > 2000 {
                 continue;
             }
-            // normala planului (din cel mai mare triunghi) si planeitatea
+            // the plane normal (from the largest triangle) and the flatness
             let n = e
                 .tris
                 .iter()
@@ -131,16 +131,16 @@ impl RawModel {
             if !flat {
                 continue;
             }
-            // grosimea in jos (gratarul se calca pe fata de sus); pentru planuri verticale, oricare parte
+            // the thickness goes down (the grating is walked on its top face); for vertical planes, either side
             if n.z < 0.0 {
                 n = -n;
             }
             let off = -n * thick;
             let c0 = e.colors.first().copied().unwrap_or([160, 160, 160, 255]);
-            // fata de sus orientata in sus (graficele proxy amesteca orientarile)
+            // top face oriented upward (proxy graphics mix the orientations)
             let top: Vec<[DVec3; 3]> = std::mem::take(&mut e.tris).into_iter().map(|t| if (t[1] - t[0]).cross(t[2] - t[0]).dot(n) >= 0.0 { t } else { [t[0], t[2], t[1]] }).collect();
             let cols = std::mem::take(&mut e.colors);
-            // muchiile de contur: perechi de varfuri (rotunjite la 0.1 mm) folosite o singura data
+            // the contour edges: pairs of vertices (rounded to 0.1 mm) used only once
             let key = |p: DVec3| ((p.x * 1e4).round() as i64, (p.y * 1e4).round() as i64, (p.z * 1e4).round() as i64);
             let mut count: std::collections::HashMap<((i64, i64, i64), (i64, i64, i64)), (usize, DVec3, DVec3)> = std::collections::HashMap::new();
             for t in &top {
@@ -154,7 +154,7 @@ impl RawModel {
             }
             let _ = (&cols, off);
             let edges: Vec<(DVec3, DVec3)> = count.into_values().filter(|v| v.0 == 1).map(|v| (v.1, v.2)).collect();
-            // dimensiunile din baza de date Plant 3D ("L x W x grosime", in unitatile desenului)
+            // the dimensions from the Plant 3D database ("L x W x thickness", in drawing units)
             let size_hint = e.props.iter().find_map(|p| {
                 let v: Vec<f64> = p.value.split(['x', 'X', '×']).map(|s| s.trim().parse::<f64>()).collect::<Result<_, _>>().ok()?;
                 (v.len() == 3 && v.iter().all(|x| *x > 0.0)).then(|| (v[0], v[1], v[2]))
@@ -183,14 +183,14 @@ impl RawModel {
         if mn.x > mx.x {
             DVec3::ZERO
         } else {
-            // X/Y centrate (coordonate mari de georeferentiere), Z pastrat real pentru cote
+            // X/Y centred (large georeferencing coordinates), Z kept real for elevations
             let c = ((mn + mx) * 0.5).round();
             DVec3::new(c.x, c.y, if c.z.abs() > 5000.0 { c.z } else { 0.0 })
         }
     }
 }
 
-/// Cutie inchisa (12 triunghiuri, orientate spre exterior) dintr-un colt si trei axe.
+/// Closed box (12 triangles, facing outward) from a corner and three axes.
 fn push_box(out: &mut Vec<[DVec3; 3]>, o: DVec3, ax: DVec3, ay: DVec3, az: DVec3) {
     let c = o + (ax + ay + az) * 0.5;
     let p = |i: u8| o + if i & 1 != 0 { ax } else { DVec3::ZERO } + if i & 2 != 0 { ay } else { DVec3::ZERO } + if i & 4 != 0 { az } else { DVec3::ZERO };
@@ -208,9 +208,9 @@ fn push_box(out: &mut Vec<[DVec3; 3]>, o: DVec3, ax: DVec3, ay: DVec3, az: DVec3
     }
 }
 
-/// Gratar presat ca in Plant 3D: rama pe contur, bare portante dese pe deschiderea scurta (pas 30 mm,
-/// 30 x 3 mm) si bare transversale pe lungime (pas 100 mm, 6 x 6 mm), sub suprafata de calcare.
-/// `edges` = conturul (in planul gratarului), `n` = normala in sus, `h` = inaltimea barelor.
+/// Pressed grating as in Plant 3D: a frame along the contour, dense bearing bars across the short span (30 mm pitch,
+/// 30 x 3 mm) and cross bars along the length (100 mm pitch, 6 x 6 mm), below the walking surface.
+/// `edges` = the contour (in the grating plane), `n` = the upward normal, `h` = the bar height.
 fn grating_bars(edges: &[(DVec3, DVec3)], n: DVec3, h_default: f64, size_hint: Option<(f64, f64, f64)>) -> (Vec<[DVec3; 3]>, String) {
     let mut h = h_default;
     let mut out = Vec::new();
@@ -232,7 +232,7 @@ fn grating_bars(edges: &[(DVec3, DVec3)], n: DVec3, h_default: f64, size_hint: O
             vmax = vmax.max(p.1);
         }
     }
-    // barele portante acopera deschiderea SCURTA: asezate de-a lungul laturii lungi, cu pasul de 30 mm
+    // the bearing bars cover the SHORT span: laid along the long side, with a 30 mm pitch
     let swap = (vmax - vmin) > (umax - umin);
     if swap {
         std::mem::swap(&mut u, &mut v);
@@ -243,7 +243,7 @@ fn grating_bars(edges: &[(DVec3, DVec3)], n: DVec3, h_default: f64, size_hint: O
     if lu < 0.01 || lv < 0.01 {
         return (out, String::new());
     }
-    // grosimea reala: unitatea desenului se deduce din L x W comparate cu conturul (inch, mm... - oricare)
+    // the real thickness: the drawing unit is deduced from L x W compared with the contour (inch, mm... - any)
     let mut from_db = false;
     if let Some((a, b, c)) = size_hint {
         let (big, small) = (a.max(b), a.min(b));
@@ -256,7 +256,7 @@ fn grating_bars(edges: &[(DVec3, DVec3)], n: DVec3, h_default: f64, size_hint: O
             }
         }
     }
-    // intervalul conturului pe o linie u = s (sau v = s): intersectii cu muchiile
+    // the contour interval on a line u = s (or v = s): intersections with the edges
     let span = |s: f64, along_v: bool| -> Option<(f64, f64)> {
         let mut lo = f64::MAX;
         let mut hi = f64::MIN;
@@ -273,7 +273,7 @@ fn grating_bars(edges: &[(DVec3, DVec3)], n: DVec3, h_default: f64, size_hint: O
     };
     let pt = |s: f64, t: f64, along_v: bool| if along_v { o + u * s + v * t } else { o + u * t + v * s };
     let down = -n * h;
-    // pasul barelor portante: 30 mm (mai rar doar la gratare foarte mari, ca sa ramana usor de afisat)
+    // the bearing bar pitch: 30 mm (sparser only on very large gratings, so it stays light to display)
     let mut pitch = 0.03;
     while lu / pitch > 1500.0 {
         pitch *= 2.0;
@@ -288,7 +288,7 @@ fn grating_bars(edges: &[(DVec3, DVec3)], n: DVec3, h_default: f64, size_hint: O
             push_box(&mut out, p0 + down, u * tb, v * (b - a), n * h);
         }
     }
-    // bare transversale (sus, 6 x 6 mm), pas 100 mm
+    // cross bars (on top, 6 x 6 mm), 100 mm pitch
     let tc = 0.006;
     let mut cpitch = 0.1;
     while lv / cpitch > 300.0 {
@@ -303,7 +303,7 @@ fn grating_bars(edges: &[(DVec3, DVec3)], n: DVec3, h_default: f64, size_hint: O
             push_box(&mut out, p0 - n * tc, u * (b - a), v * tc, n * tc);
         }
     }
-    // rama (bara de margine) pe tot conturul
+    // the frame (edge bar) along the whole contour
     for (a, b) in edges {
         let d = (*b - *a).reject_from(n);
         let len = d.length();
@@ -345,26 +345,26 @@ pub struct Model {
     pub name: String,
     pub path: String,
     pub elements: Vec<Element>,
-    /// 3 varfuri per triunghi
+    /// 3 vertices per triangle
     pub pos: Vec<Vec3>,
     pub tri_color: Vec<[u8; 4]>,
     pub aabb: Aabb,
     pub info: Vec<(String, String)>,
     pub warnings: Vec<String>,
-    /// nor de puncte (E57): punctele scanarilor, in coordonate locale
+    /// point cloud (E57): the points of the scans, in local coordinates
     pub cloud: Option<std::sync::Arc<PointCloud>>,
 }
 
-/// Punctele unui nor, amestecate aleator in fiecare scanare (densitate = primele N% din scanare).
+/// The points of a cloud, randomly shuffled within each scan (density = the first N% of the scan).
 pub struct PointCloud {
     pub pos: Vec<Vec3>,
     pub col: Vec<[u8; 4]>,
-    /// (index element, primul punct, numar de puncte)
+    /// (element index, first point, number of points)
     pub scans: Vec<(u32, u32, u32)>,
 }
 
 impl Model {
-    /// Copie completa (geometria inclusa) - doar cand modelul e folosit si in alta parte si trebuie modificat.
+    /// Full copy (geometry included) - only when the model is also used elsewhere and must be modified.
     pub fn clone_model(&self) -> Model {
         Model { name: self.name.clone(), path: self.path.clone(), elements: self.elements.clone(), pos: self.pos.clone(), tri_color: self.tri_color.clone(), aabb: self.aabb, info: self.info.clone(), warnings: self.warnings.clone(), cloud: self.cloud.clone() }
     }
@@ -373,7 +373,7 @@ impl Model {
 impl Model {
     pub fn from_raw(raw: RawModel, name: String, path: String, origin: DVec3) -> Model {
         use rayon::prelude::*;
-        // conversie + BVH pe element, in paralel
+        // conversion + BVH per element, in parallel
         let parts: Vec<(RawElement, Vec<Vec3>, Aabb, Bvh)> = raw
             .elements
             .into_par_iter()
@@ -424,7 +424,7 @@ impl Model {
         Model { name, path, elements, pos, tri_color, aabb, info: raw.info, warnings: raw.warnings, cloud: None }
     }
 
-    /// Ataseaza punctele unui nor citit (E57): coordonate locale fata de `origin`, cutiile scanarilor si a modelului.
+    /// Attaches the points of a read cloud (E57): local coordinates relative to `origin`, the boxes of the scans and of the model.
     pub fn attach_cloud(&mut self, c: crate::e57::RawCloud, origin: DVec3) {
         let shift = (c.base - origin).as_vec3();
         let pos: Vec<Vec3> = c.pos.iter().map(|p| Vec3::from_array(*p) + shift).collect();
@@ -448,8 +448,8 @@ impl Model {
     }
 
     /// Copy of the model with a transform (local coordinates) and per-element offsets applied.
-    /// Transformare non-distructivă: matrice globală + translări și scale per-element
-    /// (stil SketchUp). Scale-ul se aplică în jurul centrului AABB al elementului.
+    /// Non-destructive transform: a global matrix + per-element translations and scales
+    /// (SketchUp style). The scale is applied around the centre of the element's AABB.
     pub fn transformed(&self, m: glam::Mat4, offsets: &std::collections::HashMap<u32, Vec3>, scales: &std::collections::HashMap<u32, Vec3>) -> Model {
         use rayon::prelude::*;
         let parts: Vec<(Vec<Vec3>, Aabb, Bvh)> = self
@@ -466,7 +466,7 @@ impl Model {
                     .tris(e)
                     .iter()
                     .map(|v| {
-                        // scale în jurul pivotului, apoi matricea globală și translarea
+                        // scale around the pivot, then the global matrix and the translation
                         let sv = if sc == Vec3::ONE { *v } else { pivot + (*v - pivot) * sc };
                         let q = m.transform_point3(sv) + off;
                         bb.grow(q);
@@ -521,7 +521,7 @@ impl Model {
 #[derive(Clone)]
 pub struct BvhNode {
     pub bb: Aabb,
-    /// frunza: (start, count) in `order`; nod intern: (left, right) cu count == 0
+    /// leaf: (start, count) in `order`; internal node: (left, right) with count == 0
     pub a: u32,
     pub b: u32,
     pub leaf: bool,
@@ -530,7 +530,7 @@ pub struct BvhNode {
 #[derive(Clone, Default)]
 pub struct Bvh {
     pub nodes: Vec<BvhNode>,
-    /// indici de triunghiuri (locali elementului)
+    /// triangle indices (local to the element)
     pub order: Vec<u32>,
 }
 
@@ -587,7 +587,7 @@ impl Bvh {
         idx
     }
 
-    /// Cea mai apropiata intersectie raza-triunghi. `accept` filtreaza punctele (ex. plan de sectiune).
+    /// The nearest ray-triangle intersection. `accept` filters the points (e.g. section plane).
     pub fn raycast(&self, tris: &[Vec3], o: Vec3, d: Vec3, mut tmax: f32, accept: &dyn Fn(Vec3) -> bool) -> Option<(f32, u32)> {
         if self.nodes.is_empty() {
             return None;
@@ -620,8 +620,8 @@ impl Bvh {
 }
 
 impl Bvh {
-    /// Distanta de la punctul `p` la cea mai apropiata suprafata (triunghi) a elementului; cautarea
-    /// se opreste la `max_d` (intoarce `max_d` daca nimic nu e mai aproape).
+    /// The distance from point `p` to the nearest surface (triangle) of the element; the search
+    /// stops at `max_d` (returns `max_d` if nothing is closer).
     pub fn nearest(&self, tris: &[Vec3], p: Vec3, max_d: f32) -> f32 {
         let mut best = max_d;
         if self.nodes.is_empty() {
@@ -630,7 +630,7 @@ impl Bvh {
         let mut stack = vec![0u32];
         while let Some(ni) = stack.pop() {
             let nd = &self.nodes[ni as usize];
-            // distanta punct - cutie
+            // point - box distance
             let q = p.clamp(nd.bb.min, nd.bb.max);
             if (q - p).length() >= best {
                 continue;
@@ -652,7 +652,7 @@ impl Bvh {
     }
 }
 
-/// Distanta punct - triunghi (cel mai apropiat punct, Ericson "Real-Time Collision Detection" 5.1.5).
+/// Point - triangle distance (the closest point, Ericson "Real-Time Collision Detection" 5.1.5).
 pub fn point_tri_dist(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> f32 {
     let (ab, ac, ap) = (b - a, c - a, p - a);
     let (d1, d2) = (ab.dot(ap), ac.dot(ap));
@@ -716,9 +716,9 @@ pub fn ray_tri(o: Vec3, d: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Option<f32> {
     }
 }
 
-/// Proprietati duble din aceeasi grupa, cu acelasi nume scris altfel si aceeasi valoare
-/// ("Actuator Height" / "ActuatorHeight" / "actuator_height" - Plant 3D, COM + date Plant): ramane una,
-/// cu numele cel mai lizibil (cu spatii).
+/// Duplicate properties in the same group, with the same name written differently and the same value
+/// ("Actuator Height" / "ActuatorHeight" / "actuator_height" - Plant 3D, COM + Plant data): one remains,
+/// with the most readable name (with spaces).
 pub fn dedupe_props(props: &mut Vec<Prop>) {
     if props.len() < 2 {
         return;
@@ -730,7 +730,7 @@ pub fn dedupe_props(props: &mut Vec<Prop>) {
         let key = (p.group.clone(), norm(&p.name), p.value.trim().to_string());
         match seen.get(&key) {
             Some(&i) => {
-                // pastram numele cu spatii (mai usor de citit)
+                // we keep the name with spaces (easier to read)
                 if p.name.contains(' ') && !out[i].name.contains(' ') {
                     out[i].name = p.name;
                 }

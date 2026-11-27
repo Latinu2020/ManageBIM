@@ -1,26 +1,26 @@
-//! Export glTF 2.0 binar (.glb): geometria, culorile / materialele (PBR) si proprietatile BIM.
-//! Se deschide direct in Blender, Rhino 8, Twinmotion, Unreal, Enscape, 3ds Max, Windows 3D Viewer.
-//! Ierarhia: Model › Nivel › Element; proprietatile in `extras` (Blender: Custom Properties),
-//! cu cheile "Grup|Nume" - le citeste inapoi si importul glTF din ManageBIM.
+//! Binary glTF 2.0 export (.glb): the geometry, the colors / materials (PBR) and the BIM properties.
+//! Opens directly in Blender, Rhino 8, Twinmotion, Unreal, Enscape, 3ds Max, Windows 3D Viewer.
+//! Hierarchy: Model › Level › Element; the properties in `extras` (Blender: Custom Properties),
+//! with the keys "Group|Name" - the ManageBIM glTF import reads them back too.
 
 use glam::Vec3;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 
-/// Un element de exportat.
+/// An element to export.
 pub struct Item<'a> {
     pub model: &'a str,
     pub level: &'a str,
     pub name: &'a str,
     pub guid: &'a str,
     pub ifc_type: &'a str,
-    /// (grup, nume, valoare)
+    /// (group, name, value)
     pub props: Vec<(&'a str, &'a str, &'a str)>,
-    /// 3 varfuri per triunghi, coordonate locale Z-sus (metri)
+    /// 3 vertices per triangle, local coordinates Z-up (meters)
     pub tris: &'a [Vec3],
-    /// culoarea RGBA per triunghi (sRGB)
+    /// the RGBA color per triangle (sRGB)
     pub colors: Vec<[u8; 4]>,
-    /// luciu si metal per triunghi (0..255), ca in materialele ManageBIM
+    /// gloss and metal per triangle (0..255), as in the ManageBIM materials
     pub gloss_metal: Vec<[u8; 2]>,
 }
 
@@ -36,7 +36,7 @@ fn srgb_to_linear(c: u8) -> f32 {
     if x <= 0.04045 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) }
 }
 
-/// Z-sus (BIM) -> Y-sus (glTF)
+/// Z-up (BIM) -> Y-up (glTF)
 fn yup(p: Vec3) -> [f32; 3] {
     [p.x, p.z, -p.y]
 }
@@ -50,11 +50,11 @@ pub fn write_glb(items: &[Item], generator: &str) -> (Vec<u8>, Stats) {
     let mut materials: Vec<Value> = Vec::new();
     let mut mat_ix: HashMap<([u8; 4], [u8; 2]), usize> = HashMap::new();
     let mut nodes: Vec<Value> = Vec::new();
-    // model -> nivel -> copiii (indici de noduri)
+    // model -> level -> the children (node indices)
     let mut tree: Vec<(String, Vec<(String, Vec<usize>)>)> = Vec::new();
 
     for it in items {
-        // triunghiurile grupate pe material (o primitiva per material)
+        // the triangles grouped by material (one primitive per material)
         let mut groups: Vec<(([u8; 4], [u8; 2]), Vec<usize>)> = Vec::new();
         for t in 0..it.tris.len() / 3 {
             let (a, b, c) = (it.tris[t * 3], it.tris[t * 3 + 1], it.tris[t * 3 + 2]);
@@ -81,7 +81,7 @@ pub fn write_glb(items: &[Item], generator: &str) -> (Vec<u8>, Stats) {
                         "metallicFactor": me as f32 / 255.0,
                         "roughnessFactor": (1.0 - gl as f32 / 255.0).clamp(0.05, 1.0),
                     },
-                    // modelele BIM au adesea fete orientate inconsecvent
+                    // BIM models often have inconsistently oriented faces
                     "doubleSided": true,
                 });
                 if a < 250 {
@@ -113,7 +113,7 @@ pub fn write_glb(items: &[Item], generator: &str) -> (Vec<u8>, Stats) {
             prims.push(json!({ "attributes": { "POSITION": ai, "NORMAL": ai + 1 }, "material": mi, "mode": 4 }));
         }
         meshes.push(json!({ "name": it.name, "primitives": prims }));
-        // proprietatile: Blender le arata ca Custom Properties; importul ManageBIM le citeste inapoi
+        // the properties: Blender shows them as Custom Properties; the ManageBIM import reads them back
         let mut extras = Map::new();
         extras.insert("GlobalId".into(), json!(it.guid));
         extras.insert("IfcType".into(), json!(it.ifc_type));
@@ -143,7 +143,7 @@ pub fn write_glb(items: &[Item], generator: &str) -> (Vec<u8>, Stats) {
             None => levels.push((lvl.to_string(), vec![ni])),
         }
     }
-    // nodurile de grup: model si nivel
+    // the group nodes: model and level
     let mut roots = Vec::new();
     for (model, levels) in tree {
         let mut kids = Vec::new();
@@ -171,7 +171,7 @@ pub fn write_glb(items: &[Item], generator: &str) -> (Vec<u8>, Stats) {
         "buffers": [{ "byteLength": bin_len }],
     });
     if meshes_empty(&gltf) {
-        // glTF fara geometrie: fara bufferViews de lungime 0 (invalide)
+        // glTF without geometry: no zero-length bufferViews (invalid)
         gltf.as_object_mut().map(|o| {
             o.remove("bufferViews");
             o.remove("buffers");
@@ -212,7 +212,7 @@ fn meshes_empty(g: &Value) -> bool {
 mod tests {
     use super::*;
 
-    /// GLB -> importul glTF al ManageBIM: aceeasi geometrie (Z-sus), culori, nume, GUID, tip, nivel si proprietati
+    /// GLB -> the ManageBIM glTF import: the same geometry (Z-up), colors, names, GUID, type, level and properties
     #[test]
     fn glb_roundtrip_keeps_geometry_colours_and_properties() {
         let tris = vec![Vec3::new(0., 0., 0.), Vec3::new(2., 0., 0.), Vec3::new(0., 3., 0.), Vec3::new(0., 0., 0.), Vec3::new(0., 0., 4.), Vec3::new(2., 0., 0.)];
@@ -243,11 +243,11 @@ mod tests {
         assert_eq!(e.storey, "Level 1");
         assert!(e.props.iter().any(|p| p.group == "Pset_WallCommon" && p.name == "FireRating" && p.value == "EI30"));
         assert_eq!(e.tris.len(), 2);
-        // geometria revine in Z-sus, la aceleasi coordonate
+        // the geometry comes back in Z-up, at the same coordinates
         let all: Vec<glam::DVec3> = e.tris.iter().flatten().copied().collect();
         assert!(all.iter().any(|p| (p.z - 4.0).abs() < 1e-5), "Z-up preserved");
         assert!(all.iter().any(|p| (p.y - 3.0).abs() < 1e-5));
-        // culorile (sRGB) revin aproape identice
+        // the colors (sRGB) come back almost identical
         let reds = e.colors.iter().filter(|c| c[0] > 190 && c[1] < 45).count();
         assert_eq!(reds, 1, "{:?}", e.colors);
     }

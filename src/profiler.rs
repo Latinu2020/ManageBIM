@@ -1,18 +1,18 @@
-//! Appearance Profiler (ca in Navisworks): coloreaza elementele dupa valoarea unei proprietati.
-//! Doua moduri: o culoare pe fiecare valoare distincta (Level, System, Fire Rating...) sau
-//! intervale numerice cu gradient (Volume, Area, Elevation...).
+//! Appearance Profiler (as in Navisworks): colours the elements by the value of a property.
+//! Two modes: one colour per distinct value (Level, System, Fire Rating...) or
+//! numeric ranges with a gradient (Volume, Area, Elevation...).
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum ProfileMode {
-    /// o regula pe fiecare valoare distincta
+    /// one rule per distinct value
     #[default]
     Values,
-    /// intervale numerice egale intre minim si maxim
+    /// equal numeric ranges between minimum and maximum
     Ranges,
 }
 
-/// Ce se intampla cu elementele care nu au proprietatea / nu intra in nicio regula.
+/// What happens to the elements that do not have the property / do not fall into any rule.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum Unmatched {
     #[default]
@@ -32,13 +32,13 @@ impl Unmatched {
     }
 }
 
-/// culoarea "fantoma" pentru elementele fara regula
+/// the "ghost" colour for the elements without a rule
 pub const GHOST: [u8; 4] = [150, 150, 155, 40];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProfileRule {
     pub label: String,
-    /// doar in modul Ranges: [lo, hi) (ultimul interval include maximul)
+    /// only in Ranges mode: [lo, hi) (the last range includes the maximum)
     #[serde(default)]
     pub lo: Option<f64>,
     #[serde(default)]
@@ -51,7 +51,7 @@ pub struct ProfileRule {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Profile {
-    /// categoria proprietatii ("Item" = Name / IFC Type / Level / Model / GlobalId)
+    /// the property category ("Item" = Name / IFC Type / Level / Model / GlobalId)
     pub cat: String,
     pub prop: String,
     pub mode: ProfileMode,
@@ -67,10 +67,10 @@ impl Default for Profile {
     }
 }
 
-/// Mai multe valori distincte decat atat nu au sens pe ecran (si nici in legenda).
+/// More distinct values than this make no sense on screen (nor in the legend).
 pub const MAX_RULES: usize = 250;
 
-/// Culori distincte: nuanta pe unghiul de aur, saturatie / luminozitate alternante.
+/// Distinct colours: hue on the golden angle, alternating saturation / brightness.
 pub fn palette(i: usize) -> [u8; 4] {
     let h = (i as f64 * 0.618_033_988_75).fract();
     let s = [0.70, 0.55, 0.85][i % 3];
@@ -78,7 +78,7 @@ pub fn palette(i: usize) -> [u8; 4] {
     hsv(h, s, v)
 }
 
-/// Gradient albastru -> verde -> galben -> rosu, t in [0, 1].
+/// Blue -> green -> yellow -> red gradient, t in [0, 1].
 pub fn ramp(t: f64) -> [u8; 4] {
     let t = t.clamp(0.0, 1.0);
     hsv((1.0 - t) * 0.66, 0.80, 0.92)
@@ -99,21 +99,21 @@ fn hsv(h: f64, s: f64, v: f64) -> [u8; 4] {
     [(r * 255.0).round() as u8, (g * 255.0).round() as u8, (b * 255.0).round() as u8, 255]
 }
 
-/// sortare "naturala": "Level 2" < "Level 10", numerele dupa valoare
+/// "natural" sort: "Level 2" < "Level 10", numbers by value
 pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    // aceeasi ordine totala ca in app.rs (o sortare cu ordine inconsecventa opreste programul)
+    // the same total order as in app.rs (a sort with an inconsistent order stops the program)
     crate::app::natural_cmp(a, b)
 }
 
 impl Profile {
-    /// Reguli pentru valori distincte. `counts`: valoare -> numar de elemente.
-    /// Intoarce cate valori nu au incaput (peste MAX_RULES).
+    /// Rules for distinct values. `counts`: value -> number of elements.
+    /// Returns how many values did not fit (over MAX_RULES).
     pub fn build_values(&mut self, counts: Vec<(String, u32)>) -> usize {
         let mut v: Vec<(String, u32)> = counts.into_iter().filter(|(s, _)| !s.trim().is_empty()).collect();
         v.sort_by(|a, b| natural_cmp(&a.0, &b.0));
         let dropped = v.len().saturating_sub(MAX_RULES);
         if dropped > 0 {
-            // pastram valorile cele mai frecvente, apoi din nou in ordine naturala
+            // we keep the most frequent values, then back in natural order
             v.sort_by(|a, b| b.1.cmp(&a.1));
             v.truncate(MAX_RULES);
             v.sort_by(|a, b| natural_cmp(&a.0, &b.0));
@@ -122,7 +122,7 @@ impl Profile {
         dropped
     }
 
-    /// Intervale egale intre minimul si maximul valorilor numerice.
+    /// Equal ranges between the minimum and maximum of the numeric values.
     pub fn build_ranges(&mut self, nums: &[f64], unit: &str) {
         let nums: Vec<f64> = nums.iter().copied().filter(|x| x.is_finite()).collect();
         self.rules.clear();
@@ -149,13 +149,13 @@ impl Profile {
     fn range_rule(&self, x: f64) -> Option<usize> {
         let last = self.rules.len().checked_sub(1)?;
         self.rules.iter().enumerate().position(|(i, r)| match (r.lo, r.hi) {
-            // [lo, hi), iar ultimul interval include si maximul
+            // [lo, hi), and the last range also includes the maximum
             (Some(a), Some(b)) => x >= a && (x < b || (i == last && x <= b)),
             _ => false,
         })
     }
 
-    /// Regula care se aplica unui element, dupa valorile proprietatii lui (prima care se potriveste).
+    /// The rule that applies to an element, by the values of its property (the first that matches).
     pub fn rule_for(&self, vals: &[&str]) -> Option<usize> {
         match self.mode {
             ProfileMode::Values => vals.iter().find_map(|v| {
@@ -168,8 +168,8 @@ impl Profile {
 }
 
 impl Profile {
-    /// Adauga reguli (culori noi) pentru valorile care nu au inca regula. Pastreaza regulile existente
-    /// si culorile lor (ex. dupa importul unui profil pe un model nou). Intoarce cate s-au adaugat.
+    /// Adds rules (new colours) for the values that do not have a rule yet. Keeps the existing rules
+    /// and their colours (e.g. after importing a profile on a new model). Returns how many were added.
     pub fn add_missing(&mut self, counts: Vec<(String, u32)>) -> usize {
         let mut new: Vec<(String, u32)> = counts.into_iter().filter(|(v, _)| !v.trim().is_empty() && !self.rules.iter().any(|r| r.label.eq_ignore_ascii_case(v.trim()))).collect();
         new.sort_by(|a, b| natural_cmp(&a.0, &b.0));
@@ -183,7 +183,7 @@ impl Profile {
         n
     }
 
-    /// Regula noua, manuala: in modul Values o valoare scrisa de utilizator, in Ranges dupa ultimul interval.
+    /// New manual rule: in Values mode a value typed by the user, in Ranges after the last range.
     pub fn add_rule(&mut self) {
         let i = self.rules.len();
         let rule = match self.mode {
@@ -199,7 +199,7 @@ impl Profile {
         self.rules.push(rule);
     }
 
-    /// Dupa editarea manuala a limitelor unui interval: refacem eticheta (pastram unitatea).
+    /// After manually editing the limits of a range: we rebuild the label (keeping the unit).
     pub fn relabel_range(&mut self, i: usize) {
         let Some(r) = self.rules.get_mut(i) else { return };
         if let (Some(a), Some(b)) = (r.lo, r.hi) {
@@ -218,7 +218,7 @@ fn range_label(a: f64, b: f64, unit: &str) -> String {
     if unit.is_empty() { format!("{} – {}", f(a), f(b)) } else { format!("{} – {} {unit}", f(a), f(b)) }
 }
 
-/// Fisier .bimprofile: un profil refolosibil (proprietate, mod, reguli cu culori).
+/// .bimprofile file: a reusable profile (property, mode, rules with colours).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProfileFile {
     pub app: String,
@@ -232,12 +232,12 @@ pub const FILE_KIND: &str = "appearance-profile";
 impl Profile {
     pub fn to_file_json(&self) -> String {
         let mut p = self.clone();
-        p.rules.iter_mut().for_each(|r| r.count = 0); // numaratorile tin de model, nu de profil
+        p.rules.iter_mut().for_each(|r| r.count = 0); // the counts belong to the model, not to the profile
         p.active = true;
         serde_json::to_string_pretty(&ProfileFile { app: "ManageBIM".into(), kind: FILE_KIND.into(), version: 1, profile: p }).unwrap_or_default()
     }
 
-    /// Accepta un fisier .bimprofile (sau un profil simplu in JSON).
+    /// Accepts a .bimprofile file (or a plain profile in JSON).
     pub fn from_file_json(text: &str) -> Result<Profile, String> {
         if let Ok(f) = serde_json::from_str::<ProfileFile>(text) {
             if f.kind != FILE_KIND {
@@ -249,7 +249,7 @@ impl Profile {
     }
 }
 
-/// Unitatea dintr-o valoare de tip "12.5 m2" (textul de dupa numar).
+/// The unit in a value like "12.5 m2" (the text after the number).
 pub fn unit_of(v: &str) -> String {
     let t = v.trim();
     let num_end = t.char_indices().take_while(|(i, c)| c.is_ascii_digit() || *c == '.' || *c == ',' || ((*c == '-' || *c == '+') && *i == 0) || *c == 'e' || *c == 'E').map(|(i, c)| i + c.len_utf8()).last().unwrap_or(0);
@@ -288,7 +288,7 @@ mod tests {
         let vals: Vec<(String, u32)> = (0..MAX_RULES + 10).map(|i| (format!("V{i}"), if i < 5 { 1 } else { 100 })).collect();
         assert_eq!(p.build_values(vals), 10);
         assert_eq!(p.rules.len(), MAX_RULES);
-        // cele 5 valori rare (V0..V4) sunt primele eliminate
+        // the 5 rare values (V0..V4) are the first removed
         assert!(p.rules.iter().all(|r| r.count == 100));
     }
 }

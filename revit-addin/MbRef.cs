@@ -5,19 +5,19 @@ using System.Text;
 
 namespace ManageBIM
 {
-    /// <summary>Un element din referinta ManageBIM (.mbref): nume, GUID, tip, nivel, culoare si triunghiuri (metri, fata de Origin).</summary>
+    /// <summary>An element of the ManageBIM reference (.mbref): name, GUID, type, level, color and triangles (meters, relative to Origin).</summary>
     internal sealed class MbRefElement
     {
         public string Name = "", Guid = "", Type = "", Level = "";
         public byte R = 200, G = 200, B = 200, A = 255;
-        /// <summary>9 valori pe triunghi (x0 y0 z0 x1 ... z2), metri fata de origine</summary>
+        /// <summary>9 values per triangle (x0 y0 z0 x1 ... z2), meters relative to the origin</summary>
         public float[] Tris = new float[0];
     }
 
     /// <summary>
-    /// Fisierul .mbref scris de ManageBIM (Output › Reference): "MBREF1", originea (3 x f64, metri reali), numarul de
-    /// elemente, apoi pe element: 4 texte (u16 lungime + UTF-8), RGBA, numarul de triunghiuri si coordonatele (f32).
-    /// Acelasi fisier in Revit si AutoCAD / Plant 3D.
+    /// The .mbref file written by ManageBIM (Output › Reference): "MBREF1", the origin (3 x f64, real meters), the number of
+    /// elements, then per element: 4 texts (u16 length + UTF-8), RGBA, the triangle count and the coordinates (f32).
+    /// The same file in Revit and AutoCAD / Plant 3D.
     /// </summary>
     internal static class MbRef
     {

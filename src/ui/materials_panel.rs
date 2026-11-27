@@ -1,5 +1,5 @@
-//! Fereastra Materials, reorganizata: biblioteca, editor, harti PBR, parametri OpenPBR,
-//! asignari si import / export (.bimmat, .mtlx MaterialX, zip PBR, imagini).
+//! The Materials window, reorganized: library, editor, PBR maps, OpenPBR parameters,
+//! assignments and import / export (.bimmat, .mtlx MaterialX, PBR zip, images).
 use super::*;
 
 fn section(ui: &mut egui::Ui, title: &str, tip: &str) {
@@ -17,7 +17,7 @@ impl App {
         let mut pick_tex: Option<Purpose> = None;
         let mut io: Option<Purpose> = None;
 
-        // dialogul de asignare dupa importul unui pachet PBR
+        // the assignment dialog after importing a PBR package
         if !self.pending_mat_assign.is_empty() {
             let names = self.pending_mat_assign.clone();
             let mut choice: Option<u8> = None;
@@ -66,7 +66,7 @@ impl App {
             }
         }
 
-        // ---- biblioteca profesionala (ambientCG, CC0): progres si finalizare
+        // ---- the professional library (ambientCG, CC0): progress and completion
         self.pro_library_ui(ui);
         // ---- toolbar
         ui.horizontal_wrapped(|ui| {
@@ -147,7 +147,7 @@ impl App {
             ui.checkbox(&mut self.materials_on, "Show materials in 3D");
         });
 
-        // trei coloane pe toata inaltimea panoului: lista (lata), editorul (cu derulare proprie), asignarile
+        // three columns over the full panel height: the list (wide), the editor (with its own scrolling), the assignments
         self.mat_thumbs_poll(ui.ctx());
         let avail = ui.available_rect_before_wrap();
         let h = avail.height().max(220.0);
@@ -158,7 +158,7 @@ impl App {
         let asg_w = if narrow { 0.0 } else { (w * 0.27).clamp(230.0, 440.0) };
         let ed_w = (w - list_w - asg_w - if narrow { gap } else { 2.0 * gap }).max(180.0);
         let r0 = egui::Rect::from_min_size(avail.min, egui::vec2(list_w, h));
-        // panou ingust: asignarile sub editor (60 / 40 din inaltime)
+        // narrow panel: the assignments below the editor (60 / 40 of the height)
         let (r1, r2) = if narrow {
             let x = r0.max.x + gap;
             let eh = (h * 0.6).floor();
@@ -178,7 +178,7 @@ impl App {
         let mut c2 = mk(ui, r2);
         ui.allocate_rect(egui::Rect::from_min_size(avail.min, egui::vec2(w, h)), egui::Sense::hover());
         {
-            // ---- lista
+            // ---- list
             let ui = &mut c0;
             ui.horizontal(|ui| {
                 section(ui, "Library", "Click a material to edit it");
@@ -208,7 +208,7 @@ impl App {
                 return;
             }
             let old_name = self.materials[i].name.clone();
-            // salvare: in biblioteca ta (toate proiectele) sau ca fisier (.mtlx cu texturile alaturi)
+            // save: to your library (all projects) or as a file (.mtlx with the textures next to it)
             let in_lib = self.user_library_names().contains(&old_name);
             ui.horizontal_wrapped(|ui| {
                 let (txt, tip) = if in_lib {
@@ -314,9 +314,9 @@ impl App {
                 ui.end_row();
             });
 
-            // numele schimbat se aplica regulilor dupa ce terminam de editat materialul
+            // the changed name is applied to the rules after we finish editing the material
             let new_name = m.name.clone();
-            // previzualizare
+            // preview
             let mat = &self.materials[self.mats.sel];
             let tex = if !mat.texture.is_empty() && self.tex_loaded_res == crate::materials::tex_size() {
                 self.tex_layers.iter().find(|(k, _)| k == &mat.texture).map(|(_, px)| px.clone())
@@ -354,7 +354,7 @@ impl App {
         });
 
         {
-            // ---- asignari (coloana din dreapta; sub editor cand panoul e ingust)
+            // ---- assignments (the right column; below the editor when the panel is narrow)
             let ui = &mut c2;
             section(ui, "Assignments", "Rules lower in the list win");
             let mname = self.materials.get(self.mats.sel).map(|m| m.name.clone()).unwrap_or_default();
@@ -430,8 +430,8 @@ impl App {
         if changed {
             self.materials_changed();
         }
-        // modificarile unui material din biblioteca ta se salveaza si acolo (la ~1 s dupa ultima schimbare,
-        // ca sa nu scriem fisierul la fiecare pas al unui slider)
+        // changes to a material in your library are saved there too (~1 s after the last change,
+        // so we do not write the file at every step of a slider)
         let key = egui::Id::new("mat_lib_autosave");
         let now = ui.input(|i| i.time);
         if changed {
@@ -457,10 +457,10 @@ impl App {
 }
 
 impl App {
-    /// Biblioteca profesionala de materiale (texturi scanate ambientCG, CC0): descarcare cu progres,
-    /// apoi materialele inlocuiesc variantele incluse cu acelasi nume si se aplica dupa tipul IFC.
+    /// The professional material library (ambientCG scanned textures, CC0): download with progress,
+    /// then the materials replace the bundled variants with the same name and are applied by IFC type.
     fn pro_library_ui(&mut self, ui: &mut egui::Ui) {
-        // finalizare
+        // completion
         let finished = self.pro_lib_job.as_ref().map(|j| j.lock().unwrap_or_else(|e| e.into_inner()).finished).unwrap_or(false);
         if finished {
             let job = self.pro_lib_job.take().unwrap();
@@ -529,10 +529,10 @@ impl App {
     }
 }
 
-// ---------------------------------------------------------------- lista cu miniaturi
+// ---------------------------------------------------------------- list with thumbnails
 
 impl App {
-    /// Miniaturile terminate de firul de lucru devin texturi egui.
+    /// The thumbnails finished by the worker thread become egui textures.
     pub(super) fn mat_thumbs_poll(&mut self, ctx: &egui::Context) {
         let mut done = Vec::new();
         if let Some((_, rx)) = &self.mats.thumb_job {
@@ -549,7 +549,7 @@ impl App {
         }
     }
 
-    /// Miniatura texturii (ceruta firului de lucru la primul apel; pana atunci None).
+    /// The texture thumbnail (requested from the worker thread on the first call; None until then).
     fn mat_thumb(&mut self, tex: &str) -> Option<egui::TextureHandle> {
         if tex.is_empty() {
             return None;
@@ -574,7 +574,7 @@ impl App {
                 .ok();
             self.mats.thumb_job = Some((tx, orx));
         }
-        // marcat "in lucru" (None) ca sa nu fie cerut din nou la fiecare cadru
+        // marked "in progress" (None) so it is not requested again every frame
         self.mats.thumbs.insert(path.clone(), None);
         if let Some((tx, _)) = &self.mats.thumb_job {
             let _ = tx.send(path);
@@ -582,7 +582,7 @@ impl App {
         None
     }
 
-    /// Un rand al listei: miniatura (textura sau culoarea), numele, ce contine; intoarce true la click.
+    /// A list row: thumbnail (texture or color), name, what it contains; returns true on click.
     fn mat_row(&mut self, ui: &mut egui::Ui, i: usize, in_lib: bool) -> bool {
         let (tex, name, sub, color, used, accent_name) = {
             let m = &self.materials[i];
@@ -616,7 +616,7 @@ impl App {
                 egui::Image::new((h.id(), t.size())).rounding(4.0).paint_at(ui, t);
             }
             None => {
-                // culoarea, cu o umbrire simpla de sfera
+                // the color, with a simple sphere shading
                 let c = Color32::from_rgb(color[0], color[1], color[2]);
                 ui.painter().rect_filled(t, 4.0, c);
                 ui.painter().circle_filled(t.center() + egui::vec2(-7.0, -7.0), 7.0, Color32::from_white_alpha(45));
@@ -649,8 +649,8 @@ impl App {
 }
 
 impl App {
-    /// Fereastra Materials: ocupa inaltimea ferestrei aplicatiei (sub ribbon) si ~80% din latime;
-    /// se poate muta si redimensiona, iar lista foloseste toata inaltimea.
+    /// The Materials window: takes the height of the app window (below the ribbon) and ~80% of the width;
+    /// it can be moved and resized, and the list uses the full height.
     pub(super) fn materials_window(&mut self, ctx: &egui::Context) {
         if !self.mats.window {
             return;
@@ -670,7 +670,7 @@ impl App {
             .resizable(true)
             .collapsible(false)
             .show(ctx, |ui| {
-                // continutul ia toata marimea ferestrei (redimensionata de utilizator)
+                // the content takes the whole window size (resized by the user)
                 let r = ui.available_rect_before_wrap();
                 ui.set_min_size(r.size());
                 self.materials_ui(ui);

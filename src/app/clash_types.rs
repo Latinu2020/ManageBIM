@@ -25,10 +25,10 @@ pub struct ClashResult {
     pub resolved_by: String,
     #[serde(default)]
     pub resolved_at: String,
-    /// al doilea "element" e norul de puncte (Scan vs Model)
+    /// the second "element" is the point cloud (Scan vs Model)
     #[serde(default)]
     pub b_is_scan: bool,
-    /// viewpoint-ul salvat al rezultatului (ca in Navisworks): la selectare camera merge aici
+    /// the saved viewpoint of the result (as in Navisworks): on selection the camera goes here
     #[serde(default)]
     pub view: Option<crate::camera::Camera>,
 }
@@ -54,13 +54,13 @@ pub struct ClashRules {
     /// items matching any of these rules never clash
     #[serde(default)]
     pub exclude_rules: Vec<SearchRule>,
-    /// ignora conexiunile normale (perete-placa, grinda-stalp, teava-suport, izolatie...) cu patrundere mica
+    /// ignore normal connections (wall-slab, beam-column, pipe-support, insulation...) with small penetration
     #[serde(default)]
     pub normal_joints: bool,
-    /// patrunderea maxima pentru o conexiune normala (mm)
+    /// the maximum penetration for a normal connection (mm)
     #[serde(default = "joint_default")]
     pub joint_mm: f32,
-    /// responsabilul fiecarui clash nou = disciplina care se muta (structura > arhitectura > instalatii)
+    /// the assignee of each new clash = the discipline that moves (structure > architecture > MEP)
     #[serde(default)]
     pub auto_assign: bool,
 }
@@ -88,9 +88,9 @@ pub enum GroupBy {
     ItemB,
     TypePair,
     Proximity,
-    /// intersectia de axe cea mai apropiata + nivelul (ex. "C-4 / Level 2")
+    /// the nearest grid intersection + the level (e.g. "C-4 / Level 2")
     Grid,
-    /// sistemul instalatiei (System Name / Classification)
+    /// the system of the installation (System Name / Classification)
     System,
     ModelA,
     ModelB,
@@ -158,14 +158,14 @@ pub struct ClashTest {
     pub last_run: String,
     #[serde(default)]
     pub rules: ClashRules,
-    /// pragurile de gravitate (mm): sub primul = Minor, intre = Major, peste al doilea = Critical
+    /// the severity thresholds (mm): below the first = Minor, between = Major, above the second = Critical
     #[serde(default = "sev_default")]
     pub sev_mm: [f32; 2],
-    /// amprenta configuratiei la ultima rulare (Status Old cand s-a schimbat ceva de atunci)
+    /// fingerprint of the configuration at the last run (Status Old when something has changed since)
     #[serde(default)]
     pub run_key: u64,
-    /// test special: inaltime libera (headroom) sau distanta de evacuare (egress), cu parametrii lui;
-    /// rulat de crate::egress in locul detectiei de clash obisnuite
+    /// special test: headroom or egress distance, with its parameters;
+    /// run by crate::egress instead of the usual clash detection
     #[serde(default)]
     pub special: Option<(crate::egress::Check, crate::egress::Params)>,
 }
@@ -174,7 +174,7 @@ fn sev_default() -> [f32; 2] {
     [10.0, 50.0]
 }
 
-/// Gravitatea unui clash, dupa patrundere (hard) sau cat de aproape sunt elementele (clearance).
+/// The severity of a clash, by penetration (hard) or how close the elements are (clearance).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]
 pub enum Severity {
     Critical,
@@ -201,14 +201,14 @@ impl Severity {
 }
 
 impl ClashTest {
-    /// Gravitatea unui rezultat: hard = patrunderea (mm) fata de praguri; clearance = cat din distanta
-    /// ceruta lipseste (atingere = Critical); duplicate = Critical.
+    /// The severity of a result: hard = the penetration (mm) against the thresholds; clearance = how much of the distance
+    /// required is missing (touching = Critical); duplicate = Critical.
     pub fn severity(&self, dist: f32) -> Severity {
         severity_of(self.ty, self.tol_mm, self.sev_mm, dist)
     }
 }
 
-/// ca `ClashTest::severity`, fara testul intreg (tipul, toleranta si pragurile).
+/// like `ClashTest::severity`, without the whole test (the type, tolerance and thresholds).
 pub fn severity_of(ty: ClashType, tol_mm: f32, sev_mm: [f32; 2], dist: f32) -> Severity {
     {
         let [lo, hi] = sev_mm;
@@ -239,7 +239,7 @@ pub fn severity_of(ty: ClashType, tol_mm: f32, sev_mm: [f32; 2], dist: f32) -> S
 }
 
 impl ClashTest {
-    /// Teste gata facute (sabloane): (nume, descriere, test). Disciplinele se recunosc automat.
+    /// Ready-made tests (templates): (name, description, test). The disciplines are recognized automatically.
     pub fn templates() -> Vec<(&'static str, &'static str, ClashTest)> {
         let d = |v: &str| Selector { kind: SelKind::Discipline, value: v.to_string() };
         let all = || Selector { kind: SelKind::All, value: String::new() };

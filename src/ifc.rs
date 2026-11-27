@@ -1,4 +1,4 @@
-//! Incarcator IFC (IFC2x3 / IFC4): geometrie, culori, proprietati, structura spatiala.
+//! IFC loader (IFC2x3 / IFC4): geometry, colours, properties, spatial structure.
 use crate::model::{Prop, RawElement, RawModel};
 use crate::step::{StepFile, V};
 use glam::{DMat4, DQuat, DVec2, DVec3, DVec4};
@@ -34,7 +34,7 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
     progress(0.15, "Styles and relationships");
     c.collect_styles();
 
-    // --- relatii
+    // --- relations
     let mut parent: HashMap<u32, u32> = HashMap::new();
     for &r in f.of_type("IFCRELAGGREGATES").iter().chain(f.of_type("IFCRELNESTS")) {
         let a = f.args(r);
@@ -56,14 +56,14 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
             }
         }
     }
-    // goluri/umpleri: fereastra -> gol -> perete (pentru nivel)
+    // openings/fillings: window -> opening -> wall (for the level)
     for &r in f.of_type("IFCRELFILLSELEMENT") {
         let a = f.args(r);
         if let (Some(o), Some(e)) = (a.get(4).and_then(|v| v.as_ref()), a.get(5).and_then(|v| v.as_ref())) {
             parent.entry(e).or_insert(o);
         }
     }
-    // sisteme / zone / grupuri (IfcRelAssignsToGroup): element -> (fel, nume)
+    // systems / zones / groups (IfcRelAssignsToGroup): element -> (kind, name)
     let mut groups: HashMap<u32, Vec<(String, String)>> = HashMap::new();
     for &r in f.of_type("IFCRELASSIGNSTOGROUP").iter().chain(f.of_type("IFCRELASSIGNSTOGROUPBYFACTOR").iter()) {
         let a = f.args(r);
@@ -80,7 +80,7 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
             }
         }
     }
-    // clasificari (Uniclass, OmniClass...): element -> (sistem, cod, nume)
+    // classifications (Uniclass, OmniClass...): element -> (system, code, name)
     let mut classes: HashMap<u32, Vec<(String, String, String)>> = HashMap::new();
     for &r in f.of_type("IFCRELASSOCIATESCLASSIFICATION") {
         let a = f.args(r);
@@ -91,7 +91,7 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
         let ca = f.args(cr);
         let code = ca.get(1).and_then(|v| v.as_str()).unwrap_or("").to_string();
         let cname = ca.get(2).and_then(|v| v.as_str()).unwrap_or("").to_string();
-        // sistemul: urcam prin ReferencedSource pana la IfcClassification
+        // the system: we climb through ReferencedSource up to IfcClassification
         let mut system = String::new();
         let mut src = ca.get(3).and_then(|v| v.as_ref());
         for _ in 0..8 {
@@ -112,7 +112,7 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
             }
         }
     }
-    // golurile fiecarui element-gazda (pereti, placi...): se scad din geometria lui
+    // the openings of each host element (walls, slabs...): subtracted from its geometry
     let mut voids: HashMap<u32, Vec<u32>> = HashMap::new();
     for &r in f.of_type("IFCRELVOIDSELEMENT") {
         let a = f.args(r);
@@ -172,7 +172,7 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
         }
     }
 
-    // --- tipuri de produse
+    // --- product types
     let mut product_ids: Vec<u32> = Vec::new();
     for (ti, ids) in f.by_type.iter().enumerate() {
         let tn = &f.type_names[ti];
@@ -198,8 +198,8 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
     product_ids.sort_unstable();
 
     let scale_m = DMat4::from_scale(DVec3::splat(scale));
-    // --- geometrie in paralel: bucati ordonate de elemente, fiecare cu propriul Ctx (cache-uri locale),
-    //     rezultatele se lipesc in aceeasi ordine -> indexii elementelor raman identici cu varianta seriala
+    // --- geometry in parallel: ordered chunks of elements, each with its own Ctx (local caches),
+    //     the results are joined in the same order -> the element indices stay identical to the serial version
     let styles = std::mem::take(c.styles.to_mut());
     let sh = Shared { parent: &parent, psets: &psets, types: &types, materials: &materials, mat_colors: &mat_colors, voids: &voids, groups: &groups, classes: &classes, scale, scale_m };
     let total = product_ids.len().max(1);
@@ -225,7 +225,7 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
                 })
                 .collect()
         });
-        // progresul se raporteaza din firul curent (callback-ul nu e Sync)
+        // progress is reported from the current thread (the callback is not Sync)
         while !h.is_finished() {
             progress(0.2 + 0.78 * done.load(Ordering::Relaxed) as f32 / total as f32, "Generating geometry");
             std::thread::sleep(std::time::Duration::from_millis(25));
@@ -249,7 +249,7 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
         info.push(("Source application".into(), a.get(2).and_then(|v| v.as_str()).unwrap_or("").to_string()));
     }
     info.push(("STEP entities".into(), f.ents.len().to_string()));
-    // georeferentiere IFC4 (IfcMapConversion): coordonatele proiectului in sistemul cartografic
+    // IFC4 georeferencing (IfcMapConversion): the project coordinates in the map coordinate system
     if let Some(&mc) = f.of_type("IFCMAPCONVERSION").first() {
         let a = f.args(mc);
         let num = |i: usize| a.get(i).and_then(|v| v.as_f64());
@@ -268,8 +268,8 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
     if !classes.is_empty() {
         info.push(("Classified elements".into(), classes.len().to_string()));
     }
-    // axe (IfcGrid) si niveluri (IfcBuildingStorey) in coordonate reale (metri): afisare in 3D si locatia clash-urilor.
-    // Se pastreaza in `info` (cheile cu "~" nu se afiseaza) ca sa ajunga si in cache-ul .bimc.
+    // grids (IfcGrid) and levels (IfcBuildingStorey) in real coordinates (metres): 3D display and clash location.
+    // Kept in `info` (keys with "~" are not displayed) so that they also reach the .bimc cache.
     let mut grids: Vec<(String, [f64; 3], [f64; 3])> = Vec::new();
     for &g in f.of_type("IFCGRID") {
         let a = f.args(g);
@@ -316,14 +316,14 @@ pub fn load_ifc_bytes(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<Raw
 }
 
 
-/// Numar cu cel mult 4 zecimale, fara zerouri inutile (3.2000 -> "3.2").
+/// A number with at most 4 decimals, without useless zeros (3.2000 -> "3.2").
 fn fmt_qty(x: f64) -> String {
     let s = format!("{x:.4}");
     let s = s.trim_end_matches('0').trim_end_matches('.');
     if s.is_empty() || s == "-" { "0".into() } else { s.to_string() }
 }
 
-/// Date comune (doar citire) pentru generarea elementelor in paralel.
+/// Shared (read-only) data for generating the elements in parallel.
 struct Shared<'a> {
     parent: &'a HashMap<u32, u32>,
     psets: &'a HashMap<u32, Vec<u32>>,
@@ -337,7 +337,7 @@ struct Shared<'a> {
     scale_m: DMat4,
 }
 
-/// Un produs IFC -> element cu geometrie si proprietati (None daca nu are geometrie afisabila).
+/// An IFC product -> an element with geometry and properties (None if it has no displayable geometry).
 fn make_element(c: &mut Ctx, sh: &Shared, id: u32) -> Option<RawElement> {
     let f = c.f;
     let a = f.args(id);
@@ -348,7 +348,7 @@ fn make_element(c: &mut Ctx, sh: &Shared, id: u32) -> Option<RawElement> {
     let ty = f.ty(id).to_string();
     let place = a[5].as_ref().map(|p| c.placement(p, 0)).unwrap_or(DMat4::IDENTITY);
     let xf = sh.scale_m * place;
-    // culoare implicita: material -> tip
+    // default colour: material -> type
     let mat_info = sh.materials.get(&id).map(|m| c.material_info(*m, sh.mat_colors));
     let def_col = mat_info.as_ref().and_then(|m| m.1).unwrap_or_else(|| default_color(&ty));
     let local = c.product_tris(rep);
@@ -368,7 +368,7 @@ fn make_element(c: &mut Ctx, sh: &Shared, id: u32) -> Option<RawElement> {
         tris.push(p);
         colors.push(col.unwrap_or(def_col));
     }
-    // --- golurile (usi, ferestre, treceri): scazute din geometria gazdei
+    // --- the openings (doors, windows, penetrations): subtracted from the host geometry
     if let Some(ops) = sh.voids.get(&id) {
         for &op in ops {
             let oa = f.args(op);
@@ -379,7 +379,7 @@ fn make_element(c: &mut Ctx, sh: &Shared, id: u32) -> Option<RawElement> {
                 c.warn.insert("Some openings are not convex and were not cut from their walls.".into());
             }
         }
-        // bucatile foarte mici ramase dupa taiere
+        // the very small pieces left after cutting
         let keep: Vec<bool> = tris.iter().map(|p| (p[1] - p[0]).cross(p[2] - p[0]).length_squared() >= 1e-18).collect();
         let mut k = 0;
         tris.retain(|_| {
@@ -395,7 +395,7 @@ fn make_element(c: &mut Ctx, sh: &Shared, id: u32) -> Option<RawElement> {
     if tris.is_empty() {
         return None;
     }
-    // --- metadate
+    // --- metadata
     let guid = a[0].as_str().unwrap_or("").to_string();
     let mut name = a[2].as_str().unwrap_or("").to_string();
     if name.is_empty() {
@@ -417,7 +417,7 @@ fn make_element(c: &mut Ctx, sh: &Shared, id: u32) -> Option<RawElement> {
     if let Some(pt) = a.get(8).and_then(|v| v.as_enum()) {
         push("Element", "PredefinedType", pt.to_string());
     }
-    // nivel
+    // level
     let mut storey = String::new();
     let mut cur = id;
     for _ in 0..12 {
@@ -437,7 +437,7 @@ fn make_element(c: &mut Ctx, sh: &Shared, id: u32) -> Option<RawElement> {
         }
     }
     if storey.is_empty() {
-        // foloseste primul container spatial gasit
+        // uses the first spatial container found
         if let Some(p) = sh.parent.get(&id) {
             let pa = f.args(*p);
             storey = pa.get(2).and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -464,13 +464,13 @@ fn make_element(c: &mut Ctx, sh: &Shared, id: u32) -> Option<RawElement> {
             c.read_pset(*ps, &mut props, "");
         }
     }
-    // sistemele / zonele: "System" = primul sistem (folosit la gruparea clash-urilor si in Model Checker)
+    // systems / zones: "System" = the first system (used for grouping clashes and in Model Checker)
     if let Some(gs) = sh.groups.get(&id) {
         for (gty, gname) in gs {
             props.push(Prop { group: "Systems".into(), name: gty.clone(), value: gname.clone() });
         }
     }
-    // clasificarile: grupul "Classification", numele = sistemul, valoarea = codul
+    // classifications: the "Classification" group, name = the system, value = the code
     if let Some(cs) = sh.classes.get(&id) {
         for (system, code, cname) in cs {
             if !code.is_empty() {
@@ -496,18 +496,18 @@ fn make_element(c: &mut Ctx, sh: &Shared, id: u32) -> Option<RawElement> {
 struct Ctx<'a> {
     f: &'a StepFile,
     placements: HashMap<u32, DMat4>,
-    /// stilurile se colecteaza o data (Owned), apoi firele de geometrie le imprumuta (Borrowed)
+    /// the styles are collected once (Owned), then the geometry threads borrow them (Borrowed)
     styles: Cow<'a, HashMap<u32, [u8; 4]>>,
     rep_cache: HashMap<u32, Rc<Vec<Tri>>>,
-    /// factor de conversie unghi -> radiani
+    /// conversion factor angle -> radians
     angle: f64,
-    /// conversia cantitatilor IFC (IfcQuantityLength / Area / Volume) in m, m², m³
+    /// conversion of IFC quantities (IfcQuantityLength / Area / Volume) to m, m², m³
     qscale: [f64; 3],
     warn: BTreeSet<String>,
 }
 
 impl<'a> Ctx<'a> {
-    // ------------------------------------------------------------ unitati
+    // ------------------------------------------------------------ units
     fn units(&mut self) -> f64 {
         let f = self.f;
         let mut scale = 1.0;
@@ -520,7 +520,7 @@ impl<'a> Ctx<'a> {
             match f.ty(u) {
                 "IFCSIUNIT" => match ua.get(1).and_then(|v| v.as_enum()) {
                     Some("LENGTHUNIT") => scale = prefix(ua.get(2)),
-                    // SQUARE_METRE / CUBIC_METRE: prefixul se aplica metrului, deci la patrat / cub
+                    // SQUARE_METRE / CUBIC_METRE: the prefix applies to the metre, hence squared / cubed
                     Some("AREAUNIT") => area = Some(prefix(ua.get(2)).powi(2)),
                     Some("VOLUMEUNIT") => vol = Some(prefix(ua.get(2)).powi(3)),
                     _ => {}
@@ -534,7 +534,7 @@ impl<'a> Ctx<'a> {
                     match kind.as_str() {
                         "LENGTHUNIT" => scale = factor * base,
                         "PLANEANGLEUNIT" => self.angle = factor,
-                        // ex. square foot / cubic foot
+                        // e.g. square foot / cubic foot
                         "AREAUNIT" => area = Some(factor * base * base),
                         "VOLUMEUNIT" => vol = Some(factor * base * base * base),
                         _ => {}
@@ -543,12 +543,12 @@ impl<'a> Ctx<'a> {
                 _ => {}
             }
         }
-        // fara unitate de arie / volum declarata: derivata din unitatea de lungime
+        // no area / volume unit declared: derived from the length unit
         self.qscale = [scale, area.unwrap_or(scale * scale), vol.unwrap_or(scale * scale * scale)];
         scale
     }
 
-    // ------------------------------------------------------------ stiluri
+    // ------------------------------------------------------------ styles
     fn collect_styles(&mut self) {
         let f = self.f;
         for &s in f.of_type("IFCSTYLEDITEM") {
@@ -592,7 +592,7 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    /// (nume materiale, culoare)
+    /// (material names, colour)
     fn material_info(&self, m: u32, mat_colors: &HashMap<u32, [u8; 4]>) -> (Vec<String>, Col) {
         let mut names = Vec::new();
         let mut col = None;
@@ -633,7 +633,7 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    // ------------------------------------------------------------ proprietati
+    // ------------------------------------------------------------ properties
     fn read_pset(&self, id: u32, out: &mut Vec<Prop>, suffix: &str) {
         let f = self.f;
         let a = f.args(id);
@@ -656,7 +656,7 @@ impl<'a> Ctx<'a> {
                     pa.get(3).map(|v| v.display()).unwrap_or_default(),
                     pa.get(2).map(|v| v.display()).unwrap_or_default()
                 ),
-                // cantitati in unitati SI, cu unitatea scrisa (pentru Quantification si Profiler)
+                // quantities in SI units, with the unit written out (for Quantification and Profiler)
                 t if t.starts_with("IFCQUANTITY") => {
                     let raw = pa.get(3);
                     let (k, unit) = match t {
@@ -682,7 +682,7 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    // ------------------------------------------------------------ pozitionare
+    // ------------------------------------------------------------ placement
     fn point(&self, id: u32) -> DVec3 {
         let a = self.f.args(id);
         let l = a.first().map(|v| v.as_list()).unwrap_or(&[]);
@@ -781,7 +781,7 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    // ------------------------------------------------------------ reprezentari
+    // ------------------------------------------------------------ representations
     fn product_tris(&mut self, pds: u32) -> Rc<Vec<Tri>> {
         let f = self.f;
         let a = f.args(pds);
@@ -1038,7 +1038,7 @@ impl<'a> Ctx<'a> {
                 }
             }
             if outer.is_empty() && !holes.is_empty() {
-                // fara contur exterior marcat: cel mai mare devine exterior
+                // no outer boundary marked: the largest one becomes the outer one
                 let mut bi = 0;
                 let mut ba = -1.0;
                 for (i, h) in holes.iter().enumerate() {
@@ -1077,7 +1077,7 @@ impl<'a> Ctx<'a> {
                         Some(self.point(va.first()?.as_ref()?))
                     };
                     let (Some(s), Some(en)) = (vp(ga.first()), vp(ga.get(1))) else { continue };
-                    // muchie curba: esantioneaza geometria muchiei
+                    // curved edge: samples the edge geometry
                     let mut seg: Vec<DVec3> = Vec::new();
                     if let Some(g) = ga.get(2).and_then(|v| v.as_ref()) {
                         let gt = f.ty(g);
@@ -1112,7 +1112,7 @@ impl<'a> Ctx<'a> {
         pts
     }
 
-    /// arc pe un cerc/elipsa intre doua puncte (sens trigonometric daca `ccw`)
+    /// arc on a circle/ellipse between two points (counter-clockwise if `ccw`)
     fn conic_between(&self, conic: u32, s: DVec3, e: DVec3, ccw: bool) -> Vec<DVec3> {
         let a = self.f.args(conic);
         let pos = a.first().and_then(|v| v.as_ref()).map(|p| self.axis2(p)).unwrap_or(DMat4::IDENTITY);
@@ -1139,7 +1139,7 @@ impl<'a> Ctx<'a> {
             .collect()
     }
 
-    // ------------------------------------------------------------ curbe
+    // ------------------------------------------------------------ curves
     fn curve(&mut self, id: u32, depth: u32) -> Vec<DVec3> {
         if depth > 12 {
             return Vec::new();
@@ -1284,7 +1284,7 @@ impl<'a> Ctx<'a> {
         pts.into_iter().map(|p| p.truncate()).collect()
     }
 
-    // ------------------------------------------------------------ profile
+    // ------------------------------------------------------------ profiles
     fn profile(&mut self, id: u32, depth: u32) -> Vec<Profile> {
         if depth > 8 {
             return Vec::new();
@@ -1432,7 +1432,7 @@ impl<'a> Ctx<'a> {
                 return Vec::new();
             }
         };
-        // profile parametrizate: aplica Position (arg 2)
+        // parameterised profiles: apply Position (arg 2)
         if let Some(p) = a.get(2).and_then(|v| v.as_ref()) {
             let m = self.axis2(p);
             for (o, hs) in res.iter_mut() {
@@ -1444,7 +1444,7 @@ impl<'a> Ctx<'a> {
     }
 }
 
-// ================================================================ utilitare geometrice
+// ================================================================ geometry utilities
 
 fn to8(v: f64) -> u8 {
     (v.clamp(0.0, 1.0) * 255.0).round() as u8
@@ -1545,7 +1545,7 @@ fn newell(p: &[DVec3]) -> DVec3 {
     n
 }
 
-/// Triunghiuleaza un poligon plan 3D cu goluri.
+/// Triangulates a planar 3D polygon with holes.
 fn tri_poly(outer: &[DVec3], holes: &[Vec<DVec3>], col: Col, out: &mut Vec<Tri>) {
     if outer.len() < 3 {
         return;
@@ -1560,7 +1560,7 @@ fn tri_poly(outer: &[DVec3], holes: &[Vec<DVec3>], col: Col, out: &mut Vec<Tri>)
     }
     let n = n.normalize();
     if outer.len() == 4 && holes.is_empty() {
-        // patrulater convex: rapid
+        // convex quadrilateral: fast
         let ok = (0..4).all(|i| {
             let a = outer[i];
             let b = outer[(i + 1) % 4];
@@ -1715,7 +1715,7 @@ fn tube(path: &[DVec3], r: f64, col: Col, out: &mut Vec<Tri>) {
     }
 }
 
-/// Pastreaza partea cu (p - o)·n >= 0.
+/// Keeps the part with (p - o)·n >= 0.
 fn clip_tris(tris: Vec<Tri>, o: DVec3, n: DVec3) -> Vec<Tri> {
     let mut out = Vec::with_capacity(tris.len());
     for (t, c) in tris {
@@ -1821,9 +1821,9 @@ pub fn pretty_type(upper: &str) -> String {
     }
 }
 
-/// Scade un gol convex (dat ca triunghiuri in coordonate reale) din triunghiurile gazdei: fiecare triunghi
-/// e taiat cu planele golului (partea din afara fiecarui plan ramane, ce e in interiorul tuturor dispare).
-/// Intoarce false daca golul nu e convex (atunci gazda ramane neatinsa).
+/// Subtracts a convex opening (given as triangles in real coordinates) from the host triangles: each triangle
+/// is cut by the opening's planes (the part outside each plane stays, what is inside all of them disappears).
+/// Returns false if the opening is not convex (then the host stays untouched).
 pub fn subtract_convex(tris: &mut Vec<[DVec3; 3]>, colors: &mut Vec<[u8; 4]>, opening: &[[DVec3; 3]]) -> bool {
     if opening.len() < 4 {
         return true;
@@ -1837,7 +1837,7 @@ pub fn subtract_convex(tris: &mut Vec<[DVec3; 3]>, colors: &mut Vec<[u8; 4]>, op
     let size = (hi - lo).length().max(1e-6);
     let eps = size * 1e-6;
     let c = verts.iter().copied().sum::<DVec3>() / verts.len() as f64;
-    // planele golului, orientate spre exterior (centrul e in interior)
+    // the opening's planes, oriented outwards (the centre is inside)
     let mut planes: Vec<(DVec3, f64)> = Vec::new();
     for t in opening {
         let n = (t[1] - t[0]).cross(t[2] - t[0]);
@@ -1857,7 +1857,7 @@ pub fn subtract_convex(tris: &mut Vec<[DVec3; 3]>, colors: &mut Vec<[u8; 4]>, op
     if planes.len() < 4 || planes.len() > 64 {
         return false;
     }
-    // convex: toate varfurile golului sunt in interiorul (sau pe) fiecarui plan
+    // convex: all the opening's vertices are inside (or on) each plane
     if verts.iter().any(|v| planes.iter().any(|(n, d)| n.dot(*v) - d > eps * 100.0 + size * 1e-4)) {
         return false;
     }
@@ -1871,7 +1871,7 @@ pub fn subtract_convex(tris: &mut Vec<[DVec3; 3]>, colors: &mut Vec<[u8; 4]>, op
             out_c.push(*col);
             continue;
         }
-        // ce e in afara planului k (si in interiorul planelor de dinainte) ramane
+        // what is outside plane k (and inside the previous planes) stays
         let mut remaining: Vec<Tri> = vec![(*t, Some(*col))];
         for (n, d) in &planes {
             let o = *n * *d;

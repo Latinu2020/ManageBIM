@@ -1,4 +1,4 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
@@ -11,7 +11,7 @@ impl App {
             self.cur_test = 0;
         }
         let ti = self.cur_test;
-        // ---- antet: testul curent, ultima rulare, totalul (ca in Navisworks)
+        // ---- header: the current test, the last run, the total (like in Navisworks)
         {
             let t = &self.clash.tests[ti];
             let k = status_counts(t);
@@ -25,10 +25,10 @@ impl App {
                 });
             });
         }
-        // ---- lista testelor: Name | Status | Clashes | New | Active | Reviewed | Approved | Resolved
+        // ---- the list of tests: Name | Status | Clashes | New | Active | Reviewed | Approved | Resolved
         let mut pick: Option<usize> = None;
         let mut ctx_action: Option<(usize, u8)> = None;
-        // redenumire cu clic dreapta > Rename: randul care se redenumeste, tinut intre cadre
+        // rename with right click > Rename: the row being renamed, kept between frames
         let rename_key = egui::Id::new("mb_clash_rename");
         let mut renaming: Option<usize> = ui.data(|d| d.get_temp(rename_key));
         let mut rename_to: Option<(usize, String)> = None;
@@ -127,14 +127,14 @@ impl App {
                 self.colors_dirty = true;
             }
         }
-        // numele se aplica dupa randul de tabel (in interior s-a citit doar `&self`)
+        // the name is applied after the table row (inside, only `&self` was read)
         if let Some((i, name)) = rename_to {
             if let Some(t) = self.clash.tests.get_mut(i) {
                 t.name = name;
             }
         }
-        // starea redenumirii trebuie sa treaca intre cadre: meniul contextual se
-        // deschide intr-un strat ulterior, deci celula o citeste abia urmatorul cadru
+        // the rename state must carry across frames: the context menu
+        // opens in a later layer, so the cell reads it only on the next frame
         ui.data_mut(|d| match renaming {
             Some(r) => {
                 d.insert_temp(rename_key, r);
@@ -143,7 +143,7 @@ impl App {
                 d.remove::<usize>(rename_key);
             }
         });
-        // Duplicate / Delete cat ruleaza un test ar muta indicii: rezultatul ar ajunge la alt test
+        // Duplicate / Delete while a test runs would shift the indices: the result would land on another test
         let ctx_action = match ctx_action {
             Some((_, a)) if a >= 3 && (self.clash.job.is_some() || !self.clash.queue.is_empty()) => {
                 self.toast("A clash test is running - wait for it to finish (or Cancel) before duplicating or deleting tests.");
@@ -187,7 +187,7 @@ impl App {
                 }
             }
         }
-        // ---- butoanele de sub lista (Navisworks: Add Test, Reset All, Compact All, Delete All, Update All, Import / Export)
+        // ---- the buttons under the list (Navisworks: Add Test, Reset All, Compact All, Delete All, Update All, Import / Export)
         let idle = self.clash.job.is_none();
         ui.horizontal_wrapped(|ui| {
             if ui.add_enabled(idle, egui::Button::new("➕ Add Test")).clicked() {
@@ -294,7 +294,7 @@ impl App {
                 }
             });
         }
-        // ---- tab-urile: Rules | Select | Results | Report
+        // ---- the tabs: Rules | Select | Results | Report
         let ti = self.cur_test.min(self.clash.tests.len() - 1);
         ui.horizontal(|ui| {
             let nres = self.clash.tests[ti].results.len();
@@ -313,8 +313,8 @@ impl App {
         }
     }
 
-    /// Matricea de clash pe teste: Selection A pe randuri, Selection B pe coloane; in fiecare celula testele
-    /// perechii cu starile lor. Dedesubt: matricea de seturi din care se creeaza testele.
+    /// The clash matrix by tests: Selection A on rows, Selection B on columns; in each cell the tests
+    /// of the pair with their states. Below: the set matrix from which the tests are created.
     pub(super) fn clash_matrix_window(&mut self, ctx: &egui::Context) {
         use crate::clash_io::{status_counts, test_matrix};
         let mut open = true;
@@ -423,7 +423,7 @@ impl App {
                 });
             }
             ui.separator();
-            // ---- matricea de seturi: bifezi perechile, se creeaza testele
+            // ---- the set matrix: you tick the pairs, the tests are created
             egui::CollapsingHeader::new(RichText::new("Create tests from a sets matrix").strong()).default_open(m.cells.is_empty() || self.clash.tests.iter().all(|t| t.results.is_empty() && t.last_run.is_empty())).show(ui, |ui| {
                 let mut cands: Vec<Selector> = self.sets.iter().map(|s| Selector { kind: SelKind::Set, value: s.name.clone() }).collect();
                 for d in ["Structure", "Architecture", "MEP - HVAC", "MEP - Plumbing", "MEP - Electrical"] {
@@ -505,7 +505,7 @@ impl App {
         }
     }
 
-    /// Sumarul dupa Update All: pe fiecare test, starile acum si diferenta fata de rularea anterioara.
+    /// The summary after Update All: for each test, the states now and the difference from the previous run.
     pub(super) fn update_summary_window(&mut self, ctx: &egui::Context) {
         let Some(sum) = self.update_summary.clone() else { return };
         let mut open = true;
@@ -568,7 +568,7 @@ impl App {
         }
     }
 
-    /// Tab-ul Select: Selection A / Selection B, tipul testului, toleranta, Run Test.
+    /// The Select tab: Selection A / Selection B, the test type, tolerance, Run Test.
     pub(super) fn clash_select_ui(&mut self, ui: &mut egui::Ui, ti: usize) {
         let mut test = self.clash.tests[ti].clone();
         let mut run = false;
@@ -578,7 +578,7 @@ impl App {
                 ui.add(egui::TextEdit::singleline(&mut test.name).desired_width(220.0));
             });
             ui.add_space(4.0);
-            // headroom / egress: parametrii lor in locul selectiilor A / B
+            // headroom / egress: their parameters instead of the A / B selections
             if let Some((check, p)) = test.special.as_mut() {
                 egui::Frame::group(ui.style()).show(ui, |ui| {
                     ui.set_min_width(ui.available_width());
@@ -629,9 +629,9 @@ impl App {
                         ui.set_min_width(ui.available_width());
                         ui.strong(lbl);
                         self.selector_combo(ui, id, sel);
-                        // numarul de elemente: calculat o data pe selectie (Discipline / All parcurg tot modelul)
-                        // pentru „Current selection" includem dimensiunea selecției și o amprentă
-                        // a ID-urilor, ca numărul afișat să se actualizeze când selectezi altceva.
+                        // the element count: computed once per selection (Discipline / All walk the whole model)
+                        // for „Current selection" we include the selection size and a fingerprint
+                        // of the IDs, so the displayed count updates when you select something else.
                         let sel_sig: Vec<ElemId> = self.selected.iter().copied().take(8).collect();
                         let key = egui::Id::new(("sel_count", sel.label(), self.loaded_models().map(|(_, m)| m.elements.len()).sum::<usize>(), self.sets.len(), self.selected.len(), sel_sig));
                         let n = match ui.data(|d| d.get_temp::<usize>(key)) {
@@ -694,7 +694,7 @@ impl App {
         }
     }
 
-    /// Tab-ul Report: rapoartele si exporturile testului curent / tuturor testelor.
+    /// The Report tab: the reports and exports of the current test / all tests.
     pub(super) fn clash_report_ui(&mut self, ui: &mut egui::Ui, ti: usize) {
         let has = !self.clash.tests[ti].results.is_empty();
         egui::Grid::new("creport").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
@@ -973,7 +973,7 @@ impl App {
                 _ => true,
             }
         };
-        // locatia: axe + nivel (C-4 / Level 2) cand exista axe, altfel nivelul elementului A
+        // the location: grids + level (C-4 / Level 2) when there are grids, otherwise the level of element A
         let grids = self.scene_grids();
         let use_grid = !grids.grids.is_empty();
         let labels: Vec<(String, String, String)> = (0..res_len)
@@ -985,12 +985,12 @@ impl App {
                 (la, lb, lv)
             })
             .collect();
-        // ---- ordinea: dupa coloana aleasa in antet (clic pe antet), altfel ordinea testului
+        // ---- the order: by the column chosen in the header (click on the header), otherwise the test order
         let (sort_col, sort_asc) = (self.settings.clash_ui.sort_col, self.settings.clash_ui.sort_asc);
         let mut order: Vec<usize> = (0..res_len).collect();
         if let Some(c) = sort_col {
             let results = &self.clash.tests[ti].results;
-            // "Clash12" -> ("Clash", 12): Clash2 inaintea lui Clash10
+            // "Clash12" -> ("Clash", 12): Clash2 before Clash10
             let nat = |s: &str| {
                 let p = s.trim_end_matches(|ch: char| ch.is_ascii_digit());
                 (p.to_lowercase(), s[p.len()..].parse::<u64>().unwrap_or(0))
@@ -1013,7 +1013,7 @@ impl App {
                 o.then(x.cmp(&y))
             });
         }
-        // ---- randuri afisate: grupuri (la pozitia primului membru) + rezultate negrupate
+        // ---- displayed rows: groups (at the position of the first member) + ungrouped results
         let mut rows: Vec<Row> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
         {
@@ -1067,7 +1067,7 @@ impl App {
         let (sty, stol, ssev) = (self.clash.tests[ti].ty, self.clash.tests[ti].tol_mm, self.clash.tests[ti].sev_mm);
         let sev_of = |d: f32| crate::app::severity_of(sty, stol, ssev, d);
         let mut sort_click: Option<u8> = None;
-        // panoul Item 1 / Item 2 ia partea de jos cand e un rezultat curent
+        // the Item 1 / Item 2 panel takes the bottom part when there is a current result
         let show_items = self.settings.clash_ui.items_panel && self.cur_result.is_some_and(|c| c < res_len);
         let avail = ui.available_height();
         let items_h = if show_items { (avail * 0.38).clamp(120.0, 260.0) } else { 0.0 };
@@ -1315,7 +1315,7 @@ impl App {
             }
             None => {}
         }
-        // clic pe antet: crescator -> descrescator -> ordinea testului
+        // click on the header: ascending -> descending -> the test order
         if let Some(c) = sort_click {
             let p = &mut self.settings.clash_ui;
             match p.sort_col {
@@ -1336,8 +1336,8 @@ impl App {
         }
     }
 
-    /// Item 1 / Item 2 (ca in Navisworks): datele si proprietatile celor doua elemente ale
-    /// rezultatului curent, cu Select / Zoom / Hide si viewpoint-ul salvat al rezultatului.
+    /// Item 1 / Item 2 (like in Navisworks): the data and properties of the two elements of the
+    /// current result, with Select / Zoom / Hide and the saved viewpoint of the result.
     fn clash_items_panel(&mut self, ui: &mut egui::Ui, ti: usize, i: usize) {
         let Some(r) = self.clash.tests.get(ti).and_then(|t| t.results.get(i)).cloned() else { return };
         let mut act: Option<Action> = None;

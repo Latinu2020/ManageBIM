@@ -17,9 +17,9 @@ namespace ManageBIM.Acad
     public class Commands
     {
         /// <summary>
-        /// Aria unui desen dintr-un proiect Plant 3D: folderul lui sub radacina proiectului (cea cu Project.xml),
-        /// fara folderul "Plant 3D Models" (ex. "Area_2"). Gol in afara unui proiect Plant sau pentru desenele
-        /// aflate direct in folderul modelelor.
+        /// The area of a drawing in a Plant 3D project: its folder under the project root (the one with Project.xml),
+        /// without the "Plant 3D Models" folder (e.g. "Area_2"). Empty outside a Plant project or for drawings
+        /// located directly in the models folder.
         /// </summary>
         internal static string PlantArea(string dwg)
         {
@@ -47,7 +47,7 @@ namespace ManageBIM.Acad
         [CommandMethod("BIMCEXPORT", CommandFlags.Modal | CommandFlags.NoBlockEditor)]
         public void Export() => Safe.Command("BIMCEXPORT", () => Run(false));
 
-        /// <summary>BIMCSEND: trimite tot modelul direct in ManageBIM (fara dialog); a doua oara actualizeaza live.</summary>
+        /// <summary>BIMCSEND: sends the whole model directly to ManageBIM (no dialog); the second time it updates live.</summary>
         [CommandMethod("BIMCSEND", CommandFlags.Modal | CommandFlags.NoBlockEditor)]
         public void Send() => Safe.Command("BIMCSEND", () => Run(true));
 
@@ -155,11 +155,11 @@ namespace ManageBIM.Acad
         public double Scale = 1.0;
         public string UnitsLabel = "";
         public int Skipped;
-        /// <summary>Aria din proiectul Plant 3D (folderul desenului, ex. "Area_2"): nivelul elementelor de pe stratul "0".</summary>
+        /// <summary>The area in the Plant 3D project (the drawing folder, e.g. "Area_2"): the level of the elements on layer "0".</summary>
         public string Area = "";
 
         private readonly PlantData _plant;
-        // diagnostic: erorile Plant 3D si obiectele fara geometrie, grupate pe clasa (rezumat in jurnalul .bimc)
+        // diagnostics: the Plant 3D errors and the objects without geometry, grouped by class (summary in the .bimc log)
         private readonly Dictionary<string, int> _plantErrors = new Dictionary<string, int>();
         private readonly Dictionary<string, (int count, string reason)> _noGeometry = new Dictionary<string, (int, string)>();
         private string _reason;
@@ -224,8 +224,8 @@ namespace ManageBIM.Acad
                 {
                     _reason = "error: " + e.Message;
                 }
-                // obiectele custom (Plant 3D: grinzi, placi, scari, balustrade...; Architecture, MEP...) pot deriva
-                // din Curve / BlockReference - daca ramura lor nu a dat geometrie, incercam faceter + explode
+                // custom objects (Plant 3D: beams, plates, stairs, railings...; Architecture, MEP...) may derive
+                // from Curve / BlockReference - if their branch gave no geometry, we try faceter + explode
                 if (el.TriangleCount == 0 && IsCustom(ent))
                 {
                     string first = _reason;
@@ -233,7 +233,7 @@ namespace ManageBIM.Acad
                     catch (System.Exception e) { _reason = "error: " + e.Message; }
                     _reason = $"[{Who(ent)}] " + (_reason ?? first ?? "no geometry");
                 }
-                // diagnostic pentru orice obiect fara geometrie care nu e evident 2D
+                // diagnostics for any object without geometry that is not obviously 2D
                 if (el.TriangleCount == 0 && _reason == null && !(ent is Curve c2 && Thickness(c2) == 0) && !(ent is DBText || ent is MText || ent is Dimension || ent is Hatch || ent is DBPoint || ent is MLeader))
                     _reason = $"[{Who(ent)}] no geometry produced";
                 if (el.TriangleCount > 0) Elements.Add(el);
@@ -241,14 +241,14 @@ namespace ManageBIM.Acad
                 {
                     Skipped++;
                     string cls = ent.GetRXClass().DxfName ?? ent.GetType().Name;
-                    // 2D (linii, text, cote) nu e o problema; raportam doar obiectele 3D / custom fara geometrie
+                    // 2D (lines, text, dimensions) is not a problem; we report only 3D / custom objects without geometry
                     if (_reason != null)
                         _noGeometry[cls] = _noGeometry.TryGetValue(cls, out var v) ? (v.count + 1, v.reason) : (1, _reason);
                 }
             }
-            // rezumatul diagnosticului la inceputul listei de avertismente (vizibil in ManageBIM > Project > Log)
+            // the diagnostics summary at the start of the warnings list (visible in ManageBIM > Project > Log)
             var head = new List<string>();
-            // ce contine model space-ul, pe clase (diagnostic pentru desene "goale")
+            // what model space contains, by class (diagnostics for "empty" drawings)
             var hist = new Dictionary<string, int>();
             foreach (ObjectId id in ids) { string c = id.ObjectClass?.DxfName ?? "?"; hist[c] = hist.TryGetValue(c, out int k) ? k + 1 : 1; }
             head.Add("Model space: " + string.Join(", ", hist.OrderByDescending(h => h.Value).Select(h => h.Value + " " + h.Key)));
@@ -326,7 +326,7 @@ namespace ManageBIM.Acad
                     // the real error is inside TargetInvocationException (reflection call)
                     System.Exception x = e;
                     while (x is TargetInvocationException && x.InnerException != null) x = x.InnerException;
-                    // ObjectDoesNotHaveLink = entitate AutoCAD obisnuita (nu obiect Plant) - normal, nu e eroare
+                    // ObjectDoesNotHaveLink = an ordinary AutoCAD entity (not a Plant object) - normal, not an error
                     if (!x.Message.Contains("ObjectDoesNotHaveLink"))
                     {
                         string key = dxf + ": " + x.GetType().Name + ": " + x.Message;
@@ -334,8 +334,8 @@ namespace ManageBIM.Acad
                     }
                 }
             }
-            // obiectele aplicatiilor (Plant 3D structuri / echipamente, Civil 3D, Architecture, MEP): proprietatile
-            // din paleta Properties (marime profil, material, lungime, cota, stil, descriere...) - nu sunt in DataLinks
+            // the application objects (Plant 3D structures / equipment, Civil 3D, Architecture, MEP): the properties
+            // from the Properties palette (profile size, material, length, elevation, style, description...) - they are not in DataLinks
             if (IsCustom(ent))
             {
                 try
@@ -465,7 +465,7 @@ namespace ManageBIM.Acad
                     if (Facet(ent, xf, el, color, out _)) return;
                     break;
                 case Hatch h when depth > 0:
-                    // hasura dintr-un obiect custom descompus (ex. gratarele Plant 3D): suprafata plana
+                    // hatch from an exploded custom object (e.g. the Plant 3D gratings): a flat surface
                     HatchSurface(h, xf, el, color);
                     return;
                 case Curve _:
@@ -484,9 +484,9 @@ namespace ManageBIM.Acad
         }
 
         /// <summary>
-        /// Obiect definit de o aplicatie (Plant 3D: ACPPSTRUCTUREBEAM, ACPPEQUIPMENT...; Architecture, MEP...).
-        /// Plant 3D nu inregistreaza tipuri .NET proprii pentru toate clasele - obiectul apare ca tip de baza
-        /// AutoCAD (ex. Curve) - deci decidem dupa clasa ObjectARX: cele de baza vin din "ObjectDBX Classes".
+        /// An object defined by an application (Plant 3D: ACPPSTRUCTUREBEAM, ACPPEQUIPMENT...; Architecture, MEP...).
+        /// Plant 3D does not register its own .NET types for all classes - the object appears as a base AutoCAD
+        /// type (e.g. Curve) - so we decide by the ObjectARX class: the base ones come from "ObjectDBX Classes".
         /// </summary>
         private static bool IsCustom(Entity ent)
         {
@@ -536,7 +536,7 @@ namespace ManageBIM.Acad
             }
         }
 
-        /// <summary>Conturul exterior al unei hasuri ca suprafata (triunghiuri in planul hasurii).</summary>
+        /// <summary>The outer boundary of a hatch as a surface (triangles in the hatch plane).</summary>
         private void HatchSurface(Hatch h, Matrix3d xf, BimcElement el, uint color)
         {
             Matrix3d toWorld = Matrix3d.PlaneToWorld(h.Normal) * Matrix3d.Displacement(h.Normal * h.Elevation);
@@ -544,7 +544,7 @@ namespace ManageBIM.Acad
             {
                 HatchLoop loop;
                 try { loop = h.GetLoopAt(i); } catch { continue; }
-                // doar conturul exterior (golurile interioare ar cere triangulare cu gauri)
+                // only the outer boundary (inner holes would need triangulation with holes)
                 if ((loop.LoopType & HatchLoopTypes.External) == 0 && h.NumberOfLoops > 1 && i > 0) continue;
                 var pts = new List<Point3d>();
                 if (loop.IsPolyline)
@@ -565,7 +565,7 @@ namespace ManageBIM.Acad
                 }
                 if (pts.Count < 3) continue;
                 var w = pts.Select(p => p.TransformBy(toWorld).TransformBy(xf)).ToList();
-                // conturul gratarelor e convex (dreptunghiuri / poligoane simple): triangulare in evantai
+                // the grating outline is convex (rectangles / simple polygons): fan triangulation
                 for (int k = 1; k + 1 < w.Count; k++) Tri(el, w[0], w[k], w[k + 1], color);
             }
         }
@@ -610,14 +610,14 @@ namespace ManageBIM.Acad
             error = null;
             try
             {
-                // abaterea coardei: 2 mm .. 5 cm, ~1/1000 din diagonala - conducte, rezervoare si coturi raman
-                // rotunde (inainte: diagonala/400 si 30° - fatete vizibile pe echipamentele mari)
+                // chord deviation: 2 mm .. 5 cm, ~1/1000 of the diagonal - pipes, tanks and elbows stay
+                // round (before: diagonal/400 and 30° - visible facets on large equipment)
                 double dev = 0.002 / Scale;
                 try
                 {
                     Extents3d e = ent.GeometricExtents;
                     dev = Math.Min(Math.Max(dev, e.MinPoint.DistanceTo(e.MaxPoint) / 1000.0), 0.05 / Scale);
-                    // terenuri / suprafete foarte mari (Civil 3D): pana la 1/2000 din diagonala, ca sa nu explodeze numarul de triunghiuri
+                    // very large terrains / surfaces (Civil 3D): up to 1/2000 of the diagonal, so the triangle count does not explode
                     double diag = e.MinPoint.DistanceTo(e.MaxPoint) * Scale;
                     if (diag > 200) dev = Math.Max(dev, e.MinPoint.DistanceTo(e.MaxPoint) / 2000.0);
                 }
@@ -744,7 +744,7 @@ namespace ManageBIM.Acad
             return null;
         }
 
-        /// <summary>Toate proprietatile unui rand (nume, valoare), inclusiv cele goale.</summary>
+        /// <summary>All properties of a row (name, value), including the empty ones.</summary>
         private List<(string, string)> Props(int row)
         {
             var res = new List<(string, string)>();
@@ -761,8 +761,8 @@ namespace ManageBIM.Acad
             return res;
         }
 
-        /// <summary>Randurile legate printr-o relatie Plant 3D (ex. piesa -> Line Group), prin reflectie
-        /// (DataLinksManager.GetRelatedRowIds(relatie, rol1, rand, rol2)); lista goala daca nu exista.</summary>
+        /// <summary>The rows linked through a Plant 3D relationship (e.g. part -> Line Group), via reflection
+        /// (DataLinksManager.GetRelatedRowIds(relationship, role1, row, role2)); an empty list if there are none.</summary>
         private List<int> Related(int row, string rel, string role1, string role2)
         {
             var res = new List<int>();
@@ -803,13 +803,13 @@ namespace ManageBIM.Acad
             string tag = null, desc = null;
             foreach (var (k, v) in Props(row))
             {
-                // si valorile goale: in ManageBIM se vad TOATE proprietatile clasei (inainte lipseau cele necompletate)
+                // the empty values too: in ManageBIM ALL properties of the class are shown (previously the unfilled ones were missing)
                 el.AddKeepEmpty("Plant 3D", k, v);
                 if (string.IsNullOrEmpty(v)) continue;
                 if (k == "Tag" || k == "PartTag") tag = tag ?? v;
                 if (k == "PartFamilyLongDesc" || k == "Description") desc = desc ?? v;
             }
-            // linia (Line Number, Service, Spec...) nu e pe piesa, ci pe randul Line Group legat de ea
+            // the line (Line Number, Service, Spec...) is not on the part, but on the Line Group row linked to it
             foreach (int lg in Related(row, "P3dLineGroupPartRelationship", "Part", "LineGroup"))
             {
                 foreach (var (k, v) in Props(lg))
@@ -820,14 +820,14 @@ namespace ManageBIM.Acad
                 }
                 break;
             }
-            // echipamentul unui stut (nozzle) si invers: legatura cu echipamentul gazda
+            // the equipment of a nozzle and vice versa: the link to the host equipment
             foreach (int eq in Related(row, "P3dEquipmentNozzleRelationship", "Nozzle", "Equipment"))
             {
                 foreach (var (k, v) in Props(eq))
                     if (!string.IsNullOrEmpty(v) && (k == "Tag" || k == "Description" || k == "ClassName")) el.Add("Plant 3D Equipment", k, v);
                 break;
             }
-            // "?-?" / "?" = Tag neatribuit in Plant 3D: numele devine descrierea piesei (ex. "Gate Valve, 150 LB, RF...")
+            // "?-?" / "?" = unassigned Tag in Plant 3D: the name becomes the part description (e.g. "Gate Valve, 150 LB, RF...")
             bool realTag = !string.IsNullOrEmpty(tag) && tag.IndexOf('?') < 0;
             if (realTag) el.Name = tag;
             else if (!string.IsNullOrEmpty(desc)) el.Name = desc;

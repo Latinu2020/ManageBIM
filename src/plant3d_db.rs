@@ -1,34 +1,34 @@
-//! Proprietatile obiectelor Plant 3D din baza de date a proiectului (Piping.dcf = SQLite), doar citire.
+//! The properties of Plant 3D objects from the project database (Piping.dcf = SQLite), read-only.
 //!
-//! DWG-ul Plant 3D nu contine proprietatile de inginerie (Line Number, Size, Spec, Tag, Material...):
-//! ele sunt in `Piping.dcf`, langa `Project.xml`, in folderul proiectului (unul din parintii DWG-ului).
-//! - `PnPDrawings` (PnPType = 'DWG'): PnPID-ul desenului, dupa `PnPRelativePath` (fata de folderul proiectului)
-//!   sau `Dwg Name`.
-//! - `PnPDataLinks`: (DwgId, DwgHandleHigh << 32 | DwgHandleLow) -> RowId (= PnPID-ul obiectului; PnPID-ul\r\n//!   legaturii e altul) + RowClassName. `DwgSubIndex` 0 =
-//!   obiectul; > 0 = sub-piese ale aceleiasi entitati (garnitura / suruburi / sudura unui conector, stuturi).
-//! - tabelele de clasa mostenesc prin `PnPTables.BaseTable` (ex. Valve -> PipeRunComponent -> EngineeringItems
-//!   -> PnPBase); valorile unui obiect = randul cu acelasi PnPID din fiecare tabel al lantului.
-//! - `PnPColumnAttributes`: DISPLAYNAME (nume afisat) si ISHIDDEN (coloane interne, sarite).
-//! - linia: `P3dLineGroupPartRelationship` (Part = PnPID) -> `P3dLineGroup.Tag`.
+//! The Plant 3D DWG does not contain the engineering properties (Line Number, Size, Spec, Tag, Material...):
+//! they are in `Piping.dcf`, next to `Project.xml`, in the project folder (one of the DWG's parents).
+//! - `PnPDrawings` (PnPType = 'DWG'): the drawing's PnPID, by `PnPRelativePath` (relative to the project folder)
+//!   or `Dwg Name`.
+//! - `PnPDataLinks`: (DwgId, DwgHandleHigh << 32 | DwgHandleLow) -> RowId (= the object's PnPID; the link's PnPID is a different one) + RowClassName. `DwgSubIndex` 0 =
+//!   the object; > 0 = sub-parts of the same entity (gasket / bolts / weld of a connector, nozzles).
+//! - the class tables inherit through `PnPTables.BaseTable` (e.g. Valve -> PipeRunComponent -> EngineeringItems
+//!   -> PnPBase); an object's values = the row with the same PnPID in each table of the chain.
+//! - `PnPColumnAttributes`: DISPLAYNAME (display name) and ISHIDDEN (internal columns, skipped).
+//! - the line: `P3dLineGroupPartRelationship` (Part = PnPID) -> `P3dLineGroup.Tag`.
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-/// Datele unui obiect din baza Plant 3D.
+/// The data of an object from the Plant 3D database.
 #[derive(Clone, Debug, Default)]
 pub struct PlantData {
-    /// clasa randului principal (ex. "Valve", "Pipe", "P3dConnector")
+    /// the class of the main row (e.g. "Valve", "Pipe", "P3dConnector")
     pub class: String,
-    /// (grup, [(nume afisat, valoare)]): "Plant 3D" pentru obiect, "Plant 3D: <Clasa>" pentru sub-piese
+    /// (group, [(display name, value)]): "Plant 3D" for the object, "Plant 3D: <Class>" for sub-parts
     pub groups: Vec<(String, Vec<(String, String)>)>,
-    /// Tag-ul obiectului (echipamente, armaturi, instrumente), daca e completat
+    /// The object's Tag (equipment, fittings, instruments), if filled in
     pub tag: Option<String>,
-    /// numarul liniei (Line Number), daca e cunoscut
+    /// the line number (Line Number), if known
     pub line: Option<String>,
 }
 
-/// Cauta baza de date Plant 3D a proiectului: `Piping.dcf` in folderul DWG-ului sau intr-un parinte (max 8 nivele).
+/// Looks for the project's Plant 3D database: `Piping.dcf` in the DWG's folder or in a parent (max 8 levels).
 pub fn find_project_db(dwg: &Path) -> Option<PathBuf> {
     let mut d = dwg.parent();
     for _ in 0..8 {
@@ -42,8 +42,8 @@ pub fn find_project_db(dwg: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Deschide baza doar pentru citire. Daca e blocata (Plant 3D deschis), lucram pe o copie temporara.
-/// Intoarce si copia temporara (de sters dupa folosire).
+/// Opens the database read-only. If it is locked (Plant 3D open), we work on a temporary copy.
+/// Also returns the temporary copy (to be deleted after use).
 fn open_ro(db: &Path) -> Result<(Connection, Option<PathBuf>), String> {
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
     let probe = |c: &Connection| c.query_row("select count(*) from sqlite_master", [], |r| r.get::<_, i64>(0)).map(|_| ());
@@ -73,8 +73,8 @@ fn text(v: ValueRef) -> Option<String> {
     (!s.is_empty()).then_some(s)
 }
 
-/// Numele afisat al unei coloane: DISPLAYNAME din baza, cateva nume Plant 3D cunoscute, altfel coloana
-/// despartita in cuvinte (PartSizeLongDesc -> "Part Size Long Desc").
+/// The display name of a column: DISPLAYNAME from the database, a few known Plant 3D names, otherwise the column
+/// split into words (PartSizeLongDesc -> "Part Size Long Desc").
 pub fn display_name(col: &str, display: Option<&String>) -> String {
     if let Some(d) = display.filter(|d| !d.trim().is_empty()) {
         return d.trim().to_string();
@@ -107,8 +107,8 @@ fn skip_column(table: &str, col: &str, hidden: &HashSet<(String, String)>) -> bo
     col.starts_with("PnP") || col == "AcquisitionProperties" || col == "ContentIsoSymbolDefinition" || col.ends_with("RecordId") || col == "PartFamilyId" || hidden.contains(&(table.to_string(), col.to_string()))
 }
 
-/// Citeste proprietatile tuturor obiectelor din desenul `dwg`, cheie = handle hex (majuscule).
-/// `Ok(None)` daca desenul nu e in proiect.
+/// Reads the properties of all objects in drawing `dwg`, key = hex handle (uppercase).
+/// `Ok(None)` if the drawing is not in the project.
 pub fn read_for_drawing(db: &Path, dwg: &Path) -> Result<Option<HashMap<String, PlantData>>, String> {
     let (c, tmp) = open_ro(db)?;
     let r = read_conn(&c, db, dwg);
@@ -121,7 +121,7 @@ pub fn read_for_drawing(db: &Path, dwg: &Path) -> Result<Option<HashMap<String, 
 
 fn read_conn(c: &Connection, db: &Path, dwg: &Path) -> Result<Option<HashMap<String, PlantData>>, String> {
     let e = |e: rusqlite::Error| e.to_string();
-    // desenul: dupa calea relativa la folderul proiectului, apoi dupa nume (daca e unic)
+    // the drawing: by the path relative to the project folder, then by name (if unique)
     let rel = db.parent().and_then(|p| dwg.strip_prefix(p).ok()).map(|r| r.to_string_lossy().replace('/', "\\").to_lowercase());
     let file = dwg.file_name().map(|f| f.to_string_lossy().to_lowercase()).unwrap_or_default();
     let mut st = c.prepare("select PnPID, [Dwg Name], PnPRelativePath from PnPDrawings where upper(PnPType) = 'DWG'").map_err(e)?;
@@ -136,7 +136,7 @@ fn read_conn(c: &Connection, db: &Path, dwg: &Path) -> Result<Option<HashMap<Str
         return Ok(None);
     };
 
-    // metadate: mostenirea tabelelor, coloanele ascunse, numele afisate
+    // metadata: table inheritance, hidden columns, display names
     let mut base: HashMap<String, String> = HashMap::new();
     let mut st = c.prepare("select TableName, BaseTable from PnPTables").map_err(e)?;
     for (t, b) in st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?.unwrap_or_default()))).map_err(e)?.flatten() {
@@ -154,7 +154,7 @@ fn read_conn(c: &Connection, db: &Path, dwg: &Path) -> Result<Option<HashMap<Str
             }
         }
     }
-    // linia fiecarui obiect (optional: tabelele pot lipsi in alte proiecte)
+    // the line of each object (optional: the tables may be missing in other projects)
     let mut lines: HashMap<i64, String> = HashMap::new();
     if let Ok(mut st) = c.prepare("select r.Part, g.Tag, g.Number from P3dLineGroupPartRelationship r join P3dLineGroup g on g.PnPID = r.LineGroup") {
         if let Ok(rows) = st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get_ref(1).ok().and_then(text), r.get_ref(2).ok().and_then(text)))) {
@@ -166,8 +166,8 @@ fn read_conn(c: &Connection, db: &Path, dwg: &Path) -> Result<Option<HashMap<Str
         }
     }
 
-    // pieselor fara linie (flanse, coturi, suduri cu "?") le dam linia piesei conectate (P3dPartConnection),
-    // in latime de la piesele cu linie cunoscuta
+    // parts without a line (flanges, elbows, welds with "?") get the line of the connected part (P3dPartConnection),
+    // breadth-first from the parts with a known line
     if let Ok(mut st) = c.prepare("select Part1, Part2 from P3dPartConnection") {
         let mut adj: HashMap<i64, Vec<i64>> = HashMap::new();
         if let Ok(rows) = st.query_map([], |r| Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, Option<i64>>(1)?))) {
@@ -191,7 +191,7 @@ fn read_conn(c: &Connection, db: &Path, dwg: &Path) -> Result<Option<HashMap<Str
             }
         }
     }
-    // lantul de tabele al unei clase, de la baza spre clasa (PnPBase exclus)
+    // the table chain of a class, from the base to the class (PnPBase excluded)
     let chain = |class: &str| -> Vec<String> {
         let mut v = Vec::new();
         let mut t = class.to_string();
@@ -204,7 +204,7 @@ fn read_conn(c: &Connection, db: &Path, dwg: &Path) -> Result<Option<HashMap<Str
     };
     let mut cols: HashMap<String, Vec<String>> = HashMap::new();
 
-    // proiect nou / desen fara obiecte Plant: tabelul legaturilor poate lipsi - nu e o eroare
+    // new project / drawing without Plant objects: the links table may be missing - not an error
     let Ok(mut st) = c.prepare("select DwgHandleHigh, DwgHandleLow, DwgSubIndex, RowClassName, RowId from PnPDataLinks where DwgId = ?1 order by DwgHandleHigh, DwgHandleLow, DwgSubIndex") else {
         return Ok(Some(HashMap::new()));
     };
@@ -236,7 +236,7 @@ fn read_conn(c: &Connection, db: &Path, dwg: &Path) -> Result<Option<HashMap<Str
                     if skip_column(&t, col, &hidden) {
                         continue;
                     }
-                    // "?" = valoare neatribuita in Plant 3D (Tag / Line Number goale)
+                    // "?" = unassigned value in Plant 3D (empty Tag / Line Number)
                     let Some(v) = r.get_ref(i).ok().and_then(text).filter(|v| v != "?") else { continue };
                     if col == "Tag" {
                         tag = Some(v.clone());
@@ -260,7 +260,7 @@ fn read_conn(c: &Connection, db: &Path, dwg: &Path) -> Result<Option<HashMap<Str
             vals.insert(0, ("Class".into(), class.clone()));
             d.groups.insert(0, ("Plant 3D".into(), vals));
         } else if !vals.is_empty() {
-            // conectorul nu are linie proprie: o ia de la sub-piese (garnitura, sudura)
+            // the connector has no line of its own: it takes it from the sub-parts (gasket, weld)
             let sub_line = vals.iter().find(|(k, _)| k == "Line Number").map(|(_, v)| v.clone()).or_else(|| lines.get(&id).cloned());
             if d.line.is_none() {
                 if let Some(l) = sub_line {
@@ -281,10 +281,10 @@ fn read_conn(c: &Connection, db: &Path, dwg: &Path) -> Result<Option<HashMap<Str
     Ok(Some(out))
 }
 
-/// Modelele trimise din AutoCAD / Plant 3D prin add-in (`.bimc`, guid = "acad:<handle>", info "Drawing" =
-/// calea DWG-ului): completeaza proprietatile din baza proiectului `Piping.dcf` - aceleasi ca la deschiderea
-/// directa a DWG-ului. Doar proprietatile care lipsesc (add-in-ul poate trimite deja o parte), ca grup
-/// "Plant 3D" etc. Intoarce (baza, elemente completate), `Ok(None)` daca nu e un model Plant 3D cu baza gasita.
+/// Models sent from AutoCAD / Plant 3D through the add-in (`.bimc`, guid = "acad:<handle>", info "Drawing" =
+/// the DWG path): fills in the properties from the project database `Piping.dcf` - the same as when opening
+/// the DWG directly. Only the missing properties (the add-in may already send some of them), as the group
+/// "Plant 3D" etc. Returns (database, filled elements), `Ok(None)` if it is not a Plant 3D model with a database found.
 pub fn attach_sent(model: &mut crate::model::RawModel) -> Result<Option<(PathBuf, usize)>, String> {
     let is_acad = model.info.iter().any(|(k, v)| k == "Source application" && v.contains("AutoCAD"));
     let Some(dwg) = model.info.iter().find(|(k, _)| k == "Drawing").map(|(_, v)| PathBuf::from(v)) else { return Ok(None) };
@@ -300,7 +300,7 @@ pub fn attach_sent(model: &mut crate::model::RawModel) -> Result<Option<(PathBuf
         let before = el.props.len();
         for (g, vals) in &d.groups {
             for (n, v) in vals {
-                // add-in-ul scrie grupul "Plant 3D" cu numele interne; baza da numele afisate - nu dublam
+                // the add-in writes the "Plant 3D" group with the internal names; the database gives the display names - we do not duplicate
                 let dup = el.props.iter().any(|p| p.name.eq_ignore_ascii_case(n) && (p.group == *g || p.group.starts_with("Plant 3D")));
                 if !dup {
                     el.props.push(crate::model::Prop { group: g.clone(), name: n.clone(), value: v.clone() });
@@ -319,10 +319,10 @@ pub fn attach_sent(model: &mut crate::model::RawModel) -> Result<Option<(PathBuf
     Ok(Some((db, hit)))
 }
 
-/// Ataseaza proprietatile din baza proiectului elementelor Plant 3D ale modelului (cheie = guid = handle).
-/// Tubulatura (Pipe, armaturi, conectori, suporturi) e grupata pe linii (storey = Line Number); numele
-/// folosesc Tag-ul, respectiv linia. Intoarce (baza, elemente cu proprietati, elemente Plant 3D), sau
-/// eroarea; `Ok(None)` daca nu exista baza / desenul nu e in proiect.
+/// Attaches the properties from the project database to the Plant 3D elements of the model (key = guid = handle).
+/// The piping (Pipe, fittings, connectors, supports) is grouped by lines (storey = Line Number); the names
+/// use the Tag, or the line respectively. Returns (database, elements with properties, Plant 3D elements), or
+/// the error; `Ok(None)` if there is no database / the drawing is not in the project.
 pub fn attach(model: &mut crate::model::RawModel, dwg: &Path) -> Result<Option<(PathBuf, usize, usize)>, String> {
     let Some(db) = find_project_db(dwg) else { return Ok(None) };
     let Some(map) = read_for_drawing(&db, dwg)? else { return Ok(None) };

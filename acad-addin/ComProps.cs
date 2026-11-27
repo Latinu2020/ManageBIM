@@ -1,8 +1,8 @@
-// Proprietatile din paleta Properties a AutoCAD pentru obiectele definite de aplicatii (Plant 3D: grinzi,
-// stalpi, placi, gratare, scari, balustrade, fundatii; Civil 3D: suprafete, coridoare, conducte, structuri;
-// Architecture / MEP). Ele NU sunt in baza de date Plant 3D (DataLinks) si nici in .NET ca proprietati -
-// le citim prin interfata COM a obiectului (IDispatch + ITypeInfo), exact ce afiseaza paleta Properties.
-// Doar citire, doar valori simple (text, numere, bool, puncte); obiectele COM imbricate sunt sarite.
+// The properties from the AutoCAD Properties palette for application-defined objects (Plant 3D: beams,
+// columns, plates, gratings, stairs, railings, foundations; Civil 3D: surfaces, corridors, pipes, structures;
+// Architecture / MEP). They are NOT in the Plant 3D database (DataLinks) nor in .NET as properties -
+// we read them through the object's COM interface (IDispatch + ITypeInfo), exactly what the Properties palette shows.
+// Read-only, simple values only (text, numbers, bool, points); nested COM objects are skipped.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -24,7 +24,7 @@ namespace ManageBIM.Acad
 
     internal static class ComProps
     {
-        // proprietatile comune tuturor entitatilor (le scriem deja in grupul "Item") sau interne
+        // the properties common to all entities (we already write them in the "Item" group) or internal ones
         private static readonly HashSet<string> Skip = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "Application", "Document", "Database", "Handle", "ObjectID", "ObjectID32", "OwnerID", "OwnerID32", "ObjectName",
@@ -33,7 +33,7 @@ namespace ManageBIM.Acad
             "EnableShadowDisplay", "ReceiveShadows", "CastShadows", "Transparency"
         };
 
-        /// <summary>Citeste proprietatile COM ale obiectului in grupul dat (max <paramref name="max"/>).</summary>
+        /// <summary>Reads the COM properties of the object into the given group (max <paramref name="max"/>).</summary>
         public static int Read(object com, BimcElement el, string group, double scale, int max = 120)
         {
             if (com == null || !Marshal.IsComObject(com)) return 0;
@@ -65,7 +65,7 @@ namespace ManageBIM.Acad
             return added;
         }
 
-        /// <summary>Numele proprietatilor citibile fara parametri (si din interfetele mostenite).</summary>
+        /// <summary>The names of the properties readable without parameters (also from the inherited interfaces).</summary>
         private static void CollectGetters(ITypeInfo ti, List<string> names, HashSet<string> seen, int depth)
         {
             if (depth > 6) return;
@@ -82,7 +82,7 @@ namespace ManageBIM.Acad
                         ti.GetFuncDesc(i, out pf);
                         var fd = (FUNCDESC)Marshal.PtrToStructure(pf, typeof(FUNCDESC));
                         bool getter = (fd.invkind & INVOKEKIND.INVOKE_PROPERTYGET) != 0 && fd.cParams == 0;
-                        // ascunse / restrictionate: sarite
+                        // hidden / restricted: skipped
                         bool hidden = (fd.wFuncFlags & (short)(FUNCFLAGS.FUNCFLAG_FHIDDEN | FUNCFLAGS.FUNCFLAG_FRESTRICTED)) != 0;
                         if (getter && !hidden)
                         {
@@ -94,7 +94,7 @@ namespace ManageBIM.Acad
                     catch { }
                     finally { if (pf != IntPtr.Zero) ti.ReleaseFuncDesc(pf); }
                 }
-                // interfetele de baza (IAcadEntity -> IAcadObject...) dupa cele proprii
+                // the base interfaces (IAcadEntity -> IAcadObject...) after the object's own
                 for (int k = 0; k < attr.cImplTypes; k++)
                 {
                     try
@@ -134,7 +134,7 @@ namespace ManageBIM.Acad
                 case double[] p2 when p2.Length > 0 && p2.Length <= 6:
                     return string.Join(", ", Array.ConvertAll(p2, x => x.ToString("0.###", CultureInfo.InvariantCulture)));
                 default:
-                    // obiecte COM imbricate (stiluri, colectii): numele lor, daca au unul
+                    // nested COM objects (styles, collections): their name, if they have one
                     if (Marshal.IsComObject(v))
                     {
                         try

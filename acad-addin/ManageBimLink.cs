@@ -5,23 +5,23 @@ using System.IO;
 namespace ManageBIM
 {
     /// <summary>
-    /// "Send to ManageBIM": modelul se scrie in %LOCALAPPDATA%\ManageBIM\Inbox\&lt;sursa&gt;.bimc.
-    /// ManageBIM urmareste folderul: un fisier nou se deschide singur, unul rescris se actualizeaza live
-    /// (pastrand selectia si vederea). Daca ManageBIM nu ruleaza, il pornim cu fisierul.
-    /// Acelasi fisier e copiat in toate add-in-urile (Revit / AutoCAD / Navisworks).
+    /// "Send to ManageBIM": the model is written to %LOCALAPPDATA%\ManageBIM\Inbox\&lt;source&gt;.bimc.
+    /// ManageBIM watches the folder: a new file opens on its own, a rewritten one is updated live
+    /// (keeping the selection and the view). If ManageBIM is not running, we start it with the file.
+    /// The same file is copied into all add-ins (Revit / AutoCAD / Navisworks).
     /// </summary>
     internal static class ManageBimLink
     {
         public static string InboxDir()
         {
-            // MANAGEBIM_INBOX: alt folder (teste automate)
+            // MANAGEBIM_INBOX: another folder (automated tests)
             string d = Environment.GetEnvironmentVariable("MANAGEBIM_INBOX");
             if (string.IsNullOrEmpty(d)) d = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManageBIM", "Inbox");
             Directory.CreateDirectory(d);
             return d;
         }
 
-        /// <summary>Calea finala din Inbox pentru o sursa (ex. "Revit - Spital").</summary>
+        /// <summary>The final path in Inbox for a source (e.g. "Revit - Spital").</summary>
         public static string InboxPath(string name)
         {
             foreach (char c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
@@ -29,10 +29,10 @@ namespace ManageBIM
             return Path.Combine(InboxDir(), name.Trim() + ".bimc");
         }
 
-        /// <summary>Fisierul temporar in care se scrie (extensia .tmp e ignorata de ManageBIM).</summary>
+        /// <summary>The temporary file being written (the .tmp extension is ignored by ManageBIM).</summary>
         public static string TempPath(string final) => final + ".tmp";
 
-        /// <summary>Log local (fara server) pentru diagnosticarea exporturilor add-in-urilor.</summary>
+        /// <summary>Local log (no server) for diagnosing the add-in exports.</summary>
         public static void Log(string app, string msg)
         {
             try
@@ -45,7 +45,7 @@ namespace ManageBIM
             catch { }
         }
 
-        /// <summary>Inlocuieste atomic fisierul final cu cel temporar, ca ManageBIM sa nu citeasca un fisier pe jumatate.</summary>
+        /// <summary>Atomically replaces the final file with the temporary one, so ManageBIM does not read a half-written file.</summary>
         public static void Commit(string tmp, string final)
         {
             for (int i = 0; ; i++)
@@ -58,20 +58,20 @@ namespace ManageBIM
                 }
                 catch (IOException) when (i < 20)
                 {
-                    // ManageBIM poate citi chiar acum versiunea anterioara
+                    // ManageBIM may be reading the previous version right now
                     System.Threading.Thread.Sleep(250);
                 }
             }
         }
 
-        /// <summary>true daca ManageBIM rula deja (va prelua singur fisierul din Inbox).</summary>
+        /// <summary>true if ManageBIM was already running (it will pick up the file from Inbox by itself).</summary>
         public static bool EnsureRunning(string file)
         {
             if (Process.GetProcessesByName("ManageBIM").Length > 0) return true;
             if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MANAGEBIM_NO_LAUNCH"))) return false;
             string exe = FindExe();
             if (exe != null) Process.Start(new ProcessStartInfo(exe, "\"" + file + "\"") { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe) });
-            else Process.Start(new ProcessStartInfo(file) { UseShellExecute = true }); // asocierea .bimc
+            else Process.Start(new ProcessStartInfo(file) { UseShellExecute = true }); // the .bimc association
             return false;
         }
 
@@ -81,7 +81,7 @@ namespace ManageBIM
             string[] candidates =
             {
                 Path.Combine(local, "Programs", "ManageBIM", "ManageBIM.exe"),
-                // add-in-ul instalat din pachetul ManageBIM: ...\ManageBIM\AddIns\... -> ...\ManageBIM\ManageBIM.exe
+                // the add-in installed from the ManageBIM package: ...\ManageBIM\AddIns\... -> ...\ManageBIM\ManageBIM.exe
                 Path.Combine(Path.GetDirectoryName(typeof(ManageBimLink).Assembly.Location) ?? "", "..", "..", "ManageBIM.exe"),
             };
             foreach (string c in candidates)

@@ -1,28 +1,28 @@
-//! Search set-uri "inteligente": indexul proprietatilor modelului (cu numarul de elemente pe valoare),
-//! regulile de cautare construite din valorile bifate, proprietatile comune ale selectiei (sugestii)
-//! si interpretarea unei cautari scrise in cuvinte ("ducts level 2"). Interfata: ui/smart_sets.rs.
+//! "Smart" search sets: the index of the model properties (with the number of elements per value),
+//! the search rules built from the ticked values, the common properties of the selection (suggestions)
+//! and the interpretation of a search written in words ("ducts level 2"). Interface: ui/smart_sets.rs.
 
 use crate::app::{SearchOp, SearchRule, ITEM_CAT};
 use crate::model::{ElemId, Model};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-/// (grupa, proprietate) - grupa "Item" = campurile standard (IFC Type, Level, Model, Name)
+/// (group, property) - the "Item" group = the standard fields (IFC Type, Level, Model, Name)
 pub type Key = (String, String);
 
-/// campurile standard folosite de builder (GlobalId e unic pe element - nu e util pentru seturi)
+/// the standard fields used by the builder (GlobalId is unique per element - not useful for sets)
 pub const ITEM_FIELDS: [&str; 4] = ["IFC Type", "Level", "Model", "Name"];
 
-/// valorile unui element pentru o cheie
+/// the values of an element for a key
 pub fn values_of<'a>(m: &'a Model, e: &'a crate::model::Element, k: &Key) -> Vec<&'a str> {
     crate::app::elem_values(m, e, &k.0, &k.1)
 }
 
 #[derive(Default, Clone)]
 pub struct Index {
-    /// cheie -> valoare -> numarul de elemente
+    /// key -> value -> number of elements
     pub props: BTreeMap<Key, HashMap<String, usize>>,
-    /// numarul de elemente care au cheia
+    /// the number of elements that have the key
     pub count: HashMap<Key, usize>,
     pub elements: usize,
 }
@@ -65,14 +65,14 @@ impl Index {
         ix
     }
 
-    /// valorile unei chei, cele mai frecvente primele
+    /// the values of a key, most frequent first
     pub fn values(&self, k: &Key) -> Vec<(String, usize)> {
         let mut v: Vec<(String, usize)> = self.props.get(k).map(|m| m.iter().map(|(a, b)| (a.clone(), *b)).collect()).unwrap_or_default();
         v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         v
     }
 
-    /// o proprietate e "utila" pentru seturi daca nu are cate o valoare diferita pe fiecare element (GUID, handle)
+    /// a property is "useful" for sets if it does not have a different value on each element (GUID, handle)
     pub fn useful(&self, k: &Key) -> bool {
         let n = self.count.get(k).copied().unwrap_or(0);
         let distinct = self.props.get(k).map(|m| m.len()).unwrap_or(0);
@@ -80,8 +80,8 @@ impl Index {
     }
 }
 
-/// Regulile unui set: in cadrul unei proprietati valorile sunt SAU, intre proprietati SI.
-/// Regulile ManageBIM sunt blocuri SAU de conditii SI, deci se face produsul cartezian (max. 256 blocuri).
+/// The rules of a set: within a property the values are OR, between properties AND.
+/// The ManageBIM rules are OR blocks of AND conditions, so the Cartesian product is taken (max. 256 blocks).
 pub fn rules_for(choices: &[(Key, Vec<String>)]) -> Vec<SearchRule> {
     let choices: Vec<&(Key, Vec<String>)> = choices.iter().filter(|c| !c.1.is_empty()).collect();
     if choices.is_empty() {
@@ -111,7 +111,7 @@ pub fn rules_for(choices: &[(Key, Vec<String>)]) -> Vec<SearchRule> {
     out
 }
 
-/// Numele propus: valorile alese, separate cu " · "
+/// The proposed name: the chosen values, separated by " · "
 pub fn suggest_name(choices: &[(Key, Vec<String>)]) -> String {
     let parts: Vec<String> = choices
         .iter()
@@ -124,8 +124,8 @@ pub fn suggest_name(choices: &[(Key, Vec<String>)]) -> String {
     if parts.is_empty() { "New set".into() } else { parts.join(" · ") }
 }
 
-/// Proprietatile pe care le au TOATE elementele selectate, cu aceeasi valoare: (cheie, valoare, cate elemente
-/// din model o au). Cele mai specifice (mai putine elemente in model) primele; GUID-uri si nume unice sunt sarite.
+/// The properties that ALL selected elements have, with the same value: (key, value, how many elements
+/// in the model have it). The most specific (fewer elements in the model) first; GUIDs and unique names are skipped.
 pub fn common_props(models: &[Option<Arc<Model>>], ids: &[ElemId], ix: &Index) -> Vec<(Key, String, usize)> {
     let elem = |id: &ElemId| models.get(id.m as usize).and_then(|m| m.as_ref()).and_then(|m| m.elements.get(id.e as usize).map(|e| (m, e)));
     let Some(first) = ids.first().and_then(elem) else { return Vec::new() };
@@ -147,7 +147,7 @@ pub fn common_props(models: &[Option<Arc<Model>>], ids: &[ElemId], ix: &Index) -
         }
         if ids.iter().skip(1).all(|id| elem(id).map(|(m, e)| values_of(m, e, &k).iter().any(|x| *x == v)).unwrap_or(false)) {
             let n = ix.props.get(&k).and_then(|m| m.get(&v)).copied().unwrap_or(0);
-            // o valoare pe care o au toate elementele modelului nu deosebeste nimic
+            // a value that all elements of the model have distinguishes nothing
             if n < ix.elements || ix.elements <= ids.len() {
                 out.push((k, v, n));
             }
@@ -158,9 +158,9 @@ pub fn common_props(models: &[Option<Arc<Model>>], ids: &[ElemId], ix: &Index) -
     out
 }
 
-/// "ducts level 2", "walls, Level 1", "valves cs150": fiecare bucata (despartita de virgula / "and" / "si") e
-/// cautata intre valorile modelului; campurile standard au prioritate (tip, nivel), apoi proprietatile.
-/// "level 2" / "nivel 2" se potriveste pe Level. Intoarce alegerile gasite si bucatile negasite.
+/// "ducts level 2", "walls, Level 1", "valves cs150": each piece (split by comma / "and" / "si") is
+/// searched among the model values; the standard fields take priority (type, level), then the properties.
+/// "level 2" / "nivel 2" matches on Level. Returns the choices found and the pieces not found.
 pub fn parse_query(q: &str, ix: &Index) -> (Vec<(Key, Vec<String>)>, Vec<String>) {
     let norm = |s: &str| s.to_lowercase().replace(['_', '-'], " ");
     let mut phrases: Vec<String> = Vec::new();
@@ -172,7 +172,7 @@ pub fn parse_query(q: &str, ix: &Index) -> (Vec<(Key, Vec<String>)>, Vec<String>
             }
         }
     }
-    // "ducts level 2" fara virgula: cuvantul "level" incepe o bucata noua
+    // "ducts level 2" without a comma: the word "level" starts a new piece
     let mut split: Vec<String> = Vec::new();
     for p in phrases {
         let low = p.to_lowercase();
@@ -203,7 +203,7 @@ pub fn parse_query(q: &str, ix: &Index) -> (Vec<(Key, Vec<String>)>, Vec<String>
                 break;
             }
         }
-        // plural simplu: "ducts" -> "duct", "valves" -> "valve"
+        // simple plural: "ducts" -> "duct", "valves" -> "valve"
         let stem = if p.len() > 3 && p.ends_with('s') { p[..p.len() - 1].to_string() } else { p.clone() };
         let mut best: Option<(i32, Key, Vec<String>)> = None;
         for (k, vals) in &ix.props {
@@ -222,7 +222,7 @@ pub fn parse_query(q: &str, ix: &Index) -> (Vec<(Key, Vec<String>)>, Vec<String>
                     hits = vec![v.clone()];
                     break;
                 }
-                // la nivel "2" cauta cuvantul intreg ("Level 2", nu "Level 12")
+                // at level "2" it searches for the whole word ("Level 2", not "Level 12")
                 let word = nv.split(|c: char| !c.is_alphanumeric()).any(|w| w == p);
                 if (only_level && word) || (!only_level && p.len() >= 3 && (nv.contains(&p) || nv.contains(&stem))) {
                     hits.push(v.clone());
@@ -297,7 +297,7 @@ mod tests {
     }
 
     fn matching(models: &[Option<Arc<Model>>], rules: &[SearchRule]) -> Vec<String> {
-        // aceeasi semantica ca App::matches: blocuri SAU de conditii SI, egalitate fara majuscule
+        // the same semantics as App::matches: OR blocks of AND conditions, case-insensitive equality
         let m = models[0].as_ref().unwrap();
         let mut blocks: Vec<Vec<&SearchRule>> = vec![Vec::new()];
         for (i, r) in rules.iter().enumerate() {
@@ -349,7 +349,7 @@ mod tests {
     }
 }
 
-/// Starea ferestrei "Smart set" (pastrata intre cadre).
+/// The state of the "Smart set" window (kept between frames).
 #[derive(Default)]
 pub struct Builder {
     pub open: bool,
@@ -360,18 +360,18 @@ pub struct Builder {
     pub choices: Vec<(Key, Vec<String>)>,
     pub missed: Vec<String>,
     pub name: String,
-    /// numele a fost scris de utilizator (nu se mai propune automat)
+    /// the name was written by the user (it is no longer proposed automatically)
     pub name_edited: bool,
-    /// indexul + semnatura modelelor pentru care a fost construit
+    /// the index + the signature of the models it was built for
     pub index: Option<(u64, Index)>,
-    /// numarul de elemente gasite pentru alegerile curente (+ semnatura alegerilor)
+    /// the number of elements found for the current choices (+ the signature of the choices)
     pub count: Option<(u64, usize)>,
-    /// deschis din Clash Detective ("Ignore everything like this"): testul in care se salveaza excluderea
+    /// opened from Clash Detective ("Ignore everything like this"): the test in which the exclusion is saved
     pub target_test: Option<usize>,
 }
 
 impl Builder {
-    /// semnatura alegerilor (numarul se recalculeaza doar cand se schimba)
+    /// the signature of the choices (the count is recalculated only when it changes)
     pub fn sig(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();

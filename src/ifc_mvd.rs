@@ -1,17 +1,17 @@
-//! Model View Definition (MVD) pentru export IFC.
-//! Fiecare MVD decide ce proprietati se scriu si daca se pastreaza doar categorii IFC specifice.
+//! Model View Definition (MVD) for IFC export.
+//! Each MVD decides which properties are written and whether only specific IFC categories are kept.
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum Mvd {
-    /// toate proprietatile, compatibilitate maxima (implicit)
+    /// all properties, maximum compatibility (default)
     #[default]
     Reference,
-    /// transfer de proiectare: proprietati de baza + materiale si cantitati
+    /// design transfer: basic properties + materials and quantities
     DesignTransfer,
-    /// coordonare / clash: identitate, nivel, sistem, material
+    /// coordination / clash: identity, level, system, material
     Coordination,
-    /// site / surveying: doar amplasamentul si nivelurile
+    /// site / surveying: only the site and the levels
     Site,
 }
 
@@ -45,7 +45,7 @@ impl Mvd {
         }
     }
 
-    /// Numele view-ului scris in header-ul IFC (FILE_SCHEMA /.ApplicationContext)
+    /// The view name written in the IFC header (FILE_SCHEMA /.ApplicationContext)
     pub fn view_name(self) -> &'static str {
         match self {
             Self::Reference => "Reference View",
@@ -55,7 +55,7 @@ impl Mvd {
         }
     }
 
-    /// decide daca o proprietate intra in fisier
+    /// decides whether a property goes into the file
     pub fn keep_prop(self, group: &str, name: &str) -> bool {
         let g = group.to_ascii_lowercase();
         let n = name.to_ascii_lowercase();

@@ -1,20 +1,20 @@
-//! Nori de puncte ASTM E57 (.e57), fara biblioteci externe: antetul, paginile de 1024 octeti (1020 date + CRC),
-//! XML-ul cu descrierea scanarilor si vectorii comprimati (pachete de date, campuri impachetate pe biti).
-//! Fiecare scanare (data3D) = un element ManageBIM fara triunghiuri; punctele merg in `PointCloud`.
-//! Punctele fiecarei scanari sunt amestecate aleator: densitatea de afisare = primele N% din fiecare scanare.
+//! ASTM E57 point clouds (.e57), with no external libraries: the header, the 1024-byte pages (1020 data + CRC),
+//! the XML describing the scans and the compressed vectors (data packets, bit-packed fields).
+//! Each scan (data3D) = one ManageBIM element without triangles; the points go into `PointCloud`.
+//! The points of each scan are randomly shuffled: display density = the first N% of each scan.
 use crate::model::{Prop, RawElement, RawModel};
 use glam::{DQuat, DVec3};
 
-/// Norul citit: coordonate relative la `base` (f32 = precizie buna langa base), culori RGBA.
+/// The cloud as read: coordinates relative to `base` (f32 = good precision near base), RGBA colours.
 pub struct RawCloud {
     pub base: DVec3,
     pub pos: Vec<[f32; 3]>,
     pub col: Vec<[u8; 4]>,
-    /// (index element, primul punct, numar de puncte) pe scanare
+    /// (element index, first point, number of points) per scan
     pub scans: Vec<(u32, u32, u32)>,
 }
 
-/// Cate puncte pastram cel mult (memorie video ~16 octeti / punct).
+/// The most points we keep (video memory ~16 bytes / point).
 pub const MAX_POINTS: usize = 40_000_000;
 
 /// Points that fit now: MAX_POINTS, or fewer when the free memory is low (a point costs about 48 bytes in
@@ -52,7 +52,7 @@ impl Node {
     fn num(&self) -> Option<f64> {
         let t = self.text.trim();
         if t.is_empty() {
-            // E57: element fara valoare = 0 (ex. <versionMinor type="Integer"/>)
+            // E57: an element without a value = 0 (e.g. <versionMinor type="Integer"/>)
             return Some(0.0);
         }
         t.parse().ok()
@@ -122,7 +122,7 @@ pub(crate) fn parse_xml(s: &str) -> Result<Node, String> {
     root.kids.pop().ok_or_else(|| "E57: no XML root".to_string())
 }
 
-// ------------------------------------------------------------------ fisier: pagini si adrese logice
+// ------------------------------------------------------------------ file: pages and logical addresses
 
 struct File {
     data: Vec<u8>,
@@ -130,11 +130,11 @@ struct File {
 }
 
 impl File {
-    /// adresa fizica -> logica (fara cei 4 octeti de CRC de la finalul fiecarei pagini)
+    /// physical -> logical address (without the 4 CRC bytes at the end of each page)
     fn logical(&self, phys: u64) -> u64 {
         phys / self.page * (self.page - 4) + phys % self.page
     }
-    /// `len` octeti logici incepand de la adresa fizica `phys`
+    /// `len` logical bytes starting at physical address `phys`
     fn read(&self, phys: u64, len: usize) -> Result<Vec<u8>, String> {
         // a length from a damaged header can be absurd (terabytes): check it against the file before
         // allocating, otherwise the allocation itself aborts the whole application
@@ -157,7 +157,7 @@ impl File {
         }
         Ok(out)
     }
-    /// adresa fizica dupa ce avansam `len` octeti logici de la `phys`
+    /// the physical address after advancing `len` logical bytes from `phys`
     fn advance(&self, phys: u64, len: u64) -> u64 {
         let l = self.logical(phys) + len;
         l / (self.page - 4) * self.page + l % (self.page - 4)
@@ -172,20 +172,20 @@ fn u64le(b: &[u8], o: usize) -> u64 {
     b.get(o..o + 8).and_then(|s| s.try_into().ok()).map_or(0, u64::from_le_bytes)
 }
 
-// ------------------------------------------------------------------ campuri
+// ------------------------------------------------------------------ fields
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
     F32,
     F64,
-    /// intreg impachetat pe `bits` biti: valoare = (raw + min) * scale + offset
+    /// integer packed on `bits` bits: value = (raw + min) * scale + offset
     Int { min: i64, bits: u32, scale: f64, offset: f64 },
 }
 
 struct Field {
     name: String,
     kind: Kind,
-    /// limitele pentru normalizare (culori / intensitate)
+    /// the limits for normalisation (colours / intensity)
     lo: f64,
     hi: f64,
 }
@@ -213,7 +213,7 @@ fn field_of(n: &Node) -> Result<Field, String> {
         }
         other => return Err(format!("E57: unsupported field type {other} ({})", n.name)),
     };
-    // pentru Float, limitele normalizarii vin din colorLimits / intensityLimits (vezi mai jos)
+    // for Float, the normalisation limits come from colorLimits / intensityLimits (see below)
     let (lo, hi) = match kind {
         Kind::Int { scale, offset, .. } => (lo * scale + offset, hi * scale + offset),
         _ => (lo, hi),
@@ -221,7 +221,7 @@ fn field_of(n: &Node) -> Result<Field, String> {
     Ok(Field { name: n.name.clone(), kind, lo, hi })
 }
 
-/// Decodeaza `count` valori dintr-un flux de octeti (bitii in ordine little-endian).
+/// Decodes `count` values from a byte stream (bits in little-endian order).
 fn decode(kind: Kind, bytes: &[u8], count: usize) -> Vec<f64> {
     // `count` (recordCount) comes from the file: a damaged value must not allocate terabytes
     let count = match kind {
@@ -261,7 +261,7 @@ fn decode(kind: Kind, bytes: &[u8], count: usize) -> Vec<f64> {
     }
 }
 
-/// Citeste un CompressedVector: fluxurile de octeti ale fiecarui camp, concatenate peste toate pachetele.
+/// Reads a CompressedVector: the byte streams of each field, concatenated over all packets.
 fn read_streams(f: &File, file_offset: u64, nfields: usize) -> Result<Vec<Vec<u8>>, String> {
     let h = f.read(file_offset, 32)?;
     if h[0] != 1 {
@@ -281,7 +281,7 @@ fn read_streams(f: &File, file_offset: u64, nfields: usize) -> Result<Vec<Vec<u8
         }
         if ptype == 1 {
             let p = f.read(pos, plen as usize)?;
-            // antetul pachetului: 4 octeti + numarul de campuri + lungimile campurilor
+            // the packet header: 4 bytes + the number of fields + the field lengths
             if p.len() < 6 {
                 return Err("E57: data packet is truncated".into());
             }
@@ -321,7 +321,7 @@ fn pose_of(n: &Node) -> (DQuat, DVec3) {
     (r.unwrap_or(DQuat::IDENTITY), t.unwrap_or(DVec3::ZERO))
 }
 
-/// Limite de normalizare din `colorLimits` / `intensityLimits`, daca exista.
+/// Normalisation limits from `colorLimits` / `intensityLimits`, if present.
 fn limit(n: &Node, group: &str, lo: &str, hi: &str) -> Option<(f64, f64)> {
     let g = n.kid(group)?;
     let a = g.kid(lo).map(scaled_value).unwrap_or(0.0);
@@ -345,7 +345,7 @@ impl Rng {
     }
 }
 
-/// Citeste un fisier .e57: modelul (un element pe scanare, cu proprietati) + punctele.
+/// Reads an .e57 file: the model (one element per scan, with properties) + the points.
 pub fn read(path: &str, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, RawCloud), String> {
     let data = std::fs::read(path).map_err(|e| format!("Cannot read the file: {e}"))?;
     parse(data, progress)
@@ -369,7 +369,7 @@ pub fn parse(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, R
         return Err("E57: the file has no 3D scans (data3D is empty).".into());
     }
     let total: u64 = scans_xml.iter().filter_map(|s| s.kid("points").and_then(|p| p.attr_num("recordCount"))).map(|v| v as u64).sum();
-    // peste limita: pastram un punct din `stride`
+    // over the limit: we keep one point out of `stride`
     let stride = ((total as f64 / point_budget() as f64).ceil() as usize).max(1);
     let mut cloud = RawCloud { base: DVec3::ZERO, pos: Vec::new(), col: Vec::new(), scans: Vec::new() };
     let mut raw = RawModel { elements: Vec::new(), info: Vec::new(), warnings: Vec::new() };
@@ -441,7 +441,7 @@ pub fn parse(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, R
             hi = hi.max(p);
             let l = p - cloud.base;
             cloud.pos.push([l.x as f32, l.y as f32, l.z as f32]);
-            // fluxurile de culoare pot fi mai scurte decat XYZ (scanere / exporturi incomplete): gri, nu eroare
+            // the colour streams can be shorter than XYZ (incomplete scanners / exports): grey, not an error
             let c = match (&r, &g, &b, &inten) {
                 (Some(r), Some(g), Some(b), _) => match (r.get(i), g.get(i), b.get(i)) {
                     (Some(r), Some(g), Some(b)) => [*r, *g, *b, 255],
@@ -454,7 +454,7 @@ pub fn parse(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, R
             i += stride;
         }
         let kept = cloud.pos.len() - start;
-        // amestec aleator (Fisher-Yates) -> densitatea = primele N% puncte ale scanarii
+        // random shuffle (Fisher-Yates) -> density = the first N% points of the scan
         let mut rng = Rng(0x9e37_79b9_7f4a_7c15 ^ (si as u64 + 1));
         for k in (1..kept).rev() {
             let j = (rng.next() % (k as u64 + 1)) as usize;
@@ -493,7 +493,7 @@ pub fn parse(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, R
     if let Some(v) = root.kid("e57LibraryVersion").map(|n| n.text.trim().to_string()).filter(|v| !v.is_empty()) {
         raw.info.push(("Written by".into(), v));
     }
-    // E57 nu are clasificare: clasificare automata, fiecare scanare impartita pe clase
+    // E57 has no classification: automatic classification, each scan split into classes
     if cloud.pos.len() > 1000 && std::env::var_os("MB_NOAUTOCLASS").is_none() {
         progress(0.9, "Classifying points (ground / vegetation / buildings)");
         let has_rgb = raw.elements.iter().any(|e| e.props.iter().any(|p| p.name == "Colour" && p.value == "RGB"));
@@ -503,8 +503,8 @@ pub fn parse(data: Vec<u8>, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, R
     Ok((raw, cloud))
 }
 
-/// Clasificarea automata a unui nor cu scanari (E57): fiecare scanare devine un grup (nivelul din arbore)
-/// cu cate un element pe clasa; punctele raman amestecate in interiorul fiecarei clase.
+/// Automatic classification of a cloud with scans (E57): each scan becomes a group (the level in the tree)
+/// with one element per class; the points stay shuffled inside each class.
 fn classify_scans(raw: &mut RawModel, cloud: &mut RawCloud, has_rgb: bool) {
     let classes = auto_classify(&cloud.pos, &cloud.col, has_rgb);
     let old_elems = std::mem::take(&mut raw.elements);
@@ -512,7 +512,7 @@ fn classify_scans(raw: &mut RawModel, cloud: &mut RawCloud, has_rgb: bool) {
     let mut counts: std::collections::BTreeMap<u8, usize> = std::collections::BTreeMap::new();
     for (elem, first, n) in old_scans {
         let (a, b) = (first as usize, (first + n) as usize);
-        // sortare stabila dupa clasa: ordinea aleatoare din fiecare clasa se pastreaza
+        // stable sort by class: the random order within each class is kept
         let mut idx: Vec<usize> = (a..b).collect();
         idx.sort_by_key(|&k| classes[k]);
         let pos: Vec<[f32; 3]> = idx.iter().map(|&k| cloud.pos[k]).collect();
@@ -559,7 +559,7 @@ mod tests {
 
     #[test]
     fn bitpacked_integers_cross_byte_boundaries() {
-        // valori 0..=1023 pe 10 biti, impachetate little-endian
+        // values 0..=1023 on 10 bits, packed little-endian
         let vals: Vec<u64> = (0..50).map(|i| (i * 37) % 1024).collect();
         let mut bytes = Vec::new();
         let (mut acc, mut have) = (0u128, 0u32);
@@ -600,10 +600,10 @@ mod tests {
     }
 }
 
-// ------------------------------------------------------------------ LAS (nori de puncte, necomprimat)
+// ------------------------------------------------------------------ LAS (point clouds, uncompressed)
 
-/// Citeste un fisier .las (formatele de punct 0-10): coordonate (scara + offset din antet), culoare RGB sau intensitate.
-/// .laz (comprimat) nu e suportat: se converteste in .las (ex. CloudCompare, LAStools).
+/// Reads a .las file (point formats 0-10): coordinates (scale + offset from the header), RGB colour or intensity.
+/// .laz (compressed) is not supported: convert it to .las (e.g. CloudCompare, LAStools).
 pub fn read_las(path: &str, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, RawCloud), String> {
     let data = std::fs::read(path).map_err(|e| format!("Cannot read the file: {e}"))?;
     if data.len() > 104 && &data[..4] == b"LASF" && data[104] & 0x80 != 0 {
@@ -617,8 +617,8 @@ pub fn read_las(path: &str, progress: &dyn Fn(f32, &str)) -> Result<(RawModel, R
     parse_las(&data, progress)
 }
 
-/// LAZ (LASzip) -> LAS necomprimat in memorie: antetul si VLR-urile raman, punctele se decomprima
-/// (crate-ul `laz`, Rust pur). Bitul de compresie din formatul punctului se sterge.
+/// LAZ (LASzip) -> uncompressed LAS in memory: the header and the VLRs stay, the points are decompressed
+/// (the `laz` crate, pure Rust). The compression bit in the point format is cleared.
 pub fn laz_to_las(b: &[u8]) -> Result<Vec<u8>, String> {
     let u16_ = |o: usize| u16::from_le_bytes([b[o], b[o + 1]]) as usize;
     let u32_ = |o: usize| u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]) as usize;
@@ -634,7 +634,7 @@ pub fn laz_to_las(b: &[u8]) -> Result<Vec<u8>, String> {
     if count == 0 && maj == 1 && min >= 4 && b.len() >= 255 {
         count = u64::from_le_bytes(b[247..255].try_into().unwrap()) as usize;
     }
-    // VLR-ul LASzip: user id "laszip encoded", record 22204
+    // the LASzip VLR: user id "laszip encoded", record 22204
     let mut p = header;
     let mut vlr: Option<laz::LazVlr> = None;
     for _ in 0..nvlr {
@@ -707,7 +707,7 @@ pub fn parse_las(b: &[u8], progress: &dyn Fn(f32, &str)) -> Result<(RawModel, Ra
         return Err("LAS: the file has no points.".into());
     }
     let stride = ((count as f64 / point_budget() as f64).ceil() as usize).max(1);
-    // culorile pe 16 biti (ca in standard) sau pe 8 biti (unele programe): detectate din primele puncte
+    // 16-bit colours (as in the standard) or 8-bit (some programs): detected from the first points
     let wide = rgb_at.is_some_and(|o| (0..count.min(2000)).any(|i| {
         let p = offset + i * rec + o;
         u16_(p) > 255 || u16_(p + 2) > 255 || u16_(p + 4) > 255
@@ -716,7 +716,7 @@ pub fn parse_las(b: &[u8], progress: &dyn Fn(f32, &str)) -> Result<(RawModel, Ra
     let base = DVec3::new(i32::from_le_bytes(b[offset..offset + 4].try_into().unwrap()) as f64, i32::from_le_bytes(b[offset + 4..offset + 8].try_into().unwrap()) as f64, i32::from_le_bytes(b[offset + 8..offset + 12].try_into().unwrap()) as f64) * scale + off;
     let mut cloud = RawCloud { base, pos: Vec::with_capacity(count / stride + 1), col: Vec::with_capacity(count / stride + 1), scans: Vec::new() };
     let (mut lo, mut hi) = (DVec3::splat(f64::INFINITY), DVec3::splat(f64::NEG_INFINITY));
-    // atributele fiecarui punct (formatele 0-5 vs 6-10): clasificare, intensitate, intoarceri, timp GPS
+    // the attributes of each point (formats 0-5 vs 6-10): classification, intensity, returns, GPS time
     let new_fmt = fmt >= 6;
     let class_at = if new_fmt { 16 } else { 15 };
     let gps_at: Option<usize> = match fmt {
@@ -764,8 +764,8 @@ pub fn parse_las(b: &[u8], progress: &dyn Fn(f32, &str)) -> Result<(RawModel, Ra
         i += stride;
     }
     let n = cloud.pos.len();
-    // nor neclasificat (toate punctele 0 / 1): clasificare automata - teren, vegetatie, cladiri
-    // MB_AUTOCLASS=1: ignora clasele din fisier (pentru comparatie cu clasificarea automata)
+    // unclassified cloud (all points 0 / 1): automatic classification - ground, vegetation, buildings
+    // MB_AUTOCLASS=1: ignore the classes in the file (to compare with the automatic classification)
     let auto = n > 1000 && (classes.iter().all(|c| *c <= 1) || std::env::var_os("MB_AUTOCLASS").is_some());
     if auto {
         progress(0.9, "Classifying points (ground / vegetation / buildings)");
@@ -775,8 +775,8 @@ pub fn parse_las(b: &[u8], progress: &dyn Fn(f32, &str)) -> Result<(RawModel, Ra
             stats.entry(*c).or_default().add(0, 1, 1, None, p[2] as f64 + base.z);
         }
     }
-    // punctele grupate pe clasificare (un element in arbore pe clasa: Ground, Building, Vegetation...),
-    // amestecate in interiorul fiecarei clase (densitatea = primele N% din fiecare)
+    // the points grouped by classification (one element in the tree per class: Ground, Building, Vegetation...),
+    // shuffled within each class (density = the first N% of each)
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by_key(|&k| classes[k]);
     let mut rng = Rng(0x2545_f491_4f6c_dd1d);
@@ -840,13 +840,13 @@ pub fn parse_las(b: &[u8], progress: &dyn Fn(f32, &str)) -> Result<(RawModel, Ra
     Ok((raw, cloud))
 }
 
-/// Clasificare automata a unui nor fara clase (clase ASPRS): 2 teren, 3/4/5 vegetatie joasa / medie /
-/// inalta, 6 cladiri, 1 rest.
-/// 1. suprafata terenului: cel mai jos punct pe celula de grila, apoi o "deschidere" morfologica
-///    (minim apoi maxim pe o fereastra de ~16 m, ca filtrul PMF) care scoate acoperisurile si copacii;
-/// 2. inaltimea fiecarui punct peste teren;
-/// 3. teren sub 0.3 m; deasupra: vegetatie daca e verzuie (2G - R - B), cladire daca e mai sus de 2.5 m
-///    si nu e verde, altfel neclasificat. Fara culori (doar intensitate): teren / neclasificat.
+/// Automatic classification of a cloud without classes (ASPRS classes): 2 ground, 3/4/5 low / medium /
+/// high vegetation, 6 buildings, 1 the rest.
+/// 1. the ground surface: the lowest point per grid cell, then a morphological "opening"
+///    (min then max over a ~16 m window, like the PMF filter) that removes roofs and trees;
+/// 2. the height of each point above the ground;
+/// 3. ground below 0.3 m; above: vegetation if greenish (2G - R - B), building if higher than 2.5 m
+///    and not green, otherwise unclassified. Without colours (intensity only): ground / unclassified.
 pub fn auto_classify(pos: &[[f32; 3]], col: &[[u8; 4]], has_rgb: bool) -> Vec<u8> {
     let n = pos.len();
     if n == 0 {
@@ -859,7 +859,7 @@ pub fn auto_classify(pos: &[[f32; 3]], col: &[[u8; 4]], has_rgb: bool) -> Vec<u8
         x1 = x1.max(p[0]);
         y1 = y1.max(p[1]);
     }
-    // celula de 1 m (mai mare pe zone foarte intinse, max ~4000 x 4000 celule)
+    // 1 m cell (bigger on very large areas, max ~4000 x 4000 cells)
     let cell = (((x1 - x0).max(y1 - y0)) / 4000.0).max(1.0);
     let (nx, ny) = ((((x1 - x0) / cell) as usize + 1).max(1), (((y1 - y0) / cell) as usize + 1).max(1));
     let idx = |p: &[f32; 3]| -> usize {
@@ -874,7 +874,7 @@ pub fn auto_classify(pos: &[[f32; 3]], col: &[[u8; 4]], has_rgb: bool) -> Vec<u8
             g[k] = p[2];
         }
     }
-    // celulele goale: completate din vecini (cateva treceri), restul cu minimul global
+    // empty cells: filled from neighbours (a few passes), the rest with the global minimum
     let gmin = g.iter().copied().filter(|v| v.is_finite()).fold(f32::INFINITY, f32::min);
     for _ in 0..40 {
         let mut any = false;
@@ -906,7 +906,7 @@ pub fn auto_classify(pos: &[[f32; 3]], col: &[[u8; 4]], has_rgb: bool) -> Vec<u8
             *v = gmin;
         }
     }
-    // deschidere morfologica separabila: eroziune (min) apoi dilatare (max) pe fereastra 2r+1
+    // separable morphological opening: erosion (min) then dilation (max) over a 2r+1 window
     let r = ((8.0 / cell).ceil() as usize).max(1);
     let filt = |src: &[f32], take_min: bool| -> Vec<f32> {
         let pick = |a: f32, b: f32| if take_min { a.min(b) } else { a.max(b) };
@@ -927,8 +927,8 @@ pub fn auto_classify(pos: &[[f32; 3]], col: &[[u8; 4]], has_rgb: bool) -> Vec<u8
         out
     };
     let opened = filt(&filt(&g, true), false);
-    // ca in PMF: o celula e teren daca punctul ei cel mai jos e aproape de suprafata "deschisa" - toleranta
-    // creste cu panta locala (deschiderea coboara terenul in pante cu panta * raza)
+    // as in PMF: a cell is ground if its lowest point is close to the "opened" surface - the tolerance
+    // grows with the local slope (the opening lowers the ground on slopes by slope * radius)
     let span = r as f32 * cell;
     let mut ground = opened.clone();
     for j in 0..ny {
@@ -945,8 +945,8 @@ pub fn auto_classify(pos: &[[f32; 3]], col: &[[u8; 4]], has_rgb: bool) -> Vec<u8
             }
         }
     }
-    // rugozitatea pe celula a punctelor inalte (peste 2.5 m): acoperisurile sunt plane (variatie mica pe
-    // o celula), coroanele copacilor sunt "aspre" (puncte la multe inaltimi in aceeasi celula)
+    // per-cell roughness of the high points (above 2.5 m): roofs are flat (small variation within
+    // a cell), tree crowns are "rough" (points at many heights in the same cell)
     let mut lo = vec![f32::INFINITY; nx * ny];
     let mut hi = vec![f32::NEG_INFINITY; nx * ny];
     for p in pos {
@@ -956,13 +956,13 @@ pub fn auto_classify(pos: &[[f32; 3]], col: &[[u8; 4]], has_rgb: bool) -> Vec<u8
             hi[k] = hi[k].max(p[2]);
         }
     }
-    // verde relativ la luminozitate (si frunzele din umbra, intunecate)
+    // green relative to brightness (also the leaves in the shade, dark)
     let greenish = |c: &[u8; 4]| -> bool {
         let (r, g, b) = (c[0] as f32, c[1] as f32, c[2] as f32);
         let s = (r + g + b).max(1.0);
         (2.0 * g - r - b) / s > 0.06 && g >= r * 0.95
     };
-    // acoperis tipic: rosu / caramiziu sau gri / alb (neutru, luminos)
+    // typical roof: red / brick or grey / white (neutral, bright)
     let roofish = |c: &[u8; 4]| -> bool {
         let (r, g, b) = (c[0] as f32, c[1] as f32, c[2] as f32);
         let reddish = r > g * 1.15 && r > b * 1.15;
@@ -1001,7 +1001,7 @@ pub fn auto_classify(pos: &[[f32; 3]], col: &[[u8; 4]], has_rgb: bool) -> Vec<u8
         .collect()
 }
 
-/// Statistica atributelor LAS pe o clasa.
+/// Statistics of the LAS attributes for one class.
 #[derive(Clone)]
 struct ClassStats {
     n: u64,
@@ -1049,7 +1049,7 @@ impl ClassStats {
     }
 }
 
-/// Numele clasei ASPRS (LAS 1.4, R15).
+/// The ASPRS class name (LAS 1.4, R15).
 pub fn asprs_class(c: u8) -> &'static str {
     match c {
         0 => "Never classified",
@@ -1083,7 +1083,7 @@ pub fn asprs_class(c: u8) -> &'static str {
 mod las_tests {
     use super::*;
 
-    /// LAZ: comprimat cu LASzip (crate `laz`), apoi deschis ca LAS - aceleasi puncte si culori.
+    /// LAZ: compressed with LASzip (crate `laz`), then opened as LAS - the same points and colours.
     #[test]
     fn laz_roundtrip() {
         use laz::{LasZipCompressor, LazItemRecordBuilder, LazVlr};
@@ -1095,14 +1095,14 @@ mod las_tests {
             r[4..8].copy_from_slice(&(i * 20).to_le_bytes());
             r[8..12].copy_from_slice(&(i * 5).to_le_bytes());
             r[12..14].copy_from_slice(&(i as u16 * 3).to_le_bytes());
-            r[15] = (i % 7) as u8; // clasificare
+            r[15] = (i % 7) as u8; // classification
             r[20..22].copy_from_slice(&65535u16.to_le_bytes());
             pts.extend_from_slice(&r);
         }
         let vlr = LazVlr::from_laz_items(LazItemRecordBuilder::default_for_point_format_id(2, 0).unwrap());
         let mut vlr_data = Vec::new();
         vlr.write_to(&mut vlr_data).unwrap();
-        // ca un scriitor LAZ real: compresorul porneste de la pozitia datelor din fisier (tabela de chunk-uri e absoluta)
+        // like a real LAZ writer: the compressor starts at the data position in the file (the chunk table is absolute)
         let pre = 227 + 54 + vlr_data.len();
         let mut cur = std::io::Cursor::new(vec![0u8; pre]);
         cur.set_position(pre as u64);
@@ -1136,7 +1136,7 @@ mod las_tests {
         assert_eq!(&plain[offset..offset + pts.len()], &pts[..]);
         let (m, c) = parse_las(&plain, &|_, _| {}).unwrap();
         assert_eq!(c.pos.len(), n as usize);
-        // clasa i % 7 -> 7 elemente (Never classified .. Low noise), cate unul pe clasa
+        // class i % 7 -> 7 elements (Never classified .. Low noise), one per class
         assert_eq!(m.elements.len(), 7);
         assert_eq!(c.scans.len(), 7);
         assert_eq!(m.elements[2].name, "Ground");
@@ -1144,7 +1144,7 @@ mod las_tests {
         assert_eq!(c.scans.iter().map(|s| s.2).sum::<u32>(), n);
     }
 
-    /// Teren (pe panta usoara) + cladire de 6 m (gri) + copac verde -> teren / cladire / vegetatie inalta.
+    /// Ground (on a gentle slope) + a 6 m building (grey) + a green tree -> ground / building / high vegetation.
     #[test]
     fn auto_classification_ground_building_tree() {
         let mut pos = Vec::new();
@@ -1152,12 +1152,12 @@ mod las_tests {
         for i in 0..60 {
             for j in 0..60 {
                 let (x, y) = (i as f32, j as f32);
-                let z = 0.05 * x; // panta 5%
+                let z = 0.05 * x; // 5% slope
                 pos.push([x, y, z]);
                 col.push([120, 110, 90, 255]);
             }
         }
-        // cladire 10 x 10 m, acoperis la 6 m peste teren
+        // 10 x 10 m building, roof 6 m above the ground
         for i in 0..20 {
             for j in 0..20 {
                 let (x, y) = (20.0 + i as f32 * 0.5, 20.0 + j as f32 * 0.5);
@@ -1165,7 +1165,7 @@ mod las_tests {
                 col.push([150, 150, 155, 255]);
             }
         }
-        // coroana unui copac (verde) la 4-5 m
+        // the crown of a tree (green) at 4-5 m
         for k in 0..200 {
             let a = k as f32 * 0.7;
             pos.push([45.0 + a.cos() * 1.5, 45.0 + a.sin() * 1.5, 0.05 * 45.0 + 4.0 + (k % 10) as f32 * 0.1]);
@@ -1178,12 +1178,12 @@ mod las_tests {
         assert_eq!(count(5, 4000..4200), 200, "tree = high vegetation");
     }
 
-    /// E57: doua scanari -> fiecare devine un grup (nivel) cu elementele pe clase; punctele raman in scanarea lor.
+    /// E57: two scans -> each becomes a group (level) with the elements per class; the points stay in their scan.
     #[test]
     fn e57_scans_split_by_class() {
         let mut pos = Vec::new();
         let mut col = Vec::new();
-        // scanarea 1: teren 40 x 40; scanarea 2: teren + o cladire 8 x 8 la 5 m
+        // scan 1: ground 40 x 40; scan 2: ground + an 8 x 8 building at 5 m
         for i in 0..40 {
             for j in 0..40 {
                 pos.push([i as f32, j as f32, 0.0]);
@@ -1213,7 +1213,7 @@ mod las_tests {
         assert!(names.contains(&("Scan B".into(), "Building".into())), "{names:?}");
         assert!(!names.contains(&("Scan A".into(), "Building".into())));
         assert_eq!(cloud.scans.iter().map(|s| s.2 as usize).sum::<usize>(), n1 + n2);
-        // fiecare interval ramane in scanarea lui
+        // each range stays in its scan
         for (e, first, n) in &cloud.scans {
             let scan = &raw.elements[*e as usize].storey;
             assert!(if scan == "Scan A" { (*first + *n) as usize <= n1 } else { *first as usize >= n1 });
@@ -1222,7 +1222,7 @@ mod las_tests {
 
     #[test]
     fn las_points_with_scale_offset_and_rgb() {
-        // antet LAS 1.2, format 2 (XYZ + intensitate + ... + RGB), 3 puncte
+        // LAS 1.2 header, format 2 (XYZ + intensity + ... + RGB), 3 points
         let mut b = vec![0u8; 227];
         b[..4].copy_from_slice(b"LASF");
         b[24] = 1;
@@ -1247,7 +1247,7 @@ mod las_tests {
         assert_eq!(raw.elements.len(), 1);
         assert_eq!(c.pos.len(), 3);
         assert_eq!(c.base, DVec3::new(500000.0, 4000000.0, 100.0));
-        // punctele (amestecate) acopera 0..2 m pe X, 0..4 m pe Y
+        // the (shuffled) points cover 0..2 m on X, 0..4 m on Y
         let maxx = c.pos.iter().map(|p| p[0]).fold(0.0f32, f32::max);
         let maxy = c.pos.iter().map(|p| p[1]).fold(0.0f32, f32::max);
         assert!((maxx - 2.0).abs() < 1e-4 && (maxy - 4.0).abs() < 1e-4);

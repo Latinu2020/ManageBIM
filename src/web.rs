@@ -1,6 +1,6 @@
-//! Export "Web viewer": un singur fisier .html care contine geometria, culorile si proprietatile
-//! modelului si un viewer WebGL 2 propriu (orbit / pan / zoom, selectie, proprietati, arbore, cautare,
-//! ascundere / izolare, X-ray). Se deschide in orice browser modern, fara internet si fara instalare.
+//! "Web viewer" export: a single .html file containing the geometry, colours and properties
+//! of the model and its own WebGL 2 viewer (orbit / pan / zoom, selection, properties, tree, search,
+//! hide / isolate, X-ray). It opens in any modern browser, with no internet and no installation.
 
 use crate::model::{Element, Model};
 use base64::Engine;
@@ -13,9 +13,9 @@ pub struct WebStats {
     pub bytes: usize,
 }
 
-/// `items`: elementele de exportat (model, element); `origin` nu e necesar - pozitiile sunt deja locale.
+/// `items`: the elements to export (model, element); `origin` is not needed - the positions are already local.
 pub fn html(items: &[(&Model, &Element)], title: &str, date: &str) -> (String, WebStats) {
-    // modelele, in ordinea aparitiei
+    // the models, in order of appearance
     let mut models: Vec<*const Model> = Vec::new();
     let mut model_names: Vec<String> = Vec::new();
     let mut tris = 0usize;
@@ -65,7 +65,7 @@ pub fn html(items: &[(&Model, &Element)], title: &str, date: &str) -> (String, W
     (out, WebStats { elements: items.len(), triangles: tris, bytes })
 }
 
-/// datele comprimate din fisierul exportat (pentru teste): (numar varfuri, numar elemente, metadate JSON)
+/// the compressed data from the exported file (for tests): (number of vertices, number of elements, JSON metadata)
 pub fn read_back(html: &str) -> Option<(u32, u32, serde_json::Value)> {
     let start = html.find("const DATA=\"")? + 12;
     let end = start + html[start..].find('"')?;

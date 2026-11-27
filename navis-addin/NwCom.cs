@@ -6,12 +6,12 @@ using Autodesk.Navisworks.Api;
 
 namespace ManageBIM.Navis
 {
-    // Interfetele COM Navisworks folosite la extragerea geometriei, declarate aici in loc de
-    // Autodesk.Navisworks.Interop.ComApi.dll (care are alt numar de versiune in fiecare an: 20.x in 2023,
-    // 22.0 in 2025...). Contractul COM (GUID-uri, ordinea metodelor) e acelasi in toate versiunile, deci
-    // acelasi cod merge in Navisworks 2022 - 2026. Definitiile sunt copiate din interop-ul 2025.
+    // The Navisworks COM interfaces used for extracting the geometry, declared here instead of
+    // Autodesk.Navisworks.Interop.ComApi.dll (which has a different version number every year: 20.x in 2023,
+    // 22.0 in 2025...). The COM contract (GUIDs, method order) is the same in all versions, so
+    // the same code works in Navisworks 2022 - 2026. The definitions are copied from the 2025 interop.
 
-    /// <summary>Callback-ul nostru pentru GenerateSimplePrimitives (Navisworks il apeleaza prin vtable).</summary>
+    /// <summary>Our callback for GenerateSimplePrimitives (Navisworks calls it through the vtable).</summary>
     [ComVisible(true)]
     [Guid("1f4067d7-48fb-4759-bb8e-3e4a281fc841")]
     [InterfaceType(ComInterfaceType.InterfaceIsDual)]
@@ -24,8 +24,8 @@ namespace ManageBIM.Navis
     }
 
     /// <summary>
-    /// InwSimpleVertex (derivat din InwBase): apelat de milioane de ori, deci legat direct prin vtable.
-    /// Primele 15 sloturi sunt membrii InwBase (nefolositi aici) - doar pastreaza pozitiile.
+    /// InwSimpleVertex (derived from InwBase): called millions of times, so bound directly through the vtable.
+    /// The first 15 slots are the InwBase members (unused here) - they only keep the positions.
     /// </summary>
     [ComImport]
     [Guid("3ef67071-eeb7-4e23-bacd-6a7251492a37")]
@@ -38,12 +38,12 @@ namespace ManageBIM.Navis
         [DispId(1610809344)] [return: MarshalAs(UnmanagedType.Struct)] object get_coord();
     }
 
-    /// <summary>Accesul la COM API fara referinta la interop: ComApiBridge gasit la rulare, restul prin IDispatch.</summary>
+    /// <summary>Access to the COM API without a reference to the interop: ComApiBridge found at runtime, the rest through IDispatch.</summary>
     internal static class NwCom
     {
         private static MethodInfo toPath;
 
-        /// ModelItem -> InwOaPath (obiect COM), prin ComApiBridge din versiunea de Navisworks care ruleaza
+        /// ModelItem -> InwOaPath (COM object), through ComApiBridge from the running Navisworks version
         public static object ToPath(ModelItem item)
         {
             if (toPath == null)
@@ -51,7 +51,7 @@ namespace ManageBIM.Navis
                 Assembly asm = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "Autodesk.Navisworks.ComApi");
                 if (asm == null)
                 {
-                    // langa Autodesk.Navisworks.Api.dll in folderul Navisworks
+                    // next to Autodesk.Navisworks.Api.dll in the Navisworks folder
                     string dir = System.IO.Path.GetDirectoryName(typeof(ModelItem).Assembly.Location);
                     asm = Assembly.LoadFrom(System.IO.Path.Combine(dir, "Autodesk.Navisworks.ComApi.dll"));
                 }

@@ -1,8 +1,8 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
-    /// La fiecare 3 minute, daca proiectul s-a schimbat: copie in Autosave (fisierul .bimr al utilizatorului ramane neatins).
+    /// Every 3 minutes, if the project changed: a copy in Autosave (the user's .bimr file stays untouched).
     pub fn autosave_tick(&mut self) {
         if self.loaded_models().next().is_none() || !self.loads.is_empty() {
             return;
@@ -31,7 +31,7 @@ impl App {
         }
     }
 
-    /// Deschide proiectul salvat automat; salvarea normala merge apoi in proiectul original (daca exista).
+    /// Opens the autosaved project; the normal save then goes to the original project (if it exists).
     pub fn autosave_recover(&mut self) {
         let Some((file, orig, _)) = self.autosave.recover.take() else { return };
         self.load_project(&file);

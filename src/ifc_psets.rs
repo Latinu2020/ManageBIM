@@ -1,8 +1,8 @@
-//! Seturile de proprietati standard IFC4 (buildingSMART) cele mai folosite, cu tipul fiecarei
-//! proprietati: fereastra Property editor le propune dupa clasa IFC a elementelor selectate, iar
-//! exportul IFC le scrie cu tipul corect (IfcBoolean, IfcThermalTransmittanceMeasure...) in loc de text.
+//! The most used IFC4 standard property sets (buildingSMART), with the type of each
+//! property: the Property editor window suggests them by the IFC class of the selected elements, and
+//! the IFC export writes them with the correct type (IfcBoolean, IfcThermalTransmittanceMeasure...) instead of text.
 
-/// Tipul unei proprietati (determina controlul din fereastra si valoarea STEP din export).
+/// The type of a property (determines the control in the window and the STEP value in the export).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PKind {
     Label,
@@ -15,7 +15,7 @@ pub enum PKind {
     Thermal,
     /// 0..1
     Ratio,
-    /// grade
+    /// degrees
     Angle,
     /// m²
     Area,
@@ -52,7 +52,7 @@ pub struct PDef {
 
 pub struct PsetDef {
     pub name: &'static str,
-    /// clasele IFC carora li se aplica ("*" = oricarui element)
+    /// the IFC classes it applies to ("*" = any element)
     pub classes: &'static [&'static str],
     pub props: &'static [PDef],
 }
@@ -209,7 +209,7 @@ pub const PSETS: &[PsetDef] = &[
         classes: &["IfcCableCarrierSegment", "IfcCableCarrierFitting"],
         props: &[p!("Reference", Identifier), p!("Status", STATUS)],
     },
-    // ---- pentru orice element (predare / FM / mediu)
+    // ---- for any element (handover / FM / environment)
     PsetDef {
         name: "Pset_ManufacturerTypeInformation",
         classes: &["*"],
@@ -250,7 +250,7 @@ pub const PSETS: &[PsetDef] = &[
     },
 ];
 
-/// Seturile potrivite pentru clasa IFC data (cele specifice clasei intai, apoi cele generale).
+/// The sets matching the given IFC class (the class-specific ones first, then the general ones).
 pub fn psets_for(class: &str) -> Vec<&'static PsetDef> {
     let c = class.trim();
     let mut out: Vec<&'static PsetDef> = PSETS.iter().filter(|p| p.classes.iter().any(|k| k.eq_ignore_ascii_case(c) || (c.len() > 3 && c.to_ascii_lowercase().starts_with(&k.to_ascii_lowercase()) && *k != "*"))).collect();
@@ -266,7 +266,7 @@ fn num(v: &str) -> Option<f64> {
     v.trim().replace(',', ".").parse::<f64>().ok().filter(|x| x.is_finite())
 }
 
-/// numar STEP: mereu cu punct zecimal (1. / 0.25 / 1.E-5)
+/// STEP number: always with a decimal point (1. / 0.25 / 1.E-5)
 fn step_real(x: f64) -> String {
     let s = format!("{x}");
     if s.contains('.') || s.contains('e') || s.contains('E') { s.replace('e', "E") } else { format!("{s}.") }
@@ -280,8 +280,8 @@ pub fn parse_bool(v: &str) -> Option<bool> {
     }
 }
 
-/// Valoarea STEP tipizata pentru o proprietate standard (None = nu e standard sau valoarea nu se
-/// potriveste tipului: exportul o scrie atunci ca IfcLabel, nu se pierde).
+/// The typed STEP value for a standard property (None = not standard or the value does not
+/// match the type: the export then writes it as IfcLabel, it is not lost).
 pub fn step_value(pset: &str, prop: &str, v: &str, esc: &dyn Fn(&str) -> String) -> Option<String> {
     let d = find(pset, prop)?;
     Some(match d.kind {

@@ -1,4 +1,4 @@
-//! Export / import: Appearance Profiler (.bimprofile), Compare (.bimcmp + CSV), arbore de selectie (.bimtree).
+//! Export / import: Appearance Profiler (.bimprofile), Compare (.bimcmp + CSV), selection tree (.bimtree).
 use bimrust::app::*;
 use bimrust::compare::Diff;
 use bimrust::model::ElemId;
@@ -14,7 +14,7 @@ static ENV_LOCK: Mutex<()> = Mutex::new(());
 fn tmp(name: &str) -> String {
     let d = std::env::temp_dir().join(format!("managebim_xio_{}", std::process::id()));
     std::fs::create_dir_all(&d).unwrap();
-    // setarile (arborele) se scriu aici, nu in %APPDATA% al utilizatorului
+    // the settings (the tree) are written here, not in the user's %APPDATA%
     std::env::set_var("APPDATA", &d);
     d.join(name).to_string_lossy().to_string()
 }
@@ -45,14 +45,14 @@ fn profile_export_import_keeps_custom_colours_on_another_model() {
     a.profile.prop = "IFC Type".into();
     a.profile.mode = ProfileMode::Values;
     a.profile_generate();
-    // culorile mele
+    // my colors
     let wall = a.profile.rules.iter().position(|r| r.label.eq_ignore_ascii_case("IfcWall")).expect("walls in the sample");
     a.profile.rules[wall].color = [12, 34, 56, 255];
     a.profile.rules[0].visible = false;
     let n_rules = a.profile.rules.len();
     a.handle_path(Purpose::ExportProfile, file.clone());
 
-    // alt model (MEP): aceleasi reguli si culori, numaratori refacute pe modelul nou
+    // another model (MEP): the same rules and colors, counts rebuilt on the new model
     let mut b = app_with(&[MEP]);
     b.handle_path(Purpose::ImportProfile, file.clone());
     assert!(b.profile.active);
@@ -64,7 +64,7 @@ fn profile_export_import_keeps_custom_colours_on_another_model() {
     let mep_types_in_profile = m.elements.iter().filter(|e| a.profile.rules.iter().any(|r| r.label.eq_ignore_ascii_case(&e.ifc_type))).count();
     assert_eq!(matched as usize, mep_types_in_profile);
 
-    // tipurile MEP care lipsesc din profil primesc culori noi, cele vechi raman neatinse
+    // the MEP types missing from the profile get new colors, the old ones stay untouched
     let missing = b.profile_uncovered();
     assert!(missing > 0, "MEP has types the architecture profile does not know");
     b.profile_add_missing();
@@ -84,7 +84,7 @@ fn profile_ranges_can_be_edited_by_hand() {
     a.profile.bins = 2;
     a.profile_generate();
     let total: u32 = a.profile.rules.iter().map(|r| r.count).sum();
-    // intervalele mele: tot ce e sub 1 m intr-o regula, restul in alta
+    // my ranges: everything below 1 m in one rule, the rest in another
     a.profile.rules[0].lo = Some(-100.0);
     a.profile.rules[0].hi = Some(1.0);
     a.profile.rules[1].lo = Some(1.0);
@@ -127,7 +127,7 @@ fn compare_save_open_and_csv() {
     a.handle_path(Purpose::ExportCompareCsv, csv.clone());
     let r1 = a.compare.as_ref().unwrap();
 
-    // aceleasi modele, alta sesiune: deschidem comparatia salvata
+    // the same models, another session: we open the saved comparison
     let old = load_any(ARCH, &p).unwrap();
     let mut new = load_any(ARCH, &p).unwrap();
     new.elements[1].name = "Renamed".into();
@@ -138,7 +138,7 @@ fn compare_save_open_and_csv() {
         }
     }
     let mut b = build(o, old, new);
-    b.compare_pick = (None, None); // modelele se gasesc dupa numele din fisier
+    b.compare_pick = (None, None); // the models are found by the names in the file
     b.handle_path(Purpose::ImportCompare, file.clone());
     let r2 = b.compare.as_ref().expect("comparison imported");
     assert!(b.compare_on);
@@ -162,7 +162,7 @@ fn tree_grouping_by_any_property_and_export_import() {
     let file = tmp("tree.bimtree");
     let mut app = app_with(&[ARCH]);
     let m = app.models[0].clone().unwrap();
-    // implicit: Level > IFC Type
+    // default: Level > IFC Type
     let t = app.trees[0].as_ref().unwrap();
     let levels: std::collections::BTreeSet<&str> = m.elements.iter().map(|e| e.storey.as_str()).collect();
     assert_eq!(t.roots.len(), levels.len());
@@ -176,22 +176,22 @@ fn tree_grouping_by_any_property_and_export_import() {
     assert_eq!(t.roots.len(), types.len());
     let total: usize = t.roots.iter().map(|n| n.ids.len()).sum();
     assert_eq!(total, m.elements.len());
-    // al treilea nivel exista si e frunza
+    // the third level exists and is a leaf
     let leaf = &t.roots[0].children[0].children[0];
     assert!(leaf.children.is_empty() && !leaf.ids.is_empty());
-    // ordine naturala: "(no ...)" la final
+    // natural order: "(no ...)" at the end
     if let Some(last) = t.roots.last() {
         assert!(!t.roots[..t.roots.len() - 1].iter().any(|n| n.label.starts_with("(no ")), "{}", last.label);
     }
 
     app.handle_path(Purpose::ExportTree, file.clone());
-    app.set_tree_levels(Vec::new()); // lista plata
+    app.set_tree_levels(Vec::new()); // flat list
     assert!(app.trees[0].as_ref().unwrap().roots.is_empty());
     app.handle_path(Purpose::ImportTree, file.clone());
     assert_eq!(app.settings.tree_levels, custom);
     assert_eq!(app.trees[0].as_ref().unwrap().roots.len(), types.len());
 
-    // un element ales ramane accesibil prin arbore
+    // a chosen element stays reachable through the tree
     let id = ElemId { m: 0, e: 3 };
     assert!(app.trees[0].as_ref().unwrap().roots.iter().any(|n| n.ids.contains(&id.e)));
 }

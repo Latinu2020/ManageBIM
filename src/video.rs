@@ -349,7 +349,7 @@ pub fn convert_mp4(path: &Path) -> Result<(), String> {
     }
 }
 
-// ====================================================================== text si casete pe cadre (data 4D, legenda)
+// ====================================================================== text and boxes on frames (4D date, legend)
 
 fn overlay_font() -> &'static ab_glyph::FontRef<'static> {
     static F: std::sync::OnceLock<ab_glyph::FontRef<'static>> = std::sync::OnceLock::new();
@@ -357,7 +357,7 @@ fn overlay_font() -> &'static ab_glyph::FontRef<'static> {
 }
 
 impl Frame {
-    /// amesteca o culoare RGBA (alpha 0-255) in pixelul (x, y)
+    /// blends an RGBA colour (alpha 0-255) into pixel (x, y)
     fn blend(&mut self, x: i32, y: i32, c: [u8; 4], cov: f32) {
         if x < 0 || y < 0 || x >= self.w as i32 || y >= self.h as i32 {
             return;
@@ -370,7 +370,7 @@ impl Frame {
         }
     }
 
-    /// dreptunghi plin (semi-transparent daca alpha < 255)
+    /// filled rectangle (semi-transparent if alpha < 255)
     pub fn fill_rect(&mut self, x: i32, y: i32, w: i32, h: i32, c: [u8; 4]) {
         for yy in y.max(0)..(y + h).min(self.h as i32) {
             for xx in x.max(0)..(x + w).min(self.w as i32) {
@@ -379,14 +379,14 @@ impl Frame {
         }
     }
 
-    /// latimea unui text la inaltimea `px`
+    /// the width of a text at height `px`
     pub fn text_width(s: &str, px: f32) -> f32 {
         use ab_glyph::{Font, ScaleFont};
         let f = overlay_font().as_scaled(px);
         s.chars().map(|ch| f.h_advance(f.glyph_id(ch))).sum()
     }
 
-    /// text cu Inter (antialiasing); (x, y) = coltul stanga-sus
+    /// text with Inter (antialiasing); (x, y) = the top-left corner
     pub fn draw_text(&mut self, x: f32, y: f32, px: f32, c: [u8; 4], s: &str) {
         use ab_glyph::{Font, ScaleFont};
         let font = overlay_font();
@@ -404,8 +404,8 @@ impl Frame {
         }
     }
 
-    /// Caseta cu titlu si randuri (patrat de culoare + text) in coltul stanga-sus sau stanga-jos.
-    /// Marimea se adapteaza la inaltimea cadrului (lizibila la 720p si la 4K).
+    /// A box with a title and rows (colour square + text) in the top-left or bottom-left corner.
+    /// The size adapts to the frame height (readable at 720p and at 4K).
     pub fn draw_legend(&mut self, title: &str, rows: &[([u8; 4], String)], bottom: bool) {
         let px = (self.h as f32 / 42.0).clamp(12.0, 48.0);
         let pad = px * 0.6;
@@ -431,7 +431,7 @@ impl Frame {
 }
 
 impl Frame {
-    /// linie groasa (antialiasing simplu: discuri de-a lungul segmentului)
+    /// thick line (simple antialiasing: discs along the segment)
     pub fn draw_line(&mut self, a: [f32; 2], b: [f32; 2], width: f32, c: [u8; 4]) {
         let r = (width * 0.5).max(0.6);
         let len = ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt();
@@ -445,7 +445,7 @@ impl Frame {
                     let d = ((xx as f32 + 0.5 - cx).powi(2) + (yy as f32 + 0.5 - cy).powi(2)).sqrt();
                     let cov = (r + 0.5 - d).clamp(0.0, 1.0);
                     if cov > 0.0 {
-                        // fara dublarea opacitatii unde discurile se suprapun: doar acoperirea maxima conteaza vizual
+                        // no doubled opacity where the discs overlap: only the maximum coverage matters visually
                         self.blend(xx, yy, c, cov * if c[3] == 255 { 1.0 } else { 0.35 });
                     }
                 }
@@ -453,8 +453,8 @@ impl Frame {
         }
     }
 
-    /// Markup-urile unui viewpoint peste imagine: coordonatele lor sunt fata de centrul vederii, in inaltimi
-    /// de vedere (ca in aplicatie), grosimile scalate la inaltimea imaginii.
+    /// The markups of a viewpoint over the image: their coordinates are relative to the view centre, in view
+    /// heights (as in the application), the thicknesses scaled to the image height.
     pub fn draw_redlines(&mut self, reds: &[crate::markup::Redline]) {
         use crate::markup::RedKind;
         let (w, h) = (self.w as f32, self.h as f32);

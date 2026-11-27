@@ -1,4 +1,4 @@
-//! Clash Detective: teste Hard, Clearance si Duplicate intre doua seturi de elemente.
+//! Clash Detective: Hard, Clearance and Duplicate tests between two sets of elements.
 use crate::model::{Aabb, Bvh, ElemId, Model};
 use glam::Vec3;
 use rayon::prelude::*;
@@ -78,7 +78,7 @@ impl Progress {
     }
 }
 
-// ------------------------------------------------------------- arbore AABB pe elemente
+// ------------------------------------------------------------- AABB tree over elements
 struct Node {
     bb: Aabb,
     a: u32,
@@ -180,7 +180,7 @@ pub fn run(models: &[Option<Arc<Model>>], set_a: &[ElemId], set_b: &[ElemId], ty
                 if ib == ia || (ignore_same_file && ib.m == ia.m) {
                     continue;
                 }
-                // pereche numarata o singura data cand seturile se suprapun
+                // pair counted only once when the sets overlap
                 if a_set.contains(&ib) && b_set.contains(&ia) && ib < ia {
                     continue;
                 }
@@ -224,7 +224,7 @@ fn tri_bb(t: &[Vec3], i: u32) -> Aabb {
     Aabb { min: t[i].min(t[i + 1]).min(t[i + 2]), max: t[i].max(t[i + 1]).max(t[i + 2]) }
 }
 
-/// Primul punct de intersectie intre doua plase de triunghiuri.
+/// The first intersection point between two triangle meshes.
 pub fn bvh_intersect(ba: &Bvh, ta: &[Vec3], bb: &Bvh, tb: &[Vec3]) -> Option<Vec3> {
     if ba.nodes.is_empty() || bb.nodes.is_empty() {
         return None;
@@ -277,7 +277,7 @@ pub fn bvh_intersect(ba: &Bvh, ta: &[Vec3], bb: &Bvh, tb: &[Vec3]) -> Option<Vec
     None
 }
 
-/// Distanta minima (< limit) intre doua plase; intoarce (dist, punct median).
+/// The minimum distance (< limit) between two meshes; returns (dist, midpoint).
 pub fn bvh_min_dist(ba: &Bvh, ta: &[Vec3], bb: &Bvh, tb: &[Vec3], limit: f32) -> Option<(f32, Vec3)> {
     if ba.nodes.is_empty() || bb.nodes.is_empty() {
         return None;
@@ -334,7 +334,7 @@ pub fn bvh_min_dist(ba: &Bvh, ta: &[Vec3], bb: &Bvh, tb: &[Vec3], limit: f32) ->
     bp.map(|p| (best, p))
 }
 
-/// Segment [p,q] intersecteaza strict interiorul triunghiului?
+/// Does segment [p,q] strictly intersect the interior of the triangle?
 fn seg_tri(p: Vec3, q: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Option<Vec3> {
     let d = q - p;
     let e1 = b - a;

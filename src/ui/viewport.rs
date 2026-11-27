@@ -22,8 +22,8 @@ impl App {
         self.viewpoints[i].redlines.push(r);
     }
 
-    /// Selectie cu fereastra: `crossing` = tot ce atinge dreptunghiul, altfel doar ce e complet in interior.
-    /// Doar elementele vizibile; `add` (Ctrl) pastreaza selectia existenta.
+    /// Window selection: `crossing` = everything touching the rectangle, otherwise only what is fully inside.
+    /// Visible elements only; `add` (Ctrl) keeps the existing selection.
     pub(super) fn select_in_window(&mut self, vp: &Mat4, view: Rect, sel: Rect, crossing: bool, add: bool) {
         let mut ids = Vec::new();
         for (mi, m) in self.loaded_models() {
@@ -60,15 +60,15 @@ impl App {
         let rect = ui.available_rect_before_wrap();
         let resp = ui.allocate_rect(rect, Sense::click_and_drag());
         let painter = ui.painter_at(rect);
-        // fundal: degrade pe trei benzi, cu o "linie de orizont" usor luminata (mai elegant decat doua culori)
+        // background: gradient in three bands, with a slightly lit "horizon line" (more elegant than two colours)
         let mut mesh = egui::Mesh::default();
         let pal = self.pal();
-        // Hidden line (Rhino): fundal alb ca hartia, ca sa se vada liniile negre.
+        // Hidden line (Rhino): paper-white background, so the black lines show.
         let rhino = self.settings.visual_style == crate::render::VisualStyle::Hidden;
-        // fundalul ales in Settings › Appearance (implicit = al temei)
+        // the background chosen in Settings › Appearance (default = the theme's)
         let (top, bot) = match self.settings.vp_bg.as_str() {
             _ if rhino => (Color32::from_rgb(252, 252, 253), Color32::from_rgb(240, 242, 245)),
-            // scena de noapte (Render › Lighting): cer inchis, lampile ies in evidenta
+            // night scene (Render › Lighting): dark sky, the lamps stand out
             _ if self.render.night => (Color32::from_rgb(8, 12, 26), Color32::from_rgb(22, 26, 40)),
             "white" => (Color32::from_rgb(255, 255, 255), Color32::from_rgb(246, 247, 249)),
             "grey" => (Color32::from_rgb(150, 155, 162), Color32::from_rgb(112, 116, 122)),
@@ -93,7 +93,7 @@ impl App {
         mesh.add_triangle(2, 3, 5);
         mesh.add_triangle(2, 5, 4);
         painter.add(egui::Shape::mesh(mesh));
-        // pagina de start: doar ea, fara model / cub / suprapuneri (proiectul ramane deschis dedesubt)
+        // start page: only it, no model / cube / overlays (the project stays open underneath)
         if self.start_screen() {
             ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rect), |ui| self.start_page(ui));
             if self.show_start && ui.input(|i| i.key_pressed(Key::Escape)) && self.has_open_project() {
@@ -104,20 +104,20 @@ impl App {
 
         let aspect = rect.width() / rect.height().max(1.0);
         let params = self.frame_params(aspect);
-        // imaginea asteapta cateva cadre dupa ce s-au schimbat stilul / materialele (vezi still_wait)
+        // the image waits a few frames after the style / materials changed (see still_wait)
         let capture = if self.still_wait == 0 { self.pending_capture.take() } else { None };
         if let Some((w, h)) = capture {
             let (bg_top, bg_bottom) = self.render_bg();
             let cp = self.frame_params(w as f32 / h.max(1) as f32);
-            // Dashboard / AI: imaginea arata ce se vede in viewport (ascunsele si estomparea clash-ului incluse)
+            // Dashboard / AI: the image shows what is seen in the viewport (hidden items and clash dimming included)
             let lists = (self.dash_job.is_some() || self.mcp.capture.is_some()).then(|| std::sync::Arc::new(self.draw_lists(&cp, h as f32)));
             // Ray Trace view on: the image is path traced too (64 samples, or the view's own count if lower)
             let pt = if self.rt.on { self.rt.scene.clone().map(|sc| (self.rt_capture_frame(sc), self.settings.rt_samples.clamp(16, 64))) } else { None };
             self.renderer.lock().unwrap_or_else(|e| e.into_inner()).capture = Some(crate::render::CaptureReq { params: cp, w, h, bg_top, bg_bottom, lists, pt });
         }
-        // ce se deseneaza: campul vizual, fara ascunse; simplificat cat timp camera se misca.
-        // Lista e capturata de callback (NU in renderer) - altfel, in split-view, al doilea
-        // viewport o suprascrie pe prima si dispar elemente cand misc camera.
+        // what gets drawn: the field of view, without hidden items; simplified while the camera moves.
+        // The list is captured by the callback (NOT in the renderer) - otherwise, in split view, the second
+        // viewport overwrites the first and elements disappear when I move the camera.
         let lists = self.draw_lists(&params, rect.height());
         if self.lod_moving() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(350));
@@ -126,7 +126,7 @@ impl App {
         // interactive Ray Trace: only in the main 3D view
         // paused while a final Path Trace render uses the graphics card (the render shows in its own window)
         let pt = if self.rt.on && overlays && !self.gpu_render_running() { self.rt_frame(rect.width() / rect.height().max(1.0)) } else { None };
-        // pagina de start peste proiect: modelul nu se mai deseneaza dedesubt
+        // start page over the project: the model is no longer drawn underneath
         if !self.start_screen() {
             let lists = std::sync::Arc::new(lists);
             painter.add(egui::PaintCallback {
@@ -145,14 +145,14 @@ impl App {
             painter.text(rect.center(), Align2::CENTER_CENTER, e, FontId::proportional(14.0), Color32::RED);
         }
 
-        // --------------------------------------------------------- interactiune
+        // --------------------------------------------------------- interaction
         let uv = |p: Pos2| Vec2::new((p.x - rect.left()) / rect.width(), (p.y - rect.top()) / rect.height());
         let mods = ui.input(|i| i.modifiers);
         let hover = resp.hover_pos();
         let mut snap: Option<Vec3> = None;
-        // tipul punctului prins: 0 suprafata, 1 colt, 2 mijloc de muchie, 3 pe muchie
+        // type of the snapped point: 0 surface, 1 corner, 2 edge midpoint, 3 on edge
         let mut snap_kind = 0u8;
-        // elementul si normala fetei sub cursor (relocare: aliniere pe fata)
+        // the element and the face normal under the cursor (relocation: align to face)
         let mut snap_hit: Option<(ElemId, Vec3)> = None;
         if self.xform.is_some() && ui.input(|i| i.key_pressed(Key::Escape)) {
             self.xform = None;
@@ -160,7 +160,7 @@ impl App {
         if self.grid_pick > 0 && ui.input(|i| i.key_pressed(Key::Escape)) {
             self.grid_pick = 0;
         }
-        // F3 = OSNAP on/off (ca in AutoCAD / Navisworks)
+        // F3 = OSNAP on/off (as in AutoCAD / Navisworks)
         if ui.input(|i| i.key_pressed(Key::F3)) {
             self.osnap_on = !self.osnap_on;
         }
@@ -174,7 +174,7 @@ impl App {
                 let rad = self.settings.snap_radius;
                 let types = if self.osnap_on { self.settings.snap_types } else { 0 };
                 let mut best = (p, 0u8, f32::INFINITY);
-                // Vertex (Endpoint) - raza completa
+                // Vertex (Endpoint) - full radius
                 if types & 1 != 0 {
                     for v in tri {
                         if let Some(dd) = scr(v) {
@@ -191,7 +191,7 @@ impl App {
                         }
                     }
                 }
-                // Edge (Nearest pe muchie)
+                // Edge (Nearest on edge)
                 if types & 4 != 0 && best.1 == 0 {
                     for k in 0..3 {
                         let (a, b) = (tri[k], tri[(k + 1) % 3]);
@@ -251,12 +251,12 @@ impl App {
                 }
             }
         }
-        // desenele 2D suprapuse (DWG / DXF)
+        // overlaid 2D drawings (DWG / DXF)
         if !self.overlays.is_empty() && self.report_job.is_none() {
             self.draw_overlays(&painter, rect, &params.view_proj);
             self.draw_profile_legend(&painter, rect);
         }
-        // section box ca in Revit: cate o sageata pe fiecare fata; tragi de ea si fata se muta pe axa ei
+        // section box as in Revit: one arrow on each face; drag it and the face moves along its axis
         let mut handle_hover: Option<usize> = None;
         if self.section.enabled && self.section.mode == SectionMode::Box && self.settings.show_section_box && self.report_job.is_none() {
             let vpm = params.view_proj;
@@ -270,7 +270,7 @@ impl App {
                 let mut e = Vec3::ZERO;
                 e[ax] = s;
                 let (Some(p0), Some(p1)) = (to_screen(&vpm, rect, fc), to_screen(&vpm, rect, fc + e * size * 0.06)) else { continue };
-                // sageata mai mare, prinsa oriunde pe lungimea ei (zona de 16 px in jurul tijei si al varfului)
+                // bigger arrow, grabbed anywhere along its length (a 16 px zone around the shaft and the tip)
                 let d = (p1 - p0).normalized();
                 let ok = d.x.is_finite() && d.y.is_finite();
                 let tip = if ok { p0 + d * 38.0 } else { p0 };
@@ -287,7 +287,7 @@ impl App {
                 let active = self.box_drag == Some(k) || (hovered && self.box_drag.is_none());
                 let col = if active { Color32::from_rgb(255, 160, 40) } else { Color32::from_rgb(60, 140, 255) };
                 if active {
-                    // halou: se vede clar ce prinzi
+                    // halo: you see clearly what you grab
                     painter.line_segment([p0, end], Stroke::new(14.0_f32, col.gamma_multiply(0.25)));
                 }
                 if ok {
@@ -313,7 +313,7 @@ impl App {
                 fc[ax] = if minf { a[ax] } else { b[ax] };
                 let mut e = Vec3::ZERO;
                 e[ax] = 1.0;
-                // cati pixeli are 1 m pe axa, pe ecran: miscarea mouse-ului proiectata pe directia axei
+                // how many pixels 1 m on the axis takes on screen: mouse motion projected onto the axis direction
                 if let (Some(s0), Some(s1)) = (to_screen(&params.view_proj, rect, fc), to_screen(&params.view_proj, rect, fc + e)) {
                     let sv = s1 - s0;
                     let ppm = sv.length();
@@ -332,9 +332,9 @@ impl App {
                 self.box_drag = None;
             }
         }
-        // ---- obiectul de coordonare ales (fereastra Coordination objects deschisa): gizmo cu trei moduri,
-        // ca la lumini - Resize (sageti pe fete, in axele obiectului rotit), Move (sageti X / Y / Z din
-        // centru), Rotate (cerc in jurul verticalei). Modelul virtual se reface la eliberarea mouse-ului.
+        // ---- the selected coordination object (Coordination objects window open): gizmo with three modes,
+        // as for lights - Resize (arrows on faces, in the rotated object's axes), Move (X / Y / Z arrows from the
+        // centre), Rotate (circle around the vertical). The virtual model is rebuilt when the mouse is released.
         let mut coord_hover: Option<usize> = None;
         let coord_edit = if self.coord_open { self.coord_sel.filter(|&i| i < self.coord_objects.len()) } else { None };
         if let Some(ci) = coord_edit {
@@ -343,7 +343,7 @@ impl App {
             let c = (a + b) * 0.5;
             let h = (b - a) * 0.5;
             let rot = self.coord_objects[ci].rot_deg.to_radians();
-            // axele locale ale obiectului (rotit in jurul verticalei)
+            // the object's local axes (rotated around the vertical)
             let ex = Vec3::new(rot.cos(), rot.sin(), 0.0);
             let ey = Vec3::new(-rot.sin(), rot.cos(), 0.0);
             let ez = Vec3::Z;
@@ -351,7 +351,7 @@ impl App {
             let kc = self.coord_objects[ci].kind.color();
             let base = Color32::from_rgb(kc[0], kc[1], kc[2]);
             let mode = self.coord_mode;
-            // conturul cutiei rotite (vizibil si prin pereti)
+            // outline of the rotated box (visible through walls too)
             let corner = |i: u32| c + ex * if i & 1 == 0 { -h.x } else { h.x } + ey * if i & 2 == 0 { -h.y } else { h.y } + ez * if i & 4 == 0 { -h.z } else { h.z };
             for (i, j) in [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)] {
                 if let (Some(p), Some(q)) = (to_screen(&vpm, rect, corner(i)), to_screen(&vpm, rect, corner(j))) {
@@ -366,7 +366,7 @@ impl App {
                 let t = ((hp - p0).dot(ab) / ab.length_sq().max(1e-6)).clamp(0.0, 1.0);
                 hp.distance(p0 + ab * t)
             };
-            // cercul de rotatie in planul orizontal al centrului
+            // the rotation circle in the horizontal plane of the centre
             let ring_r = dist * 0.14;
             let ring_pt = |t: f32| c + Vec3::new(t.cos(), t.sin(), 0.0) * ring_r;
             if mode == 2 {
@@ -388,7 +388,7 @@ impl App {
                 if pts.len() > 1 {
                     painter.add(egui::Shape::line(pts, Stroke::new(if active { 5.0_f32 } else { 3.0 }, col)));
                 }
-                // directia obiectului (axa locala X), ca sa se vada unghiul
+                // the object's direction (local X axis), so the angle shows
                 if let (Some(p0), Some(p1)) = (to_screen(&vpm, rect, c), to_screen(&vpm, rect, c + ex * ring_r)) {
                     painter.line_segment([p0, p1], Stroke::new(2.0_f32, col));
                     painter.text(p1 + EV::new(8.0, -8.0), Align2::LEFT_BOTTOM, format!("{:.1}°", self.coord_objects[ci].rot_deg), FontId::proportional(13.0), col);
@@ -396,7 +396,7 @@ impl App {
             } else {
                 for k in 0..6usize {
                     let (ax, s) = (k / 2, if k % 2 == 0 { -1.0f32 } else { 1.0 });
-                    // Resize: din centrul fiecarei fete, in axele locale; Move: din centru, in axele lumii (doar +)
+                    // Resize: from the centre of each face, in local axes; Move: from the centre, in world axes (+ only)
                     let (start, dir) = if mode == 0 {
                         (c + local[ax] * h[ax] * s, local[ax] * s)
                     } else {
@@ -433,7 +433,7 @@ impl App {
             if coord_hover.is_some() || self.coord_drag.is_some() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
             }
-            // unghiul cursorului in planul orizontal al centrului (rotire)
+            // the cursor angle in the horizontal plane of the centre (rotation)
             let cam_r = self.cam;
             let ang_at = |hp: Pos2| -> Option<f32> {
                 let (ro, rd) = cam_r.ray(uv(hp), aspect);
@@ -461,7 +461,7 @@ impl App {
                                 while da > std::f32::consts::PI { da -= std::f32::consts::TAU; }
                                 while da < -std::f32::consts::PI { da += std::f32::consts::TAU; }
                                 o.rot_deg = (o.rot_deg + da.to_degrees()).rem_euclid(360.0);
-                                // Shift: pasi de 15 grade (ca in Revit / AutoCAD)
+                                // Shift: 15 degree steps (as in Revit / AutoCAD)
                                 self.coord_rot_last = Some(a1);
                             }
                         }
@@ -478,7 +478,7 @@ impl App {
                                     let (nc, mut nh);
                                     nh = h;
                                     if mode == 0 {
-                                        // fata se muta cu dm, fata opusa ramane pe loc
+                                        // the face moves by dm, the opposite face stays in place
                                         let sgn = if minf { -1.0 } else { 1.0 };
                                         let grow = (sgn * dm).max(0.005 - h[ax] * 2.0);
                                         nh[ax] = (h[ax] + grow * 0.5).max(0.005);
@@ -504,11 +504,11 @@ impl App {
                 }
             }
         }
-        // ---- lumini: gizmo in 3D. Move = sagetile X/Y/Z, Rotate = cercurile XY / XZ / YZ.
-        // Testul de atingere si inceputul tragerii se fac INAINTE de navigare: altfel orbitul misca
-        // camera in acelasi cadru cu lumina, iar cercurile fug de sub cursor (rotirea nu mergea).
+        // ---- lights: 3D gizmo. Move = the X/Y/Z arrows, Rotate = the XY / XZ / YZ circles.
+        // The hit test and the drag start happen BEFORE navigation: otherwise the orbit moves
+        // the camera in the same frame as the light, and the circles run away from the cursor (rotation did not work).
         let cam_c = self.cam;
-        // (indice, pozitie, lungimea sagetilor, raza cercurilor de rotire) - marimi constante pe ecran
+        // (index, position, arrow length, rotation circle radius) - constant sizes on screen
         let light_g = self.light_sel.filter(|&i| i < self.lights.len() && self.lights[i].enabled).map(|i| {
             let lp = Vec3::from(self.lights[i].pos);
             let dist = (lp - cam_c.eye()).length().max(0.5);
@@ -519,9 +519,9 @@ impl App {
             v[a] = 1.0;
             v
         };
-        // unghiul cursorului in jurul luminii, in planul perpendicular pe axa `ai`.
-        // Normal: raza mouse-ului intersectata cu planul (exact, sens corect). Plan vazut din profil:
-        // unghiul pe ecran, cu semnul dat de orientarea axei fata de camera.
+        // the cursor angle around the light, in the plane perpendicular to axis `ai`.
+        // Normal: the mouse ray intersected with the plane (exact, correct sign). Plane seen edge-on:
+        // the angle on screen, with the sign given by the axis orientation relative to the camera.
         let ring_angle = |lp: Vec3, ai: usize, ptr: Pos2, screen: bool| -> Option<f32> {
             let ax = unit(ai);
             if !screen {
@@ -549,13 +549,13 @@ impl App {
         let ring_point = |lp: Vec3, plane: usize, r: f32, t: f32| -> Vec3 {
             let (u, v) = (t.cos() * r, t.sin() * r);
             match plane {
-                0 => lp + Vec3::new(u, v, 0.0),  // XY -> rotire in jurul Z
-                1 => lp + Vec3::new(u, 0.0, v),  // XZ -> in jurul Y
-                _ => lp + Vec3::new(0.0, u, v), // YZ -> in jurul X
+                0 => lp + Vec3::new(u, v, 0.0),  // XY -> rotation around Z
+                1 => lp + Vec3::new(u, 0.0, v),  // XZ -> around Y
+                _ => lp + Vec3::new(0.0, u, v), // YZ -> around X
             }
         };
         let drag_start = resp.drag_started_by(egui::PointerButton::Primary);
-        // la inceputul tragerii testam punctul unde s-a apasat butonul, nu unde a ajuns mouse-ul
+        // at the start of the drag we test the point where the button was pressed, not where the mouse got to
         let probe = if drag_start { ui.input(|i| i.pointer.press_origin()).or(hover) } else { hover };
         let mut light_axis_hover: Option<usize> = None;
         let mut light_ring_hover: Option<usize> = None;
@@ -601,7 +601,7 @@ impl App {
                 if let Some(a) = light_axis_hover {
                     self.light_axis = Some(a);
                 } else if let Some(plane) = light_ring_hover {
-                    // o lumina punctuala nu are directie: o transformam in Spot, ca rotirea sa aiba efect
+                    // a point light has no direction: we turn it into a Spot, so that rotation has an effect
                     if let Some((li, ..)) = light_g {
                         if self.lights[li].kind == crate::lights::LightKind::Point {
                             self.lights[li].kind = crate::lights::LightKind::Spot;
@@ -613,7 +613,7 @@ impl App {
                         }
                     }
                     let ai = [2usize, 1, 0][plane];
-                    // planul aproape din profil (raza paralela cu el): masuram unghiul pe ecran
+                    // plane seen almost edge-on (ray parallel to it): we measure the angle on screen
                     let (_, d) = cam_c.ray(uv(ptr), aspect);
                     let screen = d.dot(unit(ai)).abs() < 0.2;
                     if let Some(a0) = ring_angle(lp, ai, ptr, screen) {
@@ -638,7 +638,7 @@ impl App {
             }
             if let (Some((li, lp, ..)), Some((ai, last, screen)), Some(ptr)) = (light_g, self.light_rot, resp.interact_pointer_pos()) {
                 if let Some(a) = ring_angle(lp, ai, ptr, screen) {
-                    // diferenta adusa in [-pi, pi]: fara salt cand unghiul trece prin +-180°
+                    // difference brought into [-pi, pi]: no jump when the angle passes through +-180°
                     let mut da = a - last;
                     while da > std::f32::consts::PI {
                         da -= std::f32::consts::TAU;
@@ -656,7 +656,7 @@ impl App {
             self.light_axis = None;
             self.light_rot = None;
         }
-        // ---- traseul de mers (unealta Draw): punctele se trag pe podea, click dreapta pe punct = sterge
+        // ---- walk path (Draw tool): points are dragged on the floor, right click on a point = delete
         if self.tool == Tool::WalkPath {
             let vpm = params.view_proj;
             let mut wp_hover: Option<usize> = None;
@@ -702,10 +702,10 @@ impl App {
         } else {
             self.wp_drag = None;
         }
-        // gizmo-ul de lumina are prioritate: nu lasam orbitul / panul sa miste camera in acelasi timp
+        // the light gizmo has priority: we do not let orbit / pan move the camera at the same time
         let light_handle = self.wp_drag.is_some() ||self.light_axis.is_some() || self.light_rot.is_some() || self.tool == Tool::PlaceLight;
         let handle_drag = self.box_drag.is_some() || light_handle || self.coord_drag.is_some() || (handle_hover.is_some() && resp.drag_started_by(egui::PointerButton::Primary));
-        // selectie cu fereastra (unealta Window): tragerea cu butonul stang deseneaza dreptunghiul
+        // window selection (Window tool): dragging with the left button draws the rectangle
         let box_tool = self.tool == Tool::Window && !handle_drag;
         if box_tool {
             if resp.drag_started_by(egui::PointerButton::Primary) {
@@ -714,7 +714,7 @@ impl App {
             if let (Some(s), Some(p)) = (self.box_start, resp.interact_pointer_pos().or(hover)) {
                 let a = Pos2::new(s[0], s[1]);
                 let r = Rect::from_two_pos(a, p);
-                // stanga -> dreapta: fereastra (albastru, continuu); dreapta -> stanga: crossing (verde, punctat)
+                // left -> right: window (blue, solid); right -> left: crossing (green, dotted)
                 let crossing = p.x < a.x;
                 let (fill, col) = if crossing { (Color32::from_rgba_unmultiplied(80, 200, 110, 30), Color32::from_rgb(80, 200, 110)) } else { (Color32::from_rgba_unmultiplied(80, 140, 255, 30), Color32::from_rgb(80, 140, 255)) };
                 painter.rect_filled(r, 0.0, fill);
@@ -743,9 +743,9 @@ impl App {
             self.walk_drag = None;
         }
         if let (Some(o), Some(p)) = (self.walk_drag, resp.interact_pointer_pos().or(hover)) {
-            // mers ca in Navisworks: tragi in sus = inainte, lateral = rotire (joystick).
-            // Raspuns progresiv (zona moarta + curba patratica, plafonat la 2x viteza de mers),
-            // accelerarea / franarea lina o face walk_tick.
+            // walking as in Navisworks: drag up = forward, sideways = turn (joystick).
+            // Progressive response (dead zone + quadratic curve, capped at 2x walking speed),
+            // smooth acceleration / braking is done by walk_tick.
             let off = Vec2::new(p.x - o[0], p.y - o[1]);
             let fwd = crate::app::walk::joystick(-off.y, 10.0, 120.0, 2.0);
             let boost = if mods.ctrl { 2.0 } else { 1.0 };
@@ -758,7 +758,7 @@ impl App {
             ui.ctx().request_repaint();
         }
         if red_tool.is_some() {
-            // primary drag deseneaza; doar middle / right navigheaza
+            // primary drag draws; only middle / right navigate
         }
         if !walk && ((red_tool.is_none() && !box_tool && !handle_drag && resp.drag_started_by(egui::PointerButton::Primary)) || resp.drag_started_by(egui::PointerButton::Middle)) {
             self.pivot = None;
@@ -767,9 +767,9 @@ impl App {
                 if let Some((_, t, hit, _)) = self.pick(o, d) {
                     self.pivot = Some(hit);
                     if self.cam.ortho {
-                        // ortho: `focus` da scara vederii - nu o schimbam (raza porneste mult in spatele
-                        // camerei, iar distanta ei ar mari brusc vederea). Mutam doar ochiul de-a lungul
-                        // directiei de privire, ca punctul ales sa fie la distanta `focus` (imaginea nu se schimba).
+                        // ortho: `focus` gives the view scale - we do not change it (the ray starts far behind the
+                        // camera, and its distance would suddenly enlarge the view). We only move the eye along the
+                        // view direction, so that the picked point is at distance `focus` (the image does not change).
                         let f = self.cam.fwd();
                         let along = (hit - self.cam.eye()).dot(f);
                         self.cam.eye = (self.cam.eye() + f * (along - self.cam.focus)).into();
@@ -783,7 +783,7 @@ impl App {
         if (walk || red_tool.is_some() || box_tool || handle_drag) && resp.dragged_by(egui::PointerButton::Primary) && !mods.shift {
             // handled above
         } else if resp.dragged_by(egui::PointerButton::Primary) && !mods.shift && self.nav == NavMode::Pan {
-            // modul Pan: modelul urmeaza mouse-ul
+            // Pan mode: the model follows the mouse
             self.cam_anim = None;
             self.cam.pan(Vec2::new(delta.x, delta.y), rect.height());
         } else if resp.dragged_by(egui::PointerButton::Primary) && !mods.shift {
@@ -808,23 +808,23 @@ impl App {
                 let bb = self.scene_aabb();
                 let ms = if bb.is_valid() { bb.size().length() * 0.002 } else { 0.01 };
                 self.cam_anim = None;
-                // ~20% pe treapta de rotita (inainte ~32%: pe norii densi parea ca vederea "sare")
+                // ~20% per wheel step (before ~32%: on dense point clouds the view seemed to "jump")
                 self.cam.zoom(scroll / 85.0, d, ms);
             }
         }
-        // alegerea originii / directiei axelor are prioritate fata de unealta curenta
-        // relocare: punctele alese (cu snap) si normala fetei
+        // picking the axes origin / direction has priority over the current tool
+        // relocation: the picked points (with snap) and the face normal
         let xform_click = resp.clicked() && self.xform.is_some() && snap.is_some();
         if xform_click {
             if let (Some(s), Some((id, n))) = (snap, snap_hit) {
-                // normala spre camera (fata vazuta)
+                // normal towards the camera (visible face)
                 let n = if n.dot(self.cam.eye() - s) < 0.0 { -n } else { n };
                 self.xform_point(s, n, id);
             }
         }
-        // ---- lumini: desenare. Fiecare lampa = bec cu halou si raze (se vede clar pe orice fundal si
-        // prin pereti), eticheta cu numele si puterea. Spot / Distant au sageata de directie (Spot si conul).
-        // Lumina selectata are gizmo-ul deasupra: sageti X/Y/Z (Move) sau cercuri de rotire (Rotate).
+        // ---- lights: drawing. Each lamp = a bulb with halo and rays (clearly visible on any background and
+        // through walls), a label with name and power. Spot / Distant have a direction arrow (Spot also the cone).
+        // The selected light has its gizmo on top: X/Y/Z arrows (Move) or rotation circles (Rotate).
         let axis_col = [Color32::from_rgb(240, 80, 70), Color32::from_rgb(80, 220, 100), Color32::from_rgb(80, 140, 255)];
         let tau = std::f32::consts::TAU;
         for (li, lamp) in self.lights.iter().enumerate() {
@@ -841,7 +841,7 @@ impl App {
             }
             let lc = Color32::from_rgb(lamp.color[0], lamp.color[1], lamp.color[2]);
             let dist = (lp - cam_c.eye()).length().max(0.5);
-            // halou + raze + bec
+            // halo + rays + bulb
             let sz = (6.0 + lamp.power.clamp(0.0, 20.0) * 0.45).clamp(7.0, 15.0);
             for (k, a) in [(3.4f32, 22u8), (2.5, 40), (1.7, 70)] {
                 painter.circle_filled(sp, sz * k, Color32::from_rgba_unmultiplied(lc.r(), lc.g(), lc.b(), a));
@@ -854,7 +854,7 @@ impl App {
             painter.circle_filled(sp, sz, lc);
             painter.circle_filled(sp, sz * 0.45, Color32::WHITE);
             painter.circle_stroke(sp, sz, Stroke::new(if selected { 2.5_f32 } else { 1.5 }, if selected { accent() } else { Color32::BLACK }));
-            // directia: sageata de lungime constanta pe ecran; Spot: si conul de lumina
+            // direction: an arrow of constant length on screen; Spot: also the light cone
             if lamp.kind != crate::lights::LightKind::Point {
                 let dir = lamp.direction();
                 if let Some(tp) = to_screen(&params.view_proj, rect, lp + dir * dist * 0.22) {
@@ -896,7 +896,7 @@ impl App {
                     for plane in 0..3 {
                         let pts: Vec<Pos2> = (0..=96).filter_map(|k| to_screen(&params.view_proj, rect, ring_point(lp, plane, rr, k as f32 / 96.0 * tau))).collect();
                         if pts.len() > 1 {
-                            // culoarea cercului = culoarea axei in jurul careia roteste (XY -> Z albastru ...)
+                            // circle colour = colour of the axis it rotates around (XY -> Z blue ...)
                             let ai = [2usize, 1, 0][plane];
                             let active = light_ring_hover == Some(plane) || rotating == Some(ai);
                             let rc = if active { Color32::from_rgb(255, 220, 60) } else { axis_col[ai] };
@@ -923,13 +923,13 @@ impl App {
                     }
                 }
             }
-            // eticheta pe fond inchis: lizibila pe model alb sau negru
+            // label on a dark background: readable on a white or black model
             let g = painter.layout_no_wrap(format!("{} · {:.1} lux", lamp.name, lamp.power), FontId::proportional(13.0), Color32::WHITE);
             let pos = sp + EV::new(sz + 12.0, -sz - 20.0);
             painter.rect_filled(Rect::from_min_size(pos - EV::splat(4.0), g.size() + EV::splat(8.0)), 4.0, Color32::from_black_alpha(175));
             painter.galley(pos, g, Color32::WHITE);
         }
-        // in modul Rotate: directia curenta (azimut / inclinare) sub lumina
+        // in Rotate mode: the current direction (azimuth / tilt) under the light
         if let (Some((li, lp, ..)), true) = (light_g, self.light_rotate_mode) {
             if let Some(sp) = to_screen(&params.view_proj, rect, lp) {
                 let lamp = &self.lights[li];
@@ -951,8 +951,8 @@ impl App {
                 self.grid_pick_point(s);
             }
         }
-        // ---- alegerea unei fete a cubului de sectiune pentru desenul 2D (Annotation › Pick face):
-        // fata de sub cursor se coloreaza verde deschis; click = vederea din acea fata (Top / Front ...)
+        // ---- picking a section box face for the 2D drawing (Annotation › Pick face):
+        // the face under the cursor turns light green; click = the view from that face (Top / Front ...)
         let box_on = self.section.enabled && self.section.mode == SectionMode::Box;
         if self.face_pick && (!box_on || ui.input(|i| i.key_pressed(Key::Escape))) {
             self.face_pick = false;
@@ -962,7 +962,7 @@ impl App {
             if let Some(h) = hover.filter(|h| rect.contains(*h)) {
                 let (o, d) = self.cam.ray(uv(h), aspect);
                 let (a, b) = (Vec3::from(self.section.bmin), Vec3::from(self.section.bmax));
-                // slab method: fata prin care intra raza (sau iese, daca ochiul e in cub)
+                // slab method: the face the ray enters through (or exits, if the eye is inside the box)
                 let (mut t0, mut t1) = (f32::MIN, f32::MAX);
                 let (mut f0, mut f1) = ((0usize, false), (0usize, false));
                 let mut ok = true;
@@ -990,7 +990,7 @@ impl App {
             }
             ui.ctx().set_cursor_icon(if face_hover.is_some() { egui::CursorIcon::PointingHand } else { egui::CursorIcon::Crosshair });
         }
-        // fata aleasa (vederea curenta) si fata de sub cursor: verde deschis, transparent
+        // the chosen face (current view) and the face under the cursor: light green, transparent
         if box_on {
             let (a, b) = (Vec3::from(self.section.bmin), Vec3::from(self.section.bmax));
             let chosen = self.settings.cad_view.axis().map(|ax| (ax, matches!(self.settings.cad_view, crate::app::CadView::Back | crate::app::CadView::Right | crate::app::CadView::Top)));
@@ -1002,7 +1002,7 @@ impl App {
                     _ => [Vec3::new(a.x, a.y, v), Vec3::new(b.x, a.y, v), Vec3::new(b.x, b.y, v), Vec3::new(a.x, b.y, v)],
                 }
             };
-            // fata aleasa e desenata de planul de taiere (verde, urmeaza si tragerea lui); aici doar hover-ul
+            // the chosen face is drawn by the cut plane (green, it also follows its dragging); here only the hover
             let _ = chosen;
             for (f, alpha, w) in [(face_hover, 80u8, 3.0f32)] {
                 let Some((ax, max)) = f else { continue };
@@ -1028,7 +1028,7 @@ impl App {
             if let Some((ax, max)) = face_hover {
                 use crate::app::CadView;
                 self.settings.cad_view = match (ax, max) { (0, false) => CadView::Left, (0, true) => CadView::Right, (1, false) => CadView::Front, (1, true) => CadView::Back, (2, false) => CadView::Bottom, _ => CadView::Top };
-                // exact pe fata cubului, fara planul portocaliu separat
+                // exactly on the box face, without the separate orange plane
                 self.settings.cad_view_pos = 0.0;
                 self.settings.show_cad_plane = false;
                 self.face_pick = false;
@@ -1037,7 +1037,7 @@ impl App {
                 self.toast(format!("{} face chosen - the 2D drawing is in the preview; export it as PDF / DWG", self.settings.cad_view.label()));
             }
         }
-        // click pe becul unei lumini (unealta Select / Window): selecteaza lumina si ii arata gizmo-ul
+        // click on a light's bulb (Select / Window tool): selects the light and shows its gizmo
         let light_click = if resp.clicked() && !grid_click && !xform_click && !face_click && !self.face_pick && matches!(self.tool, Tool::Select | Tool::Window) {
             resp.interact_pointer_pos().and_then(|p| {
                 self.lights
@@ -1073,13 +1073,13 @@ impl App {
                     }
                     Tool::Redline(_) => {}
                     Tool::WalkPath => {
-                        // punct pe podea (podea, scara, rampa; un click pe perete coboara pe podeaua de sub el)
+                        // point on the floor (floor, stair, ramp; a click on a wall drops to the floor below it)
                         let vpm = params.view_proj;
                         let lift = Vec3::Z * 0.05;
                         let on_point = self.walk_path.iter().any(|q| to_screen(&vpm, rect, *q + lift).is_some_and(|s| s.distance(p) < 10.0));
                         if !on_point {
                             if let Some(mut hit) = self.walk_floor_hit(uv(p), aspect) {
-                                // click pe un segment existent: punctul se insereaza acolo
+                                // click on an existing segment: the point is inserted there
                                 let mut insert: Option<usize> = None;
                                 for k in 1..self.walk_path.len() {
                                     if let (Some(a), Some(b)) = (to_screen(&vpm, rect, self.walk_path[k - 1] + lift), to_screen(&vpm, rect, self.walk_path[k] + lift)) {
@@ -1089,7 +1089,7 @@ impl App {
                                         }
                                     }
                                 }
-                                // Shift: directia de la ultimul punct in pasi de 45° (in plan)
+                                // Shift: the direction from the last point in 45° steps (in plan)
                                 if insert.is_none() && ui.input(|i| i.modifiers.shift) {
                                     if let Some(last) = self.walk_path.last() {
                                         let v = hit - *last;
@@ -1109,7 +1109,7 @@ impl App {
                         }
                     }
                     Tool::PlaceLight => {
-                        // ca in Navisworks: click pe o suprafata = lumina plasata acolo
+                        // as in Navisworks: click on a surface = light placed there
                         let (o, d) = self.cam.ray(uv(p), aspect);
                         if let Some((_, _, hit, n)) = self.pick(o, d) {
                             let mut l = crate::lights::SceneLight::default();
@@ -1149,7 +1149,7 @@ impl App {
         }
         if resp.double_clicked() {
             if self.tool == Tool::WalkPath {
-                // dublu-click = ultimul punct (adaugat deja de click) si gata
+                // double-click = the last point (already added by the click) and done
                 self.tool = Tool::Select;
             } else if let Tool::Measure(_) = self.tool {
                 self.finish_measure();
@@ -1216,14 +1216,14 @@ impl App {
             }
         });
 
-        // --------------------------------------------------------- suprapuneri
+        // --------------------------------------------------------- overlays
         let vp = params.view_proj;
         let line = |a: Vec3, b: Vec3, col: Color32, w: f32| {
             if let (Some(sa), Some(sb)) = (to_screen(&vp, rect, a), to_screen(&vp, rect, b)) {
                 painter.line_segment([sa, sb], Stroke::new(w, col));
             }
         };
-        // planurile de sectiune: suprafete verzi transparente, cat scena
+        // section planes: transparent green surfaces, as large as the scene
         if self.section.enabled && self.section.mode == SectionMode::Planes && self.show_section_plane && self.report_job.is_none() {
             let bb = self.scene_aabb();
             if bb.is_valid() {
@@ -1235,7 +1235,7 @@ impl App {
                         2 | 3 => [Vec3::new(o, lo.y, lo.z), Vec3::new(o, hi.y, lo.z), Vec3::new(o, hi.y, hi.z), Vec3::new(o, lo.y, hi.z)],
                         _ => [Vec3::new(lo.x, o, lo.z), Vec3::new(hi.x, o, lo.z), Vec3::new(hi.x, o, hi.z), Vec3::new(lo.x, o, hi.z)],
                     };
-                    // subdivizat, ca sa ramana corect cand o parte e in spatele camerei
+                    // subdivided, so it stays correct when part of it is behind the camera
                     let n = 8;
                     let fill = Color32::from_rgba_unmultiplied(60, 200, 90, 38);
                     for i in 0..n {
@@ -1258,13 +1258,13 @@ impl App {
                 }
             }
         }
-        // Planul de taiere FACE PARTE DIN CUB: se deseneaza in interiorul lui, se
-        // misca odata cu el si se TRAGE DIRECT cu mouse-ul (manerul cu sageti din centru).
-        // Highlightul e INCHIS implicit: apare doar cand utilizatorul a ales o
-        // FATA a cubului in Cut View (Top / Bottom / Front / Back / Left / Right).
-        // In modul Current (implicit) nu se vede niciun plan.
-        // planul vederii alese (verde deschis): mereu vizibil cu cubul de sectiune - nu mai e nevoie de bifa
-        // „Highlight plane"; fara cub ramane optiunea din Settings
+        // The cut plane IS PART OF THE BOX: it is drawn inside it, it
+        // moves with it and is DRAGGED DIRECTLY with the mouse (the arrow handle in the centre).
+        // The highlight is OFF by default: it only appears when the user has picked a
+        // FACE of the box in Cut View (Top / Bottom / Front / Back / Left / Right).
+        // In Current mode (default) no plane is shown.
+        // the plane of the chosen view (light green): always visible with the section box - the
+        // „Highlight plane" checkbox is no longer needed; without a box the option from Settings remains
         let cut_show = (self.settings.show_cad_plane || (self.section.enabled && self.section.mode == SectionMode::Box))
             && self.report_job.is_none()
             && self.settings.cad_view != crate::app::CadView::Current;
@@ -1279,7 +1279,7 @@ impl App {
                     (ax, 0.0)
                 } else {
                     let t = self.settings.cad_view_pos.clamp(0.0, 1.0);
-                    // la fel ca la export: fetele CUBULUI cand e activ, altfel scena
+                    // same as for export: the BOX faces when it is active, otherwise the scene
                     let (lo, hi) = if self.section.enabled && self.section.mode == SectionMode::Box {
                         (self.section.bmin[ax], self.section.bmax[ax])
                     } else {
@@ -1299,11 +1299,11 @@ impl App {
             } else {
                 (2, 0.0)
             };
-            // In modul cub planul sta EXACT unde e fata cubului (cubul e format din
-            // planuri; fara salturi pe grila). Fara cub, vederile denumite se
-            // aliniaza la grila / nivel; in timpul tragerii urmareste mouse-ul.
+            // In box mode the plane sits EXACTLY where the box face is (the box is made of
+            // planes; no jumps on the grid). Without a box, the named views
+            // align to the grid / level; while dragging it follows the mouse.
             let value = if self.cut_drag || view == crate::app::CadView::Current || (self.section.enabled && self.section.mode == SectionMode::Box) { raw } else { self.snap_cut(axis, raw) };
-            // intinderea planului: IN INTERIORUL CUBULUI daca e activ, altfel al scenei
+            // extent of the plane: INSIDE THE BOX if it is active, otherwise the scene's
             let (lo, hi) = if self.section.enabled && self.section.mode == SectionMode::Box {
                 (Vec3::from(self.section.bmin) - Vec3::splat(0.02), Vec3::from(self.section.bmax) + Vec3::splat(0.02))
             } else {
@@ -1320,7 +1320,7 @@ impl App {
                 _ => [Vec3::new(lo.x, lo.y, value), Vec3::new(hi.x, lo.y, value), Vec3::new(hi.x, hi.y, value), Vec3::new(lo.x, hi.y, value)],
             };
             let n = 8;
-            // planul de taiere: verde deschis, ca fata aleasa a cubului
+            // the cut plane: light green, like the chosen box face
             let fill = Color32::from_rgba_unmultiplied(120, 230, 120, 34);
             for i in 0..n {
                 for j in 0..n {
@@ -1339,7 +1339,7 @@ impl App {
             for k in 0..4 {
                 line(quad[k], quad[(k + 1) % 4], Color32::from_rgb(90, 210, 100), 2.0);
             }
-            // ---- manerul de tragere: bareta pe axa planului, cu sageti in ambele capete
+            // ---- the drag handle: a bar along the plane axis, with arrows at both ends
             let mut c = (lo + hi) * 0.5;
             c[axis] = value;
             let mut e = Vec3::ZERO;
@@ -1360,7 +1360,7 @@ impl App {
                     painter.add(egui::Shape::convex_polygon(vec![tip2, tip2 + d * 12.0 + nn, tip2 + d * 12.0 - nn], col, Stroke::new(1.0_f32, Color32::WHITE)));
                     painter.circle(p0, 7.0, col, Stroke::new(1.5_f32, Color32::WHITE));
                 }
-                // prinderea si tragerea planului
+                // grabbing and dragging the plane
                 if near && !self.cut_drag && self.box_drag.is_none() && resp.drag_started_by(egui::PointerButton::Primary) {
                     self.cut_drag = true;
                 }
@@ -1368,12 +1368,12 @@ impl App {
                     if resp.dragged_by(egui::PointerButton::Primary) {
                         let dm = resp.drag_delta().dot(d) / ppm;
                         if view == crate::app::CadView::Current {
-                            // inaltimea planului in interiorul cubului
+                            // the height of the plane inside the box
                             let (za, zb) = (self.section.bmin[2], self.section.bmax[2]);
                             self.settings.section_cut_offset = (self.settings.section_cut_offset + dm).clamp(0.05, (zb - za).max(0.06));
                         } else {
-                            // pozitia de-a lungul axei (span-ul cubului cand e activ),
-                            // cu directia vederea alese
+                            // the position along the axis (the box span when it is active),
+                            // with the direction of the chosen view
                             let span = if self.section.enabled && self.section.mode == SectionMode::Box {
                                 (self.section.bmax[axis] - self.section.bmin[axis]).max(1e-3)
                             } else {
@@ -1392,9 +1392,9 @@ impl App {
                 }
             }
         }
-        // 27.11: NU mai desenam liniile aplatizate pe plan („previewul 2D in 3D").
-        // Sectiunea e acum GEOMETRIE 3D reala: shaderul taie la cub si deseneaza
-        // capacul hasurat pe plan; tot ce e in cub de la plan incolo se vede direct.
+        // 27.11: we NO LONGER draw the lines flattened on the plane („the 2D preview in 3D").
+        // The section is now real 3D GEOMETRY: the shader clips at the box and draws
+        // the hatched cap on the plane; everything in the box beyond the plane is seen directly.
         if self.section.enabled && self.section.mode == SectionMode::Box && self.settings.show_section_box {
             let (a, b) = (Vec3::from(self.section.bmin), Vec3::from(self.section.bmax));
             let c = |i: u32| Vec3::new(if i & 1 == 0 { a.x } else { b.x }, if i & 2 == 0 { a.y } else { b.y }, if i & 4 == 0 { a.z } else { b.z });
@@ -1402,8 +1402,8 @@ impl App {
                 line(c(i), c(j), Color32::from_rgb(255, 190, 60), 1.5);
             }
         }
-        // axe si niveluri: axele pe nivelul de sub camera (ca Navisworks), cu bulele etichetelor la capete;
-        // nivelurile ca un contur discret in jurul scenei, cu numele si cota
+        // grids and levels: grids on the level below the camera (like Navisworks), with label bubbles at the ends;
+        // levels as a discreet outline around the scene, with name and elevation
         if (self.show_grids || self.level.show_lines) && self.loaded_models().next().is_some() && self.report_job.is_none() {
             let g = self.scene_grids();
             let bb = self.scene_aabb();
@@ -1411,7 +1411,7 @@ impl App {
             let gz = g.levels.iter().rev().find(|l| l.1 <= eye.z).or(g.levels.first()).map(|l| l.1).unwrap_or(if bb.is_valid() { bb.min.z } else { 0.0 });
             let gcol = Color32::from_rgba_unmultiplied(120, 175, 255, 170);
             let seg = |a: Vec3, b: Vec3, col: Color32, w: f32| {
-                // bucati mici: partile din spatele camerei dispar fara sa strice linia
+                // small pieces: the parts behind the camera disappear without breaking the line
                 let n = 24;
                 let mut prev: Option<Pos2> = None;
                 for k in 0..=n {
@@ -1422,8 +1422,8 @@ impl App {
                     prev = p;
                 }
             };
-            // axe ca pe plansa: linie-punct (ax), bula alba cu contur si eticheta, asezata DINCOLO de capatul liniei;
-            // bulele au marime fixa pe ecran (se vad si de departe), liniile se pot prelungi (Edit Grids › Extend lines)
+            // grids as on the drawing sheet: dash-dot line (axis), white bubble with outline and label, placed BEYOND the line end;
+            // the bubbles have a fixed size on screen (visible from afar too), the lines can be extended (Edit Grids › Extend lines)
             let br = self.grid_bubble.clamp(6.0, 30.0);
             let ink = Color32::from_rgb(40, 60, 95);
             for (tag, a, b) in g.grids.iter().filter(|_| self.show_grids) {
@@ -1431,13 +1431,13 @@ impl App {
                 let dir = (b - a).normalize_or_zero();
                 a -= dir * self.grid_ext;
                 b += dir * self.grid_ext;
-                // polilinia pe ecran (bucati, ca sa ramana corecta cand o parte e in spatele camerei)
+                // the polyline on screen (in pieces, so it stays correct when part of it is behind the camera)
                 let n = 32;
                 let pts: Vec<Option<Pos2>> = (0..=n).map(|k| to_screen(&vp, rect, a.lerp(b, k as f32 / n as f32))).collect();
                 let mut run: Vec<Pos2> = Vec::new();
                 let flush = |run: &mut Vec<Pos2>| {
                     if run.len() >= 2 {
-                        // linie-punct: tronson lung, pauza, punct, pauza
+                        // dash-dot: long dash, gap, dot, gap
                         let st = Stroke::new(1.4_f32, gcol);
                         painter.extend(egui::Shape::dashed_line(run, st, 16.0, 4.0));
                     }
@@ -1450,7 +1450,7 @@ impl App {
                     }
                 }
                 flush(&mut run);
-                // bulele: in prelungirea liniei, tangente la capat
+                // the bubbles: in the extension of the line, tangent at the end
                 let ends = [(pts.first().copied().flatten(), pts.get(1).copied().flatten()), (pts.last().copied().flatten(), pts.get(n - 1).copied().flatten())];
                 for (end, inner) in ends {
                     let (Some(s), Some(q)) = (end, inner) else { continue };
@@ -1471,7 +1471,7 @@ impl App {
             if self.level.show_lines && bb.is_valid() && g.levels.len() < 60 {
                 let lcol = Color32::from_rgba_unmultiplied(235, 200, 120, 60);
                 let oz = self.origin_f64().z;
-                // 0.28: etichetele nu intra sub bara de navigare de jos si nu se suprapun intre ele
+                // 0.28: the labels do not go under the bottom navigation bar and do not overlap each other
                 let floor_y = if self.settings.nav_bar { rect.bottom() - 74.0 } else { rect.bottom() - 10.0 };
                 let mut placed: Vec<f32> = Vec::new();
                 let mut labels: Vec<(Pos2, String)> = Vec::new();
@@ -1488,12 +1488,12 @@ impl App {
                         }
                     }
                 }
-                // de jos in sus: fiecare eticheta sta la nivelul ei; una care s-ar suprapune cu alta nu se mai
-                // afiseaza (linia nivelului ramane) - inainte se stivuiau intr-o coloana departe de nivel (~20 de niveluri)
+                // bottom to top: each label sits at its level; one that would overlap another is no longer
+                // shown (the level line remains) - before, they stacked in a column far from the level (~20 levels)
                 labels.sort_by(|a, b| b.0.y.total_cmp(&a.0.y));
                 let mut skipped = 0;
                 for (s, text) in labels {
-                    // pana la doua randuri mai sus (eticheta ramane langa nivelul ei); altfel se ascunde
+                    // up to two rows higher (the label stays near its level); otherwise it is hidden
                     let y0 = s.y.min(floor_y);
                     let Some(y) = [y0, y0 - 24.0, y0 - 48.0].into_iter().find(|y| !placed.iter().any(|p| (p - y).abs() < 22.0) && *y >= rect.top() + 12.0) else {
                         skipped += 1;
@@ -1508,7 +1508,7 @@ impl App {
                 }
             }
         }
-        // relocare in curs: punctele alese, linia spre cursor si indicatia pasului urmator
+        // relocation in progress: the picked points, the line to the cursor and the hint for the next step
         if let Some(x) = &self.xform {
             let col = Color32::from_rgb(255, 140, 60);
             let mut prev: Option<Pos2> = None;
@@ -1587,19 +1587,19 @@ impl App {
             };
             painter.text(rect.center_top() + EV::new(0.0, 14.0), Align2::CENTER_TOP, format!("Measure: {} — {hint}", k.label()), FontId::proportional(14.0), pal.overlay_text);
         }
-        // traseul de mers: linie netezita + punctele numerotate
+        // walk path: smoothed line + numbered points
         if !self.walk_path.is_empty() && (self.tool == Tool::WalkPath || self.nav == NavMode::Walk || self.path_run.is_some()) && self.report_job.is_none() {
             let pc = Color32::from_rgb(60, 200, 255);
             let lift = Vec3::Z * 0.05;
             let dense = crate::app::walk::densify(&self.walk_path, 0.25);
-            // umbra discreta sub linie (se citeste pe orice fundal), apoi linia
+            // discreet shadow under the line (readable on any background), then the line
             for w in dense.windows(2) {
                 line(w[0] + lift, w[1] + lift, Color32::from_black_alpha(90), 6.0);
             }
             for w in dense.windows(2) {
                 line(w[0] + lift, w[1] + lift, pc, 3.0);
             }
-            // sageti de directie la ~1.5 m
+            // direction arrows every ~1.5 m
             let mut acc = 0.0f32;
             for w in dense.windows(2) {
                 let seg = (w[1] - w[0]).length();
@@ -1617,7 +1617,7 @@ impl App {
                     }
                 }
             }
-            // lungimea fiecarui segment
+            // the length of each segment
             if self.tool == Tool::WalkPath {
                 for k in 1..self.walk_path.len() {
                     let (a, b) = (self.walk_path[k - 1], self.walk_path[k]);
@@ -1625,7 +1625,7 @@ impl App {
                         label_bg_center(&painter, s + EV::new(0.0, -6.0), &crate::app::fmt_len((b - a).length() as f64), pc);
                     }
                 }
-                // previzualizare 3D a urmatorului segment, pe podea, cu lungimea lui
+                // 3D preview of the next segment, on the floor, with its length
                 if let (Some(last), Some(hp)) = (self.walk_path.last().copied(), hover) {
                     if self.wp_drag.is_none() && rect.contains(hp) {
                         if let Some(mut q) = self.walk_floor_hit(uv(hp), aspect) {
@@ -1649,7 +1649,7 @@ impl App {
             let n_pts = self.walk_path.len();
             for (i, p) in self.walk_path.iter().enumerate() {
                 if let Some(sp) = to_screen(&vp, rect, *p + lift) {
-                    // start verde, final rosu, intermediare albastre (cu contur, se vad pe orice fundal)
+                    // start green, end red, intermediate ones blue (with outline, visible on any background)
                     let (col, txt) = if i == 0 {
                         (Color32::from_rgb(70, 200, 110), "S".to_string())
                     } else if i + 1 == n_pts && n_pts > 1 {
@@ -1693,10 +1693,10 @@ impl App {
                 label_bg(&painter, sp, &format!("dist. min. {}", crate::app::fmt_len(d as f64)), Color32::from_rgb(255, 0, 200));
             }
         }
-        // cadrul de randare (Render tab)
+        // the render frame (Render tab)
         if self.panel_shown(Panel::Render) {
             let ta = self.render.width as f32 / self.render.height.max(1) as f32;
-            // chenarul apare doar cand il activezi (Render › Show frame)
+            // the frame only appears when you turn it on (Render › Show frame)
             if self.render.show_frame && ta <= aspect + 1e-3 {
                 let fw = rect.height() * ta;
                 let fr = Rect::from_center_size(rect.center(), EV::new(fw, rect.height())).shrink(1.0);
@@ -1707,7 +1707,7 @@ impl App {
                 painter.text(rect.center_bottom() - EV::new(0.0, 16.0), Align2::CENTER_BOTTOM, format!("🎞 Rendering frame {} / {}", j.frame.min(j.frames), j.frames), FontId::proportional(16.0), pal.overlay_text);
             }
         }
-        // gizmo axe
+        // axes gizmo
         let o = rect.left_bottom() + EV::new(45.0, -45.0);
         let view = self.cam.view();
         for (ax, col, n) in [(Vec3::X, Color32::from_rgb(230, 70, 70), "X"), (Vec3::Y, Color32::from_rgb(80, 210, 90), "Y"), (Vec3::Z, Color32::from_rgb(80, 140, 255), "Z")] {
@@ -1719,8 +1719,8 @@ impl App {
             painter.line_segment([o, e], Stroke::new(2.5_f32, col));
             painter.text(e, Align2::CENTER_CENTER, n, FontId::proportional(12.0), col);
         }
-        // ViewCube-ul e overlay global: în split-view îl desenăm o singură dată (pe jumătatea activă).
-        // Bara de navigare eArea globală - se desenează o singură dată în update(), nu aici.
+        // The ViewCube is a global overlay: in split view we draw it only once (on the active half).
+        // The navigation bar is global - it is drawn only once in update(), not here.
         if overlays && self.report_job.is_none() && self.loaded_models().next().is_some() {
             self.view_cube(ui, rect);
         }
@@ -1763,12 +1763,12 @@ impl App {
                 self.red_text = Some((pos, txt));
             }
         }
-        // stari
+        // states
         if self.start_screen() {
-            // pagina de start (ca Navisworks): Open / New + fisierele recente
+            // start page (like Navisworks): Open / New + recent files
             ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rect), |ui| self.start_page(ui));
         } else if self.loaded_models().next().is_none() && self.loads.is_empty() {
-            // proiect nou / gol: scena goala, cu o indicatie discreta
+            // new / empty project: empty scene, with a discreet hint
             painter.text(rect.center(), Align2::CENTER_CENTER, "Empty project - Home › Open / Append to add models (Ctrl+O), Save to keep it (Ctrl+S)", FontId::proportional(14.0), pal.overlay_weak);
         }
         let mut yy = rect.center().y - 34.0 * self.loads.len() as f32 / 2.0;
@@ -1780,7 +1780,7 @@ impl App {
             f.set_width(f.width() * j.progress.clamp(0.02, 1.0));
             painter.rect_filled(f, 4.0, accent());
             painter.text(r.center(), Align2::CENTER_CENTER, format!("{} — {} {:.0}%", crate::file_name(&j.path), j.stage, j.progress * 100.0), FontId::proportional(13.0), Color32::WHITE);
-            // Cancel: un fisier mare deschis din greseala nu mai tine aplicatia ocupata minute intregi
+            // Cancel: a large file opened by mistake no longer keeps the application busy for whole minutes
             let br = Rect::from_min_size(Pos2::new(r.max.x + 8.0, r.min.y), EV::new(74.0, r.height()));
             if ui.put(br, egui::Button::new(crate::i18n::tr("Cancel"))).on_hover_text(crate::i18n::tr("Stop loading this file")).clicked() {
                 cancel = Some(k);
@@ -1810,7 +1810,7 @@ impl App {
                     "Click: select · drag: orbit · middle-drag: pan · wheel: zoom · double-click: focus".to_string()
                 },
                 FontId::proportional(12.0),
-                // pe fundal deschis (Hidden line, fundal alb / cer) textul e inchis, altfel nu se vede
+                // on a light background (Hidden line, white background / sky) the text is dark, otherwise it is not visible
                 if self.settings.visual_style == crate::render::VisualStyle::Hidden || matches!(self.settings.vp_bg.as_str(), "white" | "sky") { Color32::from_rgb(90, 96, 106) } else { pal.overlay_weak },
             );
         }

@@ -11,17 +11,17 @@ using TaskDialog = Autodesk.Revit.UI.TaskDialog;
 namespace ManageBIM.Revit
 {
     /// <summary>
-    /// "ManageBIM Reference": modelele exportate din ManageBIM (Output › Reference, fisier .mbref) ca geometrie de
-    /// referinta: cate un DirectShape (Generic Models) pe element, cu culoarea lui, intr-un grup fixat (pin) pe referinta.
-    /// Fereastra arata referintele incarcate: Load… / Reload (acelasi fisier, actualizat) / Unload.
-    /// Coordonatele sunt cele partajate (shared), ca la export.
+    /// "ManageBIM Reference": the models exported from ManageBIM (Output › Reference, .mbref file) as reference
+    /// geometry: one DirectShape (Generic Models) per element, with its color, in a group pinned on the reference.
+    /// The window shows the loaded references: Load… / Reload (the same file, updated) / Unload.
+    /// The coordinates are the shared ones, as in the export.
     /// </summary>
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
     public class ReferenceCommand : IExternalCommand
     {
         private const double FeetToMetres = 0.3048;
-        /// <summary>Comentariul elementelor: "MBREF|nume|cale|tip guid" - asa se regasesc referintele la Reload / Unload.</summary>
+        /// <summary>The element comment: "MBREF|name|path|type guid" - this is how the references are found on Reload / Unload.</summary>
         private const string Tag = "MBREF|";
 
         private sealed class LoadedRef
@@ -45,7 +45,7 @@ namespace ManageBIM.Revit
             if (uidoc == null) { message = "Open a project first."; return Result.Failed; }
             Document doc = uidoc.Document;
             var refs = Loaded(doc);
-            // fereastra: lista referintelor + Load… / Reload / Unload
+            // the window: the list of references + Load… / Reload / Unload
             using (var form = new System.Windows.Forms.Form { Text = "ManageBIM references", Width = 560, Height = 360, StartPosition = FormStartPosition.CenterScreen, MinimizeBox = false, MaximizeBox = false, ShowInTaskbar = false })
             {
                 var info = new Label { Dock = DockStyle.Top, Height = 34, Padding = new Padding(8, 8, 8, 0), Text = "Models from ManageBIM (Output › Reference, .mbref) loaded in this project:" };
@@ -71,7 +71,7 @@ namespace ManageBIM.Revit
                         using (var dlg = new OpenFileDialog { Title = "ManageBIM reference", Filter = "ManageBIM reference (*.mbref)|*.mbref", InitialDirectory = Directory.Exists(MbRef.Folder()) ? MbRef.Folder() : "" })
                         {
                             if (dlg.ShowDialog() != DialogResult.OK) return Result.Cancelled;
-                            // aceeasi referinta deja incarcata: se inlocuieste (ca Reload)
+                            // the same reference already loaded: it is replaced (like Reload)
                             var same = refs.FirstOrDefault(r => string.Equals(r.Path, dlg.FileName, StringComparison.OrdinalIgnoreCase));
                             return Load(doc, dlg.FileName, same);
                         }
@@ -95,7 +95,7 @@ namespace ManageBIM.Revit
             }
         }
 
-        /// <summary>Referintele din proiect, dupa comentariul elementelor ("MBREF|nume|cale|...").</summary>
+        /// <summary>The references in the project, by the element comment ("MBREF|name|path|...").</summary>
         private static List<LoadedRef> Loaded(Document doc)
         {
             var by = new Dictionary<string, LoadedRef>();
@@ -112,7 +112,7 @@ namespace ManageBIM.Revit
             return by.Values.OrderBy(r => r.Name).ToList();
         }
 
-        /// <summary>Scoate referinta: grupul ei (cu tipul de grup) si elementele.</summary>
+        /// <summary>Removes the reference: its group (with the group type) and the elements.</summary>
         private static void Unload(Document doc, LoadedRef r)
         {
             var groups = new HashSet<ElementId>();
@@ -127,7 +127,7 @@ namespace ManageBIM.Revit
                 if (grp == null) continue;
                 var gt = grp.GroupType?.Id;
                 grp.Pinned = false;
-                // tipul de grup sterge si instantele si elementele din ele
+                // the group type deletes both the instances and the elements in them
                 try { if (gt != null) doc.Delete(gt); else doc.Delete(g); } catch { try { doc.Delete(g); } catch { } }
             }
             var left = r.Ids.Where(id => doc.GetElement(id) != null).ToList();
@@ -148,8 +148,8 @@ namespace ManageBIM.Revit
             var ids = new List<ElementId>();
             string refName = Path.GetFileNameWithoutExtension(path);
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            // compact si rapid: toate triunghiurile de aceeasi culoare intr-o singura plasa neteda (Mesh, fara muchiile
-            // triunghiurilor), impartita in bucati de cel mult 150 000 de triunghiuri - cateva forme in loc de mii
+            // compact and fast: all triangles of the same color in a single smooth mesh (Mesh, without the triangle
+            // edges), split into chunks of at most 150 000 triangles - a few shapes instead of thousands
             var byColour = items.GroupBy(e => (e.R, e.G, e.B, e.A)).ToList();
             int tris = 0;
             using (var tr = new Transaction(doc, replace != null ? "ManageBIM reference reload" : "ManageBIM reference"))
@@ -213,7 +213,7 @@ namespace ManageBIM.Revit
             return Result.Succeeded;
         }
 
-        /// <summary>Materialul "ManageBIM ref RRGGBB" (culoarea si transparenta elementului), creat la nevoie.</summary>
+        /// <summary>The "ManageBIM ref RRGGBB" material (the element color and transparency), created when needed.</summary>
         private static ElementId Material(Document doc, Dictionary<string, ElementId> cache, MbRefElement e)
         {
             string name = $"ManageBIM ref {e.R:X2}{e.G:X2}{e.B:X2}{(e.A < 255 ? "T" : "")}";

@@ -7,8 +7,8 @@ using Autodesk.Revit.UI;
 namespace ManageBIM.Revit
 {
     /// <summary>
-    /// Tab-ul "ManageBIM", compact (0.28): doua butoane mari - "Send" (cel mai folosit) si "ManageBIM"
-    /// (fereastra cu toate comenzile) - si restul ca butoane mici, stivuite cate trei.
+    /// The "ManageBIM" tab, compact (0.28): two large buttons - "Send" (the most used) and "ManageBIM"
+    /// (the window with all commands) - and the rest as small buttons, stacked three at a time.
     /// </summary>
     public class App : IExternalApplication
     {
@@ -25,7 +25,7 @@ namespace ManageBIM.Revit
             PushButtonData B(string id, string text, Type cmd, string tip, string desc) =>
                 new PushButtonData(id, text, asm, cmd.FullName) { ToolTip = tip, LongDescription = desc, LargeImage = large, Image = small };
 
-            // ---- mari
+            // ---- large
             panel.AddItem(B("ManageBIMSend", "Send to\nManageBIM", typeof(SendCommand),
                 "Send the 3D view straight into ManageBIM (opens it if needed). Send again to update the model live.",
                 "Exports the active 3D view (or {3D}) without any dialog and opens it in ManageBIM. If ManageBIM is already open with this project, the model is replaced in place, keeping the selection, hidden elements and the camera."));
@@ -34,7 +34,7 @@ namespace ManageBIM.Revit
                 "Send, export, issues, coordination objects, reference models and the live selection link - each with a short description."));
             panel.AddSeparator();
 
-            // ---- mici, stivuite: trimitere / coordonare / legaturi
+            // ---- small, stacked: send / coordination / links
             panel.AddStackedItems(
                 B("ManageBIMSendSelection", "Send selection", typeof(SendSelectionCommand), "Send only the selected Revit elements to ManageBIM (no model change)", "Exports the elements currently selected in Revit to ManageBIM without modifying the source model."),
                 B("ManageBIMExportBimc", "Export BIMC", typeof(ExportCommand), "Export the 3D view to a ManageBIM model cache (.bimc)", "Writes every visible element of the active 3D view with geometry, colours, level and all parameters into a .bimc file - like a Navisworks NWC export."),

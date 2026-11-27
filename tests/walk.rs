@@ -1,4 +1,4 @@
-//! Mers lin si mers pe traseu (src/walk.rs).
+//! Smooth walking and walking along a path (src/walk.rs).
 use bimrust::app::walk::{joystick, smooth, PathRun};
 use bimrust::camera::Camera;
 use glam::Vec3;
@@ -7,14 +7,14 @@ use glam::Vec3;
 fn smoothing_accelerates_and_stops_without_jumps() {
     let target = Vec3::new(0.0, 1.4, 0.0);
     let mut v = Vec3::ZERO;
-    // primul cadru (chiar lung) nu sare direct la viteza maxima
+    // the first frame (even a long one) does not jump directly to maximum speed
     v = smooth(v, target, 0.05);
     assert!(v.y > 0.0 && v.y < 0.6 * target.y, "{v:?}");
     for _ in 0..60 {
         v = smooth(v, target, 1.0 / 60.0);
     }
     assert!((v.y - 1.4).abs() < 0.01, "reaches walking speed in ~1 s: {v:?}");
-    // independent de FPS: 30 FPS ajunge in acelasi loc ca 120 FPS
+    // independent of FPS: 30 FPS ends up in the same place as 120 FPS
     let (mut a, mut b) = (Vec3::ZERO, Vec3::ZERO);
     for _ in 0..30 {
         a = smooth(a, target, 1.0 / 30.0);
@@ -23,7 +23,7 @@ fn smoothing_accelerates_and_stops_without_jumps() {
         b = smooth(b, target, 1.0 / 120.0);
     }
     assert!((a - b).length() < 1e-3);
-    // franare pana la oprire completa
+    // braking to a complete stop
     for _ in 0..120 {
         v = smooth(v, Vec3::ZERO, 1.0 / 60.0);
     }
@@ -41,7 +41,7 @@ fn joystick_has_dead_zone_and_cap() {
 
 #[test]
 fn path_walks_at_speed_and_looks_ahead() {
-    // L: 10 m spre +X, apoi 10 m spre +Y
+    // L: 10 m toward +X, then 10 m toward +Y
     let pts = [Vec3::ZERO, Vec3::new(10.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 0.0)];
     let mut run = PathRun::new(&pts).unwrap();
     let len = run.length();

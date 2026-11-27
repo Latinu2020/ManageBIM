@@ -1,6 +1,6 @@
-//! Interfata in romana / engleza. Textele din cod sunt in engleza; `tr` intoarce traducerea romaneasca
-//! cand limba aleasa e RO (ribbon: file, grupe, butoane, tooltip-uri; panouri; meniul File; bara de stare).
-//! Un text fara traducere ramane in engleza.
+//! Interface in Romanian / English. The texts in the code are in English; `tr` returns the Romanian translation
+//! when the chosen language is RO (ribbon: tabs, groups, buttons, tooltips; panels; the File menu; the status bar).
+//! A text without a translation stays in English.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,7 +21,7 @@ fn table() -> &'static HashMap<&'static str, &'static str> {
     T.get_or_init(|| PAIRS.iter().copied().collect())
 }
 
-/// Textul in limba aleasa (engleza = textul primit).
+/// The text in the chosen language (English = the text received).
 pub fn tr(s: &str) -> &str {
     if !is_romanian() {
         return s;
@@ -29,7 +29,7 @@ pub fn tr(s: &str) -> &str {
     table().get(s).copied().unwrap_or(s)
 }
 
-/// ca `tr`, pentru texte compuse: traduce si fiecare rand separat (tooltip-uri pe mai multe randuri).
+/// like `tr`, for compound texts: also translates each line separately (multi-line tooltips).
 pub fn tr_lines(s: &str) -> String {
     if !is_romanian() {
         return s.to_string();
@@ -40,14 +40,14 @@ pub fn tr_lines(s: &str) -> String {
     s.lines().map(tr).collect::<Vec<_>>().join("\n")
 }
 
-/// Cate texte au traducere (pentru teste / manual).
+/// How many texts have a translation (for tests / manual).
 pub fn count() -> usize {
     PAIRS.len()
 }
 
-/// (engleza, romana)
+/// (English, Romanian)
 pub const PAIRS: &[(&str, &str)] = &[
-    // Visual script builder (0.28: texte in engleza, romana doar aici)
+    // Visual script builder (0.28: texts in English, Romanian only here)
     ("1. Pick a ready-made scenario or add steps   2. Choose the values from the lists   3. ▶ Run", "1. Alege un scenariu gata făcut sau adaugă pași   2. Alege valorile din liste   3. ▶ Run"),
     ("ℹ Load a model to see the property lists and the preview.", "ℹ Încarcă un model ca să apară listele de proprietăți și previzualizarea."),
     ("⚠ Nothing will be selected: no match in the model", "⚠ Nu se selectează nimic: nicio potrivire în model"),
@@ -55,7 +55,7 @@ pub const PAIRS: &[(&str, &str)] = &[
     ("✔ Every element has this property filled in", "✔ Toate elementele au proprietatea completată"),
     ("👁 Written on the elements selected by the steps above", "👁 Se scrie pe elementele selectate de pașii de mai sus"),
     ("No steps yet. Press ➕ Add step or 📋 Templates.", "Niciun pas încă. Apasă ➕ Add step sau 📋 Templates."),
-    // ---- file (tab-uri)
+    // ---- tabs
     ("Home", "Acasă"),
     ("Select", "Selecție"),
     ("Viewpoint", "Vederi"),
@@ -68,7 +68,7 @@ pub const PAIRS: &[(&str, &str)] = &[
     ("Share", "Partajare"),
     ("View", "Afișare"),
     ("File ", "Fișier "),
-    // ---- grupe si butoane
+    // ---- groups and buttons
     ("About", "Despre"),
     ("Animation", "Animație"),
     ("Append", "Adaugă"),
@@ -212,7 +212,7 @@ pub const PAIRS: &[(&str, &str)] = &[
     ("Zoom All", "Zoom tot"),
     ("Zoom to It", "Zoom pe el"),
     ("Language", "Limbă"),
-    // ---- panouri (titlu cu iconita si nume scurt)
+    // ---- panels (title with icon and short name)
     ("🌲 Selection Tree", "🌲 Arbore selecție"),
     ("🔎 Property Tree", "🔎 Arbore proprietăți"),
     ("📋 Sets", "📋 Seturi"),
@@ -231,7 +231,7 @@ pub const PAIRS: &[(&str, &str)] = &[
     ("📊 Quantification", "📊 Cantități"),
     ("✔ Model Checker", "✔ Verificare model"),
     ("Find", "Căutare"),
-    // ---- meniul File si bara de stare
+    // ---- the File menu and the status bar
     ("New project", "Proiect nou"),
     ("Open…", "Deschide…"),
     ("Save project", "Salvează proiectul"),
@@ -244,7 +244,7 @@ pub const PAIRS: &[(&str, &str)] = &[
     ("Selected", "Selectate"),
     ("Hidden", "Ascunse"),
     ("Elements", "Elemente"),
-    // ---- tooltip-uri frecvente
+    // ---- frequent tooltips
     ("Open a model (replaces the scene)  Ctrl+O", "Deschide un model (înlocuiește scena)  Ctrl+O"),
     ("Append a model to the federated scene", "Adaugă un model în scena federată"),
     ("Go to the Home view (Home key)", "Mergi la vederea Acasă (tasta Home)"),
@@ -267,7 +267,7 @@ pub const PAIRS: &[(&str, &str)] = &[
     ("🏠 Start Page", "🏠 Pagina de start"),
     ("🌐 Română / English", "🌐 English / Română"),
     ("Interface language: English / Română", "Limba interfeței: English / Română"),
-    // ---- path trace (progres / ETA / finalizare)
+    // ---- path trace (progress / ETA / completion)
     ("Path trace FINISHED", "Path trace GATA"),
     ("Export PNG is ready", "Export PNG este disponibil"),
     ("samples", "mostre"),
@@ -277,7 +277,7 @@ pub const PAIRS: &[(&str, &str)] = &[
     ("Ready - press Export PNG to save the image.", "Gata — apasă Export PNG pentru a salva imaginea."),
     ("Cut View", "Vedere tăietură"),
     ("Highlight plane", "Evidențiază planul"),
-    // ---- sectiuni / alte functii noi
+    // ---- sections / other new functions
     ("Current section", "Secțiunea curentă"),
     ("Front", "Față"),
     ("Back", "Spate"),

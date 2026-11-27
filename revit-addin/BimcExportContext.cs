@@ -47,7 +47,7 @@ namespace ManageBIM.Revit
             Document doc = _docs.Peek();
             Element e = doc.GetElement(elementId);
             if (e == null) { _cur = null; return RenderNodeAction.Skip; }
-            // Send selection: elementele neselectate ale modelului principal sunt sarite
+            // Send selection: the unselected elements of the main model are skipped
             if (Only != null && _docs.Count == 1 && !Only.Contains(elementId)) { _cur = null; return RenderNodeAction.Skip; }
             try { _cur = Describe(doc, e); }
             catch (Exception ex)

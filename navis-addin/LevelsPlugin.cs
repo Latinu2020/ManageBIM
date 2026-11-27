@@ -11,13 +11,13 @@ using NwApp = Autodesk.Navisworks.Api.Application;
 namespace ManageBIM.Navis
 {
     /// <summary>
-    /// "ManageBIM Levels": nivelurile trimise din ManageBIM (View › Grids &amp; Levels › Send Levels, fisierul
-    /// %LOCALAPPDATA%\ManageBIM\Outbox\levels.txt) - Navisworks nu are niveluri pentru modelele DWG / Plant 3D:
-    ///  - un set de selectie pe nivel (folderul "ManageBIM levels" din Sets): elementele dupa cota lor de jos;
-    ///    se folosesc la ascundere, filtrare si ca Selection A / B in Clash Detective;
-    ///  - un viewpoint de plan pe nivel (Saved Viewpoints › "ManageBIM levels"): vedere de sus, ortografica,
-    ///    cu section box intre nivel si urmatorul.
-    /// Parametrii "quiet" si "file=&lt;cale&gt;" pentru Automation / teste; cod 0 = gata, 1 = eroare.
+    /// "ManageBIM Levels": the levels sent from ManageBIM (View › Grids &amp; Levels › Send Levels, the file
+    /// %LOCALAPPDATA%\ManageBIM\Outbox\levels.txt) - Navisworks has no levels for DWG / Plant 3D models:
+    ///  - one selection set per level (the "ManageBIM levels" folder in Sets): the elements by their bottom elevation;
+    ///    used for hiding, filtering and as Selection A / B in Clash Detective;
+    ///  - one plan viewpoint per level (Saved Viewpoints › "ManageBIM levels"): top view, orthographic,
+    ///    with a section box between the level and the next one.
+    /// The "quiet" and "file=&lt;path&gt;" parameters for Automation / tests; code 0 = done, 1 = error.
     /// </summary>
     [Plugin("ManageBIMLevels", "MBIM", DisplayName = "ManageBIM Levels", ToolTip = "Levels from ManageBIM as selection sets and plan viewpoints")]
     [AddInPlugin(AddInLocation.None)]
@@ -48,7 +48,7 @@ namespace ManageBIM.Navis
                 return 1;
             }
             double s = UnitConversion.ScaleFactor(Units.Meters, doc.Units);
-            // elementele cu geometrie, pe nivelul de sub baza lor (+30 cm)
+            // the elements with geometry, on the level below their base (+30 cm)
             var groups = levels.ToDictionary(l => l.Name, l => new ModelItemCollection());
             double tol = 0.3 * s;
             BoundingBox3D all = null;
@@ -62,7 +62,7 @@ namespace ManageBIM.Navis
                 string lv = levels.Where(l => l.Z * s <= bb.Min.Z + tol).Select(l => l.Name).LastOrDefault() ?? levels[0].Name;
                 groups[lv].Add(it);
             }
-            // folderul de data trecuta se inlocuieste
+            // the folder from last time is replaced
             RemoveFolder(doc.SelectionSets.Value, f => doc.SelectionSets.Remove(f));
             RemoveFolder(doc.SavedViewpoints.Value, f => doc.SavedViewpoints.Remove(f));
             doc.SelectionSets.AddCopy(new FolderItem { DisplayName = Folder });
@@ -96,7 +96,7 @@ namespace ManageBIM.Navis
                         vp.Projection = ViewpointProjection.Orthographic;
                         vp.HeightField = size;
                         doc.CurrentViewpoint.CopyFrom(vp);
-                        // section box intre nivel si urmatorul (cu putin sub pardoseala), API 2019+ prin reflexie
+                        // section box between the level and the next one (slightly below the floor), API 2019+ through reflection
                         SetBox(doc, all.Min.X, all.Min.Y, z0 - 0.2 * s, all.Max.X, all.Max.Y, z1 - 0.05 * s);
                         var sv = new SavedViewpoint(doc.CurrentViewpoint.CreateCopy()) { DisplayName = $"Plan - {levels[i].Name}" };
                         if (vpFolder != null) doc.SavedViewpoints.InsertCopy(vpFolder, vpFolder.Children.Count, sv);

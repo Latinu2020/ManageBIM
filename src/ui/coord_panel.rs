@@ -1,11 +1,11 @@
-//! Fereastra "Coordination objects": lista zonelor de mentenanta, golurilor propuse si volumelor
-//! rezervate, cu dimensiuni, pozitie, stare, gazda si legatura cu Clash Detective.
+//! The "Coordination objects" window: the list of maintenance zones, proposed openings and reserved
+//! volumes, with dimensions, position, status, host and the link to Clash Detective.
 use super::*;
 use crate::coord_objects::{CoordKind, STATUSES};
 use crate::model::Aabb;
 
 impl App {
-    /// Grupul din tab-ul Coordination (ribbon).
+    /// The group in the Coordination tab (ribbon).
     pub(super) fn coord_ribbon(&mut self, ui: &mut egui::Ui) {
         let has = self.loaded_models().next().is_some();
         rgroup(ui, "Coordination objects", |ui| {
@@ -15,7 +15,7 @@ impl App {
                     CoordKind::ProvisionForVoid => "Void",
                     CoordKind::Placeholder => "Placeholder",
                 };
-                // deschide fereastra cu tipul pregatit; obiectul se creeaza doar cand apesi Create
+                // opens the window with the type prepared; the object is created only when you press Create
                 let on = self.coord_open && self.coord_pending == Some(k);
                 if rbtn(ui, k.icon(), short, &format!("{} - {} Opens the Coordination objects window; press Create there to add one around the selection, or at the centre of the view.", k.label(), k.tip()), on, has).clicked() {
                     if on {
@@ -44,7 +44,7 @@ impl App {
         });
     }
 
-    /// Butoanele Headroom / Egress: testul special (creat o data, cu parametrii lui), rulat si aratat.
+    /// The Headroom / Egress buttons: the special test (created once, with its parameters), run and shown.
     fn run_space_check(&mut self, check: crate::egress::Check) {
         let idx = match self.clash.tests.iter().position(|t| t.special.map(|s| s.0) == Some(check)) {
             Some(i) => i,
@@ -58,7 +58,7 @@ impl App {
                 self.clash.tests.len() - 1
             }
         };
-        // testul se deschide la parametri (Select): inaltimea / distanta / pasul se ajusteaza, apoi Run Test
+        // the test opens at the parameters (Select): the height / distance / step are adjusted, then Run Test
         self.cur_test = idx;
         self.cur_result = None;
         self.sel_results.clear();
@@ -79,7 +79,7 @@ impl App {
         egui::Window::new(crate::theme::icon_job("🛡", "Coordination objects", 14.0, ctx.style().visuals.text_color()))
             .id(egui::Id::new("coord_win"))
             .open(&mut open)
-            // in coltul din stanga-jos, nu peste centrul vederii unde e obiectul si gizmo-ul lui
+            // in the bottom-left corner, not over the centre of the view where the object and its gizmo are
             .default_size([560.0, 420.0])
             .default_pos(ctx.screen_rect().left_bottom() + EV::new(330.0, -470.0))
             .min_width(480.0)
@@ -110,7 +110,7 @@ impl App {
                     ui.add(egui::DragValue::new(&mut self.void_margin).range(0.0..=1.0).speed(0.005).max_decimals(3).suffix(" m")).on_hover_text("Auto voids: gap around the service on each side");
                 });
                 ui.separator();
-                // tip ales din ribbon: bara de confirmare (nimic nu se creeaza pana nu apesi Create)
+                // type chosen from the ribbon: a confirmation bar (nothing is created until you press Create)
                 if let Some(k) = self.coord_pending {
                     let nsel = self.selected.iter().filter(|id| Some(id.m as usize) != self.coord_slot).count();
                     let where_ = if nsel > 0 {
@@ -151,7 +151,7 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(format!("{} clearance · {} voids · {} placeholders", counts[0], counts[1], counts[2])).small().weak());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // gizmo-ul din 3D pentru obiectul ales (ca la lumini)
+                        // the 3D gizmo for the chosen object (as for lights)
                         for (m, label, tip) in [(2u8, "⟳ Rotate", "Drag the blue circle to turn the object around the vertical axis (Shift: 15° steps)"), (1, "✥ Move", "Drag the X / Y / Z arrows to move the object"), (0, "⇲ Resize", "Drag the arrows on the faces to change the size")] {
                             if ui.selectable_label(self.coord_mode == m, label).on_hover_text(tip).clicked() {
                                 self.coord_mode = m;
@@ -192,7 +192,7 @@ impl App {
                     }
                 });
                 ui.separator();
-                // ---- editorul obiectului ales
+                // ---- the editor of the chosen object
                 let Some(i) = self.coord_sel.filter(|&i| i < self.coord_objects.len()) else {
                     ui.label(RichText::new("Click an object to edit it.").small().weak());
                     return;

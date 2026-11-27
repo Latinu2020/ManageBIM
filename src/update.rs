@@ -1,6 +1,6 @@
-//! Verificarea actualizarilor: ultimul release publicat pe GitHub (Latinu2020/ManageBIM).
-//! Cererea HTTPS se face cu `curl` (inclus in Windows 10 / 11) pe un fir separat; nu se trimite
-//! nimic despre utilizator - doar citirea paginii publice a release-ului.
+//! Update check: the latest release published on GitHub (Latinu2020/ManageBIM).
+//! The HTTPS request is made with `curl` (included in Windows 10 / 11) on a separate thread; nothing
+//! about the user is sent - only the public release page is read.
 use serde::Deserialize;
 use std::sync::mpsc::{channel, Receiver};
 
@@ -8,11 +8,11 @@ pub const REPO: &str = "Latinu2020/ManageBIM";
 
 #[derive(Clone, Debug, Default)]
 pub struct UpdateInfo {
-    /// versiunea noua (fara "v")
+    /// the new version (without "v")
     pub version: String,
-    /// pagina release-ului (note de versiune)
+    /// the release page (release notes)
     pub page: String,
-    /// installerul Windows (ManageBIM-Setup-<v>.exe), daca exista
+    /// the Windows installer (ManageBIM-Setup-<v>.exe), if any
     pub setup_url: String,
     pub setup_name: String,
 }
@@ -34,7 +34,7 @@ struct Release {
     assets: Vec<Asset>,
 }
 
-/// "0.27.32" < "0.28.0": comparatie numerica pe componente (sufixele "-rc1" sunt ignorate).
+/// "0.27.32" < "0.28.0": numeric comparison by components (the "-rc1" suffixes are ignored).
 pub fn newer(remote: &str, local: &str) -> bool {
     let parse = |s: &str| -> Vec<u64> {
         s.trim().trim_start_matches('v').split(['-', '+']).next().unwrap_or("").split('.').map(|p| p.parse().unwrap_or(0)).collect()
@@ -49,7 +49,7 @@ pub fn newer(remote: &str, local: &str) -> bool {
     false
 }
 
-/// Raspunsul API-ului GitHub -> informatia despre actualizare, daca e mai noua decat `local`.
+/// The GitHub API response -> the update information, if it is newer than `local`.
 pub fn parse_latest(json: &str, local: &str) -> Result<Option<UpdateInfo>, String> {
     let r: Release = serde_json::from_str(json).map_err(|e| format!("GitHub answer not understood: {e}"))?;
     if r.draft || r.prerelease || r.tag_name.is_empty() || !newer(&r.tag_name, local) {
@@ -81,7 +81,7 @@ fn curl(args: &[&str]) -> Result<Vec<u8>, String> {
 
 pub type CheckResult = Result<Option<UpdateInfo>, String>;
 
-/// Verifica pe un fir separat; rezultatul vine pe canal.
+/// Checks on a separate thread; the result comes on the channel.
 pub fn spawn_check() -> Receiver<CheckResult> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
@@ -93,7 +93,7 @@ pub fn spawn_check() -> Receiver<CheckResult> {
     rx
 }
 
-/// Descarca installerul in Downloads si il porneste (installerul face upgrade, pastrand folderul si setarile).
+/// Downloads the installer to Downloads and starts it (the installer upgrades, keeping the folder and the settings).
 pub fn spawn_download_and_run(info: UpdateInfo) -> Receiver<Result<std::path::PathBuf, String>> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {

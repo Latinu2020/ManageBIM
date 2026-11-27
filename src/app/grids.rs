@@ -1,9 +1,9 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
-    /// Axele / nivelurile modelului din slotul dat: din IFC (IfcGrid, IfcBuildingStorey) sau, fara niveluri in
-    /// fisier, deduse din elemente (cota minima a elementelor fiecarui nivel). Calculate o data per model.
+    /// Grids / levels of the model in the given slot: from IFC (IfcGrid, IfcBuildingStorey) or, with no levels in the
+    /// file, derived from the elements (lowest elevation of each level's elements). Computed once per model.
     pub fn grid_data(&self, slot: usize) -> Arc<GridData> {
         let Some(m) = self.models.get(slot).cloned().flatten() else { return Arc::new(GridData::default()) };
         let key = Arc::as_ptr(&m) as usize;
@@ -46,7 +46,7 @@ impl App {
         g
     }
 
-    /// Axele si nivelurile tuturor modelelor (nivelurile cu acelasi nume o singura data, axele identice o data).
+    /// Grids and levels of all models (levels with the same name only once, identical grids once).
     pub fn scene_grids(&self) -> GridData {
         let mut all = GridData::default();
         let custom = self.level.custom && !self.level.user.is_empty();
@@ -76,13 +76,13 @@ impl App {
         all
     }
 
-    /// Locatia unui punct (coordonate locale): intersectia de axe cea mai apropiata si nivelul, ex. "C-4 / Level 2".
+    /// Location of a point (local coordinates): the nearest grid intersection and the level, e.g. "C-4 / Level 2".
     pub fn grid_location(&self, p: Vec3) -> String {
         let g = self.scene_grids();
         grid_location_in(&g, p)
     }
 
-    /// Axele si nivelurile din modele (fara nivelurile utilizatorului).
+    /// Grids and levels from the models (without the user's levels).
     pub fn scene_grids_models(&self) -> GridData {
         let mut all = GridData::default();
         for (slot, _) in self.loaded_models() {
@@ -98,7 +98,7 @@ impl App {
         all
     }
 
-    /// Axele folosite acum (ale tale sau din modele), in coordonate reale - pentru editor / export.
+    /// Grids in use now (yours or from the models), in real coordinates - for the editor / export.
     pub fn grids_world(&self) -> Vec<UserGrid> {
         if self.use_user_grids && !self.user_grids.is_empty() {
             return self.user_grids.clone();
@@ -107,11 +107,11 @@ impl App {
         self.scene_grids_models().grids.iter().map(|(n, a, b)| UserGrid { name: n.clone(), a: [a.x as f64 + o.x, a.y as f64 + o.y], b: [b.x as f64 + o.x, b.y as f64 + o.y] }).collect()
     }
 
-    /// Planul de taiere pentru exportul DWG / PDF cand directia nu e "Current".
-    /// Coordonate LOCALE, ca in camera si in viewport (fara origin).
-    /// Cea mai apropiata axa de grila / nivel pentru planul de taiere.
-    /// Top / Bottom se aliniaza la niveluri; Front / Back / Left / Right la liniile
-    /// de grila (axiale). Planul astfel „urmareste" grila: muti grila, se muta si planul.
+    /// The cut plane for the DWG / PDF export when the direction is not "Current".
+    /// LOCAL coordinates, as in the camera and the viewport (without origin).
+    /// The nearest grid line / level for the cut plane.
+    /// Top / Bottom snap to levels; Front / Back / Left / Right to the
+    /// grid lines (axes). The plane thus „follows" the grid: move the grid and the plane moves too.
     pub fn snap_cut(&self, axis: usize, v: f32) -> f32 {
         if !self.settings.snap_cut_to_grid {
             return v;
@@ -123,10 +123,10 @@ impl App {
         } else {
             for (_, a, b) in &g.grids {
                 if axis == 0 && (a.x - b.x).abs() < 0.01 {
-                    cands.push(a.x); // linie verticala in plan (X constant)
+                    cands.push(a.x); // vertical line in plan (constant X)
                 }
                 if axis == 1 && (a.y - b.y).abs() < 0.01 {
-                    cands.push(a.y); // linie orizontala (Y constant)
+                    cands.push(a.y); // horizontal line (constant Y)
                 }
             }
         }
@@ -136,13 +136,13 @@ impl App {
     pub fn cad_cut_plane(&self) -> Option<(usize, f32)> {
         use crate::app::CadView;
         let view = self.settings.cad_view;
-        // In modul "Current", daca sectiunea e Box, planul taietii folosit la
-        // export e planul orizontal la nivel + 1.2 m (ca in planurile Revit).
+        // In "Current" mode, if the section is a Box, the cut plane used for
+        // export is the horizontal plane at level + 1.2 m (as in Revit plans).
         if view == crate::app::CadView::Current {
             if self.section.enabled && self.section.mode == crate::app::SectionMode::Box {
                 let (a, b) = (self.section.bmin, self.section.bmax);
-                // FARA aliniere la grila in modul cub: planul sta EXACT unde l-a pus
-                // utilizatorul (chiar si pe fata cubului), iar exportul taie exact acolo.
+                // NO grid snapping in box mode: the plane stays EXACTLY where the
+                // user put it (even on the box face), and the export cuts exactly there.
                 let z = (a[2] + self.settings.section_cut_offset.max(0.01)).min(b[2] - 0.01).max(a[2] + 0.01);
                 return Some((2, z));
             }
@@ -154,16 +154,16 @@ impl App {
             return None;
         }
         let t = self.settings.cad_view_pos.clamp(0.0, 1.0);
-        // CAND CUBUL DE SECTIUNE E ACTIV, vederile denumite se pozitioneaza pe
-        // FETELE CUBULUI (nu pe scena): Top = fata de sus a cubului, Front = fata
-        // din fata etc. Tragi fata cubului cu sageata -> planul o urmareste.
+        // WHEN THE SECTION BOX IS ACTIVE, the named views are positioned on the
+        // BOX FACES (not on the scene): Top = the top face of the box, Front = the
+        // front face etc. Drag the box face with the arrow -> the plane follows it.
         let (lo, hi) = if self.section.enabled && self.section.mode == crate::app::SectionMode::Box {
             (self.section.bmin[a], self.section.bmax[a])
         } else {
             (bb.min[a], bb.max[a])
         };
-        // Directiile opuse trebuie sa dea planuri DIFERITE; apoi planul se
-        // aliniaza la axa de grila / nivelul cel mai apropiat.
+        // Opposite directions must give DIFFERENT planes; then the plane
+        // snaps to the nearest grid line / level.
         let raw = match view {
             CadView::Front => lo + (hi - lo) * t,
             CadView::Back => hi - (hi - lo) * t,
@@ -173,15 +173,15 @@ impl App {
             CadView::Bottom => lo + (hi - lo) * t,
             CadView::Current => unreachable!(),
         };
-        // Cand cubul e activ, planul e chiar o FATA a cubului: exact unde a pus
-        // utilizatorul cubul, fara aliniere la grila. Fara cub, se aliniaza.
+        // When the box is active, the plane is exactly a FACE of the box: exactly where the
+        // user put the box, with no grid snapping. Without a box, it snaps.
         let value = if self.section.enabled && self.section.mode == crate::app::SectionMode::Box { raw } else { self.snap_cut(a, raw) };
         Some((a, value))
     }
 
-    /// Calculeaza SECTIONEA propriu-zisa: intersectia triunghiurilor cu planul,
-    /// limitata strict la cub. Intoarce segmentele 3D pe plan (aceleasi pe care
-    /// le scrie exportul DWG), ca sa le putem desena in viewport.
+    /// Computes the actual SECTION: the intersection of the triangles with the plane,
+    /// strictly limited to the box. Returns the 3D segments on the plane (the same ones
+    /// the DWG export writes), so we can draw them in the viewport.
     pub fn section_cut_lines(&self, axis: usize, value: f32) -> Vec<(Vec3, Vec3)> {
         if !self.section.enabled || self.section.mode != crate::app::SectionMode::Box {
             return Vec::new();
@@ -220,10 +220,10 @@ impl App {
         out
     }
 
-    /// Muchiile geometriei aflate IN SPATELE planului de taiere, intre plan si
-    /// peretele opus al cubului, proiectate PE plan. Se deseneaza punctat in 3D
-    /// si se scriu pe stratul BEHIND (linetip HIDDEN) in DWG.
-    /// `sign`: +1 daca „in spate" inseamna coordonata mai mare pe axa taieturii.
+    /// The geometry edges lying BEHIND the cut plane, between the plane and
+    /// the opposite wall of the box, projected ONTO the plane. Drawn dotted in 3D
+    /// and written on the BEHIND layer (HIDDEN linetype) in DWG.
+    /// `sign`: +1 if „behind" means a larger coordinate on the cut axis.
     pub fn section_behind_edges(&self, axis: usize, value: f32, sign: f32) -> Vec<(Vec3, Vec3)> {
         if !self.section.enabled || self.section.mode != crate::app::SectionMode::Box {
             return Vec::new();
@@ -248,7 +248,7 @@ impl App {
                         if dp <= 1e-4 && dq <= 1e-4 {
                             continue;
                         }
-                        // partea din spate a muchiei (daca o traverseaza, o taiem la plan)
+                        // the rear part of the edge (if it crosses the plane, we clip it at the plane)
                         let (pp0, qq0) = if dp > 1e-4 && dq > 1e-4 {
                             (p, q)
                         } else if dp > 1e-4 {
@@ -261,7 +261,7 @@ impl App {
                         let (mut pp, mut qq) = (pp0, qq0);
                         pp[axis] = value;
                         qq[axis] = value;
-                        // STRICT: ambele capete trebuie sa fie in cub (toate cele 3 axe)
+                        // STRICT: both ends must be inside the box (all 3 axes)
                         if (0..3).any(|d| pp[d] < bmin[d] - 1e-3 || pp[d] > bmax[d] + 1e-3 || qq[d] < bmin[d] - 1e-3 || qq[d] > bmax[d] + 1e-3) {
                             continue;
                         }
@@ -282,16 +282,16 @@ impl App {
         out
     }
 
-    /// Taietura sectiunii curente (plan / nivel) ca linii 2D in DWG (scriitor integrat) sau DXF:
-    /// un layer pe tip de element (Walls, Doors, IfcColumn...), coordonate reale in metri.
-    /// Construiește EXACT desenul 2D al tăieturii: segmente (layer, x1,y1,x2,y2) + texte.
-    /// Folosit atât de exportul DWG / PDF, cât și de fereastra de preview, ca să fie identice.
+    /// The cut of the current section (plan / level) as 2D lines in DWG (built-in writer) or DXF:
+    /// one layer per element type (Walls, Doors, IfcColumn...), real coordinates in metres.
+    /// Builds EXACTLY the 2D drawing of the cut: segments (layer, x1,y1,x2,y2) + texts.
+    /// Used both by the DWG / PDF export and by the preview window, so they are identical.
     pub fn section_drawing(&self) -> Option<(Vec<(String, [f64; 4])>, Vec<CadText>, usize, f32)> {
         let view = self.settings.cad_view;
         if view == crate::app::CadView::Current && !self.section.enabled {
             return None;
         }
-        // planul de taiere: axa (0 = X, 1 = Y, 2 = Z), valoarea (coordonate locale) si zona (doar la box)
+        // the cut plane: the axis (0 = X, 1 = Y, 2 = Z), the value (local coordinates) and the zone (box only)
         let (axis, value, clip): (usize, f32, Option<([f32; 3], [f32; 3])>) = if view.axis().is_some() {
             let (a, v) = self.cad_cut_plane()?;
             let box_clip = if self.section.enabled && self.section.mode == crate::app::SectionMode::Box {
@@ -316,11 +316,11 @@ impl App {
         };
         let o = self.origin_f64();
         let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
-        // (layer, x1, y1, x2, y2) in coordonatele plansei
+        // (layer, x1, y1, x2, y2) in sheet coordinates
         let mut segs: Vec<(String, [f64; 4])> = Vec::new();
-        // elementele taiate: (primul segment, dupa ultimul, se hasureaza, eticheta)
+        // the cut elements: (first segment, past the last, hatched, label)
         let mut cut_elems: Vec<(usize, usize, bool, Option<String>)> = Vec::new();
-        // din spate / dreapta axa orizontala se inverseaza (ca in vederea din acea directie)
+        // from the back / right the horizontal axis is flipped (as in the view from that direction)
         let mirror = view.mirrored();
         let to2d = |p: Vec3| -> [f64; 2] {
             let w = [p.x as f64 + o.x, p.y as f64 + o.y, p.z as f64 + o.z];
@@ -334,13 +334,13 @@ impl App {
             }
             r
         };
-        // un element intra in sectiune numai daca AABB-ul lui prinde cubul SI planul
+        // an element enters the section only if its AABB touches the box AND the plane
         let in_box = |e: &crate::model::Element| match clip {
             Some((a, b)) => (0..3).all(|d| e.aabb.min[d] <= b[d] + 1e-3 && e.aabb.max[d] >= a[d] - 1e-3),
             None => true,
         };
-        // taierea exacta a fiecarui segment la frontiera cubului (slab method):
-        // nu respingem segmentul daca e in afara, il scurtam pana la perete
+        // exact clipping of each segment at the box boundary (slab method):
+        // we do not reject the segment if it is outside, we shorten it up to the wall
         let clip_seg = |p: Vec3, q: Vec3| -> Option<(Vec3, Vec3)> {
             let (a, b) = clip?;
             let d = q - p;
@@ -408,16 +408,16 @@ impl App {
                 }
             }
         }
-        // Proiectia de dupa planul de taiere, ca o vedere de desen din Inventor: muchiile reale ale
-        // formei (fara diagonalele plasei), vizibile cu linie plina, ascunse cu linie intrerupta.
+        // The projection beyond the cut plane, like a drawing view in Inventor: the real edges of the
+        // shape (without the mesh diagonals), visible ones with a solid line, hidden ones with a dashed line.
         if self.cad_visible_edges || self.cad_hidden_edges {
             segs.extend(self.section_projection(view, axis, value, clip, &models, &to2d));
         }
         if segs.is_empty() {
             return None;
         }
-        // planul complet: hasura pe elementele taiate, etichete (usi, ferestre, pereti), axe cu cote, niveluri pe sectiuni.
-        // Marimile textelor / bulelor sunt in mm de hartie: u = metri pe mm (scara plansei sau 1:100 in Model space).
+        // the full plan: hatching on the cut elements, labels (doors, windows, walls), grids with dimensions, levels on sections.
+        // Text / bubble sizes are in paper mm: u = metres per mm (sheet scale, or 1:100 in Model space).
         let mut texts: Vec<CadText> = Vec::new();
         if self.cad_annotate {
             let u = if self.cad_sheet { sheet_scale(&segs, &self.title_block) as f64 / 1000.0 } else { 0.1 };
@@ -430,7 +430,7 @@ impl App {
             }
             let mut extra: Vec<(String, [f64; 4])> = Vec::new();
             let mut tag_boxes: Vec<[f64; 4]> = Vec::new();
-            // usile / ferestrele primele (numerele lor conteaza), apoi peretii
+            // doors / windows first (their numbers matter), then the walls
             let mut cut_elems = cut_elems;
             cut_elems.sort_by_key(|c| c.3.as_ref().map(|_| 0).unwrap_or(1) + if c.2 { 1 } else { 0 });
             for (a, b, hatch, tag) in &cut_elems {
@@ -446,13 +446,13 @@ impl App {
                         ex1 = ex1.max(p[0]).max(p[2]);
                         ey1 = ey1.max(p[1]).max(p[3]);
                     }
-                    // de-a lungul elementului (perete vertical pe plansa -> text rotit 90 grade), deasupra lui
+                    // along the element (vertical wall on the sheet -> text rotated 90 degrees), above it
                     let vertical = ey1 - ey0 > (ex1 - ex0) * 1.5;
                     let (cx, cy) = ((ex0 + ex1) / 2.0, (ey0 + ey1) / 2.0);
                     let w = tag.chars().count() as f64 * 2.0 * u * 0.8;
                     let th = 2.6 * u;
-                    // locul liber cel mai apropiat: doar DEASUPRA elementului (cu gap), apoi tot mai departe lateral / in sus
-                    // (nu plasam niciodata sub element - se vede ce e dedesupt)
+                    // the nearest free spot: only ABOVE the element (with a gap), then further and further sideways / up
+                    // (we never place it under the element - what is underneath must stay visible)
                     let mut placed = None;
                     for k in 0..6 {
                         let gap = 1.0 * u + k as f64 * th;
@@ -488,8 +488,8 @@ impl App {
         Some((segs, texts, axis, value))
     }
 
-    /// Liniile vizibile / ascunse de dupa planul de taiere (layere VISIBLE / HIDDEN), cu cache:
-    /// calculul (buffer de adancime + muchii) se reface doar cand se schimba vederea sau modelele.
+    /// Visible / hidden lines beyond the cut plane (VISIBLE / HIDDEN layers), with a cache:
+    /// the computation (depth buffer + edges) is redone only when the view or the models change.
     fn section_projection(
         &self,
         view: crate::app::CadView,
@@ -500,7 +500,7 @@ impl App {
         to2d: &dyn Fn(Vec3) -> [f64; 2],
     ) -> Vec<(String, [f64; 4])> {
         use crate::app::CadView;
-        // directia privirii: ce e "dupa" plan (fata aleasa a cubului priveste spre interiorul lui)
+        // viewing direction: what is "beyond" the plane (the chosen box face looks toward its interior)
         let sign = match view {
             CadView::Top => -1.0,
             CadView::Bottom => 1.0,
@@ -531,7 +531,7 @@ impl App {
             }
         }
         let hv = crate::hlr::HlrView { axis, plane: value, sign, bmin, bmax, res: 1600 };
-        // triunghiurile elementelor din zona de dupa plan (o lista per element)
+        // the triangles of the elements in the zone beyond the plane (one list per element)
         let (lo, hi) = if sign > 0.0 { (value, bmax[axis]) } else { (bmin[axis], value) };
         let mut elements: Vec<Vec<[Vec3; 3]>> = Vec::new();
         let mut total = 0usize;
@@ -556,7 +556,7 @@ impl App {
                 }
                 total += tris.len();
                 elements.push(tris);
-                // modele uriase: limita, ca previewul sa ramana fluid (cubul mai mic = mai mult detaliu)
+                // huge models: a limit, so the preview stays fluid (a smaller box = more detail)
                 if total > 3_000_000 {
                     break;
                 }
@@ -582,10 +582,10 @@ impl App {
         out
     }
 
-    /// Plansa cu mai multe vederi din cubul de sectiune, ca in Inventor: fatadele (Front, Right, Back,
-    /// Left) pe un rand, Top deasupra lui Front, Bottom sub el. Doar vederile bifate (`mv_views`), cu
-    /// distanta `mv_gap` intre ele (0 = automat). Front ramane in coordonatele lui REALE (1:1, metri),
-    /// celelalte sunt asezate langa el la dimensiunea lor reala. Rezultatul e in cache (preview fluid).
+    /// Sheet with several views from the section box, as in Inventor: the elevations (Front, Right, Back,
+    /// Left) in one row, Top above Front, Bottom below it. Only the ticked views (`mv_views`), with
+    /// a distance of `mv_gap` between them (0 = automatic). Front stays in its REAL coordinates (1:1, metres),
+    /// the others are placed next to it at their real size. The result is cached (fluid preview).
     pub fn multiview_layout(&mut self) -> Result<Arc<crate::app::MultiViewSheet>, String> {
         use crate::app::CadView;
         if !(self.section.enabled && self.section.mode == crate::app::SectionMode::Box) {
@@ -630,8 +630,8 @@ impl App {
         if views.is_empty() {
             return Err(if self.mv_views.iter().any(|b| *b) { "Nothing to draw: move the section box over the model.".into() } else { "Tick at least one view.".into() });
         }
-        // limitele unei vederi: liniile SI textele ei (etichetele de nivel ies in afara desenului;
-        // distanta dintre vederi se masoara de la ele, ca sa nu intre in vederea vecina)
+        // the bounds of a view: its lines AND texts (the level labels stick out of the drawing;
+        // the distance between views is measured from them, so they do not enter the neighbouring view)
         let u = 0.1f64;
         let bbox_full = |segs: &[(String, [f64; 4])], texts: &[CadText]| {
             let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
@@ -653,10 +653,10 @@ impl App {
             [x0, y0, x1, y1]
         };
         let views: Vec<(CadView, Vec<(String, [f64; 4])>, Vec<CadText>, [f64; 4])> = views.into_iter().map(|(v, s, t)| { let b = bbox_full(&s, &t); (v, s, t, b) }).collect();
-        // spatiul dintre vederi: ales de utilizator, sau 15% din cea mai mare latime (minim 2 m)
+        // the spacing between views: chosen by the user, or 15% of the largest width (minimum 2 m)
         let maxw = views.iter().map(|v| { let b = v.3; (b[2] - b[0]).max(b[3] - b[1]) }).fold(0.0, f64::max);
         let gap = if self.mv_gap > 0.0 { self.mv_gap as f64 } else { (maxw * 0.15).max(2.0) };
-        // vederea de referinta (ramane pe loc): Front, altfel prima fatada, altfel prima vedere
+        // the reference view (stays in place): Front, otherwise the first elevation, otherwise the first view
         let is_plan = |v: &CadView| matches!(v, CadView::Top | CadView::Bottom);
         let anchor = views.iter().position(|v| v.0 == CadView::Front).or_else(|| views.iter().position(|v| !is_plan(&v.0))).unwrap_or(0);
         let front = views[anchor].3;
@@ -664,17 +664,17 @@ impl App {
         let has_elev = views.iter().any(|v| !is_plan(&v.0));
         let title_h = if self.mv_titles { (gap * 0.35).max(0.5) } else { 0.0 };
         let mut sheet = crate::app::MultiViewSheet::default();
-        // fatadele: incepem cu vederea de referinta, apoi celelalte la dreapta ei
+        // the elevations: we start with the reference view, then the others to its right
         let mut x_cursor = front[2] + gap;
         for (i, (v, segs, tx, b)) in views.iter().enumerate() {
             let b = *b;
             let (dx, dy) = if i == anchor {
                 (0.0, 0.0)
             } else if has_elev && *v == CadView::Top {
-                // Top deasupra randului de fatade, aliniat cu Front
+                // Top above the row of elevations, aligned with Front
                 (front[0] - b[0], front[1] + elev_h + gap - b[1])
             } else if has_elev && *v == CadView::Bottom {
-                // Bottom sub Front (sub titlul lui)
+                // Bottom below Front (below its title)
                 (front[0] - b[0], front[1] - gap - title_h - b[3])
             } else {
                 let d = (x_cursor - b[0], front[1] - b[1]);
@@ -691,7 +691,7 @@ impl App {
                 sheet.texts.push(t);
             }
             let fr = [b[0] + dx, b[1] + dy, b[2] + dx, b[3] + dy];
-            // titlul vederii sub ea, ca in Inventor
+            // the view title below it, as in Inventor
             if self.mv_titles {
                 sheet.texts.push(CadText::new("VIEW_TITLES", fr[0], fr[1] - title_h, 5.0, 0.0, format!("{} VIEW", v.label().to_uppercase())));
             }
@@ -703,7 +703,7 @@ impl App {
         Ok(sheet)
     }
 
-    /// Exportul plansei cu mai multe vederi: DWG / DXF 1:1 in model space sau PDF cu cartus.
+    /// Export of the multi-view sheet: DWG / DXF 1:1 in model space, or PDF with a title block.
     pub fn export_multiview(&mut self, path: &str) {
         let sheet = match self.multiview_layout() {
             Ok(s) => s,
@@ -736,14 +736,14 @@ impl App {
         }
     }
 
-    /// Exportul DWG / DXF / PDF al tăieturii. Folosește EXACT același desen ca previewul.
+    /// DWG / DXF / PDF export of the cut. Uses EXACTLY the same drawing as the preview.
     pub fn export_section_cad(&mut self, path: &str) {
         let view = self.settings.cad_view;
         let Some((segs, texts, axis, value)) = self.section_drawing() else {
             return self.error("Turn on a section first, or choose Front / Back / Left / Right in Settings › Export.");
         };
         let _ = value;
-        // PDF: aceeasi taietura, desen vectorial pe plansa cu cartus si aceleasi anotatii
+        // PDF: the same cut, a vector drawing on the sheet with a title block and the same annotations
         if path.to_lowercase().ends_with(".pdf") {
             let n = segs.len();
             let level = self.section_level.and_then(|i| self.scene_grids().levels.get(i).map(|l| l.0.clone()));
@@ -766,7 +766,7 @@ impl App {
         let dwg = path.to_lowercase().ends_with(".dwg");
         let dxf_path = if dwg { std::path::Path::new(path).with_extension("dxf").to_string_lossy().to_string() } else { with_ext(path, "dxf") };
         let n = segs.len();
-        // implicit: 2D in Model space, coordonate reale (m); optional: pe plansa A3 cu cartus, la scara
+        // default: 2D in Model space, real coordinates (m); optional: on an A3 sheet with a title block, to scale
         let mut content = if self.cad_sheet {
             let level = self.section_level.and_then(|i| self.scene_grids().levels.get(i).map(|l| l.0.clone()));
             let title = if view != crate::app::CadView::Current {
@@ -783,15 +783,15 @@ impl App {
         } else {
             cut_dxf_annot(&segs, &texts, 0.1)
         };
-        // metadatele taieturii pentru TOATE exporturile in model space (si din cub),
-        // ca la import sa punem desenul EXACT in locul din care a fost extras
+        // the cut metadata for ALL exports in model space (including from the box),
+        // so that on import we put the drawing EXACTLY back where it was extracted from
         if !self.cad_sheet {
             let o = self.origin_f64();
             let mirror = view.mirrored();
             let meta = format!("999\nMB_CUT_PLANE axis={axis} value={value:.4} mirror={} origin={:.4},{:.4},{:.4}\n", if mirror { 1 } else { 0 }, o.x, o.y, o.z);
             content = content.replacen("2\nHEADER\n", &format!("2\nHEADER\n{meta}"), 1);
-            // ...si ca text minuscul IN desen (strat MB_CUT_PLANE): supravietuieste conversiei in DWG,
-            // redenumirii fisierului si salvarii din AutoCAD - comentariul DXF si fisierul alaturat nu
+            // ...and as tiny text IN the drawing (layer MB_CUT_PLANE): it survives the conversion to DWG,
+            // renaming the file and saving from AutoCAD - the DXF comment and the sidecar file do not
             let line = meta.lines().nth(1).unwrap_or("").to_string();
             let (mut x0, mut y0) = (f64::MAX, f64::MAX);
             for (_, s) in &segs {
@@ -802,7 +802,7 @@ impl App {
             if let Some(p) = content.rfind("0\nENDSEC\n0\nEOF") {
                 content.insert_str(p, &text);
             }
-            // sidecar pentru DWG (rezerva pentru desenele exportate de versiuni mai vechi)
+            // sidecar for DWG (fallback for drawings exported by older versions)
             let _ = std::fs::write(format!("{path}.mbplane"), line);
         }
         if let Err(e) = std::fs::write(&dxf_path, content) {
@@ -821,7 +821,7 @@ impl App {
         }
         match crate::formats::dxf_to_dwg(&dxf_path) {
             Ok(out) => {
-                // DXF-ul a fost doar intermediar
+                // the DXF was only an intermediate
                 let _ = std::fs::remove_file(&dxf_path);
                 self.toast(format!("Section cut exported ({what}, {n} lines): {}", crate::file_name(&out)))
             }
@@ -829,7 +829,7 @@ impl App {
         }
     }
 
-    /// Export DXF; daca extensia e .dwg, DXF-ul se converteste in DWG (scriitorul integrat, ODA doar ca rezerva).
+    /// DXF export; if the extension is .dwg, the DXF is converted to DWG (built-in writer, ODA only as a fallback).
     pub fn export_grids(&mut self, path: &str) {
         let grids = self.grids_world();
         if grids.is_empty() {
@@ -852,7 +852,7 @@ impl App {
         }
     }
 
-    /// Sectiune pe nivel: box de la nivel pana la nivelul urmator (tot planul XY al scenei).
+    /// Section by level: a box from the level up to the next level (the whole XY plane of the scene).
     pub fn section_level_box(&mut self, li: usize) {
         let g = self.scene_grids();
         let bb = self.scene_aabb();
@@ -863,7 +863,7 @@ impl App {
         let top = g.levels.get(li + 1).map(|n| n.1).unwrap_or(bb.max.z + 0.01);
         self.section.enabled = true;
         self.section.mode = SectionMode::Box;
-        // marginile: sub nivel (ex. placa de sub) si sub nivelul urmator (ex. fara placa de deasupra)
+        // the margins: below the level (e.g. the slab below) and below the next level (e.g. without the slab above)
         self.section.bmin = [bb.min.x - 0.5, bb.min.y - 0.5, l.1 - self.level_below.max(0.0) - 0.01];
         self.section.bmax = [bb.max.x + 0.5, bb.max.y + 0.5, top + self.level_above - 0.02];
         self.section_level = Some(li);
@@ -871,7 +871,7 @@ impl App {
         self.toast(format!("Section: {} (to {})", l.0, g.levels.get(li + 1).map(|n| n.0.clone()).unwrap_or_else(|| "the top".into())));
     }
 
-    /// Nivelul de deasupra / dedesubt (PgUp / PgDn sau ◀ ▶), pastrand tipul sectiunii (box de nivel sau plan).
+    /// The level above / below (PgUp / PgDn or ◀ ▶), keeping the section type (level box or plane).
     pub fn section_level_step(&mut self, delta: i32) {
         let n = self.scene_grids().levels.len();
         if n == 0 {
@@ -886,7 +886,7 @@ impl App {
         }
     }
 
-    /// Doar elementele nivelului (dupa numele nivelului din model; altfel dupa inaltime), restul ascunse.
+    /// Only the elements of the level (by the level name in the model; otherwise by height), the rest hidden.
     pub fn isolate_level(&mut self, li: usize) {
         let g = self.scene_grids();
         let Some(l) = g.levels.get(li).cloned() else { return };
@@ -907,7 +907,7 @@ impl App {
         self.toast(format!("{}: {n} items shown, the rest hidden (Unhide All to undo)", l.0));
     }
 
-    /// Sectiune tip plan: totul de deasupra lui (nivel + h) e taiat.
+    /// Plane-type section: everything above it (level + h) is cut away.
     pub fn section_plan_cut(&mut self, li: usize, h: f32) {
         let g = self.scene_grids();
         let Some(l) = g.levels.get(li) else { return };
@@ -920,7 +920,7 @@ impl App {
         self.toast(format!("Plan cut: {} + {h:.2} m", l.0));
     }
 
-    /// Genereaza reteaua din `grid_gen` (cu rotatie) ca axele utilizatorului.
+    /// Generates the grid from `grid_gen` (with rotation) as the user's grids.
     pub fn generate_user_grid(&mut self) {
         let g = self.grid_gen.clone();
         let mut out = generate_grid(g.origin, g.nx, g.dx, &g.fx, g.ny, g.dy, &g.fy, self.grid_ext as f64);
@@ -930,7 +930,7 @@ impl App {
         self.show_grids = true;
     }
 
-    /// Clic in 3D in timpul alegerii: 1 = originea (apoi directia), 2 = directia -> reteaua se regenereaza.
+    /// Click in 3D while picking: 1 = the origin (then the direction), 2 = the direction -> the grid is regenerated.
     pub fn grid_pick_point(&mut self, local: Vec3) {
         let o = self.origin_f64();
         let w = [local.x as f64 + o.x, local.y as f64 + o.y];
@@ -953,11 +953,11 @@ impl App {
         }
     }
 
-    /// Axe din DWG / DXF: devin axele mele (se pot muta / roti / edita apoi). `layer` = alt strat decat cel ghicit.
+    /// Grids from DWG / DXF: they become my grids (they can be moved / rotated / edited afterwards). `layer` = a layer other than the guessed one.
     pub fn import_grids_cad(&mut self, path: &str, layer: Option<&str>) {
         match crate::formats::grids_from_cad(path, layer) {
             Ok(g) if g.grids.is_empty() => {
-                // stratul axelor nu s-a putut ghici: se alege din lista in fereastra Grids
+                // the grid layer could not be guessed: it is chosen from the list in the Grids window
                 self.grid_import = Some((path.to_string(), g.layers, String::new()));
                 self.show_grids_editor = true;
                 self.toast("No layer named GRID / AXE / AX in the drawing - choose the layer with the grid lines in the Grids window.");
@@ -974,8 +974,8 @@ impl App {
         }
     }
 
-    /// Adauga un desen 2D peste model. Daca e o taietura exportata din ManageBIM,
-    /// revine EXACT in planul si la coordonatele din care a fost extras.
+    /// Adds a 2D drawing over the model. If it is a cut exported from ManageBIM,
+    /// it returns EXACTLY to the plane and the coordinates it was extracted from.
     pub fn import_overlay(&mut self, path: &str) {
         let mut ov = CadOverlay {
             name: crate::file_name(path), path: path.to_string(), z: 0.0, dx: 0.0, dy: 0.0,
@@ -985,9 +985,9 @@ impl App {
         let mut note = String::from("2D overlay");
         if let Some((ax, val, mir, old)) = crate::formats::read_cut_plane_meta(path) {
             let cur = self.origin_f64();
-            // planul salvat e in coordonatele locale de la export; liniile 2D sunt in coordonate REALE
-            // (lume), deci se aduc singure in coordonatele de acum - corectam doar planul, o singura data
-            // (inainte se mai adauga si o deplasare, iar desenul pleca din loc cand originea era alta)
+            // the saved plane is in the local coordinates at export time; the 2D lines are in REAL
+            // (world) coordinates, so they map to the current coordinates on their own - we correct only the plane, once
+            // (previously an offset was added as well, and the drawing moved away when the origin was different)
             let shift = (old[ax.min(2)] - cur[ax.min(2)]) as f32;
             ov.z = val + if old == glam::DVec3::ZERO { 0.0 } else { shift };
             ov.mirror = mir;
@@ -1008,9 +1008,9 @@ impl App {
         }
     }
 
-    /// (re)citeste liniile desenului, in coordonatele scenei (relative la origine)
+    /// (re)reads the drawing's lines, in scene coordinates (relative to the origin)
     pub fn load_overlay_segs(&self, ov: &mut CadOverlay) -> Result<usize, String> {
-        // cititorul DWG / DXF poate crapa pe un desen deteriorat: devine eroare, nu inchide aplicatia
+        // the DWG / DXF reader may crash on a damaged drawing: it becomes an error, it does not close the application
         let path = ov.path.clone();
         let (lines, _) = std::panic::catch_unwind(|| crate::formats::cad_lines(&path)).unwrap_or_else(|_| Err(format!("{} could not be read (damaged drawing).", crate::file_name(&path))))?;
         if lines.is_empty() {
@@ -1020,10 +1020,10 @@ impl App {
         let (sx, sy) = match ov.vert {
             Some(0) => (o.x, o.z), // YZ: 2D = (x, z)
             Some(1) => (o.y, o.z), // XZ: 2D = (y, z)
-            _ => (o.x, o.y),       // XY: plan la Z
+            _ => (o.x, o.y),       // XY: plan at Z
         };
-        // vederile Back / Right sunt exportate oglindite (x = -lume): desenarea inverseaza x inapoi, deci
-        // aici originea se aduna in loc sa se scada (altfel desenul ajungea in partea opusa a originii)
+        // the Back / Right views are exported mirrored (x = -world): drawing flips x back, so
+        // here the origin is added instead of subtracted (otherwise the drawing ended up on the opposite side of the origin)
         let ox = if ov.mirror { -sx } else { sx };
         let segs: Vec<[f32; 4]> = lines
             .iter()
@@ -1037,8 +1037,8 @@ impl App {
 }
 
 impl App {
-    /// Nivelurile pentru Plant 3D / AutoCAD (comanda MBLEVELS) si Navisworks (ManageBIM › Levels):
-    /// `Outbox\levels.txt`, cote reale in metri (aceleasi coordonate ca modelele trimise).
+    /// The levels for Plant 3D / AutoCAD (MBLEVELS command) and Navisworks (ManageBIM › Levels):
+    /// `Outbox\levels.txt`, real elevations in metres (the same coordinates as the models sent).
     pub fn send_levels_outbox(&mut self) {
         let oz = self.origin_f64().z;
         let levels: Vec<(String, f64)> = self.scene_grids().levels.iter().map(|(n, z)| (n.clone(), *z as f64 + oz)).collect();
@@ -1057,7 +1057,7 @@ impl App {
     }
 }
 
-/// Formatul MBLEVELS 1: un rand L <tab> nume <tab> cota (m), ordonat crescator dupa cota.
+/// The MBLEVELS 1 format: one row L <tab> name <tab> elevation (m), sorted ascending by elevation.
 pub fn levels_text(levels: &[(String, f64)]) -> String {
     let mut v: Vec<&(String, f64)> = levels.iter().collect();
     v.sort_by(|a, b| a.1.total_cmp(&b.1));

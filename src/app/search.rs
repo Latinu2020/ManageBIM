@@ -1,4 +1,4 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
@@ -89,7 +89,7 @@ impl App {
         s.into_iter().collect()
     }
 
-    // ------------------------------------------------------------------ cautare
+    // ------------------------------------------------------------------ search
     /// Rules are AND-ed; a rule flagged `or` starts a new block, blocks are OR-ed.
     pub fn matches(&self, id: ElemId, rules: &[SearchRule]) -> bool {
         if rules.is_empty() {
@@ -109,7 +109,7 @@ impl App {
         let Some((m, e)) = self.elem(id) else { return false };
         let val = r.value.trim().to_lowercase();
         let num = leading_number(&r.value);
-        // valoarea(ile) campului
+        // the field value(s)
         let item_val = |f: &str| -> Option<&str> {
             match f {
                 "Name" => Some(e.name.as_str()),
@@ -194,7 +194,7 @@ impl App {
         }
     }
 
-    /// Regula TimeLiner: "set:Nume" sau "camp=valoare; camp=valoare" sau text liber
+    /// TimeLiner rule: "set:Name" or "field=value; field=value" or free text
     pub fn rule_elems(&self, rule: &str) -> Vec<ElemId> {
         let rule = rule.trim();
         if rule.is_empty() {
@@ -225,7 +225,7 @@ impl App {
         self.find(&rules)
     }
 
-    // ------------------------------------------------------------------ actiuni
+    // ------------------------------------------------------------------ actions
     pub fn apply(&mut self, a: Action) {
         match a {
             Action::Select(ids, add) => {
@@ -307,7 +307,7 @@ impl App {
                 self.primary = Some(res[0].a);
                 let animate = self.settings.clash_ui.animate;
                 if let Some(v) = res[0].view.filter(|_| res.len() == 1) {
-                    // viewpoint salvat pe rezultat (ca in Navisworks): are prioritate fata de auto-zoom
+                    // viewpoint saved on the result (as in Navisworks): takes priority over auto-zoom
                     if animate {
                         self.fly_to(v);
                     } else {
@@ -316,7 +316,7 @@ impl App {
                     }
                 } else if self.clash.auto_zoom {
                     let bb = if res.len() == 1 {
-                        // apropie camera de punctul de clash (elementele mari ar indeparta prea mult camera)
+                        // brings the camera closer to the clash point (large elements would push the camera too far away)
                         let bb = self.ids_aabb(&[res[0].a, res[0].b]);
                         let p = f.points[0];
                         let r0 = (bb.size().length() * 0.5).min(4.0).max(0.6);

@@ -7,8 +7,8 @@ using Control = System.Windows.Forms.Control;
 namespace ManageBIM.Navis
 {
     /// <summary>
-    /// "ManageBIM": o fereastra cu toate comenzile add-in-ului (ca in Revit). In tab-ul Tool add-ins raman
-    /// doar "Send to ManageBIM" si acesta; celelalte comenzi se ruleaza din fereastra.
+    /// "ManageBIM": a window with all the add-in commands (as in Revit). In the Tool add-ins tab only
+    /// "Send to ManageBIM" and this one remain; the other commands are run from the window.
     /// </summary>
     [Plugin("ManageBIMHub", "MBIM", DisplayName = "ManageBIM", ToolTip = "All ManageBIM commands in one window")]
     [AddInPlugin(AddInLocation.AddIn)]

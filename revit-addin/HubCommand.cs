@@ -11,9 +11,9 @@ using Control = System.Windows.Forms.Control;
 namespace ManageBIM.Revit
 {
     /// <summary>
-    /// "ManageBIM": o fereastra cu toate comenzile add-in-ului, grupate (Send, Issues, Coordination,
-    /// Reference, Live Link), fiecare cu o descriere scurta. Ribbon-ul ramane compact; comanda aleasa
-    /// ruleaza in acelasi context (fereastra e modala, deci API-ul Revit e disponibil).
+    /// "ManageBIM": a window with all the add-in commands, grouped (Send, Issues, Coordination,
+    /// Reference, Live Link), each with a short description. The ribbon stays compact; the chosen command
+    /// runs in the same context (the window is modal, so the Revit API is available).
     /// </summary>
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
@@ -45,7 +45,7 @@ namespace ManageBIM.Revit
             return Items[pick].Make().Execute(commandData, ref message, elements);
         }
 
-        /// <summary>Fereastra compacta: cate un buton lat pe comanda, cu titlu si descriere, pe grupe.</summary>
+        /// <summary>Compact window: one wide button per command, with title and description, by group.</summary>
         private static int Show()
         {
             int chosen = -1;
@@ -94,7 +94,7 @@ namespace ManageBIM.Revit
                 }
                 form.Controls.Add(flow);
                 form.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) form.Close(); };
-                // inaltimea dupa continut (fara spatiu gol), plafonata la ecran
+                // height by content (no empty space), capped at the screen
                 int h = 0;
                 foreach (Control c in flow.Controls) h += c.Height + c.Margin.Vertical;
                 form.ClientSize = new Size(form.ClientSize.Width, Math.Min(h + 30, Screen.PrimaryScreen.WorkingArea.Height - 80));

@@ -1,7 +1,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 use eframe::egui;
 
-// acelasi desen ca iconita exe-ului / installerului (tools/icon_gen.rs)
+// the same drawing as the exe / installer icon (tools/icon_gen.rs)
 include!("../tools/icon_gen.rs");
 
 fn icon() -> egui::IconData {
@@ -27,14 +27,14 @@ fn run(files: Vec<String>, depth: u8, msaa: u16) -> eframe::Result<()> {
         Box::new(move |cc| {
             bimrust::theme::install_fonts(&cc.egui_ctx);
             let mut app = bimrust::app::App::new(files);
-            // salvarea automata si recuperarea doar in aplicatia grafica (nu in teste / convertor)
+            // autosave and recovery only in the graphical application (not in tests / converter)
             app.autosave = bimrust::app::Autosave::start();
             Ok(Box::new(app))
         }),
     )
 }
 
-/// Mesaj de eroare pe ecran (aplicatia nu are consola).
+/// Error message on screen (the application has no console).
 fn error_box(text: &str) {
     #[cfg(windows)]
     {
@@ -50,8 +50,8 @@ fn error_box(text: &str) {
     eprintln!("{text}");
 }
 
-/// La o eroare interna: motivul + locul in %APPDATA%\ManageBIM\crash.log si un mesaj pe ecran
-/// (altfel o aplicatie cu fereastra se inchide fara niciun semn).
+/// On an internal error: the reason + the location in %APPDATA%\ManageBIM\crash.log and a message on screen
+/// (otherwise a windowed application closes without any sign).
 fn install_crash_log() {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -69,7 +69,7 @@ fn install_crash_log() {
             if let Some(d) = p.parent() {
                 let _ = std::fs::create_dir_all(d);
             }
-            // jurnalul nu creste la infinit: peste 1 MB pastram doar ultima jumatate
+            // the log does not grow forever: above 1 MB we keep only the last half
             if std::fs::metadata(p).map(|m| m.len() > 1_000_000).unwrap_or(false) {
                 if let Ok(old) = std::fs::read(p) {
                     let tail = &old[old.len() / 2..];
@@ -81,7 +81,7 @@ fn install_crash_log() {
                 let _ = writeln!(f, "{msg}");
             }
         }
-        // erorile din firele de lucru sunt prinse (devin mesaje de eroare); doar firul principal inchide aplicatia
+        // the errors in the worker threads are caught (they become error messages); only the main thread closes the application
         if std::thread::current().name() == Some("main") {
             error_box(&format!("ManageBIM stopped because of an internal error:\n\n{info}\n\nDetails were saved to:\n{}", path.as_ref().map(|p| p.display().to_string()).unwrap_or_default()));
         }
@@ -90,13 +90,13 @@ fn install_crash_log() {
 }
 
 fn main() -> eframe::Result<()> {
-    // punte MCP stdio pentru Claude Desktop / OpenCode (fara fereastra): vorbeste cu ManageBIM deja pornit
+    // MCP stdio bridge for Claude Desktop / OpenCode (no window): talks to the already running ManageBIM
     if std::env::args().nth(1).as_deref() == Some("--mcp-stdio") {
         std::process::exit(bimrust::mcp::stdio_bridge());
     }
     install_crash_log();
     let files: Vec<String> = std::env::args().skip(1).collect();
-    // incearca configuratii GL din ce in ce mai simple (placi video vechi, VM, Remote Desktop)
+    // tries simpler and simpler GL configurations (old video cards, VM, Remote Desktop)
     let mut last = Ok(());
     for (depth, msaa) in [(24u8, 4u16), (24, 0), (16, 0)] {
         match run(files.clone(), depth, msaa) {
@@ -111,7 +111,7 @@ fn main() -> eframe::Result<()> {
             }
         }
     }
-    // nicio configuratie nu a mers: explicatie in loc de o inchidere fara niciun semn
+    // no configuration worked: an explanation instead of closing without any sign
     if let Err(e) = &last {
         error_box(&format!(
             "ManageBIM could not open its 3D window.\n\n\

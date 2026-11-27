@@ -1,4 +1,4 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
@@ -56,7 +56,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                 ui.set_max_width(avail.x * 0.52);
                 let mut clicked = None;
                 let mut changed = false;
-                // clic dreapta > Rename: randul care se redenumeste, tinut intre cadre
+                // right click > Rename: the row being renamed, kept between frames
                 let rename_key = egui::Id::new("mb_tasks_rename");
                 let mut renaming: Option<usize> = ui.data(|d| d.get_temp(rename_key));
                 let cur = self.cur_task;
@@ -114,14 +114,14 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                             if r.clicked() {
                                 clicked = Some(i);
                             }
-                            // mouse: click dreapta > Rename
+                            // mouse: right click > Rename
                             r.context_menu(|ui| {
                                 super::table::rename_item(ui, &mut renaming, i);
                             });
                         });
                     });
-                // starea redenumirii trebuie sa treaca intre cadre (meniul contextual
-                // se deschide intr-un strat ulterior, celula o citeste urmatorul cadru)
+                // the rename state must carry over between frames (the context menu
+                // opens in a later layer, the cell reads it on the next frame)
                 ui.data_mut(|d| match renaming {
                     Some(r) => {
                         d.insert_temp(rename_key, r);
@@ -205,7 +205,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
             p.rect_filled(rect, 4.0, pal.gantt_bg);
             let span = (e - s + 1).max(1) as f32;
             let x = |d: f32| rect.left() + 6.0 + (d - s as f32) / span * (rect.width() - 12.0);
-            // grila lunara
+            // monthly grid
             let (mut y0, mut m0, _) = timeline::civil_from_days(s);
             loop {
                 let d = timeline::days_from_civil(y0, m0, 1);
@@ -262,7 +262,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
     // ------------------------------------------------------------------ viewpoints
     pub(super) fn viewpoints_ui(&mut self, ui: &mut egui::Ui) {
         use crate::markup::{PRIORITIES, STATUSES};
-        // Toolbar profesionist: carduri compacte, grupate, cu glife Phosphor vizibile.
+        // Professional toolbar: compact, grouped cards, with visible Phosphor glyphs.
         let card = |ui: &mut egui::Ui, ic: &str, label: &str, tip: &str, enabled: bool| -> bool {
             let txt = crate::theme::icon_job(ic, label, 12.0, ui.visuals().text_color());
             let btn = egui::Button::new(txt).frame(false).rounding(6.0_f32).min_size(egui::vec2(0.0, 24.0));
@@ -416,7 +416,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
     }
 
     // ------------------------------------------------------------------ render / animation
-    /// Animator: seturile de obiecte animate (culoare, transparenta, vizibilitate) cu keyframe-urile lor.
+    /// Animator: the animated object sets (colour, transparency, visibility) with their keyframes.
     pub(super) fn anim_sets_ui(&mut self, ui: &mut egui::Ui, ai: usize) {
         use crate::anim::{AnimSet, ObjKey};
         let n_sets = self.animations[ai].sets.len();
@@ -533,13 +533,13 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
         });
         ui.separator();
         if self.render_subtab == 1 {
-            // derulare in panou: editorul de materiale nu mai impinge panoul de jos peste vederea 3D
-            // fara derulare exterioara: lista, editorul si asignarile au fiecare derularea lor, pe toata inaltimea panoului
+            // scrolling inside the panel: the material editor no longer pushes the bottom panel over the 3D view
+            // no outer scrolling: the list, the editor and the assignments each have their own scrolling, over the full panel height
             self.materials_ui(ui);
             return;
         }
         if self.render_subtab == 2 {
-            // derulare in panou: lista de lumini nu mai cere ca panoul de jos sa fie marit peste vederea 3D
+            // scrolling inside the panel: the light list no longer needs the bottom panel to be enlarged over the 3D view
             egui::ScrollArea::vertical().id_salt("lighting_scroll").auto_shrink([false, false]).show(ui, |ui| self.lighting_ui(ui));
             return;
         }
@@ -572,7 +572,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
         });
     }
 
-    /// Setarile de iesire (rezolutie, cadre, format, calitate, fundal, anti-aliasing). `video` = si cadrele / formatul.
+    /// The output settings (resolution, frames, format, quality, background, anti-aliasing). `video` = also the frames / format.
     pub(super) fn output_settings_grid(&mut self, ui: &mut egui::Ui, video: bool) {
         if self.ffmpeg.is_none() {
             let ok = crate::video::ffmpeg_available();
@@ -593,7 +593,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                                 if ui.selectable_label(cur == n, format!("{n}  ({w}×{h})")).clicked() {
                                     self.render.width = w;
                                     self.render.height = h;
-                                    // la 4K+ supersampling ar randa la 7680×4320 (de 4-8 ori mai lent); il oprim
+                                    // at 4K+ supersampling would render at 7680×4320 (4-8 times slower); we turn it off
                                     if w >= 3840 {
                                         self.render.supersample = false;
                                     }
@@ -647,7 +647,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
         });
     }
 
-    /// Editorul de keyframe-uri al camerei (avansat; ascuns implicit in fereastra Animations).
+    /// The camera keyframe editor (advanced; hidden by default in the Animations window).
     pub(super) fn anim_keys_ui(&mut self, ui: &mut egui::Ui, ai: usize) {
                 ui.horizontal_wrapped(|ui| {
                     if ui.button("📷 Capture keyframe").on_hover_text("Adds the current 3D view").clicked() {
@@ -710,7 +710,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                 }
     }
 
-    /// Fereastra Animations: lista animatiilor cu Play pe fiecare, playerul, exportul video.
+    /// The Animations window: the list of animations with Play on each, the player, the video export.
     pub(super) fn animations_ui(&mut self, ui: &mut egui::Ui) {
         if self.cur_anim >= self.animations.len() {
             self.cur_anim = self.animations.len().saturating_sub(1);
@@ -721,7 +721,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
             ui.label(RichText::new(t).small().strong().color(weak));
         };
         ui.columns(3, |cols| {
-            // ================= 1. lista animatiilor
+            // ================= 1. the list of animations
             let ui = &mut cols[0];
             head(ui, "CREATE");
             ui.horizontal_wrapped(|ui| {
@@ -818,7 +818,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                 self.anim_time = 0.0;
             }
 
-            // ================= 2. playerul
+            // ================= 2. the player
             let ui = &mut cols[1];
             let ai = self.cur_anim;
             if ai >= self.animations.len() {
@@ -900,7 +900,7 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
                 });
             }
 
-            // ================= 3. exportul video
+            // ================= 3. the video export
             let ui = &mut cols[2];
             head(ui, "EXPORT VIDEO");
             if let Some(j) = &self.render_job {

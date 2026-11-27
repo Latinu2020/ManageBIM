@@ -1,12 +1,12 @@
-//! Cititor Radiance RGBE (.hdr), folosit ca mediu pentru iluminarea image-based.
-//! Formatul e simplu si deschis (https://www.hdri-hub.com/hdriphy/hotgeneve/papers/HDRI.pdf).
-//! Nu descarcam nimic: utilizatorul alege un fisier .hdr de pe calculator.
+//! Radiance RGBE (.hdr) reader, used as the environment for image-based lighting.
+//! The format is simple and open (https://www.hdri-hub.com/hdriphy/hotgeneve/papers/HDRI.pdf).
+//! We do not download anything: the user picks a .hdr file from the computer.
 
 #[derive(Clone, Debug)]
 pub struct Hdri {
     pub width: usize,
     pub height: usize,
-    /// RGB liniar, width*height*3
+    /// linear RGB, width*height*3
     pub pixels: Vec<f32>,
 }
 
@@ -20,9 +20,9 @@ fn rgbe(r: u8, g: u8, b: u8, e: u8) -> [f32; 3] {
 
 pub fn read(path: &str) -> Result<Hdri, String> {
     let d = std::fs::read(path).map_err(|e| format!("Cannot read {path}: {e}"))?;
-    // dir: linia "-Y <h> +X <w>" (sau variantele cu +Y / -X)
+    // dir: the line "-Y <h> +X <w>" (or the variants with +Y / -X)
     let header_end = d.windows(4).position(|w| w == b"\n\n").map(|i| i + 2).unwrap_or(0);
-    // linia cu dimensiuni poate fi dupa cele doua newline-uri: cautam si acolo
+    // the line with dimensions may come after the two newlines: we search there too
     let scan_end = (header_end + 256).min(d.len());
     let prefix = String::from_utf8_lossy(&d[..scan_end]);
     let mut dims = None;
@@ -53,7 +53,7 @@ pub fn read(path: &str) -> Result<Hdri, String> {
     for y in 0..h {
         if rle && i + 4 <= d.len() && d[i] == 2 && d[i + 1] == 2 && ((d[i + 2] as usize) << 8 | d[i + 3] as usize) == w {
             i += 4;
-            // fiecare canal e codat separat cu run-length
+            // each channel is encoded separately with run-length
             let mut chans = [[0u8; 8192]; 4];
             for c in 0..4 {
                 let mut x = 0usize;
@@ -64,7 +64,7 @@ pub fn read(path: &str) -> Result<Hdri, String> {
                     let n = d[i] as usize;
                     i += 1;
                     if n > 128 {
-                        // run: urmeaza un singur octet repetat
+                        // run: a single repeated byte follows
                         if i >= d.len() {
                             return Err(format!("{path}: truncated HDR run."));
                         }
@@ -104,8 +104,8 @@ pub fn read(path: &str) -> Result<Hdri, String> {
     Ok(Hdri { width: w, height: h, pixels })
 }
 
-/// Incarca mediul din .hdr (Radiance) sau dintr-o fotografie PNG / JPG.
-/// Pentru fotografii folosim aceeasi resampling ca la texturi si convertim sRGB -> liniar.
+/// Loads the environment from a .hdr (Radiance) or from a PNG / JPG photo.
+/// For photos we use the same resampling as for textures and convert sRGB -> linear.
 pub fn load(path: &str) -> Result<Hdri, String> {
     if path.to_ascii_lowercase().ends_with(".hdr") {
         return read(path);
@@ -126,7 +126,7 @@ pub fn load(path: &str) -> Result<Hdri, String> {
     Ok(Hdri { width: n, height: n, pixels })
 }
 
-/// esantionare echirectangulara: directia (x,y,z) -> (longitude, latitudine)
+/// equirectangular sampling: direction (x,y,z) -> (longitude, latitude)
 pub fn sample(tex: &Hdri, dir: glam::Vec3) -> [f32; 3] {
     let d = dir.normalize_or_zero();
     let u = (d.x.atan2(d.y) / std::f32::consts::TAU + 0.5).rem_euclid(1.0);
@@ -146,7 +146,7 @@ mod tests {
         assert_eq!(super::rgbe(0, 0, 0, 0), [0.0; 3]);
     }
 
-    /// un fisier HDR mic, scris in format RGBE simplu (fara RLE), trebuie citit si esantionat
+    /// a small HDR file, written in simple RGBE format (no RLE), must be read and sampled
     #[test]
     fn reads_plain_rgbe() {
         let dir = std::env::temp_dir().join("mb_hdr_test");

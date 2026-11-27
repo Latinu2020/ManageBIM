@@ -389,7 +389,7 @@ fn xyz(tag: &str, v: [f64; 3]) -> String {
     format!("<{tag}><X>{:.6}</X><Y>{:.6}</Y><Z>{:.6}</Z></{tag}>", v[0], v[1], v[2])
 }
 
-/// Componenta BCF: GUID IFC (22 caractere) -> IfcGuid; altfel (Revit UniqueId, Navisworks, DWG handle) -> AuthoringToolId.
+/// BCF component: IFC GUID (22 characters) -> IfcGuid; otherwise (Revit UniqueId, Navisworks, DWG handle) -> AuthoringToolId.
 fn bcf_component(g: &str) -> String {
     if g.len() == 22 && !g.contains(':') {
         format!("<Component IfcGuid=\"{}\"/>", esc(g))
@@ -402,7 +402,7 @@ pub fn bcf_zip(project: &str, items: &[ReportItem]) -> Vec<u8> {
     bcf_zip_version(project, items, 2)
 }
 
-/// Export BCF 2.1 sau 3.0. In 3.0 comentariile stau in interiorul `<Topic>`.
+/// BCF 2.1 or 3.0 export. In 3.0 the comments live inside `<Topic>`.
 pub fn bcf_zip_version(project: &str, items: &[ReportItem], version: u8) -> Vec<u8> {
     let ver = if version == 3 { "3.0" } else { "2.1" };
     let mut z = Zip::default();
@@ -525,10 +525,10 @@ pub fn downscale_rgb(rgb: &[u8], w: u32, h: u32, max_w: u32) -> (Vec<u8>, u32, u
 }
 
 // ---------------------------------------------------------------------------- Navisworks viewpoints XML
-// Format "exchange" al Navisworks (schemas\nw-exchange-12.0.xsd din instalarea Navisworks):
-// Viewpoints > (click dreapta) Import Viewpoints... Camera, sectiunea (box), comentariile si redline-urile.
+// The Navisworks "exchange" format (schemas\nw-exchange-12.0.xsd from the Navisworks installation):
+// Viewpoints > (right click) Import Viewpoints... The camera, the section (box), the comments and the redlines.
 
-/// Un viewpoint pentru Navisworks, in coordonate WORLD (metri).
+/// A viewpoint for Navisworks, in WORLD coordinates (metres).
 pub struct NwView {
     pub name: String,
     pub guid: String,
@@ -544,14 +544,14 @@ pub struct NwView {
     pub scene_min: [f64; 3],
     pub scene_max: [f64; 3],
     pub section_box: Option<([f64; 3], [f64; 3])>,
-    /// (autor, text, data ISO, stare Navisworks: new / active / approved / resolved)
+    /// (author, text, ISO date, Navisworks status: new / active / approved / resolved)
     pub comments: Vec<(String, String, String, &'static str)>,
     pub redlines: Vec<Redline>,
-    /// folderul de Saved Viewpoints ("A/B" = subfolder); gol = radacina
+    /// the Saved Viewpoints folder ("A/B" = subfolder); empty = root
     pub folder: String,
 }
 
-/// Stare ManageBIM -> stare comentariu Navisworks
+/// ManageBIM status -> Navisworks comment status
 pub fn nw_status(s: &str) -> &'static str {
     match s {
         "In Progress" => "active",
@@ -561,7 +561,7 @@ pub fn nw_status(s: &str) -> &'static str {
     }
 }
 
-/// Rotatia camerei Navisworks (camera priveste spre -Z, sus = +Y) ca quaternion (a, b, c, d) = (x, y, z, w).
+/// The Navisworks camera rotation (the camera looks toward -Z, up = +Y) as a quaternion (a, b, c, d) = (x, y, z, w).
 pub fn nw_quaternion(fwd: [f64; 3], up: [f64; 3]) -> [f64; 4] {
     let n = |v: [f64; 3]| {
         let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-12);
@@ -571,7 +571,7 @@ pub fn nw_quaternion(fwd: [f64; 3], up: [f64; 3]) -> [f64; 4] {
     let z = n([-fwd[0], -fwd[1], -fwd[2]]);
     let x = n(cross(up, z));
     let y = cross(z, x);
-    // matricea cu coloanele x, y, z -> quaternion (Shepperd)
+    // the matrix with columns x, y, z -> quaternion (Shepperd)
     let (m00, m11, m22) = (x[0], y[1], z[2]);
     let tr = m00 + m11 + m22;
     let (qx, qy, qz, qw);
@@ -613,16 +613,16 @@ fn p3(tag: &str, p: [f64; 3]) -> String {
     format!("<{tag}><pos3f x=\"{:.6}\" y=\"{:.6}\" z=\"{:.6}\"/></{tag}>", p[0], p[1], p[2])
 }
 
-/// Redline (coordonate ManageBIM: fata de centrul vederii, impartite la inaltime, y in jos) ->
-/// coordonate Navisworks (-1..1 pe latime / inaltime, y in sus).
+/// Redline (ManageBIM coordinates: relative to the view centre, divided by the height, y down) ->
+/// Navisworks coordinates (-1..1 across width / height, y up).
 fn nw_pt(p: [f32; 2], aspect: f32) -> String {
     let x = 2.0 * p[0] / aspect.max(0.01);
     let y = -2.0 * p[1];
     format!("<pos2f x=\"{:.5}\" y=\"{:.5}\"/>", x.clamp(-1.0, 1.0), y.clamp(-1.0, 1.0))
 }
 
-/// Markup-ul ca polilinii (coordonate ManageBIM: fata de centru / inaltime, y in jos), pentru add-in-urile
-/// Revit / Navisworks: linie, sageata (cu varf), dreptunghi, elipsa, nor cu festoane, desen liber. Textul: nimic.
+/// The markup as polylines (ManageBIM coordinates: relative to the centre / height, y down), for the
+/// Revit / Navisworks add-ins: line, arrow (with head), rectangle, ellipse, scalloped cloud, freehand. Text: nothing.
 pub fn redline_polylines(r: &Redline) -> Vec<Vec<[f32; 2]>> {
     let (Some(&a), Some(&b)) = (r.pts.first(), r.pts.last()) else { return Vec::new() };
     match r.kind {
@@ -684,7 +684,7 @@ pub fn redline_polylines(r: &Redline) -> Vec<Vec<[f32; 2]>> {
 fn nw_redline(r: &Redline, aspect: f32) -> String {
     let col = format!("<colour red=\"{:.3}\" green=\"{:.3}\" blue=\"{:.3}\"/>", r.color[0] as f32 / 255.0, r.color[1] as f32 / 255.0, r.color[2] as f32 / 255.0);
     let th = (r.width.round() as u32).max(1);
-    // pattern 65535 = linie continua (cum scrie Navisworks)
+    // pattern 65535 = solid line (the way Navisworks writes it)
     let seg = |tag: &str, a: [f32; 2], b: [f32; 2]| format!("<{tag} thickness=\"{th}\" pattern=\"65535\">{col}<start>{}</start><end>{}</end></{tag}>", nw_pt(a, aspect), nw_pt(b, aspect));
     let (Some(&a), Some(&b)) = (r.pts.first(), r.pts.last()) else { return String::new() };
     match r.kind {
@@ -696,11 +696,11 @@ fn nw_redline(r: &Redline, aspect: f32) -> String {
             [seg("rlline", a, c), seg("rlline", c, b), seg("rlline", b, d), seg("rlline", d, a)].concat()
         }
         RedKind::Cloud => {
-            // Navisworks deseneaza un arc intre fiecare doua puncte consecutive: conturul dreptunghiului
-            // impartit in pasi mici (~3% din inaltimea ecranului), in sensul acelor de ceas pe ecran - ca norii
-            // desenati in Navisworks (4 colturi ar da 4 bucle uriase)
-            // conturul cu festoane (semicercuri spre exterior), exact ca norul desenat in ManageBIM, esantionat
-            // des: arata la fel fie ca Navisworks uneste punctele cu linii, fie cu arce mici
+            // Navisworks draws an arc between every two consecutive points: the rectangle outline
+            // split into small steps (~3% of the screen height), clockwise on screen - like the clouds
+            // drawn in Navisworks (4 corners would give 4 huge loops)
+            // the scalloped outline (semicircles outward), exactly like the cloud drawn in ManageBIM, sampled
+            // densely: it looks the same whether Navisworks joins the points with lines or with small arcs
             let (x0, x1, y0, y1) = (a[0].min(b[0]), a[0].max(b[0]), a[1].min(b[1]), a[1].max(b[1]));
             let corners = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
             let bump = (0.03 + r.width * 0.003).max(0.02);
@@ -715,7 +715,7 @@ fn nw_redline(r: &Redline, aspect: f32) -> String {
                 let n = ((len / bump).round() as usize).max(1);
                 let (sx, sy) = (dx / n as f32, dy / n as f32);
                 let l = (sx * sx + sy * sy).sqrt();
-                // spre exterior pe ecran (y in jos, colturi in sensul acelor de ceas)
+                // outward on screen (y down, corners clockwise)
                 let (ox, oy) = (sy / l, -sx / l);
                 let rad = l * 0.5;
                 for j in 0..n {
@@ -730,7 +730,7 @@ fn nw_redline(r: &Redline, aspect: f32) -> String {
             format!("<rlcloud thickness=\"{th}\" pattern=\"65535\">{col}<points>{}</points></rlcloud>", pts.iter().map(|p| nw_pt(*p, aspect)).collect::<String>())
         }
         RedKind::Freehand => {
-            // fara polilinie in schema: segmente (max ~80)
+            // no polyline in the schema: segments (max ~80)
             let step = (r.pts.len() / 80).max(1);
             let pts: Vec<[f32; 2]> = r.pts.iter().step_by(step).copied().chain(std::iter::once(b)).collect();
             pts.windows(2).map(|w| seg("rlline", w[0], w[1])).collect()
@@ -739,23 +739,23 @@ fn nw_redline(r: &Redline, aspect: f32) -> String {
     }
 }
 
-/// Unitati Navisworks (atributul `units` din XML) si metri pe unitate.
+/// Navisworks units (the `units` attribute in the XML) and metres per unit.
 pub const NW_UNITS: [(&str, f64, &str); 7] = [("m", 1.0, "Meters"), ("cm", 0.01, "Centimeters"), ("mm", 0.001, "Millimeters"), ("ft", 0.3048, "Feet"), ("in", 0.0254, "Inches"), ("yrd", 0.9144, "Yards"), ("km", 1000.0, "Kilometers")];
 
-/// Unitatea unui document Navisworks ("Inches", "Feet"...) -> codul din XML ("in", "ft"...).
+/// The unit of a Navisworks document ("Inches", "Feet"...) -> the code in the XML ("in", "ft"...).
 pub fn nw_unit_code(navis_name: &str) -> Option<&'static str> {
     let n = navis_name.trim().to_lowercase();
     NW_UNITS.iter().find(|u| u.2.to_lowercase() == n || u.0 == n).map(|u| u.0)
 }
 
-/// `views` sunt in METRI; se scriu in unitatea `units` (cea a documentului Navisworks: Navisworks pune
-/// pozitiile direct in unitatile documentului, deci asa ajung la locul lor indiferent cum trateaza atributul).
+/// `views` are in METRES; they are written in the unit `units` (that of the Navisworks document: Navisworks puts
+/// the positions directly in the document units, so this way they land in place regardless of how it treats the attribute).
 pub fn navis_viewpoints_xml(views: &[NwView], units: &str) -> String {
     let k = 1.0 / NW_UNITS.iter().find(|u| u.0 == units).map(|u| u.1).unwrap_or(1.0);
     let units = if NW_UNITS.iter().any(|u| u.0 == units) { units } else { "m" };
     let sc = |p: [f64; 3]| [p[0] * k, p[1] * k, p[2] * k];
     let mut head = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<exchange xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"http://download.autodesk.com/us/navisworks/schemas/nw-exchange-12.0.xsd\" units=\"{units}\" filename=\"\" filepath=\"\">\n<viewpoints>\n");
-    // fiecare <view> separat; apoi asezate in <viewfolder> dupa folderul lor
+    // each <view> separately; then placed in <viewfolder> according to their folder
     let mut parts: Vec<(String, String)> = Vec::new();
     for v in views {
         let mut s = String::new();
@@ -772,7 +772,7 @@ pub fn navis_viewpoints_xml(views: &[NwView], units: &str) -> String {
             v.focal * k, v.near * k, v.far * k, v.aspect, height, p3("position", sc(v.eye)), q[0], q[1], q[2], q[3]
         ));
         if let Some((mn, mx)) = v.section_box {
-            // ca exportul Navisworks: cele 6 planuri (fetele cutiei, normale spre interior), cutia si rotatia ei
+            // like the Navisworks export: the 6 planes (the box faces, normals pointing inward), the box and its rotation
             let (a, b) = (sc(mn), sc(mx));
             let plane = |al: &str, n: [f64; 3], d: f64| format!("<clipplane state=\"default\" alignment=\"{al}\"><plane distance=\"{d:.6}\"><vec3f x=\"{}\" y=\"{}\" z=\"{}\"/></plane></clipplane>", n[0], n[1], n[2]);
             let planes = [
@@ -814,7 +814,7 @@ pub fn navis_viewpoints_xml(views: &[NwView], units: &str) -> String {
     head
 }
 
-/// viewpoint-urile din folderul `path`, apoi subfolderele lui ca <viewfolder> (in ordinea aparitiei)
+/// the viewpoints in folder `path`, then its subfolders as <viewfolder> (in order of appearance)
 fn emit_folder(out: &mut String, parts: &[(String, String)], path: &str) {
     for (f, xml) in parts {
         if f == path {
@@ -855,7 +855,7 @@ fn xml_f(tag: &str, name: &str) -> f64 {
     xml_attr(tag, name).and_then(|v| v.trim().parse::<f64>().ok()).unwrap_or(0.0)
 }
 
-/// Continutul primului element `<name ...>...</name>` (sau tag-ul gol) din `s`, si tag-ul de deschidere.
+/// The content of the first `<name ...>...</name>` element (or the empty tag) in `s`, and the opening tag.
 fn xml_elem<'a>(s: &'a str, name: &str) -> Option<(&'a str, &'a str)> {
     let mut from = 0;
     loop {
@@ -876,7 +876,7 @@ fn xml_elem<'a>(s: &'a str, name: &str) -> Option<(&'a str, &'a str)> {
     }
 }
 
-/// Toate elementele `<name ...>` de pe acelasi nivel (cautare simpla, fara imbricare de acelasi nume).
+/// All `<name ...>` elements on the same level (simple search, no nesting of the same name).
 fn xml_all<'a>(s: &'a str, name: &str) -> Vec<(&'a str, &'a str)> {
     let mut out = Vec::new();
     let mut rest = s;
@@ -904,7 +904,7 @@ fn xml_pos2(s: &str, name: &str) -> Option<[f32; 2]> {
     Some([xml_f(p, "x") as f32, xml_f(p, "y") as f32])
 }
 
-/// Coordonate Navisworks (-1..1, y in sus) -> redline ManageBIM (fata de centru / inaltime, y in jos).
+/// Navisworks coordinates (-1..1, y up) -> ManageBIM redline (relative to the centre / height, y down).
 fn from_nw_pt(p: [f32; 2], aspect: f32) -> [f32; 2] {
     [p[0] * aspect / 2.0, -p[1] / 2.0]
 }
@@ -919,8 +919,8 @@ fn rot_q(q: [f64; 4], v: [f64; 3]) -> [f64; 3] {
     [0, 1, 2].map(|i| m[i][0] * v[0] + m[i][1] * v[1] + m[i][2] * v[2])
 }
 
-/// Citeste viewpoints dintr-un XML Navisworks (exportat din Navisworks sau din ManageBIM).
-/// `aspect` = latime / inaltime a ferestrei, pentru pozitia markup-urilor. Unitatile se convertesc in metri.
+/// Reads viewpoints from a Navisworks XML (exported from Navisworks or from ManageBIM).
+/// `aspect` = width / height of the window, for the position of the markups. The units are converted to metres.
 pub fn parse_navis_viewpoints(xml: &str, aspect: f32) -> Result<Vec<NwView>, String> {
     let (ex, _) = xml_elem(xml, "exchange").ok_or("Not a Navisworks exchange XML (no <exchange> element).")?;
     let k = match xml_attr(ex, "units").as_deref().unwrap_or("m") {
@@ -938,7 +938,7 @@ pub fn parse_navis_viewpoints(xml: &str, aspect: f32) -> Result<Vec<NwView>, Str
     };
     let sc = |p: [f64; 3]| [p[0] * k, p[1] * k, p[2] * k];
     let mut out = Vec::new();
-    // <view> poate sta si in <viewfolder> (si subfoldere): calea folderului la fiecare pozitie din fisier
+    // <view> can also sit in <viewfolder> (and subfolders): the folder path at each position in the file
     let folders = folder_events(xml);
     let folder_at = |pos: usize| folders.iter().rev().find(|(p, _)| *p <= pos).map(|(_, f)| f.clone()).unwrap_or_default();
     let mut rest = xml;
@@ -1016,7 +1016,7 @@ pub fn parse_navis_viewpoints(xml: &str, aspect: f32) -> Result<Vec<NwView>, Str
             for (o, b) in xml_all(rl, "rlcloud") {
                 let pts: Vec<[f32; 2]> = xml_elem(b, "points").map(|(_, p)| xml_all(p, "pos2f").iter().map(|(t, _)| from_nw_pt([xml_f(t, "x") as f32, xml_f(t, "y") as f32], aspect)).collect()).unwrap_or_default();
                 if pts.len() >= 2 {
-                    // norul ManageBIM e definit de colturile dreptunghiului care il incadreaza
+                    // the ManageBIM cloud is defined by the corners of the rectangle that frames it
                     let (mut lo, mut hi) = ([f32::MAX; 2], [f32::MIN; 2]);
                     for p in &pts {
                         lo = [lo[0].min(p[0]), lo[1].min(p[1])];
@@ -1051,7 +1051,7 @@ pub struct BcfTopic {
     pub created: String,
     pub description: String,
     pub comments: Vec<VpComment>,
-    /// (ochi, directie, sus, fov grade sau None pentru ortho, inaltime ortho)
+    /// (eye, direction, up, fov in degrees or None for ortho, ortho height)
     pub camera: Option<([f64; 3], [f64; 3], [f64; 3], Option<f32>, f64)>,
     pub selected: Vec<String>,
 }
@@ -1066,7 +1066,7 @@ fn bcf_xyz(s: &str, name: &str) -> Option<[f64; 3]> {
     Some([g("X")?, g("Y")?, g("Z")?])
 }
 
-/// Citeste un fisier .bcf / .bcfzip (BCF 2.1 sau 3.0): topic-uri, comentarii, camera, componente selectate.
+/// Reads a .bcf / .bcfzip file (BCF 2.1 or 3.0): topics, comments, camera, selected components.
 pub fn parse_bcf(data: Vec<u8>) -> Result<Vec<BcfTopic>, String> {
     let zip = crate::fcstd::Zip::parse(data).map_err(|_| "Not a BCF file (ZIP archive expected).".to_string())?;
     let names: Vec<String> = zip.names().cloned().collect();
@@ -1088,14 +1088,14 @@ pub fn parse_bcf(data: Vec<u8>) -> Result<Vec<BcfTopic>, String> {
             camera: None,
             selected: Vec::new(),
         };
-        // comentariile: in BCF 2.1 sub <Markup>, in 3.0 sub <Topic><Comments>
+        // the comments: in BCF 2.1 under <Markup>, in 3.0 under <Topic><Comments>
         for (_, c) in xml_all(&m, "Comment").into_iter().filter(|(o, _)| o.contains("Guid=")) {
             let text = xml_text(c, "Comment");
             if !text.is_empty() {
                 t.comments.push(VpComment { author: xml_text(c, "Author"), date: xml_text(c, "Date"), text });
             }
         }
-        // primul viewpoint al topic-ului
+        // the first viewpoint of the topic
         let vp_name = xml_elem(&m, "Viewpoint").map(|(_, b)| b.trim().to_string()).filter(|s| s.ends_with(".bcfv"));
         let vp_path = vp_name
             .map(|n| if dir.is_empty() { n } else { format!("{dir}/{n}") })
@@ -1129,7 +1129,7 @@ pub fn parse_bcf(data: Vec<u8>) -> Result<Vec<BcfTopic>, String> {
     Ok(out)
 }
 
-/// (pozitie, calea folderului de acolo incolo) la fiecare <viewfolder ...> si </viewfolder> din fisier
+/// (position, the folder path from there on) at each <viewfolder ...> and </viewfolder> in the file
 fn folder_events(xml: &str) -> Vec<(usize, String)> {
     let mut ev = Vec::new();
     let mut stack: Vec<String> = Vec::new();
@@ -1142,7 +1142,7 @@ fn folder_events(xml: &str) -> Vec<(usize, String)> {
                 let end = xml[o..].find('>').map(|p| p + o).unwrap_or(xml.len());
                 let tag = &xml[o..end];
                 stack.push(xml_attr(tag, "name").unwrap_or_else(|| "Folder".into()));
-                // <viewfolder .../> gol: se inchide imediat
+                // empty <viewfolder .../>: closes immediately
                 if tag.ends_with('/') {
                     stack.pop();
                 }

@@ -1,4 +1,4 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
@@ -50,7 +50,7 @@ impl App {
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
                 .show_header(ui, |ui| {
                     eye_btn(ui, &mids, &mut acts);
-                    // punct colorat pe model (ca disciplinele: arhitectura, structura, instalatii...)
+                    // colored dot per model (like the disciplines: architecture, structure, MEP...)
                     let mc = crate::profiler::palette(mi);
                     let (dr, _) = ui.allocate_exact_size(EV::splat(10.0), Sense::hover());
                     ui.painter().circle_filled(dr.center(), 4.5, Color32::from_rgb(mc[0], mc[1], mc[2]));
@@ -89,7 +89,7 @@ impl App {
                 .body(|ui| {
                     let single = tree.roots.len() == 1;
                     if tree.roots.is_empty() {
-                        // fara niveluri de grupare: elementele direct sub model
+                        // no grouping levels: the elements directly under the model
                         Self::tree_elems(self, ui, mi, m, &mids, ctrl, &eye_btn, &group_menu, &mut acts);
                     }
                     for (k, node) in tree.roots.iter().enumerate() {
@@ -101,7 +101,7 @@ impl App {
         acts
     }
 
-    /// Un nod al arborelui (recursiv: grupurile de sub el, sau elementele la ultimul nivel).
+    /// A tree node (recursive: the groups below it, or the elements at the last level).
     #[allow(clippy::too_many_arguments)]
     pub(super) fn tree_node(
         &self,
@@ -121,7 +121,7 @@ impl App {
             .show_header(ui, |ui| {
                 eye_btn(ui, &ids, acts);
                 let all_sel = ids.iter().all(|i| self.selected.contains(i));
-                // grupele de ultim nivel (categorii / tipuri) au punct colorat; cele cu subgrupe (niveluri) sunt ingrosate
+                // last-level groups (categories / types) have a colored dot; those with subgroups (levels) are bold
                 let leaf = node.children.is_empty();
                 let r = tree_row(ui, &node.label, Some(ids.len()), if leaf { Some(cat_color(&node.label)) } else { None }, all_sel, !leaf, false);
                 if r.clicked() {
@@ -162,7 +162,7 @@ impl App {
             let e = &m.elements[id.e as usize];
             ui.horizontal(|ui| {
                 eye_btn(ui, &[*id], acts);
-                // punctul are culoarea elementului din model
+                // the dot has the element's color from the model
                 let c = m.tri_color.get(e.tri_start as usize).copied().unwrap_or([160, 160, 160, 255]);
                 let r = tree_row(ui, &e.name, None, Some(Color32::from_rgb(c[0], c[1], c[2])), self.selected.contains(id), false, self.hidden.contains(id));
                 if r.clicked() {
@@ -176,7 +176,7 @@ impl App {
         }
     }
 
-    /// Bara de sus a arborelui: gruparea curenta + editorul de niveluri (orice proprietate).
+    /// The top bar of the tree: the current grouping + the level editor (any property).
     pub(super) fn tree_config_ui(&mut self, ui: &mut egui::Ui) {
         let levels = self.settings.tree_levels.clone();
         let desc = if levels.is_empty() { "(flat list)".to_string() } else { levels.iter().map(|l| l.prop.clone()).collect::<Vec<_>>().join(" › ") };
@@ -191,7 +191,7 @@ impl App {
         }
         let cats: Vec<String> = self.prop_index.cats.iter().map(|c| c.0.clone()).collect();
         let mut new = levels.clone();
-        let mut action: Option<(usize, i32)> = None; // (index, -1 sus / +1 jos / 0 sterge)
+        let mut action: Option<(usize, i32)> = None; // (index, -1 up / +1 down / 0 delete)
         egui::Frame::group(ui.style()).show(ui, |ui| {
             egui::Grid::new("tree_levels").num_columns(4).show(ui, |ui| {
                 for (i, lv) in new.iter_mut().enumerate() {
@@ -315,7 +315,7 @@ impl App {
                     if ui.small_button(format!("{}", ids.len())).on_hover_text("Select these items").clicked() {
                         acts.push(Action::Select(ids.clone(), ctrl));
                     }
-                    // search set: ce a castigat / pierdut de la ultima confirmare (modele actualizate)
+                    // search set: what it gained / lost since the last confirmation (updated models)
                     if matches!(self.sets[i].kind, SetKind::Search(_)) && self.loads.is_empty() {
                         let key = |id: &ElemId| self.elem(*id).map(|(m, e)| format!("{}|{}", m.name, if e.guid.is_empty() { e.name.clone() } else { e.guid.clone() })).unwrap_or_default();
                         let now: std::collections::HashSet<String> = ids.iter().map(key).collect();
@@ -362,7 +362,7 @@ impl App {
                             }
                         }
                     }
-                    // folosirea setului in Clash Detective dintr-un click
+                    // using the set in Clash Detective with one click
                     let set_name = self.sets[i].name.clone();
                     ui.menu_button("⛔", |ui| {
                         ui.label(RichText::new("Use in Clash Detective").small().weak());
@@ -474,7 +474,7 @@ impl App {
                 if self.find_rules.is_empty() {
                     self.find_rules.push(SearchRule::new(ITEM_CAT, "IFC Type", SearchOp::Equals, "", false));
                 }
-                // ---- conditiile ca "chip-uri": Level = 2 ×  Type = Wall ×  + Condition   [Find All]
+                // ---- the conditions as "chips": Level = 2 ×  Type = Wall ×  + Condition   [Find All]
                 let mut remove: Option<usize> = None;
                 let mut chip_go = false;
                 ui.horizontal_wrapped(|ui| {
@@ -531,7 +531,7 @@ impl App {
                     .max_height((ui.available_height() - 70.0).max(60.0))
                     .show(ui, |ui| Self::rule_rows(ui, "find", &mut self.find_rules, &self.prop_index, true))
                     .inner;
-                // "+ Condition" si "Find All" sunt sus, la chip-uri; aici raman OR, Clear si seturile
+                // "+ Condition" and "Find All" are at the top, with the chips; here remain OR, Clear and the sets
                 ui.horizontal_wrapped(|ui| {
                     if ui.button("➕ OR Condition").on_hover_text("Start an OR block: items matching either block are found").clicked() {
                         let last = self.find_rules.last().cloned();
@@ -693,12 +693,12 @@ impl App {
             ui.label(format!("{} elements selected — showing the last one.", sel.len()));
         }
         let mut acts = Vec::new();
-        // filtrul e chiar sub titlul panoului, inainte de orice card
+        // the filter is right below the panel title, before any card
         let filter_id = ui.make_persistent_id("prop_filter");
         let mut filter: String = ui.data_mut(|d| d.get_temp(filter_id)).unwrap_or_default();
         ui.add(egui::TextEdit::singleline(&mut filter).hint_text("🔍 Filter properties").desired_width(f32::INFINITY));
         ui.add_space(3.0);
-        // actiunea principala sus, nu jos
+        // the main action at the top, not at the bottom
         let b = egui::Button::new(RichText::new("🎯  Show in Model").strong().size(13.0).color(Color32::WHITE)).fill(accent()).rounding(7.0);
         if ui.add_sized([ui.available_width(), 28.0], b).on_hover_text("Zoom to the selected item(s)").clicked() {
             acts.push(Action::Focus(sel.clone()));
@@ -718,9 +718,9 @@ impl App {
                 self.min_distance_selected();
             }
         });
-        // ---- date utilizator ca in Navisworks: Custom > Add / Delete / Rename User Data Tab, Insert New Property
+        // ---- user data as in Navisworks: Custom > Add / Delete / Rename User Data Tab, Insert New Property
         self.user_data_ui(ui, pid, &sel);
-        // aspect
+        // appearance
         egui::CollapsingHeader::new("Appearance override").default_open(false).show(ui, |ui| {
             let mut c = Color32::from_rgba_unmultiplied(self.override_color[0], self.override_color[1], self.override_color[2], 255);
             ui.horizontal(|ui| {
@@ -783,7 +783,7 @@ impl App {
             ],
         ));
         let mut copy = None;
-        // carduri compacte, cu un chenar abia vizibil
+        // compact cards, with a barely visible border
         let card_fill = ui.visuals().faint_bg_color;
         let card_stroke = Stroke::new(1.0_f32, ui.visuals().widgets.noninteractive.bg_stroke.color);
         let weak = ui.visuals().weak_text_color();
@@ -894,8 +894,8 @@ impl App {
         });
     }
 
-    /// Tab-urile de date utilizator ale elementului (Navisworks: butonul Custom din Properties):
-    /// proprietati cu valori scrise pe toate elementele selectate, salvate in proiect.
+    /// The element's user data tabs (Navisworks: the Custom button in Properties):
+    /// properties with values written on all selected elements, saved in the project.
     pub(super) fn user_data_ui(&mut self, ui: &mut egui::Ui, pid: ElemId, sel: &[ElemId]) {
         let mut tabs: Vec<(String, Vec<(String, String)>)> = self.user_tabs_of(pid);
         for t in &self.user_tabs_new {
@@ -959,7 +959,7 @@ impl App {
                 ui.label(RichText::new("No user data. Custom › Add User Data Tab, then Insert New Property.").small().color(weak));
                 return;
             }
-            // tab-urile, ca in Navisworks
+            // the tabs, as in Navisworks
             ui.horizontal_wrapped(|ui| {
                 for (t, _) in &tabs {
                     if ui.selectable_label(*t == cur, t).clicked() {
@@ -989,12 +989,12 @@ impl App {
                 ui.label("");
                 ui.end_row();
                 for (k, (n, v)) in rows.iter().enumerate() {
-                    // textul in lucru se pastreaza intre cadre; se scrie la Enter / iesirea din camp
+                    // the text being edited is kept between frames; it is written on Enter / leaving the field
                     let nid = egui::Id::new(("udn", &cur, k, pid));
                     let vid = egui::Id::new(("udv", &cur, k, pid));
                     let mut nn: String = ui.data(|d| d.get_temp(nid)).unwrap_or_else(|| n.clone());
                     let mut vv: String = ui.data(|d| d.get_temp(vid)).unwrap_or_else(|| v.clone());
-                    // latimea campurilor dupa latimea panoului (Properties e de obicei ingust)
+                    // field width by the panel width (Properties is usually narrow)
                     let w = (ui.available_width() - 40.0).max(120.0);
                     let rn = ui.add(egui::TextEdit::singleline(&mut nn).desired_width((w * 0.42).clamp(70.0, 180.0)).hint_text("property"));
                     let rv = ui.add(egui::TextEdit::singleline(&mut vv).desired_width((w * 0.58).clamp(80.0, 260.0)).hint_text("value"));
@@ -1093,7 +1093,7 @@ impl App {
         }
     }
 
-    /// Fereastra de import a proprietatilor: coloana cheie, cum se potriveste, tab-ul tinta.
+    /// The property import window: key column, how it matches, the target tab.
     pub(super) fn prop_import_window(&mut self, ctx: &egui::Context) {
         let Some(mut imp) = self.prop_import.clone() else { return };
         let mut open = true;

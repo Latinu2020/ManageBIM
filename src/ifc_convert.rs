@@ -1,8 +1,8 @@
-//! ifcJSON (buildingSMART) si ifcXML (IFC2X3 / IFC4) -> IFC STEP, citit apoi de cititorul IFC obisnuit:
-//! aceeasi geometrie, aceleasi proprietati, aceleasi niveluri ca la un .ifc.
-//! Entitatile au atributele cu NUME; schema EXPRESS (`crate::ifc_schema`) da ordinea si tipul lor in STEP.
-//! Relatiile scrise "inversat" in interiorul obiectului (ex. `isDefinedBy`, `containedInStructure`) devin
-//! entitati-relatie complete (obiectul e adaugat in RelatedObjects / RelatingObject).
+//! ifcJSON (buildingSMART) and ifcXML (IFC2X3 / IFC4) -> IFC STEP, then read by the usual IFC reader:
+//! the same geometry, the same properties, the same levels as with an .ifc.
+//! The entities have their attributes by NAME; the EXPRESS schema (`crate::ifc_schema`) gives their order and type in STEP.
+//! Relationships written "inverted" inside the object (e.g. `isDefinedBy`, `containedInStructure`) become
+//! complete relationship entities (the object is added to RelatedObjects / RelatingObject).
 use crate::e57::{parse_xml, Node};
 use crate::ifc_schema::{Base, Schema};
 use crate::model::RawModel;
@@ -14,12 +14,12 @@ enum Dv {
     Str(String),
     Num(f64, bool),
     Bool(bool),
-    /// referinta dupa id / GlobalId
+    /// reference by id / GlobalId
     Ref(String),
-    /// instanta (inline sau rezolvata), indexul ei
+    /// instance (inline or resolved), its index
     Inst(usize),
     List(Vec<Dv>),
-    /// valoare cu tip explicit (select): IFCLABEL('x')
+    /// value with an explicit type (select): IFCLABEL('x')
     Typed(String, Box<Dv>),
 }
 
@@ -33,7 +33,7 @@ struct Conv<'a> {
     s: &'a Schema,
     insts: Vec<Inst>,
     keys: HashMap<String, usize>,
-    /// (relatia, atributul relatiei, obiectul care trebuie adaugat)
+    /// (the relationship, the relationship attribute, the object to add)
     inverse: Vec<(Dv, String, usize)>,
 }
 
@@ -49,7 +49,7 @@ impl<'a> Conv<'a> {
 
     fn set(&mut self, i: usize, name: &str, v: Dv) {
         let ty = self.insts[i].ty.clone();
-        // relatie inversa: obiectul se adauga in relatie, nu ca atribut
+        // inverse relationship: the object is added to the relationship, not as an attribute
         if let Some((_, rel_attr)) = self.s.inverse(&ty, name) {
             let items = match v {
                 Dv::List(a) => a,
@@ -118,7 +118,7 @@ impl<'a> Conv<'a> {
         n.rsplit(':').next().unwrap_or(n)
     }
 
-    /// continutul unui element-atribut: entitate / referinta / lista / valoare cu tip / text
+    /// the content of an attribute element: entity / reference / list / typed value / text
     fn xml_val(&mut self, n: &Node) -> Dv {
         let kids: Vec<&Node> = n.kids.iter().collect();
         if kids.is_empty() {
@@ -132,7 +132,7 @@ impl<'a> Conv<'a> {
             if self.s.is_entity(ty) {
                 items.push(self.xml_entity(k));
             } else if ty != name || self.s.types.contains_key(&ty.to_uppercase()) {
-                // <IfcLabel-wrapper>x</IfcLabel-wrapper> sau <IfcLengthMeasure>3</IfcLengthMeasure>
+                // <IfcLabel-wrapper>x</IfcLabel-wrapper> or <IfcLengthMeasure>3</IfcLengthMeasure>
                 items.push(Dv::Typed(ty.to_string(), Box::new(Dv::Str(k.text.trim().to_string()))));
             } else {
                 items.push(self.xml_val(k));
@@ -148,7 +148,7 @@ impl<'a> Conv<'a> {
 
     fn xml_entity(&mut self, n: &Node) -> Dv {
         let attr = |k: &str| n.attrs.iter().find(|(a, _)| Self::local(a) == k).map(|(_, v)| v.clone());
-        // referinta goala: <IfcLocalPlacement ref="i12" xsi:nil="true"/> (sau href)
+        // empty reference: <IfcLocalPlacement ref="i12" xsi:nil="true"/> (or href)
         if let Some(r) = attr("ref").or_else(|| attr("href").map(|h| h.trim_start_matches('#').to_string())) {
             if n.kids.is_empty() && n.attrs.iter().all(|(a, _)| ["ref", "href", "nil", "type"].contains(&Self::local(a))) {
                 return Dv::Ref(r);
@@ -267,10 +267,10 @@ impl<'a> Conv<'a> {
         }
     }
 
-    /// valoarea `d` pentru un atribut de tipul `expr`
+    /// the value `d` for an attribute of type `expr`
     fn write(&self, d: &Dv, expr: &str) -> String {
         let base = self.s.base(expr);
-        // un singur element unde schema cere o lista (ex. <Items> cu un singur obiect in ifcXML)
+        // a single element where the schema asks for a list (e.g. <Items> with a single object in ifcXML)
         if let Base::Agg(_, inner) = &base {
             if matches!(d, Dv::Inst(_) | Dv::Ref(_) | Dv::Bool(_)) || matches!(d, Dv::Typed(..)) {
                 return format!("({})", self.write(d, inner));
@@ -318,7 +318,7 @@ impl<'a> Conv<'a> {
                 Base::Enum => format!(".{}.", s.trim().trim_matches('.').to_uppercase()),
                 Base::Binary => format!("\"{}\"", s.trim()),
                 Base::Entity => self.keys.get(s.trim()).map(|i| format!("#{}", i + 1)).unwrap_or_else(|| "$".into()),
-                // lista din XML: "0 0 0" / "i1 i2"
+                // list from XML: "0 0 0" / "i1 i2"
                 Base::Agg(_, inner) => format!("({})", s.split_whitespace().map(|p| self.write(&Dv::Str(p.to_string()), inner)).collect::<Vec<_>>().join(",")),
                 Base::Select => format!("IFCLABEL({})", Self::string(s)),
                 Base::Unknown => Self::string(s),
@@ -342,7 +342,7 @@ impl<'a> Conv<'a> {
     }
 }
 
-/// numele schemei de scris in FILE_SCHEMA (IFC2X3 / IFC4 / IFC4X3)
+/// the schema name to write in FILE_SCHEMA (IFC2X3 / IFC4 / IFC4X3)
 fn schema_label(s: &str) -> &'static str {
     let u = s.to_uppercase();
     if u.contains("2X3") {
@@ -370,7 +370,7 @@ pub fn ifcjson_to_step(v: &serde_json::Value) -> Result<(String, usize), String>
 
 pub fn ifcxml_to_step(text: &str) -> Result<(String, usize), String> {
     let root = parse_xml(text).map_err(|e| format!("ifcXML: {}", e.replace("E57: ", "")))?;
-    // schema: din namespace / schemaLocation (ifcXML4: .../IFC4/...; ifcXML2x3: IFC2X3)
+    // schema: from the namespace / schemaLocation (ifcXML4: .../IFC4/...; ifcXML2x3: IFC2X3)
     let ns = format!("{} {}", root.attrs.iter().map(|(_, v)| v.as_str()).collect::<Vec<_>>().join(" "), root.name);
     let sname = if ns.to_uppercase().contains("2X3") { "IFC2X3" } else if ns.to_uppercase().contains("4X3") { "IFC4X3" } else { "IFC4" };
     let s = crate::ifc_schema::schema(sname);

@@ -1,4 +1,4 @@
-//! .bimc v2 (pe bucati, scris de add-in-ul Navisworks pentru modele foarte mari) == v1 la citire.
+//! .bimc v2 (in chunks, written by the Navisworks add-in for very large models) == v1 on read.
 use bimrust::*;
 
 #[test]

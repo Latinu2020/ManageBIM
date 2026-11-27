@@ -1,4 +1,4 @@
-//! Starea aplicatiei si logica (fara desenarea panourilor, care e in ui.rs).
+//! Application state and logic (without the panel drawing, which lives in ui.rs).
 use crate::camera::Camera;
 use crate::clash::{self, ClashStatus, ClashType};
 use crate::model::{Aabb, ElemId, Element, Model};
@@ -47,20 +47,20 @@ pub use search_types::*;
 #[path = "walk.rs"]
 pub mod walk;
 
-/// Cum arata un element pe ecran. Pastram ultimul aspect trimis la GPU ca sa actualizam
-/// doar elementele care s-au schimbat (un click de selectie nu mai retrimite tot modelul).
+/// How an element looks on screen. We keep the last look sent to the GPU so that we update
+/// only the elements that changed (a selection click no longer resends the whole model).
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub struct Look {
-    /// culoare impusa (override / clash / 4D / material); None = culoarea din fisier
+    /// forced color (override / clash / 4D / material); None = the color from the file
     pub col: Option<[u8; 4]>,
-    /// parametrii materialului pentru shader
+    /// material parameters for the shader
     pub gpu: [u8; 4],
     pub sel: bool,
     pub hidden: bool,
 }
 
-/// Culorile + materialele (4 octeti / varf, 3 varfuri / triunghi) pentru triunghiurile unui element.
-/// `tint` = culoarea selectiei si cat acopera culoarea elementului (Settings › Selection).
+/// The colors + materials (4 bytes / vertex, 3 vertices / triangle) for the triangles of one element.
+/// `tint` = the selection color and how much it covers the element color (Settings › Selection).
 fn fill_look(l: &Look, tri_color: &[[u8; 4]], col: &mut [u8], mat: &mut [u8], tint: ([u8; 3], f32)) {
     let ([sr, sg, sb], k) = tint;
     let keep = 1.0 - k;
@@ -80,7 +80,7 @@ fn fill_look(l: &Look, tri_color: &[[u8; 4]], col: &mut [u8], mat: &mut [u8], ti
     }
 }
 
-/// Tot bufferul de culori al unui model, umplut in paralel (fiecare element are intervalul lui).
+/// The whole color buffer of a model, filled in parallel (each element has its own range).
 fn full_colors(slot: u32, m: &Model, looks: &[Look], tint: ([u8; 3], f32)) -> Upload {
     use rayon::prelude::*;
     let n = m.tri_color.len() * 12;
@@ -104,7 +104,7 @@ fn full_colors(slot: u32, m: &Model, looks: &[Look], tint: ([u8; 3], f32)) -> Up
     Upload::Colors { slot, col, mat }
 }
 
-/// Adauga extensia daca lipseste ("raport" -> "raport.csv").
+/// Adds the extension if missing ("raport" -> "raport.csv").
 fn with_ext(path: &str, ext: &str) -> String {
     if path.to_lowercase().ends_with(&format!(".{ext}")) {
         path.to_string()
@@ -113,7 +113,7 @@ fn with_ext(path: &str, ext: &str) -> String {
     }
 }
 
-/// Valorile proprietatii (categorie, nume) ale unui element. Categoria "Item" = campurile standard.
+/// The property values (category, name) of an element. Category "Item" = the standard fields.
 pub fn elem_values<'a>(m: &'a Model, e: &'a Element, cat: &str, prop: &str) -> Vec<&'a str> {
     if cat == ITEM_CAT {
         let v = match prop {
@@ -129,7 +129,7 @@ pub fn elem_values<'a>(m: &'a Model, e: &'a Element, cat: &str, prop: &str) -> V
     e.props.iter().filter(|p| p.group.eq_ignore_ascii_case(cat) && p.name.eq_ignore_ascii_case(prop)).map(|p| p.value.as_str()).collect()
 }
 
-/// Data ultimei modificari a unui fisier (None daca nu exista / nu se poate citi).
+/// The last modification date of a file (None if it does not exist / cannot be read).
 fn file_mtime(path: &str) -> Option<std::time::SystemTime> {
     std::fs::metadata(path).ok()?.modified().ok()
 }
@@ -138,14 +138,14 @@ fn file_stem(path: &str) -> String {
     std::path::Path::new(path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
 }
 
-/// %LOCALAPPDATA%\ManageBIM\Inbox - aici scriu add-in-urile cand trimit modelul direct in ManageBIM.
+/// %LOCALAPPDATA%\ManageBIM\Inbox - the add-ins write here when they send the model directly to ManageBIM.
 pub fn inbox_dir() -> Option<std::path::PathBuf> {
     let d = crate::formats::data_root()?.join("ManageBIM").join("Inbox");
     std::fs::create_dir_all(&d).ok()?;
     Some(d)
 }
 
-// ====================================================================== tipuri
+// ====================================================================== types
 
 pub struct ReportJob {
     /// 0 html, 1 xlsx, 2 bcf
@@ -159,9 +159,9 @@ pub struct ReportJob {
     pub saved_section: Section,
     pub saved_hidden: HashSet<ElemId>,
     pub saved_vp: Option<usize>,
-    /// viewpoint-urile exportate (toate sau doar cele dintr-un folder)
+    /// the exported viewpoints (all of them or only those in one folder)
     pub list: Vec<usize>,
-    /// cadre asteptate dupa captura de ecran ceruta (oprire daca nu vine)
+    /// frames waited after the requested screenshot (stop if it does not come)
     pub shot_wait: u32,
 }
 
@@ -184,7 +184,7 @@ pub fn png_rgb(png_data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
 pub enum NavMode {
     Orbit,
     Walk,
-    /// click stanga + trage = deplasare laterala (ca Pan din Navisworks)
+    /// left click + drag = lateral movement (like Pan in Navisworks)
     Pan,
 }
 
@@ -213,7 +213,7 @@ pub enum Purpose {
     ExportAsBuilt,
     ExportSectionCad,
     ExportSectionPdf,
-    /// planșa cu mai multe vederi din cubul de sectiune (fatade + vedere de sus)
+    /// the sheet with several views of the section box (elevations + top view)
     ExportMultiView,
     ExportCobie,
     ImportOverlay,
@@ -239,9 +239,9 @@ pub enum Purpose {
     ExportVpHtml,
     ExportVpXlsx,
     ExportVpPdf,
-    /// Export în lot: dosar destinație, 3 rapoarte (PDF / HTML / Excel) + STATUS
+    /// Batch export: destination folder, 3 reports (PDF / HTML / Excel) + STATUS
     ExportBatch,
-    /// Profil de setări partajabil (.mbprofile)
+    /// Shareable settings profile (.mbprofile)
     ExportSettingsProfile,
     ImportSettingsProfile,
     ExportBcf,
@@ -298,7 +298,7 @@ pub struct LoadJob {
     pub progress: f32,
     pub stage: String,
     rx: Receiver<LoadMsg>,
-    /// butonul Cancel de pe bara de progres
+    /// the Cancel button on the progress bar
     pub cancel: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -323,7 +323,7 @@ pub struct RenderJob {
     pub waiting: bool,
     pub started: Instant,
     pub saved_sel: BTreeSet<ElemId>,
-    /// Render with materials: stilul vederii si materialele de dinainte (refacute la final)
+    /// Render with materials: the previous view style and materials (restored at the end)
     pub saved_style: Option<(crate::render::VisualStyle, bool)>,
 }
 
@@ -336,7 +336,7 @@ pub enum Action {
     Focus(Vec<ElemId>),
     FocusClash(usize, usize),
     FocusClashes(usize, Vec<usize>),
-    /// scoate modelul (slotul) din proiect; fisierul de pe disc ramane neatins
+    /// removes the model (the slot) from the project; the file on disk stays untouched
     RemoveModel(usize),
 }
 
@@ -346,48 +346,48 @@ pub struct App {
     pub origin: Arc<Mutex<Option<DVec3>>>,
     pub renderer: Arc<Mutex<Renderer>>,
     pub cam: Camera,
-    /// lumini punctuale plasate in model (lampi)
+    /// point lights placed in the model (lamps)
     pub lights: Vec<crate::lights::SceneLight>,
-    /// lumina selectata in panoul Lighting / viewport
+    /// the light selected in the Lighting panel / viewport
     pub light_sel: Option<usize>,
-    /// axa UCS (0=X, 1=Y, 2=Z) prinsa pentru mutarea luminii
+    /// UCS axis (0=X, 1=Y, 2=Z) grabbed for moving the light
     pub light_axis: Option<usize>,
-    /// rotirea directiei luminii prin cercul gizmo: (axa de rotire 0=X 1=Y 2=Z, unghiul din cadrul
-    /// precedent, true = unghi masurat pe ecran - planul cercului e vazut din profil)
+    /// rotating the light direction through the gizmo circle: (rotation axis 0=X 1=Y 2=Z, the angle from the
+    /// previous frame, true = angle measured on screen - the circle plane is seen edge-on)
     pub light_rot: Option<(usize, f32, bool)>,
-    /// modul gizmo-ului de lumina: false = Move (sagetile), true = Rotate (cercurile)
+    /// the light gizmo mode: false = Move (the arrows), true = Rotate (the circles)
     pub light_rotate_mode: bool,
-    /// filtrul de cautare in catalogul de clasificare
+    /// the search filter in the classification catalog
     pub class_search: String,
-    /// verificarea actualizarilor (GitHub): in curs, rezultatul, descarcarea installerului
+    /// update check (GitHub): in progress, the result, the installer download
     pub update_rx: Option<std::sync::mpsc::Receiver<crate::update::CheckResult>>,
     pub update_info: Option<crate::update::UpdateInfo>,
     pub update_dl_rx: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
     pub update_checked: bool,
     pub update_manual: bool,
     pub update_open: bool,
-    /// obiectele de coordonare (clearance / provision for void / placeholder) si modelul lor virtual
+    /// the coordination objects (clearance / provision for void / placeholder) and their virtual model
     pub coord_objects: Vec<crate::coord_objects::CoordObject>,
     pub coord_slot: Option<usize>,
     pub coord_sel: Option<usize>,
     pub coord_open: bool,
-    /// tipul ales din ribbon, asteapta confirmarea utilizatorului in fereastra (nu se creeaza automat)
+    /// the type chosen from the ribbon, waits for the user confirmation in the window (not created automatically)
     pub coord_pending: Option<crate::coord_objects::CoordKind>,
-    /// fata obiectului de coordonare tras cu mouse-ul (0..5 = -X +X -Y +Y -Z +Z, 6 = mutare in plan)
+    /// the face of the coordination object dragged with the mouse (0..5 = -X +X -Y +Y -Z +Z, 6 = move in plane)
     pub coord_drag: Option<usize>,
-    /// gizmo-ul obiectelor de coordonare: 0 = Resize (fete), 1 = Move (X/Y/Z), 2 = Rotate (verticala)
+    /// the coordination objects gizmo: 0 = Resize (faces), 1 = Move (X/Y/Z), 2 = Rotate (vertical)
     pub coord_mode: u8,
-    /// unghiul cursorului la pasul anterior al rotirii
+    /// the cursor angle at the previous step of the rotation
     pub coord_rot_last: Option<f32>,
-    /// marja zonelor de mentenanta in jurul selectiei si a golurilor automate (m)
+    /// the margin of the maintenance zones around the selection and of the automatic voids (m)
     pub coord_margin: f32,
     pub void_margin: f32,
-    /// fereastra Classification (catalog local + bSDD online)
+    /// the Classification window (local catalog + online bSDD)
     pub class_open: bool,
-    /// 0 = catalog local, 1 = bSDD online
+    /// 0 = local catalog, 1 = online bSDD
     pub class_tab: usize,
     pub bsdd_query: String,
-    /// URI-ul dictionarului bSDD ales (gol = toate)
+    /// URI of the chosen bSDD dictionary (empty = all)
     pub bsdd_dict: String,
     pub bsdd_results: Vec<crate::bsdd::BsddClass>,
     pub bsdd_total: usize,
@@ -422,11 +422,11 @@ pub struct App {
     pub open_groups: HashSet<String>,
     pub find_in_selection: bool,
     pub group_cell: f32,
-    /// Model focus: ribon si panouri ascunse, proprietatile raman plutitoare (maximum de spatiu pentru model)
+    /// Model focus: ribbon and panels hidden, the properties stay floating (maximum space for the model)
     pub immersive_mode: bool,
-    /// layout-ul salvat inainte de Model focus, ca sa se poata restaura exact
+    /// the layout saved before Model focus, so it can be restored exactly
     pub saved_layout: Option<crate::layout::UiLayout>,
-    /// ferestrele plutitoare maximizate (butonul ⤢ din header)
+    /// the maximized floating windows (the ⤢ button in the header)
     pub float_max: std::collections::HashSet<crate::layout::Panel>,
     pub tasks: Vec<Task>,
     pub cur_task: Option<usize>,
@@ -436,7 +436,7 @@ pub struct App {
     pub sim_speed: f32,
     pub sim_cache: HashMap<ElemId, SimState>,
     pub sim_cache_day: i32,
-    /// 4D: afiseaza doar elementele legate de sarcini (restul modelului se ascunde)
+    /// 4D: shows only the elements linked to tasks (the rest of the model is hidden)
     pub sim_only_linked: bool,
     pub loads: Vec<LoadJob>,
     pub toasts: Vec<(String, Instant, bool)>,
@@ -449,161 +449,161 @@ pub struct App {
     pub fps: f32,
     pub show_help: bool,
     pub show_about: bool,
-    /// fereastra Lighting (View › Scene)
+    /// the Lighting window (View › Scene)
     pub show_light: bool,
-    /// nori de puncte: densitatea afisata (0..1), marimea punctelor (px), fereastra de control
+    /// point clouds: displayed density (0..1), point size (px), control window
     pub cloud_density: f32,
-    /// norii de puncte: 0 = culorile scanarii, 1 = dupa cota, 2 = gri
+    /// point clouds: 0 = scan colors, 1 = by elevation, 2 = gray
     pub cloud_mode: u8,
-    /// puncte rotunde cu relief (altfel patrate, ca inainte)
+    /// round points with relief (otherwise square, as before)
     pub cloud_round: bool,
-    /// marimea reala a punctului (mm) - aproape de nor punctele cresc si umplu golurile; 0 = doar pixeli
+    /// the real point size (mm) - close to the cloud the points grow and fill the gaps; 0 = pixels only
     pub cloud_world_mm: f32,
-    /// pixeli fizici pe punct logic (pentru marimea punctelor)
+    /// physical pixels per logical point (for the point size)
     pub ppp: f32,
     pub point_size: f32,
     pub show_cloud: bool,
-    /// axe si niveluri pe model (calculate o data per model)
+    /// grids and levels on the model (computed once per model)
     pub grid_cache: std::cell::RefCell<HashMap<usize, (usize, Arc<GridData>)>>,
     /// levels: the user's own levels, the project zero and the display switches
     pub level: LevelState,
     pub show_grids: bool,
-    /// salvare automata + recuperare dupa o inchidere neasteptata
+    /// autosave + recovery after an unexpected close
     pub autosave: Autosave,
-    /// sectiune: fetele taiate pline (capace hasurate)
+    /// section: the cut faces filled (hatched caps)
     pub section_caps: bool,
-    /// folderul comun pentru issue-uri (retea / SharePoint); None = nepartajat
+    /// the shared folder for issues (network / SharePoint); None = not shared
     pub shared_dir: Option<String>,
     pub shared: crate::shared::SharedState,
-    /// proiect nou, gol (New): fara pagina de start, cu Save disponibil
+    /// new, empty project (New): no start page, with Save available
     pub blank_project: bool,
-    /// axe create in ManageBIM (coordonate reale, metri)
+    /// grids created in ManageBIM (real coordinates, meters)
     pub user_grids: Vec<UserGrid>,
     pub use_user_grids: bool,
-    /// marimea bulelor axelor (px) si prelungirea liniilor dincolo de capete (m)
+    /// the size of the grid bubbles (px) and the extension of the lines beyond the ends (m)
     pub grid_bubble: f32,
     pub grid_ext: f32,
     pub show_grids_editor: bool,
-    /// planul de sectiune desenat ca suprafata verde transparenta
+    /// the section plane drawn as a transparent green surface
     pub show_section_plane: bool,
-    /// panoul deschis dintr-o zona auto-hide si ultima data cand mouse-ul era pe el
+    /// the panel opened from an auto-hide area and the last time the mouse was over it
     pub flyout: Option<(crate::layout::Dock, crate::layout::Panel)>,
     pub flyout_seen: Instant,
-    /// sectiunea pe nivel curenta (pentru PgUp / PgDn), marginile box-ului de nivel (m) si inaltimea taieturii de plan
+    /// the current level section (for PgUp / PgDn), the level box margins (m) and the plan cut height
     pub section_level: Option<usize>,
     pub level_below: f32,
     pub level_above: f32,
     pub plan_cut_h: f32,
-    /// relocare in curs (mutare / rotire / aliniere pe fata)
+    /// relocation in progress (move / rotate / align to face)
     pub xform: Option<XformPick>,
     pub relocate_selection: bool,
-    /// fereastra de selectie in curs (punctul de pornire, pe ecran)
+    /// selection window in progress (the start point, on screen)
     pub box_start: Option<[f32; 2]>,
-    /// exportul IFC: doar selectia (true) sau tot ce e vizibil
+    /// the IFC export: only the selection (true) or everything visible
     pub ifc_selection: bool,
-    /// exportul web: doar selectia
+    /// the web export: only the selection
     pub web_selection: bool,
-    /// Live Link (selectie sincronizata cu Revit / Navisworks)
+    /// Live Link (selection synchronized with Revit / Navisworks)
     pub sync: crate::sync::SyncState,
-    /// as-built: rezultatul, parametrii, fereastra, elementele colorate de noi
+    /// as-built: the result, the parameters, the window, the elements colored by us
     pub asbuilt: Option<Vec<crate::asbuilt::ElemResult>>,
     pub asbuilt_params: crate::asbuilt::Params,
     pub asbuilt_open: bool,
     pub asbuilt_show: bool,
     pub asbuilt_painted: Vec<ElemId>,
     pub asbuilt_filter: Option<crate::asbuilt::Status>,
-    /// paleta de comenzi (Ctrl+K)
+    /// the command palette (Ctrl+K)
     pub palette_open: bool,
     pub palette_q: String,
     pub palette_sel: usize,
-    /// manualul integrat
+    /// the built-in manual
     pub manual_open: bool,
     pub manual_page: usize,
     pub manual_q: String,
-    /// Cut to DWG: pe plansa A3 cu cartus (altfel 2D in Model space)
+    /// Cut to DWG: on an A3 sheet with title block (otherwise 2D in Model space)
     pub cad_sheet: bool,
-    /// Cut to DWG: plan complet (hasura, etichete, axe cu cote, niveluri pe sectiuni)
+    /// Cut to DWG: full plan (hatch, labels, grids with dimensions, levels on sections)
     pub cad_annotate: bool,
-    /// Cut to DWG: include cotele în lanț (dimensiuni) în desenul exportat
+    /// Cut to DWG: include the chain dimensions in the exported drawing
     pub cad_dims: bool,
-    /// Cut to DWG: include liniile de nivel + etichetele lor în desenul exportat
+    /// Cut to DWG: include the level lines + their labels in the exported drawing
     pub cad_levels: bool,
-    /// Cut to DWG: hașura pe elementele tăiate (oprită = desen curat, doar contur)
+    /// Cut to DWG: hatch on the cut elements (off = clean drawing, outline only)
     pub cad_hatch: bool,
-    /// desenul 2D: muchiile vizibile ale formei dupa planul de taiere (ca vederile din Inventor)
+    /// the 2D drawing: the visible edges of the shape behind the cut plane (like the views in Inventor)
     pub cad_visible_edges: bool,
-    /// desenul 2D: muchiile ascunse, cu linie intrerupta
+    /// the 2D drawing: the hidden edges, with a dashed line
     pub cad_hidden_edges: bool,
-    /// cache-ul liniilor vizibile / ascunse (cheie = vederea + modelele), calculul e costisitor
+    /// the cache of the visible / hidden lines (key = the view + the models), the computation is expensive
     pub hlr_cache: std::sync::Mutex<Option<(String, Vec<(String, [f64; 4])>)>>,
-    /// alegerea unei fete a cubului de sectiune cu mouse-ul, pentru desenul 2D
+    /// picking a face of the section box with the mouse, for the 2D drawing
     pub face_pick: bool,
-    /// istoricul vizualizarii (Undo / Redo): starile, pozitia curenta, semnatura ultimei stari
+    /// the view history (Undo / Redo): the states, the current position, the signature of the last state
     pub hist: Vec<ViewSnap>,
-    /// şabloane de vizualizare salvate în proiect, aplicate cu un click
+    /// view templates saved in the project, applied with one click
     pub view_templates: Vec<ViewTemplate>,
-    /// fereastra de manage a şabloanelor de vizualizare
+    /// the manage window for the view templates
     pub view_templates_open: bool,
-    /// indexul template-ului curent (pentru navigare ◀ ▶ lângă cub)
+    /// the index of the current template (for ◀ ▶ navigation next to the cube)
     pub vt_current: usize,
-    /// un View Template a fost aplicat explicit (altfel viewpoint-urile noi nu se leaga de niciunul)
+    /// a View Template was applied explicitly (otherwise the new viewpoints are not linked to any)
     pub vt_applied: bool,
 
     pub hist_pos: usize,
     pub hist_sig: u64,
-    /// folderele de viewpoints: cel curent (unde intra viewpoint-urile noi), cele create goale, filtrul de export
+    /// the viewpoint folders: the current one (where new viewpoints go), the ones created empty, the export filter
     pub vp_folder_cur: String,
     pub vp_folders: Vec<String>,
     pub vp_filter: Option<String>,
     pub vp_rename_pending: Option<(String, String)>,
-    /// desene 2D suprapuse peste model si fereastra lor
+    /// 2D drawings overlaid on the model and their window
     pub overlays: Vec<CadOverlay>,
     pub overlay_open: bool,
-    /// fereastra mica de preview 2D a sectiunii (inainte de export), inchizabila
+    /// the small 2D preview window of the section (before export), closable
     pub section_preview_open: bool,
-    /// fereastra Multi view: vederile bifate (Front, Right, Back, Left, Top, Bottom), distanta (m, 0 = auto), titluri
+    /// the Multi view window: the ticked views (Front, Right, Back, Left, Top, Bottom), distance (m, 0 = auto), titles
     pub mv_open: bool,
     pub mv_views: [bool; 6],
     pub mv_gap: f32,
     pub mv_titles: bool,
     pub mv_cache: Option<(String, Arc<MultiViewSheet>)>,
-    /// previewul 2D: zoom (1 = incape in fereastra) si deplasare (pixeli)
+    /// the 2D preview: zoom (1 = fits the window) and pan (pixels)
     pub prev_zoom: f32,
     pub prev_pan: [f32; 2],
-    /// cartusul planselor (PDF / DWG) si fereastra lui de editare
+    /// the title block of the sheets (PDF / DWG) and its editing window
     pub title_block: crate::pdf::TitleBlock,
     pub title_block_open: bool,
-    /// fata section box-ului trasa acum (0..5: -X +X -Y +Y -Z +Z)
+    /// the section box face being dragged now (0..5: -X +X -Y +Y -Z +Z)
     pub box_drag: Option<usize>,
     pub show_clash_matrix: bool,
-    /// ultimul import de axe din DWG / DXF: fisierul, straturile cu linii, stratul folosit
+    /// the last grid import from DWG / DXF: the file, the layers with lines, the layer used
     pub grid_import: Option<(String, Vec<(String, usize)>, String)>,
-    /// generatorul de axe (originea si directia se pot alege cu clic in model)
+    /// the grid generator (the origin and direction can be picked with a click in the model)
     pub grid_gen: GridGen,
-    /// alegere in 3D: 0 nimic, 1 originea, 2 directia primei axe
+    /// picking in 3D: 0 nothing, 1 the origin, 2 the direction of the first grid
     pub grid_pick: u8,
-    /// OSNAP activ (F3 comuta); cand e off, snapul la geometrie e dezactivat
+    /// OSNAP active (F3 toggles); when off, snapping to geometry is disabled
     pub osnap_on: bool,
-    /// Split-view: al doilea viewport (comparatie). camera/secțiune proprii.
+    /// Split-view: the second viewport (comparison). its own camera/section.
     pub split_view: bool,
-    /// pozitia separatorului (0.05..0.95) - se trage cu mouse-ul
+    /// the splitter position (0.05..0.95) - dragged with the mouse
     pub split_ratio: f32,
-    /// camerele sincronizate intre cele doua jumatati
+    /// cameras synchronized between the two halves
     pub split_link: bool,
-    /// coada de export în lot (kind, path) - rulează secvențial
+    /// batch export queue (kind, path) - runs sequentially
     pub batch_queue: Vec<(u8, String)>,
-    /// camera si sectiunea jumatatii din dreapta
+    /// the camera and section of the right half
     pub cam_b: crate::camera::Camera,
     pub section_b: crate::app::Section,
-    /// proiectul deschis dintr-un .bimd: Save il publica din nou acolo
+    /// the project opened from a .bimd: Save publishes it there again
     pub bimd_path: Option<String>,
-    /// intrebarea "salvezi?" inainte de intoarcerea la pagina de start
+    /// the "save?" question before returning to the start page
     pub confirm_start: bool,
-    /// pagina de start aratata peste proiectul deschis (ca Navisworks: sageata inapoi la proiect)
+    /// the start page shown over the open project (like Navisworks: back arrow to the project)
     pub show_start: bool,
-    /// ce se face dupa intrebarea "salvezi?" (deschidere / proiect nou din pagina de start)
+    /// what to do after the "save?" question (open / new project from the start page)
     pub start_pending: Option<StartAction>,
-    /// pagina de start: sortare (0 ultima deschidere, 1 nume, 2 data modificarii, 3 tip), cautare, lista / grila
+    /// start page: sorting (0 last opened, 1 name, 2 modification date, 3 type), search, list / grid
     pub start_sort: u8,
     pub start_search: String,
     pub start_list: bool,
@@ -631,34 +631,34 @@ pub struct App {
     pub anim_play: Option<f32>,
     pub anim_time: f32,
     pub anim_loop: bool,
-    /// ping-pong (P.P. in Navisworks): la capat, animatia merge inapoi
+    /// ping-pong (P.P. in Navisworks): at the end, the animation goes backwards
     pub anim_pp: bool,
-    /// Import 4D: dupa importul planificarii se creeaza animatia 4D
+    /// Import 4D: after importing the schedule the 4D animation is created
     pub anim_4d_pending: bool,
-    /// un model s-a incarcat: sarcinile TimeLiner fara elemente se leaga din nou
+    /// a model was loaded: the TimeLiner tasks without elements are linked again
     pub relink_tasks: bool,
-    /// directia redarii: 1 inainte, -1 inapoi
+    /// the playback direction: 1 forward, -1 backward
     pub anim_dir: f32,
-    /// starea obiectelor animate la timpul curent: element -> (culoare rgba, vizibil)
+    /// the state of the animated objects at the current time: element -> (rgba color, visible)
     pub anim_obj: HashMap<ElemId, ([u8; 4], bool)>,
-    /// Record: inregistrarea navigarii in timp real (inceput, keyframe-uri)
+    /// Record: recording the navigation in real time (start, keyframes)
     pub anim_rec: Option<(Instant, Vec<crate::anim::Keyframe>)>,
     pub anim_sim_active: bool,
     pub render_job: Option<RenderJob>,
     /// the final render (Render › Path Trace): job, window, picture, settings
     pub pt: PathTraceState,
-    /// ultimul font aplicat (ca sa reinstalam fonturile doar la schimbare)
+    /// the last font applied (so we reinstall the fonts only on change)
     pub font_family_cur: String,
-    /// planul de taiere se trage cu mouse-ul in 3D (partea din cub)
+    /// the cut plane is dragged with the mouse in 3D (the part from the cube)
     pub cut_drag: bool,
-    /// fereastra consolei de scripturi (motorul Rhai se activeaza in 0.28)
+    /// the script console window (the Rhai engine is enabled in 0.28)
     pub script_open: bool,
     pub script_help_open: bool,
-    /// scenariul curent din editorul vizual de scripturi (pași care generează cod Rhai)
+    /// the current scenario of the visual script editor (steps that generate Rhai code)
     pub scenario: crate::script_builder::Scenario,
-    /// proprietățile modelelor pentru editorul vizual (cheie = semnătura modelelor încărcate)
+    /// the model properties for the visual editor (key = the signature of the loaded models)
     pub scenario_index: Option<(u64, std::sync::Arc<crate::script_builder::PropIndex>)>,
-    /// fereastra de setari a aplicatiei (View › Settings / butonul ⚙)
+    /// the application settings window (View › Settings / the ⚙ button)
     pub settings_open: bool,
     /// interactive Ray Trace view (GPU path tracing in the viewport, like Navisworks)
     pub rt: RtState,
@@ -666,9 +666,9 @@ pub struct App {
     pub ifc_map_open: bool,
     pub still_path: Option<String>,
     pub pending_capture: Option<(u32, u32)>,
-    /// imaginea (Render Image): vederea de dinainte (stil, materiale, selectie), refacuta dupa captura
+    /// the image (Render Image): the previous view (style, materials, selection), restored after the capture
     pub still_restore: Option<(crate::render::VisualStyle, bool, BTreeSet<ElemId>)>,
-    /// cadre de asteptat inainte de captura (culorile / materialele noi ajung pe GPU)
+    /// frames to wait before the capture (the new colors / materials reach the GPU)
     pub still_wait: u8,
     pub ffmpeg: Option<bool>,
     pub orbit_secs: f32,
@@ -676,40 +676,40 @@ pub struct App {
     pub proj_sel: Option<usize>,
     pub materials: Vec<Material>,
     pub materials_on: bool,
-    /// numele materialelor din biblioteca utilizatorului (cache; None = de recitit)
+    /// the material names from the user library (cache; None = to be reread)
     pub user_lib_cache: Option<std::collections::HashSet<String>>,
     pub render_subtab: u8,
     pub show_tools: bool,
     pub sets_sig: u64,
     pub tex_layers: Vec<(String, Vec<u8>)>,
-    /// cheie material PBR (toate hartile + intensitati + rezolutie) -> primul strat din pair-ul albedo/normal
+    /// PBR material key (all maps + intensities + resolution) -> the first layer of the albedo/normal pair
     pub pbr_layers: HashMap<String, u8>,
-    /// rezolutia cu care au fost incarcate tex_layers (la schimbare se reincarca tot)
+    /// the resolution with which tex_layers were loaded (on change everything is reloaded)
     pub tex_loaded_res: u32,
-    /// materiale PBR importate recent, care asteapta o alegere de asignare
+    /// recently imported PBR materials, waiting for an assignment choice
     pub pending_mat_assign: Vec<String>,
-    /// descarcarea bibliotecii profesionale ambientCG (CC0) in curs
+    /// the download of the ambientCG professional library (CC0) in progress
     pub pro_lib_job: Option<std::sync::Arc<std::sync::Mutex<crate::pro_materials::Progress>>>,
-    /// istoricul notificarilor (clopotelul din bara de stare): (cand, eroare, mesaj) si cate au fost vazute
+    /// the notification history (the bell in the status bar): (when, error, message) and how many were seen
     pub notes: Vec<(Instant, bool, String)>,
     pub notes_seen: usize,
-    /// fereastra cu scurtaturile de tastatura (F1)
+    /// the window with the keyboard shortcuts (F1)
     pub keys_open: bool,
-    /// fereastra "Smart set" (search set-uri din valori, sugestii, cautare in cuvinte)
+    /// the "Smart set" window (search sets from values, suggestions, word search)
     pub smart: crate::smart_sets::Builder,
-    /// fereastra Dashboard si sumarul afisat (refacut la deschidere / Refresh / export)
+    /// the Dashboard window and the displayed summary (rebuilt on open / Refresh / export)
     pub dash_open: bool,
     pub dash: Option<crate::dashboard::Summary>,
-    /// continutul confirmat al fiecarui search set (GUID-uri): dupa o actualizare de model panoul Sets arata +/-
+    /// the confirmed content of each search set (GUIDs): after a model update the Sets panel shows +/-
     pub set_snap: HashMap<String, std::collections::HashSet<String>>,
-    /// exportul Dashboard cu imaginile clash-urilor (o captura pe cadru)
+    /// the Dashboard export with the clash images (one capture per frame)
     pub dash_job: Option<crate::dashboard::CaptureJob>,
     pub tex_failed: HashSet<String>,
     pub pending_csv: Vec<String>,
     pub settings: crate::theme::Settings,
     pub theme_dirty: bool,
     pub last_mode: (bool, bool),
-    /// Update All: starile dinainte (pentru sumar) si sumarul de la final
+    /// Update All: the previous states (for the summary) and the summary at the end
     pub update_all_before: Option<Vec<(String, [usize; 5])>>,
     pub update_summary: Option<crate::clash_io::UpdateSummary>,
     pub update_all_cur: Option<usize>,
@@ -729,85 +729,85 @@ pub struct App {
     pub nav: NavMode,
     pub walk_drag: Option<[f32; 2]>,
     pub walk_saved: f32,
-    /// viteza tinta in acest cadru (local: x dreapta, y inainte, z sus), in multipli ai vitezei de mers
+    /// target velocity in this frame (local: x right, y forward, z up), in multiples of the walking speed
     pub walk_target: Vec3,
-    /// rotirea tinta in acest cadru (rad/s)
+    /// target rotation in this frame (rad/s)
     pub walk_turn_target: f32,
-    /// viteza / rotirea curente, netezite (accelerare si franare lina)
+    /// current velocity / rotation, smoothed (smooth acceleration and braking)
     pub walk_vel: Vec3,
     pub walk_turn: f32,
-    /// traseul de mers desenat (puncte pe podea)
+    /// the drawn walk path (points on the floor)
     pub walk_path: Vec<Vec3>,
-    /// punctul traseului tras cu mouse-ul (unealta Draw)
+    /// the path point dragged with the mouse (the Draw tool)
     pub wp_drag: Option<usize>,
-    /// mersul automat pe traseu, cand ruleaza
+    /// automatic walking along the path, when running
     pub path_run: Option<walk::PathRun>,
-    /// fisierele din Inbox deja deschise in aceasta sesiune (Send to ManageBIM)
+    /// the Inbox files already opened in this session (Send to ManageBIM)
     pub inbox_seen: HashSet<String>,
-    /// section box-ul urmareste selectia (butonul Follow)
+    /// the section box follows the selection (the Follow button)
     pub section_follow: bool,
     pub section_sel_sig: u64,
-    /// semnatura ultimei scrieri a Outbox\issues.txt (add-in-urile Revit / Navisworks)
+    /// the signature of the last write of Outbox\issues.txt (the Revit / Navisworks add-ins)
     pub outbox_sig: u64,
-    /// desenare simplificata: camera din cadrul trecut, momentul ultimei miscari, elementele cu transparenta
+    /// simplified drawing: the camera from the last frame, the time of the last movement, the elements with transparency
     pub lod_cam: Camera,
     pub lod_moved: Instant,
-    /// pragul LOD in miscare (pixeli), adaptat dupa FPS
+    /// the LOD threshold while moving (pixels), adapted by FPS
     pub lod_px: f32,
     pub alpha_cache: HashMap<usize, (usize, Vec<bool>)>,
-    /// Refresh: data modificarii fisierului sursa la momentul incarcarii (per slot)
+    /// Refresh: the modification date of the source file at load time (per slot)
     pub file_stamps: HashMap<usize, std::time::SystemTime>,
-    /// Refresh: modelul vechi, pastrat pana termina reincarcarea (pt. remaparea selectiei pe GUID)
+    /// Refresh: the old model, kept until the reload finishes (for remapping the selection by GUID)
     pub reloading: HashMap<usize, Arc<Model>>,
-    /// Refresh: sloturile ale caror fisiere s-au modificat pe disc de la incarcare
+    /// Refresh: the slots whose files changed on disk since loading
     pub changed_files: BTreeSet<usize>,
     pub last_file_check: Instant,
-    /// aspectul trimis ultima data la GPU, per slot (actualizare incrementala a culorilor)
+    /// the look last sent to the GPU, per slot (incremental color update)
     pub looks: HashMap<usize, Vec<Look>>,
-    /// Appearance Profiler: reguli + harta element -> regula (calculata la nevoie)
+    /// Appearance Profiler: rules + element -> rule map (computed when needed)
     pub profile: crate::profiler::Profile,
     pub profile_map: Option<HashMap<ElemId, u16>>,
-    /// Compare: rezultat + afisare in 3D + modelele alese (A = vechi, B = nou) + toleranta (mm)
+    /// Compare: result + 3D display + the chosen models (A = old, B = new) + tolerance (mm)
     pub compare: Option<crate::compare::CompareResult>,
-    /// proprietatile schimbate (compare pe parametri) si filtrul listei
+    /// the changed properties (compare by parameters) and the list filter
     pub compare_params: Vec<crate::compare::ParamChange>,
-    /// verificarile rapide (fara IDS)
+    /// the quick checks (without IDS)
     pub quick_checks: Vec<crate::check::QuickCheck>,
-    /// legenda colorarii dupa parametru in vederea 3D
+    /// the legend of the coloring by parameter in the 3D view
     pub profile_legend: bool,
-    /// parametrii adaugati de utilizator (salvati in proiect) si campurile din panoul Properties
+    /// the parameters added by the user (saved in the project) and the fields in the Properties panel
     pub user_params: Vec<UserParam>,
     pub up_name: String,
     pub prop_import: Option<PropImport>,
-    /// proprietatile utilizatorului: ce e al lui pe fiecare element + valorile originale inlocuite
+    /// the user properties: what is theirs on each element + the original values replaced
     pub user_shadow: Mutex<UserShadow>,
-    /// fereastra Property editor (proprietati libere sau seturi standard IFC pe selectie)
+    /// the Property editor window (free properties or IFC standard sets on the selection)
     pub pe: crate::ui::PropEditor,
-    /// tab-ul de date utilizator afisat / editat in Properties
+    /// the user data tab displayed / edited in Properties
     pub user_tab: String,
-    /// tab-uri goale create cu Add User Data Tab (inca fara proprietati)
+    /// empty tabs created with Add User Data Tab (still without properties)
     pub user_tabs_new: Vec<String>,
-    /// redenumirea tab-ului curent (textul din campul de editare)
+    /// renaming the current tab (the text in the edit field)
     pub user_tab_rename: Option<String>,
     pub up_value: String,
     pub compare_param_pick: Option<String>,
     pub compare_on: bool,
-    /// harta de abateri geometrice pe elementele schimbate; scara in mm (0 = automata)
+    /// the map of geometric deviations on the changed elements; scale in mm (0 = automatic)
     pub compare_heat: bool,
     pub compare_heat_max_mm: f32,
     pub compare_pick: (Option<usize>, Option<usize>),
     pub compare_tol: f32,
-    /// Model Checker: regulile, ultimul rezultat, regula aleasa si avertismentele importului IDS
+    /// Model Checker: the rules, the last result, the chosen rule and the IDS import warnings
     pub check_rules: Vec<crate::check::Rule>,
     pub check_results: Option<Vec<crate::check::RuleResult>>,
     pub check_sel: Option<usize>,
     pub check_warn: Vec<String>,
-    /// editorul de grupare al arborelui de selectie e deschis
+    /// the grouping editor of the selection tree is open
     pub tree_edit: bool,
-    /// Quantification: configuratia (salvata in proiect / sablon .bimqto) si ultimul rezultat
+    /// Quantification: the configuration (saved in the project / .bimqto template) and the last result
     pub qto: crate::qto::QtoSetup,
     pub qto_result: Option<crate::qto::QtoResult>,
-    /// semnatura starii pentru care s-a calculat rezultatul (setup + selectie / ascunse)
+    /// the signature of the state for which the result was computed (setup + selection / hidden)
     pub qto_sig: u64,
 }
 
@@ -1146,7 +1146,7 @@ impl App {
             app.group_cell = p.group_cell;
             app.sim_only_linked = p.only_linked;
         }
-        // convertoare externe: detectare la prima pornire (sau cand lipsesc)
+        // external converters: detected at the first start (or when they are missing)
         let t = &app.settings.tools;
         if t.oda.is_empty() || t.navisworks.is_empty() {
             let d = crate::formats::detect_tools();
@@ -1166,8 +1166,8 @@ impl App {
         app
     }
 
-    // ------------------------------------------------------------------ mesaje
-    /// Salveaza preferintele UI (Clash / 4D) cand se schimba, fara a scrie fisierul la fiecare cadru.
+    // ------------------------------------------------------------------ messages
+    /// Saves the UI preferences (Clash / 4D) when they change, without writing the file on every frame.
     pub fn sync_ui_prefs(&mut self) {
         let p = crate::theme::ClashUiPrefs {
             subtab: self.clash.subtab,
@@ -1178,7 +1178,7 @@ impl App {
             highlight_all: self.clash.highlight_all,
             group_cell: self.group_cell,
             only_linked: self.sim_only_linked,
-            // restul (sortare, culori, panouri) se editeaza direct in settings.clash_ui
+            // the rest (sorting, colors, panels) is edited directly in settings.clash_ui
             ..self.settings.clash_ui.clone()
         };
         if p != self.settings.clash_ui {
@@ -1187,7 +1187,7 @@ impl App {
         }
     }
 
-    /// Model focus: maximum de spatiu pentru model, proprietatile raman plutitoare.
+    /// Model focus: maximum space for the model, the properties stay floating.
     pub fn toggle_immersive(&mut self) {
         if self.immersive_mode {
             if let Some(l) = self.saved_layout.take() {
@@ -1204,7 +1204,7 @@ impl App {
         self.settings.save();
     }
 
-    /// istoricul notificarilor (ultimele 200)
+    /// the notification history (the last 200)
     fn note(&mut self, err: bool, m: &str) {
         self.notes.push((Instant::now(), err, m.to_string()));
         if self.notes.len() > 200 {
@@ -1238,7 +1238,7 @@ pub fn now_string() -> String {
     format!("{y}-{m:02}-{d:02} {:02}:{:02} UTC", s / 3600, (s % 3600) / 60)
 }
 
-/// Textul unei erori interne (panic) prinse cu catch_unwind.
+/// The text of an internal error (panic) caught with catch_unwind.
 pub fn panic_text(e: &(dyn std::any::Any + Send)) -> String {
     e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_else(|| "unknown error".into())
 }
@@ -1298,12 +1298,12 @@ fn natural_chunks_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     chunks(a).cmp(&chunks(b)).then_with(|| a.cmp(b))
 }
 
-/// Axele si nivelurile unui model, in coordonate locale (ale scenei).
+/// The grids and levels of a model, in local (scene) coordinates.
 #[derive(Default, Clone)]
 pub struct GridData {
-    /// (eticheta, capat 1, capat 2)
+    /// (label, end 1, end 2)
     pub grids: Vec<(String, Vec3, Vec3)>,
-    /// (nume, cota Z locala), sortate dupa cota
+    /// (name, local Z elevation), sorted by elevation
     pub levels: Vec<(String, f32)>,
 }
 
@@ -1311,7 +1311,7 @@ impl App {
 
 }
 
-/// Locatia in axe (doua axe neparalele cele mai apropiate in plan) + nivelul de sub punct.
+/// The grid location (the two closest non-parallel grids in plan) + the level below the point.
 pub fn grid_location_in(g: &GridData, p: Vec3) -> String {
     let dist = |a: Vec3, b: Vec3| {
         let (a2, b2, p2) = (a.truncate(), b.truncate(), p.truncate());
@@ -1323,10 +1323,10 @@ pub fn grid_location_in(g: &GridData, p: Vec3) -> String {
     lines.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut grid = String::new();
     if let Some(first) = lines.first() {
-        // a doua axa: cea mai apropiata care nu e (aproape) paralela cu prima
+        // the second grid: the closest one that is not (nearly) parallel to the first
         match lines.iter().skip(1).find(|l| l.2.dot(first.2).abs() < 0.87) {
             Some(second) => {
-                // litera inaintea cifrei, ca pe planse (C-4, nu 4-C)
+                // letter before the digit, as on the drawings (C-4, not 4-C)
                 let (x, y) = if first.1.chars().next().is_some_and(|c| c.is_ascii_digit()) && !second.1.chars().next().is_some_and(|c| c.is_ascii_digit()) { (second.1, first.1) } else { (first.1, second.1) };
                 grid = format!("{x}-{y}");
             }
@@ -1342,7 +1342,7 @@ pub fn grid_location_in(g: &GridData, p: Vec3) -> String {
     }
 }
 
-/// Nivel definit de utilizator: nume si cota (m) fata de ±0.00 al proiectului.
+/// User-defined level: name and elevation (m) relative to the project ±0.00.
 /// Clash Detective: the tests, the running job and the display of the results.
 pub struct ClashState {
     pub tests: Vec<ClashTest>,
@@ -1353,9 +1353,9 @@ pub struct ClashState {
     pub auto_zoom: bool,
     pub subtab: u8,
     pub filter: Option<ClashStatus>,
-    /// Filter by Selection: 0 = off, 1 = inclusive, 2 = exclusive (ca in Navisworks)
+    /// Filter by Selection: 0 = off, 1 = inclusive, 2 = exclusive (like in Navisworks)
     pub filter_sel: u8,
-    /// Clash Detective in mod Focus: fereastra maximizata, cu tot spatiul pentru teste si rezultate
+    /// Clash Detective in Focus mode: maximized window, with all the space for tests and results
     pub focus_mode: bool,
     pub queue: Vec<usize>,
 }
@@ -1365,13 +1365,13 @@ pub struct MaterialsState {
     pub assign: Vec<MatAssign>,
     pub sel: usize,
     pub cache: Option<HashMap<ElemId, u16>>,
-    /// previzualizarea hartii de culoare a materialului selectat
+    /// the preview of the color map of the selected material
     pub preview: Option<(String, eframe::egui::TextureHandle)>,
-    /// filtrul listei de materiale si miniaturile texturilor (cale -> imagine; None = in lucru / esuat)
+    /// the material list filter and the texture thumbnails (path -> image; None = in progress / failed)
     pub filter: String,
-    /// fereastra mare Materials (pe toata inaltimea ferestrei aplicatiei)
+    /// the large Materials window (over the full height of the application window)
     pub window: bool,
-    /// lista deruleaza pana la materialul selectat (dupa un import)
+    /// the list scrolls to the selected material (after an import)
     pub scroll: bool,
     pub thumbs: HashMap<String, Option<eframe::egui::TextureHandle>>,
     pub thumb_job: Option<(std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<(String, Option<crate::materials::Thumb>)>)>,
@@ -1379,11 +1379,11 @@ pub struct MaterialsState {
 
 /// The MCP server for AI assistants: the server, its window and status, a capture waiting for its image.
 pub struct McpState {
-    /// serverul MCP pornit (asistenti AI) si fereastra lui de conectare
+    /// the MCP server started (AI assistants) and its connection window
     pub server: Option<crate::mcp::Server>,
     pub open: bool,
     pub status: String,
-    /// raspunsul unei cereri MCP capture_view, trimis cand imaginea e gata (dupa cadrul urmator)
+    /// the response to an MCP capture_view request, sent when the image is ready (after the next frame)
     pub capture: Option<std::sync::mpsc::Sender<Result<serde_json::Value, String>>>,
 }
 
@@ -1436,25 +1436,25 @@ pub fn yes() -> bool {
 impl App {
 }
 
-// ------------------------------------------------------------------ salvare automata
+// ------------------------------------------------------------------ autosave
 /// %LOCALAPPDATA%\ManageBIM\Autosave
 pub fn autosave_dir() -> Option<std::path::PathBuf> {
     crate::formats::data_root().map(|d| d.join("ManageBIM").join("Autosave"))
 }
 
-/// Starea salvarii automate: lock-ul sesiunii (tinut deschis cat ruleaza aplicatia) si ce se poate recupera.
+/// The autosave state: the session lock (kept open while the application runs) and what can be recovered.
 #[derive(Default)]
 pub struct Autosave {
     pub lock: Option<std::fs::File>,
     pub last: Option<Instant>,
     pub sig: u64,
-    /// (fisierul salvat automat, proiectul original daca exista, data)
+    /// (the autosaved file, the original project if any, the date)
     pub recover: Option<(String, Option<String>, String)>,
 }
 
 impl Autosave {
-    /// La pornire: un lock ramas de la o sesiune care nu s-a inchis normal = acea sesiune s-a oprit brusc.
-    /// Lock-urile sesiunilor care inca ruleaza nu se pot sterge (fisierul e deschis), deci raman neatinse.
+    /// At startup: a lock left by a session that did not close normally = that session stopped abruptly.
+    /// The locks of sessions still running cannot be deleted (the file is open), so they stay untouched.
     pub fn start() -> Autosave {
         let mut a = Autosave::default();
         let Some(dir) = autosave_dir() else { return a };
@@ -1477,7 +1477,7 @@ impl Autosave {
         a
     }
 
-    /// La iesirea normala: lock-ul si salvarea automata a sesiunii se sterg.
+    /// On a normal exit: the session lock and autosave are deleted.
     pub fn finish(&mut self) {
         self.lock = None;
         if let Some(dir) = autosave_dir() {
@@ -1489,7 +1489,7 @@ impl Autosave {
     }
 }
 
-/// Data locala scurta (pentru mesaje).
+/// Short local date (for messages).
 pub fn fmt_time(t: std::time::SystemTime) -> String {
     let secs = t.elapsed().map(|d| d.as_secs()).unwrap_or(0);
     match secs {
@@ -1504,7 +1504,7 @@ impl App {
 
 }
 
-/// Axa creata in ManageBIM: eticheta si capetele in coordonate reale (metri, XY).
+/// A grid created in ManageBIM: the label and the ends in real coordinates (meters, XY).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UserGrid {
     pub name: String,
@@ -1519,7 +1519,7 @@ pub fn grid_ext_default() -> f32 {
     2.0
 }
 
-/// Eticheta numarul `i` (0..) in stilul A, B, … Z, AA, AB … sau 1, 2, 3 …
+/// Labels number `i` (0..) in the style A, B, … Z, AA, AB … or 1, 2, 3 …
 pub fn grid_label(first: &str, i: usize) -> String {
     let f = first.trim();
     if let Ok(n) = f.parse::<i64>() {
@@ -1538,8 +1538,8 @@ pub fn grid_label(first: &str, i: usize) -> String {
     s
 }
 
-/// Retea de axe: `nx` axe verticale (de-a lungul lui Y) la distanta `dx`, etichete de la `fx`; `ny` axe orizontale
-/// (de-a lungul lui X) la `dy`, etichete de la `fy`. Originea = intersectia primelor axe; `ext` = cat ies liniile.
+/// Grid system: `nx` vertical grids (along Y) at spacing `dx`, labels from `fx`; `ny` horizontal grids
+/// (along X) at `dy`, labels from `fy`. Origin = intersection of the first grids; `ext` = how far the lines extend.
 pub fn generate_grid(origin: [f64; 2], nx: usize, dx: f64, fx: &str, ny: usize, dy: f64, fy: &str, ext: f64) -> Vec<UserGrid> {
     let (lx, ly) = (dx * nx.saturating_sub(1) as f64, dy * ny.saturating_sub(1) as f64);
     let mut out = Vec::new();
@@ -1554,7 +1554,7 @@ pub fn generate_grid(origin: [f64; 2], nx: usize, dx: f64, fx: &str, ny: usize, 
     out
 }
 
-/// Axele ca DXF (R12, metri): linii pe stratul GRID, bulele (cerc + text) pe stratul GRID_TAGS.
+/// The grids as DXF (R12, meters): lines on the GRID layer, the bubbles (circle + text) on the GRID_TAGS layer.
 pub fn grid_dxf(grids: &[UserGrid], bubble_r: f64) -> String {
     let mut s = String::from("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n6\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n2\n");
     for (name, col) in [("GRID", 1), ("GRID_TAGS", 7)] {
@@ -1564,11 +1564,11 @@ pub fn grid_dxf(grids: &[UserGrid], bubble_r: f64) -> String {
     for g in grids {
         let (a, b) = (glam::DVec2::from(g.a), glam::DVec2::from(g.b));
         let d = (b - a).normalize_or_zero();
-        // ca pe plansa: linia intre capete, bulele in prelungire (tangente la capete)
+        // as on the drawing: the line between the ends, the bubbles in extension (tangent at the ends)
         s.push_str(&format!("0\nLINE\n8\nGRID\n10\n{}\n20\n{}\n30\n0.0\n11\n{}\n21\n{}\n31\n0.0\n", a.x, a.y, b.x, b.y));
         for c in [a - d * bubble_r, b + d * bubble_r] {
             s.push_str(&format!("0\nCIRCLE\n8\nGRID_TAGS\n10\n{}\n20\n{}\n30\n0.0\n40\n{}\n", c.x, c.y, bubble_r));
-            // text centrat in bula (72=1 centru, 73=2 mijloc)
+            // text centered in the bubble (72=1 center, 73=2 middle)
             s.push_str(&format!("0\nTEXT\n8\nGRID_TAGS\n10\n{x}\n20\n{y}\n30\n0.0\n40\n{h}\n1\n{t}\n72\n1\n73\n2\n11\n{x}\n21\n{y}\n31\n0.0\n", x = c.x, y = c.y, h = bubble_r * 0.9, t = g.name));
         }
     }
@@ -1577,7 +1577,7 @@ pub fn grid_dxf(grids: &[UserGrid], bubble_r: f64) -> String {
 }
 
 impl App {
-    /// Interfata RO / EN (salvata in setari).
+    /// RO / EN interface (saved in the settings).
     pub fn toggle_language(&mut self) {
         self.settings.romanian = !self.settings.romanian;
         crate::i18n::set_romanian(self.settings.romanian);
@@ -1586,7 +1586,7 @@ impl App {
 
 }
 
-/// Parametrii generatorului de axe: originea (real, m), rotatia, numarul / distanta / prima eticheta pe fiecare directie.
+/// The grid generator parameters: origin (real, m), rotation, count / spacing / first label in each direction.
 #[derive(Clone, Debug)]
 pub struct GridGen {
     pub origin: [f64; 2],
@@ -1605,7 +1605,7 @@ impl Default for GridGen {
     }
 }
 
-/// Roteste axele cu `deg` in jurul punctului `c` si le muta cu `d` (real, m).
+/// Rotates the grids by `deg` around point `c` and moves them by `d` (real, m).
 pub fn transform_grids(grids: &mut [UserGrid], c: [f64; 2], deg: f64, d: [f64; 2]) {
     let (s, co) = deg.to_radians().sin_cos();
     let rot = |p: [f64; 2]| {
@@ -1622,8 +1622,8 @@ impl App {
 
 }
 
-// ------------------------------------------------------------------ .bimd (un singur fisier, ca .nwd)
-/// Folderul in care se despacheteaza fisierele .bimd deschise.
+// ------------------------------------------------------------------ .bimd (a single file, like .nwd)
+/// The folder where the opened .bimd files are unpacked.
 pub fn published_dir() -> Option<std::path::PathBuf> {
     crate::formats::data_root().map(|d| d.join("ManageBIM").join("Published"))
 }
@@ -1635,14 +1635,14 @@ impl App {
 impl App {
 }
 
-/// Actiune pornita din pagina de start cand un proiect e deja deschis (dupa intrebarea "salvezi?").
+/// Action started from the start page when a project is already open (after the "save?" question).
 #[derive(Clone, Debug, PartialEq)]
 pub enum StartAction {
     New,
     Open(String),
     OpenModelDialog,
     OpenProjectDialog,
-    /// doar inchide proiectul (ramane pagina de start)
+    /// only closes the project (the start page stays)
     Close,
 }
 
@@ -1650,15 +1650,15 @@ impl App {
 
 }
 
-// ------------------------------------------------------------------ relocare (ca Navisworks: masurare -> transformare)
-/// Ce se muta: modelul punctului ales sau elementele selectate.
+// ------------------------------------------------------------------ relocation (like Navisworks: measure -> transform)
+/// What gets moved: the model of the picked point or the selected elements.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum XformMode {
-    /// punct -> punct (translatie)
+    /// point -> point (translation)
     Move,
-    /// pivot, directia de pornire, directia tinta (rotatie in jurul verticalei)
+    /// pivot, start direction, target direction (rotation around the vertical)
     Rotate,
-    /// fata elementului de mutat -> fata tinta (rotatie in plan + lipire pe fata)
+    /// face of the element to move -> target face (in-plane rotation + snapping onto the face)
     Align,
 }
 
@@ -1685,13 +1685,13 @@ impl XformMode {
 #[derive(Clone, Debug)]
 pub struct XformPick {
     pub mode: XformMode,
-    /// true = elementele selectate (doar translatie), false = modelul primului punct
+    /// true = the selected elements (translation only), false = the model of the first point
     pub selection: bool,
-    /// (punct, normala fetei, elementul atins)
+    /// (point, face normal, the element hit)
     pub pts: Vec<(Vec3, Vec3, ElemId)>,
 }
 
-/// Rotatia in jurul verticalei care duce directia orizontala `a` peste `b` (grade).
+/// The rotation around the vertical that brings horizontal direction `a` onto `b` (degrees).
 pub fn z_angle(a: Vec3, b: Vec3) -> Option<f32> {
     let (a2, b2) = (a.truncate(), b.truncate());
     if a2.length() < 1e-4 || b2.length() < 1e-4 {
@@ -1715,9 +1715,9 @@ fn fmt_vec_len(d: Vec3) -> String {
 impl App {
 }
 
-// ------------------------------------------------------------------ referinta pentru Revit / AutoCAD (.mbref)
-/// Format simplu, citit de add-in-uri: "MBREF1", originea (f64 x3, metri reali), numarul de elemente, apoi pe element:
-/// nume, GUID, tip, nivel (u16 lungime + UTF-8), culoare RGBA, numar de triunghiuri, triunghiurile (f32 x9, metri fata de origine).
+// ------------------------------------------------------------------ reference for Revit / AutoCAD (.mbref)
+/// Simple format, read by the add-ins: "MBREF1", the origin (f64 x3, real meters), the element count, then per element:
+/// name, GUID, type, level (u16 length + UTF-8), RGBA color, triangle count, the triangles (f32 x9, meters from the origin).
 pub fn write_mbref(items: &[(&Model, &crate::model::Element)], origin: DVec3) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(b"MBREF1");
@@ -1751,14 +1751,14 @@ pub fn write_mbref(items: &[(&Model, &crate::model::Element)], origin: DVec3) ->
 
 impl App {
 
-    // ------------------------------------------------------------ suprapunere DWG / DXF 2D peste model
+    // ------------------------------------------------------------ DWG / DXF 2D overlay over the model
 
-    // ------------------------------------------------------------ Undo / Redo al vizualizarii
+    // ------------------------------------------------------------ View Undo / Redo
 
-    // ------------------------------------------------------------ stil de afisare, proiect demo
+    // ------------------------------------------------------------ display style, demo project
 
-    /// Proiectul demo (Block A: arhitectura + structura, instalatii, planificare 4D): fisierele sunt in
-    /// aplicatie, se scriu in %LOCALAPPDATA%\ManageBIM\Demo si se deschid ca un proiect obisnuit.
+    /// The demo project (Block A: architecture + structure, MEP, 4D schedule): the files are in the
+    /// application, are written to %LOCALAPPDATA%\ManageBIM\Demo and are opened like a regular project.
     pub fn open_demo(&mut self) {
         const FILES: [(&str, &[u8]); 3] = [
             ("Block_A_Architecture_Structure.ifc", include_bytes!("../samples/Block_A_Architecture_Structure.ifc")),
@@ -1773,7 +1773,7 @@ impl App {
         }
         for (n, b) in FILES {
             let p = dir.join(n);
-            // nu rescriem fisierele demo (utilizatorul poate lucra pe ele)
+            // we do not rewrite the demo files (the user may be working on them)
             if !p.exists() {
                 if let Err(e) = std::fs::write(&p, b) {
                     return self.error(format!("Cannot write {}: {e}", p.display()));
@@ -1788,19 +1788,19 @@ impl App {
         self.manual_page = 0;
         self.toast("Demo project: Block A (architecture + structure, MEP, 4D schedule). Try Clash Detective, TimeLiner, Model Checker and the command palette (Ctrl+K).");
     }
-    // ------------------------------------------------------------ As-built: model fata de norul de puncte
+    // ------------------------------------------------------------ As-built: model against the point cloud
 
-    // ------------------------------------------------------------ Live Link: selectie sincronizata
+    // ------------------------------------------------------------ Live Link: synchronized selection
 
 }
 
-/// %LOCALAPPDATA%\ManageBIM\Outbox (referinte, issue-uri pentru add-in-uri)
+/// %LOCALAPPDATA%\ManageBIM\Outbox (references, issues for the add-ins)
 pub fn outbox_dir() -> Option<std::path::PathBuf> {
     crate::formats::data_root().map(|d| d.join("ManageBIM").join("Outbox"))
 }
 
-// ------------------------------------------------------------------ matricea de clash (discipline / modele)
-/// Clash-urile tuturor testelor, numarate pe perechi de modele: (modele, perechea (i <= j) -> [deschise, revizuite / aprobate, rezolvate]).
+// ------------------------------------------------------------------ the clash matrix (disciplines / models)
+/// The clashes of all tests, counted per model pair: (models, the pair (i <= j) -> [open, reviewed / approved, resolved]).
 pub struct ClashMatrix {
     pub models: Vec<String>,
     pub cells: HashMap<(usize, usize), [usize; 3]>,
@@ -1814,11 +1814,11 @@ impl ClashMatrix {
 
 impl App {
 
-    // ------------------------------------------------------------ Model Checker (reguli + IDS)
+    // ------------------------------------------------------------ Model Checker (rules + IDS)
 
 }
 
-/// Numele modelului fara extensie (pentru matrice / rapoarte).
+/// The model name without extension (for the matrix / reports).
 pub fn model_label(name: &str) -> String {
     std::path::Path::new(name).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| name.to_string())
 }
@@ -1836,24 +1836,24 @@ pub fn thousands_app(n: usize) -> String {
     out
 }
 
-/// numele layer-ului DXF pentru un tip de element (fara caractere interzise in AutoCAD)
+/// the DXF layer name for an element type (without characters forbidden in AutoCAD)
 pub fn cad_layer(s: &str) -> String {
     let t: String = s.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '_' }).collect();
     let t = t.trim().to_string();
     if t.is_empty() { "Model".into() } else { t }
 }
 
-/// DXF R12 cu linii pe layere (culoare AutoCAD diferita pe layer), unitati: metri
+/// DXF R12 with lines on layers (a different AutoCAD color per layer), units: meters
 pub fn cut_dxf(segs: &[(String, [f64; 4])]) -> String {
     cut_dxf_layers(segs, &[])
 }
 
-/// ca `cut_dxf`, cu layere suplimentare definite in tabel (ex. pentru texte adaugate dupa)
+/// like `cut_dxf`, with extra layers defined in the table (e.g. for texts added afterwards)
 pub fn cut_dxf_layers(segs: &[(String, [f64; 4])], extra: &[&str]) -> String {
     let mut layers: Vec<&str> = segs.iter().map(|s| s.0.as_str()).chain(extra.iter().copied()).collect();
     layers.sort();
     layers.dedup();
-    // tabel LTYPE: solid +Hidden (punctat) pentru stratul „BEHIND"
+    // LTYPE table: solid +Hidden (dashed) for the „BEHIND" layer
     let mut s = String::from("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n6\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n");
     s.push_str("0\nTABLE\n2\nLTYPE\n70\n2\n0\nLTYPE\n2\nCONTINUOUS\n70\n0\n3\nSolid line\n72\n65\n73\n0\n40\n0.0\n0\nLTYPE\n2\nHIDDEN\n70\n0\n3\nHidden line __ __\n72\n65\n73\n2\n40\n1.0\n49\n0.5\n74\n0\n49\n-0.5\n74\n0\n0\nENDTAB\n");
     s.push_str("0\nTABLE\n2\nLAYER\n");
@@ -1861,17 +1861,17 @@ pub fn cut_dxf_layers(segs: &[(String, [f64; 4])], extra: &[&str]) -> String {
     for l in layers.iter() {
         let behind = l.eq_ignore_ascii_case("BEHIND") || l.eq_ignore_ascii_case("HIDDEN");
         let ltype = if behind { "HIDDEN" } else { "CONTINUOUS" };
-        // 27.11: paletă de desen tehnic (stil Inventor), nu culori aleatoare:
-        //   7 = alb/negru (context), 8 = gri, 5 = albastru, 1 = roșu (accente).
+        // 27.11: technical drawing palette (Inventor style), not random colors:
+        //   7 = white/black (context), 8 = gray, 5 = blue, 1 = red (accents).
         let lower = l.to_ascii_lowercase();
         let color = if behind { 8 }
-            else if lower == "hatch" { 8 }              // hașura: gri deschis
-            else if lower == "dims" || lower == "dims_text" { 5 } // cote: albastru
-            else if lower == "levels" || lower == "levels_text" { 8 } // niveluri: gri
-            else if lower == "grids" || lower == "grid_text" { 8 }    // grile: gri
-            else if lower == "sheet" || lower == "sheet_text" { 7 }   // chenar/cartuș: negru
-            else if lower == "tags" { 1 }                // etichete: roșu discret
-            else { 7 };                                  // tăietura și elementele: negru
+            else if lower == "hatch" { 8 }              // hatch: light gray
+            else if lower == "dims" || lower == "dims_text" { 5 } // dimensions: blue
+            else if lower == "levels" || lower == "levels_text" { 8 } // levels: gray
+            else if lower == "grids" || lower == "grid_text" { 8 }    // grids: gray
+            else if lower == "sheet" || lower == "sheet_text" { 7 }   // border/title block: black
+            else if lower == "tags" { 1 }                // labels: subtle red
+            else { 7 };                                  // the cut and the elements: black
         s.push_str(&format!("0\nLAYER\n2\n{l}\n70\n0\n62\n{color}\n6\n{ltype}\n"));
     }
     s.push_str("0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
@@ -1882,14 +1882,14 @@ pub fn cut_dxf_layers(segs: &[(String, [f64; 4])], extra: &[&str]) -> String {
     s
 }
 
-/// Liniile taieturii puse pe o plansa (A3 / A2 / A1 / A0, milimetri) la scara aleasa sau automata
-/// (cea mai mare scara standard la care incape), cu chenar si cartusul editabil.
-/// `segs` sunt in metri (coordonate reale). Intoarce DXF-ul si scara (1:N).
+/// The cut lines placed on a sheet (A3 / A2 / A1 / A0, millimeters) at the chosen or automatic scale
+/// (the largest standard scale at which it fits), with border and the editable title block.
+/// `segs` are in meters (real coordinates). Returns the DXF and the scale (1:N).
 pub fn cut_sheet_dxf(segs: &[(String, [f64; 4])], tb: &crate::pdf::TitleBlock, project: &str, title: &str, date: &str) -> (String, u32) {
     cut_sheet_dxf_annot(segs, &[], tb, project, title, date)
 }
 
-/// scara plansei: cea din cartus sau cea mai mare scara standard la care incape desenul w x h (m) in aw x ah (mm)
+/// the sheet scale: the one from the title block or the largest standard scale at which the w x h (m) drawing fits in aw x ah (mm)
 fn fit_scale(tb: &crate::pdf::TitleBlock, w: f64, h: f64, aw: f64, ah: f64) -> u32 {
     if tb.scale > 0 {
         return tb.scale;
@@ -1897,7 +1897,7 @@ fn fit_scale(tb: &crate::pdf::TitleBlock, w: f64, h: f64, aw: f64, ah: f64) -> u
     crate::pdf::SCALES.into_iter().find(|n| w * 1000.0 / *n as f64 <= aw && h * 1000.0 / *n as f64 <= ah).unwrap_or(10000)
 }
 
-/// Scara la care `cut_sheet_dxf` ar pune liniile pe plansa (pentru a dimensiona textele inainte).
+/// The scale at which `cut_sheet_dxf` would put the lines on the sheet (to size the texts beforehand).
 pub fn sheet_scale(segs: &[(String, [f64; 4])], tb: &crate::pdf::TitleBlock) -> u32 {
     let (sw, sh) = crate::pdf::paper_mm(&tb.paper);
     let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
@@ -1910,7 +1910,7 @@ pub fn sheet_scale(segs: &[(String, [f64; 4])], tb: &crate::pdf::TitleBlock) -> 
     fit_scale(tb, (x1 - x0).max(0.01), (y1 - y0).max(0.01), sw - 30.0, sh - 20.0 - 48.0 - 10.0)
 }
 
-/// ca `cut_sheet_dxf`, plus textele planului (etichete, cote, axe, niveluri) mutate pe plansa (inaltimea in mm de hartie).
+/// like `cut_sheet_dxf`, plus the plan texts (labels, dimensions, grids, levels) moved onto the sheet (height in paper mm).
 pub fn cut_sheet_dxf_annot(segs: &[(String, [f64; 4])], texts: &[CadText], tb: &crate::pdf::TitleBlock, project: &str, title: &str, date: &str) -> (String, u32) {
     let (sw, sh) = crate::pdf::paper_mm(&tb.paper);
     const MARGIN: f64 = 10.0;
@@ -1924,12 +1924,12 @@ pub fn cut_sheet_dxf_annot(segs: &[(String, [f64; 4])], texts: &[CadText], tb: &
         y1 = y1.max(p[1]).max(p[3]);
     }
     let (w, h) = ((x1 - x0).max(0.01), (y1 - y0).max(0.01));
-    // zona de desen: foaia fara margini si fara banda cartusului
+    // drawing area: the sheet without margins and without the title block strip
     let (aw, ah) = (sw - 2.0 * MARGIN - 10.0, sh - 2.0 * MARGIN - TB_H - 10.0);
     let scale = fit_scale(tb, w, h, aw, ah);
-    // 27.11 (stil Inventor): desenul RAMÂNE 1:1 (coordonate reale, metri) - fără scalare.
-    // Are loc doar o translare ca să fie centrat în zona de desen; chenarul și
-    // cartușul rămân în mm de hartie, iar textele desenului rămân 1:1.
+    // 27.11 (Inventor style): the drawing STAYS 1:1 (real coordinates, meters) - no scaling.
+    // Only a translation takes place so it is centered in the drawing area; the border and
+    // the title block stay in paper mm, and the drawing texts stay 1:1.
     let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
     let (ox, oy) = (MARGIN + 5.0 + aw / 2.0, MARGIN + TB_H + 5.0 + ah / 2.0);
     let mut out: Vec<(String, [f64; 4])> = segs.iter().map(|(l, p)| (l.clone(), [ox + p[0] - cx, oy + p[1] - cy, ox + p[2] - cx, oy + p[3] - cy])).collect();
@@ -1942,7 +1942,7 @@ pub fn cut_sheet_dxf_annot(segs: &[(String, [f64; 4])], texts: &[CadText], tb: &
     };
     rect(&mut line, 0.0, 0.0, sw, sh);
     rect(&mut line, MARGIN, MARGIN, sw - MARGIN, sh - MARGIN);
-    // cartusul: dreapta jos, 185 x 48 mm - firma / proiect | titlu | desenat, verificat | data, rev | scara | nr
+    // the title block: bottom right, 185 x 48 mm - company / project | title | drawn, checked | date, rev | scale | no
     let (tx, ty) = (sw - MARGIN - TB_W, MARGIN);
     let r = sw - MARGIN;
     rect(&mut line, tx, ty, r, ty + TB_H);
@@ -1979,13 +1979,13 @@ pub fn cut_sheet_dxf_annot(segs: &[(String, [f64; 4])], texts: &[CadText], tb: &
     if let Some(p) = dxf.rfind("0\nENDSEC\n0\nEOF") {
         dxf.insert_str(p, &t);
     }
-    // plansa e in milimetri
+    // the sheet is in millimeters
     let dxf = dxf.replacen("$INSUNITS\n70\n6\n", "$INSUNITS\n70\n4\n", 1);
     (dxf, scale)
 }
 
-/// Un text al planului 2D (eticheta, cota, axa, nivel). `mm` = inaltimea pe hartie;
-/// in Model space se inmulteste cu `u` (metri pe mm de hartie). `rot` in grade.
+/// A text of the 2D plan (label, dimension, grid, level). `mm` = the height on paper;
+/// in Model space it is multiplied by `u` (meters per paper mm). `rot` in degrees.
 #[derive(Clone, Debug)]
 pub struct CadText {
     pub layer: String,
@@ -2000,14 +2000,14 @@ impl CadText {
     pub fn new(layer: &str, x: f64, y: f64, mm: f64, rot: f64, s: impl Into<String>) -> Self {
         CadText { layer: layer.into(), x, y, mm, rot, s: s.into() }
     }
-    /// entitatea TEXT; `k` = unitati de desen pe mm de hartie
+    /// the TEXT entity; `k` = drawing units per paper mm
     pub fn dxf(&self, k: f64) -> String {
         let s: String = self.s.chars().map(|c| if c == '\n' || c == '\r' { ' ' } else { c }).collect();
         format!("0\nTEXT\n8\n{}\n10\n{:.4}\n20\n{:.4}\n30\n0.0\n40\n{:.4}\n1\n{}\n50\n{:.2}\n", self.layer, self.x, self.y, self.mm * k, s, self.rot)
     }
 }
 
-/// DXF in Model space (metri) cu linii si textele planului - `u` = metri pe mm de hartie (0.1 = 1:100).
+/// DXF in Model space (meters) with the lines and the plan texts - `u` = meters per paper mm (0.1 = 1:100).
 pub fn cut_dxf_annot(segs: &[(String, [f64; 4])], texts: &[CadText], u: f64) -> String {
     let extra: Vec<&str> = texts.iter().map(|t| t.layer.as_str()).collect();
     let mut dxf = cut_dxf_layers(segs, &extra);
@@ -2018,15 +2018,15 @@ pub fn cut_dxf_annot(segs: &[(String, [f64; 4])], texts: &[CadText], u: f64) -> 
     dxf
 }
 
-/// Hasura ANSI31 (linii la 45 grade, pas `spacing`) in interiorul conturului taiat al unui element.
-/// Conturul vine din taierea triunghiurilor unei suprafete inchise, deci regula par / impar delimiteaza interiorul.
+/// ANSI31 hatch (lines at 45 degrees, step `spacing`) inside the cut outline of an element.
+/// The outline comes from cutting the triangles of a closed surface, so the even / odd rule delimits the interior.
 pub fn hatch_lines(contour: &[[f64; 4]], spacing: f64) -> Vec<[f64; 4]> {
     let mut out = Vec::new();
     if contour.len() < 3 || spacing <= 0.0 {
         return out;
     }
     let r = std::f64::consts::FRAC_1_SQRT_2;
-    // u de-a lungul hasurii, v perpendicular
+    // u along the hatch, v perpendicular
     let uv = |x: f64, y: f64| ((x + y) * r, (y - x) * r);
     let xy = |u: f64, v: f64| ((u - v) * r, (u + v) * r);
     let e: Vec<((f64, f64), (f64, f64))> = contour.iter().map(|s| (uv(s[0], s[1]), uv(s[2], s[3]))).collect();
@@ -2034,7 +2034,7 @@ pub fn hatch_lines(contour: &[[f64; 4]], spacing: f64) -> Vec<[f64; 4]> {
     if (vmax - vmin) / spacing > 4000.0 {
         return out;
     }
-    // liniile pe o grila globala: hasurile elementelor vecine se continua
+    // the lines on a global grid: the hatches of neighboring elements continue
     let mut v = (vmin / spacing).ceil() * spacing;
     let mut xs: Vec<f64> = Vec::new();
     while v <= vmax {
@@ -2056,14 +2056,14 @@ pub fn hatch_lines(contour: &[[f64; 4]], spacing: f64) -> Vec<[f64; 4]> {
     out
 }
 
-/// Elementele care se hasureaza in plan / sectiune (structura si pereti).
+/// The elements hatched in plan / section (structure and walls).
 pub fn cut_is_hatched(ifc_type: &str) -> bool {
     let t = ifc_type.to_lowercase();
     ["wall", "column", "slab", "beam", "footing", "pile", "stair", "ramp", "roof"].iter().any(|k| t.contains(k)) && !t.contains("opening")
 }
 
-/// Eticheta unui element taiat: usi / ferestre -> numarul (Mark / Number / Tag sau ultima parte din nume),
-/// pereti -> tipul. None pentru restul.
+/// The label of a cut element: doors / windows -> the number (Mark / Number / Tag or the last part of the name),
+/// walls -> the type. None for the rest.
 pub fn cut_tag(e: &crate::model::Element) -> Option<String> {
     let t = e.ifc_type.to_lowercase();
     let prop = |names: &[&str]| e.props.iter().find(|p| names.iter().any(|n| p.name.eq_ignore_ascii_case(n)) && !p.value.trim().is_empty()).map(|p| p.value.trim().to_string());
@@ -2087,7 +2087,7 @@ fn circle_segs(layer: &str, c: [f64; 2], r: f64, out: &mut Vec<(String, [f64; 4]
     }
 }
 
-/// unghiul unui text citibil de jos / din dreapta: (-90, 90]
+/// the angle of a text readable from the bottom / from the right: (-90, 90]
 pub fn read_angle(dx: f64, dy: f64) -> f64 {
     let mut a = dy.atan2(dx).to_degrees();
     if a > 90.0 + 1e-6 {
@@ -2098,13 +2098,13 @@ pub fn read_angle(dx: f64, dy: f64) -> f64 {
     a
 }
 
-/// latimea aproximativa a unui text (metri), `u` = metri pe mm de hartie
+/// the approximate width of a text (meters), `u` = meters per paper mm
 fn text_w(s: &str, mm: f64, u: f64) -> f64 {
     s.chars().count() as f64 * mm * u * 0.8
 }
 
-/// Axele in plan: linia axei, bula cu eticheta la un capat si lanturi de cote intre axele paralele
-/// (plus cota totala) la celalalt capat. Coordonate in metri.
+/// The grids in plan: the grid line, the bubble with the label at one end and dimension chains between the parallel grids
+/// (plus the overall dimension) at the other end. Coordinates in meters.
 pub fn plan_grid_annotations(grids: &[UserGrid], u: f64, segs: &mut Vec<(String, [f64; 4])>, texts: &mut Vec<CadText>) {
     let r_b = 4.5 * u;
     let mut items: Vec<([f64; 2], [f64; 2], [f64; 2], &str)> = Vec::new();
@@ -2116,7 +2116,7 @@ pub fn plan_grid_annotations(grids: &[UserGrid], u: f64, segs: &mut Vec<(String,
         }
         items.push((g.a, g.b, [dx / l, dy / l], g.name.as_str()));
     }
-    // grupuri de axe paralele
+    // groups of parallel grids
     let mut groups: Vec<Vec<usize>> = Vec::new();
     for i in 0..items.len() {
         let d = items[i].2;
@@ -2131,7 +2131,7 @@ pub fn plan_grid_annotations(grids: &[UserGrid], u: f64, segs: &mut Vec<(String,
     for gr in &groups {
         let d = items[gr[0]].2;
         let n = [-d[1], d[0]];
-        // fiecare axa: (offset pe normala, t minim, t maxim, eticheta) in sistemul primei axe din grup
+        // each grid: (offset along the normal, min t, max t, label) in the system of the first grid in the group
         let mut rows: Vec<(f64, f64, f64, &str)> = gr
             .iter()
             .map(|&i| {
@@ -2152,7 +2152,7 @@ pub fn plan_grid_annotations(grids: &[UserGrid], u: f64, segs: &mut Vec<(String,
         if rows.len() < 2 {
             continue;
         }
-        // cotele: la capatul opus bulelor
+        // the dimensions: at the end opposite to the bubbles
         let tmax = rows.iter().map(|r| r.2).fold(f64::MIN, f64::max);
         let rot = read_angle(n[0], n[1]);
         let (rc, rs) = (rot.to_radians().cos(), rot.to_radians().sin());
@@ -2161,7 +2161,7 @@ pub fn plan_grid_annotations(grids: &[UserGrid], u: f64, segs: &mut Vec<(String,
             segs.push(("DIMS".into(), [a[0], a[1], b[0], b[1]]));
             for &k in idx {
                 let o = rows[k].0;
-                // linie ajutatoare de la capatul axei si bifa la 45 grade
+                // extension line from the grid end and the 45 degree tick
                 let (e0, e1) = (p(o, rows[k].2 + 2.0 * u), p(o, t + 1.5 * u));
                 segs.push(("DIMS".into(), [e0[0], e0[1], e1[0], e1[1]]));
                 let q = p(o, t);
@@ -2177,7 +2177,7 @@ pub fn plan_grid_annotations(grids: &[UserGrid], u: f64, segs: &mut Vec<(String,
                 let label = format!("{mm:.0}");
                 let half = text_w(&label, 2.5, u) / 2.0;
                 let m = p((oa + ob) / 2.0, t);
-                // deasupra liniei de cota, in sensul de citire al textului
+                // above the dimension line, in the reading direction of the text
                 let m = [m[0] - rs * 0.8 * u, m[1] + rc * 0.8 * u];
                 texts.push(CadText::new("DIMS_TEXT", m[0] - half * rc, m[1] - half * rs, 2.5, rot, label));
             }
@@ -2190,9 +2190,9 @@ pub fn plan_grid_annotations(grids: &[UserGrid], u: f64, segs: &mut Vec<(String,
     }
 }
 
-/// Pe o sectiune verticala: liniile de nivel cu nume si cota (m) si axele taiate de plan (cu bula sus).
-/// `axis` = 0 (plan la X = value, orizontala = Y) sau 1 (plan la Y = value, orizontala = X);
-/// `bbox` = [x0, y0, x1, y1] al taieturii in coordonatele desenului.
+/// On a vertical section: the level lines with name and elevation (m) and the grids cut by the plane (with the bubble on top).
+/// `axis` = 0 (plane at X = value, horizontal = Y) or 1 (plane at Y = value, horizontal = X);
+/// `bbox` = [x0, y0, x1, y1] of the cut in the drawing coordinates.
 pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: usize, value: f64, bbox: [f64; 4], u: f64, dims: bool, levels_on: bool, segs: &mut Vec<(String, [f64; 4])>, texts: &mut Vec<CadText>) {
     let [x0, y0, x1, y1] = bbox;
     if levels_on { for (name, z) in levels {
@@ -2200,7 +2200,7 @@ pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: u
             continue;
         }
         segs.push(("LEVELS".into(), [x0 - 10.0 * u, *z, x1 + 10.0 * u, *z]));
-        // marcajul de cota (triunghi cu varful pe linie)
+        // the elevation marker (triangle with its tip on the line)
         let tx = x1 + 10.0 * u;
         segs.push(("LEVELS".into(), [tx, *z, tx + 2.0 * u, *z + 2.5 * u]));
         segs.push(("LEVELS".into(), [tx + 2.0 * u, *z + 2.5 * u, tx - 2.0 * u, *z + 2.5 * u]));
@@ -2209,7 +2209,7 @@ pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: u
     } }
     let mut grid_x: Vec<f64> = Vec::new();
     if levels_on { for g in grids {
-        // intersectia axei (2D) cu planul sectiunii
+        // the intersection of the grid (2D) with the section plane
         let (a, b) = (g.a[axis] - value, g.b[axis] - value);
         if (a > 1e-9 && b > 1e-9) || (a < -1e-9 && b < -1e-9) || (b - a).abs() < 1e-9 {
             continue;
@@ -2225,13 +2225,13 @@ pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: u
         circle_segs("GRIDS", [h, y1 + 14.5 * u], 4.5 * u, segs);
         texts.push(CadText::new("GRID_TEXT", h - text_w(&g.name, 2.5, u) / 2.0, y1 + 13.25 * u, 2.5, 0.0, g.name.clone()));
     } }
-    // ---- COTE IN LANT (desen tehnic): linie de cota + linii ajutatoare + bifa 45° + text.
-    // Verticale: intre niveluri consecutiv; Orizontale: intre axele de grila taiete de plan.
+    // ---- CHAIN DIMENSIONS (technical drawing): dimension line + extension lines + 45° tick + text.
+    // Vertical: between consecutive levels; Horizontal: between the grid lines cut by the plane.
     if !dims { return; }
     let tick = |x: f64, y: f64, segs: &mut Vec<(String, [f64; 4])>| {
         segs.push(("DIMS".into(), [x - 1.2 * u, y - 1.2 * u, x + 1.2 * u, y + 1.2 * u]));
     };
-    // verticale (stanga desenului)
+    // vertical (left of the drawing)
     let mut zs: Vec<f64> = levels.iter().map(|(_, z)| *z).filter(|z| *z > y0 - 5.0 && *z < y1 + 5.0).collect();
     zs.sort_by(|a, b| a.total_cmp(b));
     zs.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
@@ -2249,7 +2249,7 @@ pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: u
             texts.push(CadText::new("DIMS_TEXT", dx - 1.5 * u, (w[0] + w[1]) * 0.5, 2.5, 90.0, label));
         }
     }
-    // orizontale (sub desen)
+    // horizontal (below the drawing)
     grid_x.sort_by(|a, b| a.total_cmp(b));
     grid_x.dedup_by(|a, b| (*a - *b).abs() < 1e-3);
     if grid_x.len() >= 2 {
@@ -2269,38 +2269,38 @@ pub fn section_annotations(levels: &[(String, f64)], grids: &[UserGrid], axis: u
     }
 }
 
-/// Un şablon de vizualizare salvat în proiect (stil Mitcad / Revit View Graphics).
+/// A view template saved in the project (Mitcad / Revit View Graphics style).
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ViewTemplate {
     pub name: String,
     pub hidden: Vec<ElemId>,
     pub section: Section,
-    /// poziția 3D (camera) înainte de salvare - ca să revii exact la aceeași vedere
+    /// the 3D position (camera) before saving - so you return to exactly the same view
     pub cam: Camera,
     pub visual_style: crate::render::VisualStyle,
     pub show_grids: bool,
     pub show_levels: bool,
     pub section_caps: bool,
-    /// culorile/transparențele atribuite elementelor
+    /// the colors/transparencies assigned to the elements
     #[serde(default)]
     pub overrides: Vec<(ElemId, [u8; 4])>,
-    /// elementele selectate în acel moment
+    /// the elements selected at that moment
     #[serde(default)]
     pub selected: Vec<ElemId>,
-    /// măsurătorile din viewport
+    /// the measurements in the viewport
     #[serde(default)]
     pub measures: Vec<Measure>,
-    /// filtrul de viewpoint activ
+    /// the active viewpoint filter
     #[serde(default)]
     pub vp_filter: Option<String>,
-    /// template-ul aplicat automat la deschiderea proiectului
+    /// the template applied automatically when the project opens
     #[serde(default)]
     pub is_default: bool,
-    /// notă scurtă (ce vezi în acest template)
+    /// short note (what you see in this template)
     #[serde(default)]
     pub note: String,
-    /// ce aplica sablonul (ca „Include" din View Templates in Revit): camera, vizibilitate + selectie,
-    /// sectiune, stil vizual (+ axe / niveluri / capace), culori; implicit totul
+    /// what the template applies (like „Include" in Revit View Templates): camera, visibility + selection,
+    /// section, visual style (+ grids / levels / caps), colors; everything by default
     #[serde(default = "vt_include_all")]
     pub include: [bool; 5],
 }
@@ -2309,22 +2309,22 @@ fn vt_include_all() -> [bool; 5] {
     [true; 5]
 }
 
-/// etichetele flagurilor `ViewTemplate::include`
+/// the labels of the `ViewTemplate::include` flags
 pub const VT_INCLUDE: [&str; 5] = ["Camera", "Visibility", "Section", "Style", "Colours"];
 
-/// O stare a vizualizarii in istoricul Undo / Redo.
+/// A view state in the Undo / Redo history.
 #[derive(Clone)]
 pub struct ViewSnap {
     pub selected: BTreeSet<ElemId>,
     pub hidden: Arc<HashSet<ElemId>>,
     pub section: Section,
     pub cam: Camera,
-    /// datele de model schimbate de utilizator (proprietati, culori, materiale) - Undo le reface si pe ele;
-    /// impartite (Arc) cu instantaneul anterior cand nu s-au schimbat
+    /// the model data changed by the user (properties, colors, materials) - Undo restores them too;
+    /// shared (Arc) with the previous snapshot when they did not change
     pub model: Arc<ModelSnap>,
 }
 
-/// Schimbarile utilizatorului asupra modelului, in istoricul Undo / Redo.
+/// The user changes to the model, in the Undo / Redo history.
 #[derive(Clone, Default)]
 pub struct ModelSnap {
     pub sig: u64,
@@ -2334,25 +2334,25 @@ pub struct ModelSnap {
     pub mat_assign: Vec<MatAssign>,
 }
 
-/// Un desen 2D (DWG / DXF) asezat peste model la o cota, cu deplasare si rotatie.
+/// A 2D drawing (DWG / DXF) placed over the model at an elevation, with offset and rotation.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CadOverlay {
     pub name: String,
     pub path: String,
-    /// cota (m, coordonate locale ale scenei)
+    /// elevation (m, local scene coordinates)
     pub z: f32,
-    /// deplasare (m) si rotatie (grade, in jurul originii scenei)
+    /// offset (m) and rotation (degrees, around the scene origin)
     #[serde(default)]
     pub dx: f32,
     #[serde(default)]
     pub dy: f32,
     #[serde(default)]
     pub rot_deg: f32,
-    /// None = plan orizontal la Z; Some(0) = plan vertical YZ la Y=z (Front/Back);
-    /// Some(1) = plan vertical XZ la X=z (Left/Right)
+    /// None = horizontal plane at Z; Some(0) = vertical YZ plane at Y=z (Front/Back);
+    /// Some(1) = vertical XZ plane at X=z (Left/Right)
     #[serde(default)]
     pub vert: Option<u8>,
-    /// desenul a fost exportat oglindit (Back / Right) la intoarcere se oglindeste inapoi
+    /// the drawing was exported mirrored (Back / Right); on the way back it is mirrored again
     #[serde(default)]
     pub mirror: bool,
     #[serde(default = "yes_bool")]
@@ -2361,12 +2361,12 @@ pub struct CadOverlay {
     pub color: [u8; 3],
     #[serde(default = "overlay_opacity")]
     pub opacity: f32,
-    /// liniile (x1, y1, x2, y2) in coordonatele scenei; recitite din fisier la deschiderea proiectului
+    /// the lines (x1, y1, x2, y2) in scene coordinates; reread from the file when the project opens
     #[serde(skip)]
     pub segs: Arc<Vec<[f32; 4]>>,
 }
 
-/// valoare implicita `true` pentru campurile de setari adaugate mai tarziu (serde)
+/// default value `true` for the settings fields added later (serde)
 pub fn yes_default() -> bool {
     true
 }
@@ -2381,17 +2381,17 @@ fn overlay_opacity() -> f32 {
     0.85
 }
 
-// ====================================================================== parametri adaugati de utilizator
+// ====================================================================== parameters added by the user
 
-/// Un parametru adaugat in ManageBIM unui element (ex. elemente fara date din DWG / OBJ / STEP),
-/// salvat in proiect si aplicat la fiecare incarcare: model (numele fisierului) + GUID (sau #index).
+/// A parameter added in ManageBIM to an element (e.g. elements without data from DWG / OBJ / STEP),
+/// saved in the project and applied on every load: model (the file name) + GUID (or #index).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UserParam {
     pub model: String,
     pub key: String,
     pub name: String,
     pub value: String,
-    /// tab-ul de date utilizator (Navisworks: User Data Tab); proiectele vechi: "User"
+    /// the user data tab (Navisworks: User Data Tab); old projects: "User"
     #[serde(default = "user_group_default")]
     pub group: String,
 }
@@ -2400,56 +2400,56 @@ fn user_group_default() -> String {
     USER_GROUP.to_string()
 }
 
-/// grupul implicit al proprietatilor adaugate de utilizator (proiectele vechi)
+/// the default group of the properties added by the user (old projects)
 pub const USER_GROUP: &str = "User";
 
-/// Import de proprietati din Excel / CSV: fisierul citit si alegerile din fereastra de import.
+/// Property import from Excel / CSV: the file read and the choices in the import window.
 #[derive(Clone, Debug, Default)]
 pub struct PropImport {
     pub path: String,
     pub rows: Vec<Vec<String>>,
-    /// randul de antet
+    /// the header row
     pub header: usize,
-    /// coloana cu cheia elementului
+    /// the column with the element key
     pub key_col: usize,
-    /// cum se potriveste cheia: "GlobalId", "Name" sau numele unei proprietati
+    /// how the key is matched: "GlobalId", "Name" or the name of a property
     pub match_by: String,
-    /// tab-ul in care se scriu proprietatile
+    /// the tab the properties are written to
     pub tab: String,
-    /// doar elementele selectate
+    /// only the selected elements
     pub only_selected: bool,
 }
 
-/// cheia unui element: GUID-ul sau "#index" cand nu are GUID
+/// the key of an element: the GUID or "#index" when it has no GUID
 pub fn user_key(e: &Element, idx: usize) -> String {
     if e.guid.trim().is_empty() { format!("#{idx}") } else { e.guid.clone() }
 }
 
-/// Ce a scris utilizatorul peste model: (model, cheie element, tab, proprietate cu litere mici).
+/// What the user wrote over the model: (model, element key, tab, lowercase property).
 pub type UserPropKey = (String, String, String, String);
 
-/// Starea proprietatilor utilizatorului: ce valori sunt ale lui pe fiecare element si valorile
-/// ORIGINALE pe care le-a inlocuit (ca sa revina daca suprascrierea e stearsa - nu se pierde nimic).
+/// The state of the user properties: which values are theirs on each element and the
+/// ORIGINAL values they replaced (so they come back if the override is deleted - nothing is lost).
 #[derive(Default)]
 pub struct UserShadow {
     pub applied: HashSet<UserPropKey>,
-    /// valoarea originala (numele exact + valoarea) inainte de prima suprascriere
+    /// the original value (exact name + value) before the first override
     pub orig: HashMap<UserPropKey, (String, String)>,
 }
 
-/// Scrie parametrii utilizatorului in proprietatile modelului (tab-urile utilizatorului se refac de la zero).
+/// Writes the user parameters into the model properties (the user tabs are rebuilt from scratch).
 pub fn apply_user_params(m: &mut Model, params: &[UserParam]) {
     let mut sh = UserShadow::default();
     let prev = HashSet::new();
     apply_user_params_shadow(m, params, &prev, &mut sh);
 }
 
-/// Aplica parametrii utilizatorului pe un model, element cu element:
-/// 1. scoate valorile puse anterior de utilizator (`prev` = (cheie, tab, proprietate) ale modelului) si
-///    tab-ul "User", repunand valorile originale pe care le inlocuisera;
-/// 2. scrie parametrii curenti; daca elementul avea deja proprietatea (din IFC / Revit), valoarea originala
-///    e pastrata in `sh.orig` si revine cand suprascrierea e stearsa.
-/// Doar elementele cu parametri sunt atinse - proprietatile celorlalte raman neschimbate.
+/// Applies the user parameters to a model, element by element:
+/// 1. removes the values previously set by the user (`prev` = (key, tab, property) of the model) and
+///    the "User" tab, putting back the original values they had replaced;
+/// 2. writes the current parameters; if the element already had the property (from IFC / Revit), the original value
+///    is kept in `sh.orig` and comes back when the override is deleted.
+/// Only the elements with parameters are touched - the properties of the others stay unchanged.
 pub fn apply_user_params_shadow(m: &mut Model, params: &[UserParam], prev: &HashSet<(String, String, String)>, sh: &mut UserShadow) {
     let model = m.name.clone();
     let mine: Vec<&UserParam> = params.iter().filter(|p| p.model == model).collect();
@@ -2468,7 +2468,7 @@ pub fn apply_user_params_shadow(m: &mut Model, params: &[UserParam], prev: &Hash
         if here.is_none() && !prev_keys.contains(k.as_str()) && !e.props.iter().any(|p| p.group == USER_GROUP) {
             continue;
         }
-        // 1. valorile vechi ale utilizatorului afara, originalele inapoi
+        // 1. the old user values out, the originals back
         let mut restored: Vec<crate::model::Prop> = Vec::new();
         e.props.retain(|p| {
             let nl = p.name.to_lowercase();
@@ -2487,7 +2487,7 @@ pub fn apply_user_params_shadow(m: &mut Model, params: &[UserParam], prev: &Hash
             }
         });
         e.props.extend(restored);
-        // 2. valorile curente
+        // 2. the current values
         if let Some(v) = here {
             for p in v {
                 let nl = p.name.to_lowercase();
@@ -2504,18 +2504,18 @@ pub fn apply_user_params_shadow(m: &mut Model, params: &[UserParam], prev: &Hash
     }
 }
 
-/// numele afisat al unei proprietati
+/// the displayed name of a property
 pub fn prop_display_name(n: &str) -> &str {
     n
 }
 
 impl App {
 
-    // ------------------------------------------------------------------ import / export de proprietati
+    // ------------------------------------------------------------------ property import / export
 
 }
 
-/// cheia normalizata pentru potrivire (fara spatii la capete, GUID-uri cu litere mici)
+/// the normalized key for matching (no leading/trailing spaces, lowercase GUIDs)
 fn norm_key(s: &str) -> String {
     let t = s.trim();
     if t.len() == 36 && t.matches('-').count() == 4 { t.to_ascii_lowercase() } else { t.to_string() }

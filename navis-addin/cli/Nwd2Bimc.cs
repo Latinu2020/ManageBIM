@@ -7,14 +7,14 @@ using System.Reflection;
 namespace ManageBIM.Navis.Cli
 {
     /// <summary>
-    /// nwd2bimc model.nwd [iesire.bimc]
-    /// nwd2bimc [-o folder] [-f] fisier1.nwd fisier2.nwc folder\ ...
+    /// nwd2bimc model.nwd [output.bimc]
+    /// nwd2bimc [-o folder] [-f] file1.nwd file2.nwc folder\ ...
     ///
-    /// Porneste Navisworks o singura data in fundal (Automation API oficial), deschide pe rand fiecare
-    /// fisier si ruleaza add-in-ul ManageBIM "Export to .bimc". Pentru un folder: toate .nwd / .nwc / .nwf din el.
-    /// Fisierele al caror .bimc e mai nou decat sursa sunt sarite (-f le reface).
-    /// Necesita Navisworks Manage / Simulate instalat si licentiat. Folosit si de ManageBIM (File > Open .nwd).
-    /// Coduri de iesire: 0 OK, 1 utilizare, 2 Navisworks lipsa, 3 cel putin un export esuat.
+    /// Starts Navisworks only once in the background (official Automation API), opens each file in turn
+    /// and runs the ManageBIM "Export to .bimc" add-in. For a folder: all .nwd / .nwc / .nwf in it.
+    /// Files whose .bimc is newer than the source are skipped (-f redoes them).
+    /// Requires Navisworks Manage / Simulate installed and licensed. Also used by ManageBIM (File > Open .nwd).
+    /// Exit codes: 0 OK, 1 usage, 2 Navisworks missing, 3 at least one export failed.
     /// </summary>
     internal static class Program
     {
@@ -33,7 +33,7 @@ namespace ManageBIM.Navis.Cli
                 Console.WriteLine("  --year YYYY  use this Navisworks version (default: the newest supported one with the ManageBIM add-in)");
                 return 1;
             }
-            // --- argumente
+            // --- arguments
             var jobs = new List<(string inp, string outp)>();
             string outDir = null;
             bool force = false;
@@ -48,7 +48,7 @@ namespace ManageBIM.Navis.Cli
             }
             if (inputs.Count == 2 && inputs[1].EndsWith(".bimc", StringComparison.OrdinalIgnoreCase) && File.Exists(inputs[0]))
             {
-                // forma clasica: intrare + iesire (folosita de ManageBIM) - convertim mereu
+                // the classic form: input + output (used by ManageBIM) - we always convert
                 jobs.Add((Path.GetFullPath(inputs[0]), Path.GetFullPath(inputs[1])));
                 force = true;
             }
@@ -79,7 +79,7 @@ namespace ManageBIM.Navis.Cli
 
             nwDir = FindNavisworks(year);
             if (nwDir == null) { Console.Error.WriteLine("Autodesk Navisworks Manage / Simulate is not installed."); return 2; }
-            // DLL-urile Navisworks se incarca din folderul de instalare
+            // the Navisworks DLLs are loaded from the installation folder
             AppDomain.CurrentDomain.AssemblyResolve += (s, e) =>
             {
                 string f = Path.Combine(nwDir, new AssemblyName(e.Name).Name + ".dll");
@@ -88,7 +88,7 @@ namespace ManageBIM.Navis.Cli
             return Run(jobs);
         }
 
-        // separat de Main: tipurile Navisworks se rezolva abia dupa ce AssemblyResolve e activ
+        // separate from Main: the Navisworks types are resolved only after AssemblyResolve is active
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         private static int Run(List<(string inp, string outp)> jobs)
         {
@@ -110,7 +110,7 @@ namespace ManageBIM.Navis.Cli
                             Console.WriteLine("PROGRESS 0.000\tOpening " + Path.GetFileName(input) + " in Navisworks");
                             app.OpenFile(input);
                             Console.WriteLine("PROGRESS 0.000\tReading the model structure");
-                            // progresul exportului: add-in-ul scrie <iesire>.progress, noi il afisam (citit de ManageBIM)
+                            // the export progress: the add-in writes <output>.progress, we display it (read by ManageBIM)
                             using (var stop = new System.Threading.ManualResetEventSlim(false))
                             {
                                 var watcher = new System.Threading.Thread(() =>
@@ -160,15 +160,15 @@ namespace ManageBIM.Navis.Cli
         }
 
         /// <summary>
-        /// Versiunea de Navisworks folosita: cea ceruta (--year), altfel cea mai noua SUPORTATA (<= 2026) in care add-in-ul ManageBIM e instalat (fiecare versiune
-        /// are propriul DLL); daca nu e instalat nicaieri, cea mai noua versiune (mesajul de eroare spune ce lipseste).
+        /// The Navisworks version used: the requested one (--year), otherwise the newest SUPPORTED one (<= 2026) in which the ManageBIM add-in is installed (each version
+        /// has its own DLL); if it is not installed anywhere, the newest version (the error message says what is missing).
         /// </summary>
         private static string FindNavisworks(int year)
         {
             string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
             string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             string newest = null;
-            // ordinea: versiunea ceruta; apoi cele suportate (2026 -> 2022); apoi cele mai noi (2027+, inca nesuportate de API)
+            // the order: the requested version; then the supported ones (2026 -> 2022); then the newest ones (2027+, not yet supported by the API)
             var order = new List<int>();
             if (year > 0) order.Add(year);
             for (int v = 2026; v >= 2020; v--) if (!order.Contains(v)) order.Add(v);

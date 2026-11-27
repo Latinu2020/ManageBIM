@@ -1,10 +1,10 @@
-//! Instalarea / dezinstalarea add-in-urilor ManageBIM pentru utilizatorul curent, fara
-//! drepturi de administrator. Fisierele add-in-ului sunt incluse in binarul installerului
-//! la compilare (build.rs le citeste din `installers\payload`); aici doar se copiaza in
-//! versiunile de Revit / AutoCAD / Navisworks gasite pe calculator.
+//! Installing / uninstalling the ManageBIM add-ins for the current user, without
+//! administrator rights. The add-in files are embedded in the installer binary
+//! at compile time (build.rs reads them from `installers\payload`); here they are only copied into
+//! the Revit / AutoCAD / Navisworks versions found on the computer.
 //!
-//! Logica e separata de binare (`src/bin/addin/*.rs`) ca sa poata fi testata fara
-//! registru si fara instalari reale: toate caile vin ca parametri.
+//! The logic is separate from the binaries (`src/bin/addin/*.rs`) so it can be tested without
+//! the registry and without real installs: all paths come in as parameters.
 
 use std::path::{Path, PathBuf};
 
@@ -25,19 +25,19 @@ impl Kind {
     }
 }
 
-/// O operatiune de instalare: ce add-in, cu ce fisiere, unde si in ce sens.
+/// An install operation: which add-in, with which files, where and in which direction.
 pub struct Job<'a> {
     pub kind: Kind,
-    /// fisierele din pachet: nume relativ cu '/' (ex. "2025/ManageBIM.NwExporter.dll")
+    /// the files in the package: relative name with '/' (e.g. "2025/ManageBIM.NwExporter.dll")
     pub files: &'a [(&'a str, &'a [u8])],
-    /// %APPDATA% (sau folderul de test)
+    /// %APPDATA% (or the test folder)
     pub appdata: &'a Path,
-    /// %ProgramFiles% (sau folderul de test)
+    /// %ProgramFiles% (or the test folder)
     pub program_files: &'a Path,
     pub uninstall: bool,
 }
 
-/// Ruleaza instalarea si intoarce liniile de raport (aceeasi forma ca inainte:
+/// Runs the install and returns the report lines (the same form as before:
 /// "Revit 2024: installed" / "AutoCAD: removed").
 pub fn run(job: &Job) -> Vec<String> {
     let mut out = Vec::new();
@@ -49,9 +49,9 @@ pub fn run(job: &Job) -> Vec<String> {
     out
 }
 
-// ------------------------------------------------------------------ utilitare
+// ------------------------------------------------------------------ utilities
 
-/// fisierul din pachet (numele e relativ, cu '/' ca separator)
+/// the file in the package (the name is relative, with '/' as separator)
 fn payload<'a>(files: &'a [(&str, &[u8])], name: &str) -> Option<&'a [u8]> {
     files.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, b)| *b)
 }
@@ -75,7 +75,7 @@ fn remove(path: &Path) -> bool {
     }
 }
 
-/// Subfolderele `<prefix><an>` din %ProgramFiles%\Autodesk (ex. "Revit 2024").
+/// The `<prefix><year>` subfolders of %ProgramFiles%\Autodesk (e.g. "Revit 2024").
 fn autodesk_years(program_files: &Path, prefix: &str) -> Vec<u32> {
     let root = program_files.join("Autodesk");
     let Ok(rd) = std::fs::read_dir(root) else { return Vec::new() };
@@ -114,7 +114,7 @@ fn revit(job: &Job, out: &mut Vec<String>) {
             }
             continue;
         }
-        // Revit 2026 si mai nou folosesc API-ul / DLL-ul pentru 2026
+        // Revit 2026 and newer use the API / DLL for 2026
         let dll_year = y.min(2026);
         let Some(dll) = payload(job.files, &format!("ManageBIM.RevitExporter.{dll_year}.dll")) else {
             out.push(format!("Revit {y}: no DLL for {dll_year} in this package"));
@@ -150,7 +150,7 @@ fn acad(job: &Job, out: &mut Vec<String>) {
         }
         return;
     }
-    // Nu lasam un bundle pe jumatate: fara macar un DLL nu are ce incarca AutoCAD-ul.
+    // We do not leave a half-made bundle: without at least one DLL AutoCAD has nothing to load.
     let has_dll = ["ManageBIM.AcadExporter.R24.dll", "ManageBIM.AcadExporter.R25.dll"]
         .iter()
         .any(|d| payload(job.files, d).is_some());
@@ -162,7 +162,7 @@ fn acad(job: &Job, out: &mut Vec<String>) {
     if let Some(xml) = payload(job.files, "PackageContents.xml") {
         ok |= write(&bundle.join("PackageContents.xml"), xml);
     }
-    // PackageContents.xml incarca ./Contents/R24/ManageBIM.AcadExporter.dll (si R25)
+    // PackageContents.xml loads ./Contents/R24/ManageBIM.AcadExporter.dll (and R25)
     for (r, dll) in [("R24", "ManageBIM.AcadExporter.R24.dll"), ("R25", "ManageBIM.AcadExporter.R25.dll")] {
         if let Some(b) = payload(job.files, dll) {
             ok |= write(&bundle.join("Contents").join(r).join("ManageBIM.AcadExporter.dll"), b);
@@ -170,7 +170,7 @@ fn acad(job: &Job, out: &mut Vec<String>) {
     }
     if ok {
         out.push("AutoCAD: installed".into());
-        // fara dialogul "Unsigned Executable File - Always Load" la fiecare pornire: folderul devine de incredere
+        // no "Unsigned Executable File - Always Load" dialog on every start: the folder becomes trusted
         if let Some(n) = acad_trust(&bundle, job, true) {
             if n > 0 {
                 out.push(format!("AutoCAD: add-in folder trusted in {n} profile(s)"));
@@ -181,9 +181,9 @@ fn acad(job: &Job, out: &mut Vec<String>) {
     }
 }
 
-/// Adauga (sau scoate) folderul bundle-ului in TRUSTEDPATHS din fiecare profil AutoCAD al utilizatorului
-/// (HKCU\Software\Autodesk\AutoCAD\R*\ACAD-*\Profiles\*\Variables). Doar pentru %APPDATA% real (nu in teste).
-/// AutoCAD trebuie sa fie inchis: la iesire isi rescrie profilul.
+/// Adds (or removes) the bundle folder to TRUSTEDPATHS in each AutoCAD profile of the user
+/// (HKCU\Software\Autodesk\AutoCAD\R*\ACAD-*\Profiles\*\Variables). Only for the real %APPDATA% (not in tests).
+/// AutoCAD must be closed: on exit it rewrites its profile.
 fn acad_trust(bundle: &Path, job: &Job, add: bool) -> Option<usize> {
     let real = std::env::var_os("APPDATA").map(PathBuf::from)?;
     if real != job.appdata {
@@ -225,7 +225,7 @@ fn acad_trust(bundle: &Path, job: &Job, add: bool) -> Option<usize> {
 
 // ------------------------------------------------------------------ Navisworks
 
-/// (edition, year) pentru fiecare "Navisworks <Manage|Simulate> <an>" instalat.
+/// (edition, year) for each installed "Navisworks <Manage|Simulate> <year>".
 fn navisworks_installed(program_files: &Path) -> Vec<(String, u32)> {
     let root = program_files.join("Autodesk");
     let Ok(rd) = std::fs::read_dir(root) else { return Vec::new() };
@@ -244,7 +244,7 @@ fn navisworks_installed(program_files: &Path) -> Vec<(String, u32)> {
     out
 }
 
-/// Toate folderele de add-in-uri Navisworks din %APPDATA% (pentru dezinstalare).
+/// All Navisworks add-in folders in %APPDATA% (for uninstall).
 fn navisworks_roots(appdata: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     if let Ok(rd) = std::fs::read_dir(appdata.join("Autodesk")) {
@@ -287,7 +287,7 @@ fn navisworks(job: &Job, out: &mut Vec<String>) {
             out.push(format!("Navisworks {edition} {year}: no DLL for {year} in this package"));
             continue;
         };
-        // 2024+ scrie in "Autodesk\Navisworks ..."; versiunile vechi in "Autodesk Navisworks ..."
+        // 2024+ writes to "Autodesk\Navisworks ..."; older versions to "Autodesk Navisworks ..."
         let new = job.appdata.join("Autodesk").join(format!("Navisworks {edition} {year}"));
         let old = job.appdata.join(format!("Autodesk Navisworks {edition} {year}"));
         let base = if year >= 2024 || new.is_dir() { new } else { old };
@@ -332,10 +332,10 @@ mod tests {
         assert_eq!(std::fs::read(d24.join("ManageBIM/ManageBIM.RevitExporter.dll")).unwrap(), b"dll2024");
         assert!(d24.join("ManageBIM.addin").is_file());
         assert!(d24.join("ManageBIM/managebim16.png").is_file());
-        // 2027 foloseste DLL-ul de 2026
+        // 2027 uses the 2026 DLL
         let d27 = appdata.join("Autodesk/Revit/Addins/2027");
         assert_eq!(std::fs::read(d27.join("ManageBIM/ManageBIM.RevitExporter.dll")).unwrap(), b"dll2026");
-        // dezinstalare: dispare tot, in toate versiunile
+        // uninstall: everything goes, in all versions
         let msgs = run(&Job { kind: Kind::Revit, files: REVIT, appdata: &appdata, program_files: &pf, uninstall: true });
         assert!(msgs.contains(&"Revit 2024: removed".to_string()));
         assert!(!d24.join("ManageBIM").exists() && !d24.join("ManageBIM.addin").exists());
@@ -378,12 +378,12 @@ mod tests {
         let files: &[(&str, &[u8])] = &[("2023/ManageBIM.NwExporter.dll", b"n23"), ("2025/ManageBIM.NwExporter.dll", b"n25")];
         let msgs = run(&Job { kind: Kind::Navisworks, files, appdata: &root, program_files: &pf, uninstall: false });
         assert_eq!(msgs, vec!["Navisworks Manage 2023: installed", "Navisworks Simulate 2025: installed"]);
-        // 2023 -> folderul vechi, fara "Autodesk\"
+        // 2023 -> the old folder, without "Autodesk\"
         assert_eq!(
             std::fs::read(root.join("Autodesk Navisworks Manage 2023/Plugins/ManageBIM.NwExporter/ManageBIM.NwExporter.dll")).unwrap(),
             b"n23"
         );
-        // 2025 -> folderul nou
+        // 2025 -> the new folder
         assert_eq!(
             std::fs::read(root.join("Autodesk/Navisworks Simulate 2025/Plugins/ManageBIM.NwExporter/ManageBIM.NwExporter.dll")).unwrap(),
             b"n25"
@@ -399,7 +399,7 @@ mod tests {
         std::fs::create_dir_all(pf.join("Autodesk/Revit 2024")).unwrap();
         let msgs = run(&Job { kind: Kind::Revit, files: &[], appdata: &root, program_files: &pf, uninstall: false });
         assert_eq!(msgs, vec!["Revit 2024: no DLL for 2024 in this package"]);
-        // AutoCAD: doar PackageContents.xml, fara DLL -> nu se creeaza bundle-ul
+        // AutoCAD: only PackageContents.xml, no DLL -> the bundle is not created
         let files: &[(&str, &[u8])] = &[("PackageContents.xml", b"<ApplicationPackage/>")];
         let msgs = run(&Job { kind: Kind::Acad, files, appdata: &root, program_files: &pf, uninstall: false });
         assert_eq!(msgs, vec!["AutoCAD: no add-in DLL in this package"]);

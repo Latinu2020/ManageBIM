@@ -1,9 +1,9 @@
-//! Dashboard-ul proiectului: sumarul modelelor, clash-urilor, issue-urilor, verificarilor si al restului
-//! datelor, afisat intr-o fereastra (ui/dashboard.rs) si exportat ca raport PDF (A4) sau Word (.docx).
+//! The project Dashboard: the summary of the models, clashes, issues, checks and the rest
+//! of the data, shown in a window (ui/dashboard.rs) and exported as a PDF (A4) or Word (.docx) report.
 
 use crate::markup::{esc, Zip};
 
-/// imagine JPEG: octetii, latimea, inaltimea
+/// JPEG image: the bytes, the width, the height
 pub type Jpeg = (Vec<u8>, u32, u32);
 
 #[derive(Clone, Debug, Default)]
@@ -22,13 +22,13 @@ pub struct ClashRow {
     pub total: usize,
     /// New, Active, Reviewed, Approved, Resolved
     pub by_status: [usize; 5],
-    /// Critical, Major, Minor (rezultatele deschise)
+    /// Critical, Major, Minor (the open results)
     pub by_severity: [usize; 3],
     pub last_run: String,
     pub tolerance: String,
-    /// grupurile testului (nume, numar, deschise, responsabili)
+    /// the test groups (name, count, open, assignees)
     pub groups: Vec<GroupRow>,
-    /// toate rezultatele (pentru tabelul detaliat si fisele cu imagini)
+    /// all the results (for the detailed table and the image sheets)
     pub results: Vec<ResultRow>,
 }
 
@@ -54,7 +54,7 @@ pub struct ResultRow {
     pub assigned: String,
     pub comment: String,
     pub found: String,
-    /// captura vederii pe clash (JPEG, latime, inaltime) - doar pentru rezultatele alese pentru fise
+    /// the view capture on the clash (JPEG, width, height) - only for the results chosen for sheets
     pub image: Option<Jpeg>,
 }
 
@@ -65,17 +65,17 @@ pub struct Summary {
     pub date: String,
     pub models: Vec<ModelRow>,
     pub levels: Vec<(String, f64)>,
-    /// cele mai frecvente categorii (nume, numar)
+    /// the most frequent categories (name, count)
     pub categories: Vec<(String, usize)>,
     pub clash: Vec<ClashRow>,
     pub viewpoints: usize,
-    /// status, priority, assignee -> numar
+    /// status, priority, assignee -> count
     pub issue_status: Vec<(String, usize)>,
     pub issue_priority: Vec<(String, usize)>,
     pub issue_assignee: Vec<(String, usize)>,
-    /// fiecare viewpoint (issue) cu detaliile si imaginea cu markup-uri
+    /// each viewpoint (issue) with the details and the image with markups
     pub views: Vec<VpRow>,
-    /// (reguli, elemente verificate, erori) - None daca Model Checker nu a rulat
+    /// (rules, checked elements, errors) - None if Model Checker has not run
     pub check: Option<(usize, usize, usize)>,
     pub sets: usize,
     pub coord_objects: usize,
@@ -97,7 +97,7 @@ impl Summary {
     pub fn issues_open(&self) -> usize {
         self.issue_status.iter().filter(|(s, _)| !matches!(s.to_ascii_lowercase().as_str(), "closed" | "resolved" | "done")).map(|(_, n)| n).sum()
     }
-    /// indicatorii principali: (eticheta, valoare, detaliu)
+    /// the main indicators: (label, value, detail)
     pub fn kpis(&self) -> Vec<(&'static str, String, String)> {
         let check = match self.check {
             Some((r, c, f)) => (format!("{f}"), format!("errors in {c} items, {r} rules")),
@@ -157,7 +157,7 @@ struct Pdf {
     c: Vec<u8>,
     y: f32,
     title: String,
-    /// imaginea paginii curente (scriitorul PDF are o imagine pe pagina: fisele de clash)
+    /// the image of the current page (the PDF writer has one image per page: the clash sheets)
     img: Option<Jpeg>,
 }
 
@@ -171,7 +171,7 @@ impl Pdf {
         if !self.c.is_empty() {
             self.pages.push(crate::pdf::Page { content: std::mem::take(&mut self.c), image: self.img.take() });
         }
-        // banda de sus
+        // the top strip
         rect(&mut self.c, 0.0, PH - 6.0, PW, 6.0, ACCENT);
         txt(&mut self.c, M, PH - 28.0, 9.0, true, ACCENT, "ManageBIM");
         let t = self.title.clone();
@@ -214,10 +214,10 @@ impl Pdf {
             }
             let mut x = M + 4.0;
             for (v, w) in r.iter().zip(widths) {
-                // taiat la latimea coloanei
+                // cut to the column width
                 let mut s = v.clone();
                 if crate::pdf::text_w(&s, 8.5) > w - 6.0 {
-                    // "..." (fontul standard al PDF-ului nu are caracterul ellipsis)
+                    // "..." (the standard PDF font does not have the ellipsis character)
                     while s.chars().count() > 2 && crate::pdf::text_w(&format!("{s}..."), 8.5) > w - 6.0 {
                         s.pop();
                     }
@@ -230,7 +230,7 @@ impl Pdf {
         }
         self.y -= 8.0;
     }
-    /// bara orizontala impartita in segmente colorate, cu legenda
+    /// horizontal bar split into colored segments, with legend
     fn stacked(&mut self, label: &str, parts: &[(String, usize, [u8; 3])]) {
         self.need(34.0);
         let total: usize = parts.iter().map(|p| p.1).sum();
@@ -263,7 +263,7 @@ impl Pdf {
         }
         self.y -= 16.0;
     }
-    /// imaginea (JPEG) pe pagina curenta, in dreptunghiul dat (puncte), cu chenar subtire
+    /// the image (JPEG) on the current page, in the given rectangle (points), with a thin border
     #[allow(clippy::too_many_arguments)]
     fn image(&mut self, jpg: &[u8], w: u32, h: u32, x: f32, y: f32, dw: f32, dh: f32) {
         self.img = Some((jpg.to_vec(), w, h));
@@ -271,7 +271,7 @@ impl Pdf {
         rgb(&mut self.c, [200, 205, 215], false);
         self.c.extend_from_slice(format!("0.6 w {x:.2} {y:.2} {dw:.2} {dh:.2} re S\n").as_bytes());
     }
-    /// randuri eticheta: valoare (cu textul lung impartit pe mai multe randuri)
+    /// label rows: value (with the long text split over several rows)
     fn fields(&mut self, rows: &[(&str, String)]) {
         let lw = 92.0;
         let vw = PW - 2.0 * M - lw;
@@ -292,7 +292,7 @@ impl Pdf {
             self.pages.push(crate::pdf::Page { content: std::mem::take(&mut self.c), image: self.img.take() });
             self.pages.len()
         };
-        // numerotarea paginilor
+        // page numbering
         for (i, p) in self.pages.iter_mut().enumerate() {
             let s = format!("Page {} / {n}", i + 1);
             txt(&mut p.content, PW - M - crate::pdf::text_w(&s, 8.0), 28.0, 8.0, false, [140, 140, 140], &s);
@@ -303,12 +303,12 @@ impl Pdf {
 
 pub fn pdf(s: &Summary) -> Vec<u8> {
     let mut p = Pdf::new(&format!("Project dashboard - {}", s.project));
-    // titlu
+    // title
     txt(&mut p.c, M, p.y - 14.0, 22.0, true, [20, 25, 35], "Project dashboard");
     p.y -= 34.0;
     txt(&mut p.c, M, p.y, 11.0, false, [90, 95, 105], &format!("{}  -  {}  -  {}", s.project, s.date, if s.author.is_empty() { "ManageBIM" } else { &s.author }));
     p.y -= 26.0;
-    // indicatori (2 randuri x 3)
+    // indicators (2 rows x 3)
     let kpis = s.kpis();
     let cw = (PW - 2.0 * M - 20.0) / 3.0;
     let ch = 62.0;
@@ -324,7 +324,7 @@ pub fn pdf(s: &Summary) -> Vec<u8> {
     }
     p.y -= 2.0 * (ch + 10.0) + 14.0;
 
-    // clash-uri
+    // clashes
     p.heading("Clash Detective");
     if s.clash.is_empty() {
         txt(&mut p.c, M, p.y, 9.0, false, [110, 110, 120], "No clash tests.");
@@ -374,7 +374,7 @@ pub fn pdf(s: &Summary) -> Vec<u8> {
     txt(&mut p.c, M, p.y, 9.5, false, [50, 50, 60], &line);
     p.y -= 22.0;
 
-    // modele
+    // models
     p.heading("Models");
     let rows: Vec<Vec<String>> = s.models.iter().map(|m| vec![m.name.clone(), m.format.clone(), thousands(m.elements), thousands(m.triangles), if m.points > 0 { thousands(m.points) } else { "-".into() }]).collect();
     p.table(&["Model", "Format", "Elements", "Triangles", "Points"], &[220.0, 60.0, 70.0, 80.0, 80.0], &rows);
@@ -388,7 +388,7 @@ pub fn pdf(s: &Summary) -> Vec<u8> {
         p.table(&["Level", "Elevation"], &[400.0, 110.0], &rows);
     }
 
-    // ---- detaliile fiecarui test: grupuri si toate rezultatele
+    // ---- the details of each test: groups and all results
     for c in s.clash.iter().filter(|c| !c.results.is_empty()) {
         p.page();
         p.heading(&format!("Clash test - {}", c.name));
@@ -414,7 +414,7 @@ pub fn pdf(s: &Summary) -> Vec<u8> {
         p.table(&["Clash", "Status", "Severity", "mm", "Item A", "Item B", "Location", "Assigned"], &[48.0, 48.0, 48.0, 34.0, 112.0, 112.0, 60.0, 53.0], &rows);
     }
 
-    // ---- viewpoints / issues: tabelul, apoi o fisa pe viewpoint cu imaginea si markup-urile
+    // ---- viewpoints / issues: the table, then one sheet per viewpoint with the image and the markups
     if !s.views.is_empty() {
         p.page();
         p.heading("Viewpoints & markups");
@@ -459,13 +459,13 @@ pub fn pdf(s: &Summary) -> Vec<u8> {
         }
     }
 
-    // ---- fisele de clash: o pagina pe clash, cu imaginea vederii
+    // ---- the clash sheets: one page per clash, with the view image
     for c in &s.clash {
         for r in c.results.iter().filter(|r| r.image.is_some()) {
             let Some((jpg, w, h)) = &r.image else { continue };
             p.page();
             txt(&mut p.c, M, p.y - 4.0, 15.0, true, [20, 25, 35], &format!("{}  ·  {}", r.name, c.name));
-            // eticheta de gravitate in dreapta
+            // the severity label on the right
             let k = SEVERITY.iter().position(|x| *x == r.severity).unwrap_or(2);
             let lbl = format!("{} · {}", r.severity, r.status);
             let lw = crate::pdf::text_w(&lbl, 9.0) + 16.0;
@@ -500,7 +500,7 @@ fn w_par(text: &str, style: &str) -> String {
 
 const W_PAGE_BREAK: &str = "<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>";
 
-/// imaginea `n` (word/media/clash<n>.jpeg) pe toata latimea paginii (16 cm), centrata
+/// image `n` (word/media/clash<n>.jpeg) over the full page width (16 cm), centered
 fn w_image(n: usize, w: u32, h: u32) -> String {
     let cx: u64 = 16 * 360_000;
     let cy: u64 = cx * h.max(1) as u64 / w.max(1) as u64;
@@ -516,7 +516,7 @@ fn w_table(head: &[&str], rows: &[Vec<String>]) -> String {
         format!("<w:tc><w:tcPr>{shade}</w:tcPr><w:p><w:pPr><w:spacing w:before=\"40\" w:after=\"40\"/></w:pPr><w:r>{bold}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:p></w:tc>", esc(t))
     };
     let mut s = String::from("<w:tbl><w:tblPr><w:tblStyle w:val=\"MBTable\"/><w:tblW w:w=\"5000\" w:type=\"pct\"/></w:tblPr>");
-    // grila coloanelor (ceruta de schema Word): latime egala pe pagina A4 cu margini de 2 cm
+    // the column grid (required by the Word schema): equal width on the A4 page with 2 cm margins
     let colw = 9638 / head.len().max(1);
     s.push_str("<w:tblGrid>");
     for _ in head {
@@ -600,7 +600,7 @@ pub fn docx(s: &Summary) -> Vec<u8> {
     }
     b.push_str(&w_par(&format!("Other: {} selection / search sets, {} coordination objects, {} material rules, {} 4D tasks, {} hidden items.", s.sets, s.coord_objects, s.materials, s.tasks, s.hidden), "Normal"));
 
-    // ---- viewpoints / issues cu markup-urile
+    // ---- viewpoints / issues with the markups
     let mut media: Vec<Vec<u8>> = Vec::new();
     if !s.views.is_empty() {
         b.push_str(W_PAGE_BREAK);
@@ -628,7 +628,7 @@ pub fn docx(s: &Summary) -> Vec<u8> {
         }
     }
 
-    // ---- detaliile testelor de clash: grupuri, toate rezultatele, fisele cu imagini
+    // ---- the details of the clash tests: groups, all results, the image sheets
     for c in s.clash.iter().filter(|c| !c.results.is_empty()) {
         b.push_str(W_PAGE_BREAK);
         b.push_str(&w_par(&format!("Clash test - {}", c.name), "Heading1"));
@@ -647,7 +647,7 @@ pub fn docx(s: &Summary) -> Vec<u8> {
             .map(|r| vec![r.name.clone(), r.group.clone(), r.status.clone(), r.severity.clone(), format!("{:.0}", r.distance_mm), r.item_a.clone(), r.item_b.clone(), r.location.clone(), r.assigned.clone(), r.comment.clone()])
             .collect();
         b.push_str(&w_table(&["Clash", "Group", "Status", "Severity", "Distance (mm)", "Item A", "Item B", "Location", "Assigned to", "Comment"], &rows));
-        // fisele: imaginea si detaliile fiecarui clash ales
+        // the sheets: the image and the details of each chosen clash
         for r in c.results.iter().filter(|r| r.image.is_some()) {
             let Some((jpg, w, h)) = &r.image else { continue };
             media.push(jpg.clone());
@@ -807,7 +807,7 @@ fn sample_groups() -> Vec<GroupRow> {
 
 #[cfg(test)]
 fn sample_results() -> Vec<ResultRow> {
-    // o imagine mica de test (gradient) ca JPEG
+    // a small test image (gradient) as JPEG
     let (w, h) = (320u32, 180u32);
     let mut rgb = Vec::with_capacity((w * h * 3) as usize);
     for y in 0..h {
@@ -835,20 +835,20 @@ fn sample_results() -> Vec<ResultRow> {
         .collect()
 }
 
-/// Exportul cu imagini: clash-urile de fotografiat (test, rezultat), pe rand, cate o captura pe cadru.
+/// The export with images: the clashes to photograph (test, result), one by one, one capture per frame.
 pub struct CaptureJob {
     pub pdf: bool,
     pub path: String,
     pub queue: Vec<(usize, usize)>,
     pub idx: usize,
-    /// 0 = de aratat urmatorul clash, >0 = cadre de asteptat, apoi captura
+    /// 0 = the next clash to show, >0 = frames to wait, then the capture
     pub wait: u32,
     pub waiting: bool,
     pub images: Vec<((usize, usize), Jpeg)>,
     pub saved_cam: crate::camera::Camera,
     pub saved_bottom: bool,
     pub saved_test: usize,
-    /// viewpoint-urile fotografiate dupa clash-uri (cu markup-urile desenate peste imagine)
+    /// the viewpoints photographed after the clashes (with the markups drawn over the image)
     pub views: Vec<usize>,
     pub view_images: Vec<(usize, Jpeg)>,
     pub saved_section: crate::app::Section,
@@ -857,8 +857,8 @@ pub struct CaptureJob {
     pub saved_vp: Option<usize>,
 }
 
-/// Ce clash-uri primesc fisa cu imagine: cele deschise (New / Active / Reviewed); cand testul are grupuri,
-/// primul din fiecare grup plus cele negrupate. Maxim `per_test` pe test si `total` in tot raportul.
+/// Which clashes get an image sheet: the open ones (New / Active / Reviewed); when the test has groups,
+/// the first of each group plus the ungrouped ones. At most `per_test` per test and `total` in the whole report.
 pub fn pick_images(tests: &[(Vec<String>, Vec<bool>)], per_test: usize, total: usize) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     for (ti, (groups, open)) in tests.iter().enumerate() {
@@ -889,7 +889,7 @@ mod pick_tests {
     }
 }
 
-/// Un viewpoint / issue in raport, cu markup-urile desenate pe imagine.
+/// A viewpoint / issue in the report, with the markups drawn on the image.
 #[derive(Clone, Debug, Default)]
 pub struct VpRow {
     pub name: String,
@@ -900,7 +900,7 @@ pub struct VpRow {
     pub author: String,
     pub created: String,
     pub description: String,
-    /// "autor (data): text"
+    /// "author (date): text"
     pub comments: Vec<String>,
     pub markups: usize,
     pub image: Option<Jpeg>,

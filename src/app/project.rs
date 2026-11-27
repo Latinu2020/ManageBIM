@@ -1,8 +1,8 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
-    // ------------------------------------------------------------------ incarcare
+    // ------------------------------------------------------------------ loading
     pub fn open_path(&mut self, path: &str, append: bool) {
         let lower = path.to_lowercase();
         if lower.ends_with(".bimr") {
@@ -14,7 +14,7 @@ impl App {
             return;
         }
         if lower.ends_with(".csv") {
-            // graficul se importa dupa ce modelele s-au incarcat (pentru reguli)
+            // the schedule is imported after the models have loaded (for the rules)
             self.pending_csv.push(path.to_string());
             self.open_panel(Panel::TimeLiner);
             return;
@@ -29,7 +29,7 @@ impl App {
     }
 
     pub(super) fn start_load(&mut self, slot: usize, path: String) {
-        // fisier mai mare decat incape in memoria libera: avertisment inainte (citirea continua)
+        // file larger than what fits in free memory: a warning first (reading continues)
         if let (Ok(meta), Some(free)) = (std::fs::metadata(&path), available_memory()) {
             let need = estimated_memory(&path, meta.len());
             if need > free * 8 / 10 {
@@ -43,7 +43,7 @@ impl App {
                 ));
             }
         }
-        // data fisierului la momentul citirii -> Refresh stie daca s-a modificat ulterior
+        // the file date at the time of reading -> Refresh knows whether it was modified later
         match file_mtime(&path) {
             Some(t) => {
                 self.file_stamps.insert(slot, t);
@@ -60,21 +60,21 @@ impl App {
         let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let cancel_t = cancel.clone();
         std::thread::spawn(move || {
-            // orice panica (cache, origine, scriere) devine eroare de incarcare - altfel incarcarea ar ramane
-            // „in curs” pentru totdeauna, iar autosave-ul s-ar opri
+            // any panic (cache, origin, writing) becomes a load error - otherwise loading would stay
+            // „in progress” forever, and autosave would stop
             let tx_fail = tx.clone();
             let body = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
             let txp = tx.clone();
             let prog = move |f: f32, s: &str| {
-                // Cancel: firul se opreste la urmatorul pas de progres (resume_unwind nu scrie crash.log)
+                // Cancel: the thread stops at the next progress step (resume_unwind does not write crash.log)
                 if cancel_t.load(std::sync::atomic::Ordering::Relaxed) {
                     std::panic::resume_unwind(Box::new(CANCELLED));
                 }
                 let _ = txp.send(LoadMsg::Progress(f, s.to_string()));
             };
             let lower = p2.to_lowercase();
-            // cache .bimc pentru tot ce nu e deja .bimc (conversiile DWG / STEP / Navisworks sunt lente)
-            // norii de puncte nu au cache .bimc (punctele nu incap in formatul cache)
+            // .bimc cache for everything that is not already .bimc (the DWG / STEP / Navisworks conversions are slow)
+            // point clouds have no .bimc cache (the points do not fit in the cache format)
             let is_e57 = lower.ends_with(".e57") || lower.ends_with(".las") || lower.ends_with(".laz");
             let is_ifc = !lower.ends_with(".bimc") && !is_e57;
             let mut note = None;
@@ -94,7 +94,7 @@ impl App {
                     }
                 }
             }
-            // incarcarea ruleaza protejat: o eroare interna devine mesaj de eroare, nu inchide aplicatia
+            // loading runs protected: an internal error becomes an error message, it does not close the application
             let loaded = loaded.unwrap_or_else(|| {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     if is_e57 {
@@ -155,18 +155,18 @@ impl App {
     }
 
     pub fn reload_model(&mut self, slot: usize, path: String) {
-        // deja in curs de incarcare -> nu porni a doua oara
+        // already loading -> do not start a second time
         if self.loads.iter().any(|j| j.slot == slot) {
             return;
         }
-        // pastram modelul vechi: ramane afisat pana vine cel nou, apoi remapam selectia etc.
+        // we keep the old model: it stays displayed until the new one arrives, then we remap the selection etc.
         if let Some(old) = self.base_models.get(slot).cloned().flatten() {
             self.reloading.insert(slot, old);
         }
         self.start_load(slot, path);
     }
 
-    /// Verifica (cel mult o data la 1.5 s) ce fisiere sursa s-au modificat pe disc.
+    /// Checks (at most once every 1.5 s) which source files have changed on disk.
     pub fn check_file_changes(&mut self) {
         if self.last_file_check.elapsed().as_secs_f32() < 1.5 {
             return;
@@ -217,8 +217,8 @@ impl App {
         }
     }
 
-    /// Butonul Refresh (F5): reincarca modelele ale caror fisiere s-au modificat.
-    /// `force` (Ctrl+F5 / Shift+click) reincarca toate modelele, modificate sau nu.
+    /// The Refresh button (F5): reloads the models whose files have changed.
+    /// `force` (Ctrl+F5 / Shift+click) reloads all models, modified or not.
     pub fn refresh_models(&mut self, force: bool) {
         self.scan_file_changes();
         let mut todo: Vec<(usize, String)> = Vec::new();
@@ -248,19 +248,19 @@ impl App {
         }
     }
 
-    /// Dupa reincarcare: muta selectia, ascunderile, culorile, deplasarile, seturile
-    /// si rezultatele de clash de pe modelul vechi pe cel nou, potrivind elementele dupa GUID.
+    /// After reloading: moves the selection, hidden items, colours, offsets, sets
+    /// and clash results from the old model to the new one, matching elements by GUID.
     pub(super) fn remap_reloaded(&mut self, slot: usize, old: &Model, new: &Model) {
         let by_guid: HashMap<&str, u32> = new.elements.iter().enumerate().filter(|(_, e)| !e.guid.is_empty()).map(|(i, e)| (e.guid.as_str(), i as u32)).collect();
         let n_new = new.elements.len() as u32;
         let s = slot as u32;
-        // element vechi -> element nou (None = elementul a disparut din fisier)
+        // old element -> new element (None = the element disappeared from the file)
         let map_e = |e: u32| -> Option<u32> {
             let oe = old.elements.get(e as usize)?;
             if !oe.guid.is_empty() {
                 return by_guid.get(oe.guid.as_str()).copied();
             }
-            // fara GUID (glTF / DXF / OBJ...): pastram indexul daca inca exista
+            // no GUID (glTF / DXF / OBJ...): we keep the index if it still exists
             (e < n_new).then_some(e)
         };
         let rid = |id: ElemId| -> Option<ElemId> {
@@ -273,7 +273,7 @@ impl App {
         self.selected = self.selected.iter().filter_map(|i| rid(*i)).collect();
         self.primary = self.primary.and_then(&rid);
 
-        // ascunse: remapate; elementele noi ascunse implicit (ex. IfcSpace) raman ascunse
+        // hidden: remapped; new elements hidden by default (e.g. IfcSpace) stay hidden
         let mapped: HashSet<u32> = (0..old.elements.len() as u32).filter_map(map_e).collect();
         let mut hidden: HashSet<ElemId> = self.hidden.iter().filter_map(|i| rid(*i)).collect();
         for (k, e) in new.elements.iter().enumerate() {
@@ -320,7 +320,7 @@ impl App {
         self.coord_sel = None;
         self.user_params.clear();
         self.overlays.clear();
-        // istoricul vizualizarii se refera la elementele modelelor de acum
+        // the view history refers to the elements of the current models
         self.hist.clear();
         self.hist_pos = 0;
         self.hist_sig = 0;
@@ -386,7 +386,7 @@ impl App {
         self.check_results = None;
         self.check_sel = None;
         self.qto_result = None;
-        // lucrarile in curs se refera la proiectul vechi (indici de teste / viewpoints / elemente)
+        // the jobs in progress refer to the old project (test / viewpoint / element indices)
         if let Some(j) = self.clash.job.take() {
             j.prog.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
         }
@@ -408,7 +408,7 @@ impl App {
     }
 
     pub fn remove_model(&mut self, slot: usize) {
-        // scoaterea modelului virtual = stergerea obiectelor de coordonare
+        // removing the virtual model = deleting the coordination objects
         if self.coord_slot == Some(slot) {
             self.coord_objects.clear();
             self.coord_slot = None;
@@ -449,7 +449,7 @@ impl App {
                         break;
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                    // firul s-a oprit fara rezultat (crash intern): incarcarea nu mai ramane blocata
+                    // the thread stopped without a result (internal crash): loading no longer stays stuck
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                         done.push((i, Err("Internal error: the loading thread stopped unexpectedly.".into())));
                         break;
@@ -464,7 +464,7 @@ impl App {
                     if let Some(n) = note {
                         self.log.push(n);
                     }
-                    // parametrii adaugati de utilizator (din proiect)
+                    // the parameters added by the user (from the project)
                     let m = self.with_user_params(m);
                     let first = self.loaded_models().next().is_none();
                     while self.base_models.len() <= job.slot {
@@ -475,7 +475,7 @@ impl App {
                     }
                     self.base_models[job.slot] = Some(m.clone());
                     if let Some(old) = self.reloading.remove(&job.slot) {
-                        // Refresh: pastram starea utilizatorului (selectie, ascunse, culori...)
+                        // Refresh: we keep the user's state (selection, hidden, colours...)
                         self.remap_reloaded(job.slot, &old, &m);
                     } else {
                         for (k, e) in m.elements.iter().enumerate() {
@@ -508,7 +508,7 @@ impl App {
                         self.toast(format!("Loading cancelled: {}", crate::file_name(&job.path)));
                         continue;
                     }
-                    // la Refresh esuat (ex. fisier inca in curs de scriere) ramane modelul vechi pe ecran
+                    // on a failed Refresh (e.g. a file still being written) the old model stays on screen
                     if self.reloading.remove(&job.slot).is_some() {
                         self.changed_files.insert(job.slot);
                         self.error(format!("Refresh failed, keeping the previous version of {}: {e}", crate::file_name(&job.path)));
@@ -525,7 +525,7 @@ impl App {
             for p in std::mem::take(&mut self.pending_csv) {
                 self.import_tasks_csv(&p);
             }
-            // modele noi incarcate: sarcinile 4D importate inainte (fara elemente) se leaga acum
+            // new models loaded: the 4D tasks imported earlier (with no elements) get linked now
             if std::mem::take(&mut self.relink_tasks) {
                 let mut n = 0;
                 for i in 0..self.tasks.len() {
@@ -546,7 +546,7 @@ impl App {
         // clash
         if let Some(job) = &self.clash.job {
             let msg = job.rx.try_recv();
-            // firul de clash s-a oprit fara rezultat (eroare interna): nu ramane blocat pe "ruleaza"
+            // the clash thread stopped without a result (internal error): it does not stay stuck on "running"
             if let Err(std::sync::mpsc::TryRecvError::Disconnected) = msg {
                 self.clash.job = None;
                 self.clash.queue.clear();
@@ -564,7 +564,7 @@ impl App {
                     self.toast("Clash test cancelled.");
                 } else {
                     self.merge_clash(t, found, secs);
-                    // ca in Navisworks: dupa Run Test se deschide automat tabul Results
+                    // as in Navisworks: after Run Test the Results tab opens automatically
                     self.clash.subtab = 0; // 0 = Results (vezi ordinea tab-urilor din clash_ui)
                     self.cur_test = t;
                     self.clash_queue_next();
@@ -573,7 +573,7 @@ impl App {
         }
     }
 
-    // ------------------------------------------------------------------ proiect
+    // ------------------------------------------------------------------ project
     pub fn project_file(&self) -> ProjectFile {
         let mut hidden: Vec<ElemId> = self.hidden.iter().copied().collect();
         hidden.sort();
@@ -656,8 +656,8 @@ impl App {
     }
 }
 
-/// JSON nu are NaN / infinit: serde le scrie ca `null`, iar la deschidere proiectul ar fi respins.
-/// Curatam valorile care pot ajunge asa (camera, viewpoints, clash-uri).
+/// JSON has no NaN / infinity: serde writes them as `null`, and on opening the project would be rejected.
+/// We clean up the values that can end up like that (camera, viewpoints, clashes).
 fn sanitize_floats(pf: &mut ProjectFile) {
     fn cam(c: &mut crate::camera::Camera) {
         if !(c.eye.iter().all(|v| v.is_finite()) && c.yaw.is_finite() && c.pitch.is_finite() && c.focus.is_finite() && c.fov_deg.is_finite()) {
@@ -713,7 +713,7 @@ impl App {
         let pf: ProjectFile = match read(std::path::Path::new(path)) {
             Ok(p) => p,
             Err(e) => {
-                // fisier stricat (ex. o cadere in timpul unei salvari vechi): copia .bak a salvarii anterioare
+                // corrupt file (e.g. a crash during an older save): the .bak copy of the previous save
                 let bak = crate::formats::backup_path(std::path::Path::new(path));
                 match read(&bak) {
                     Ok(p) => {
@@ -730,7 +730,7 @@ impl App {
         self.reset();
         *self.origin.lock().unwrap_or_else(|e| e.into_inner()) = pf.origin.map(DVec3::from_array);
         let base = std::path::Path::new(path).parent().map(|p| p.to_path_buf()).unwrap_or_default();
-        // transformarile se aplica imediat ce fiecare model termina incarcarea
+        // the transforms are applied as soon as each model finishes loading
         self.elem_offsets = pf.elem_offsets.iter().copied().collect();
         self.elem_scale = pf.elem_scale.iter().copied().collect();
         for (i, mp) in pf.models.iter().enumerate() {
@@ -738,7 +738,7 @@ impl App {
             if let Some(x) = pf.model_xf.get(i) {
                 self.model_xf[i] = *x;
             }
-            // slotul modelului virtual "Coordination objects": nu e un fisier, se reface din proiect
+            // the slot of the virtual "Coordination objects" model: it is not a file, it is rebuilt from the project
             if mp == crate::coord_objects::COORD_PATH {
                 self.coord_slot = Some(i);
                 continue;
@@ -759,7 +759,7 @@ impl App {
             self.start_load(i, real);
         }
         self.project_path = Some(path.to_string());
-        // proiectul salvat automat / despachetat din .bimd nu intra in lista Recent
+        // the autosaved project / unpacked from .bimd does not go into the Recent list
         let internal = autosave_dir().is_some_and(|d| std::path::Path::new(path).starts_with(&d)) || published_dir().is_some_and(|d| std::path::Path::new(path).starts_with(&d));
         if !internal {
             self.settings.add_recent(path);
@@ -773,11 +773,11 @@ impl App {
     }
 
     pub(super) fn apply_project_state(&mut self, pf: ProjectFile) {
-        // o camera cu NaN / infinit (proiect deteriorat) ar lasa vederea goala
+        // a camera with NaN / infinity (damaged project) would leave the view empty
         let cam_ok = |c: &crate::camera::Camera| c.eye.iter().all(|v| v.is_finite()) && c.yaw.is_finite() && c.pitch.is_finite() && c.focus.is_finite() && c.fov_deg.is_finite();
         self.cam = if cam_ok(&pf.camera) { pf.camera } else { Default::default() };
         self.lights = pf.lights;
-        // obiectele de coordonare: modelul lor virtual se reface in slotul salvat
+        // the coordination objects: their virtual model is rebuilt in the saved slot
         self.coord_objects = pf.coord_objects;
         if !self.coord_objects.is_empty() || self.coord_slot.is_some() {
             self.rebuild_coord_model();
@@ -787,7 +787,7 @@ impl App {
         self.path_run = None;
         self.animations = pf.animations;
         self.render = pf.render;
-        // limitele din interfata (proiectul poate veni deteriorat sau din alta versiune)
+        // the limits from the interface (the project may come damaged or from another version)
         self.render.width = self.render.width.clamp(64, 7680);
         self.render.height = self.render.height.clamp(64, 4320);
         self.render.fps = self.render.fps.clamp(1, 120);
@@ -804,7 +804,7 @@ impl App {
         self.shared = Default::default();
         if !pf.materials.is_empty() {
             self.materials = pf.materials;
-            // materialele din biblioteca ta raman disponibile si in proiectele mai vechi
+            // the materials from your library stay available in older projects too
             for m in crate::materials::user_library() {
                 if !self.materials.iter().any(|x| x.name == m.name) {
                     self.materials.push(m);
@@ -820,7 +820,7 @@ impl App {
         self.clash.tests = if pf.clash_tests.is_empty() { vec![ClashTest::new("Test 1".into())] } else { pf.clash_tests };
         self.cur_test = 0;
         self.tasks = pf.tasks;
-        // datele activitatilor: aceleasi limite ca in interfata (1900-2200); o data stricata ar bloca TimeLiner-ul
+        // the activity dates: the same limits as in the interface (1900-2200); a corrupt date would block the TimeLiner
         let (d0, d1) = (crate::timeline::days_from_civil(1900, 1, 1), crate::timeline::days_from_civil(2200, 12, 31));
         for t in &mut self.tasks {
             t.start = t.start.clamp(d0, d1);
@@ -835,7 +835,7 @@ impl App {
         self.qto = pf.qto.unwrap_or_default();
         self.check_rules = pf.check_rules;
         self.user_params = pf.user_params;
-        // modelele deja incarcate primesc parametrii acum (cele care vin dupa, la incarcare)
+        // models already loaded get the parameters now (the ones coming later, at load time)
         let slots: Vec<usize> = self.loaded_models().map(|(i, _)| i).collect();
         if !self.user_params.is_empty() {
             for s in slots {
@@ -844,7 +844,7 @@ impl App {
         }
         self.title_block = pf.title_block.unwrap_or_default();
         self.vp_folders = pf.vp_folders;
-        // desenele 2D se recitesc din fisierele lor
+        // the 2D drawings are re-read from their files
         let mut ovs = pf.overlays;
         for ov in &mut ovs {
             if let Err(e) = self.load_overlay_segs(ov) {
@@ -859,7 +859,7 @@ impl App {
         if let Some((s, _)) = self.sim_range() {
             self.sim_day = s as f32;
         }
-        // aplică View Template-ul marcat „default", dacă există
+        // applies the View Template marked „default", if there is one
         if let Some(i) = self.view_templates.iter().position(|t| t.is_default) {
             if let Some(t) = self.view_templates.get(i).cloned() {
                 self.hidden = t.hidden.into_iter().collect();
@@ -925,7 +925,7 @@ impl App {
         }
     }
 
-    /// Proiect nou, gol: aplicatia trece de pagina de start, Save (Ctrl+S) cere unde se salveaza.
+    /// New, empty project: the application skips the start page, Save (Ctrl+S) asks where to save.
     pub fn new_project(&mut self) {
         self.reset();
         self.project_path = None;
@@ -933,8 +933,8 @@ impl App {
         self.toast("New project - add models with Open / Append; save it with Save (Ctrl+S).");
     }
 
-    /// Publica proiectul intr-un singur fisier .bimd (ZIP): project.bimr + fiecare model ca .bimc
-    /// (norii de puncte cu fisierul original). Se deschide pe orice PC, fara fisierele sursa.
+    /// Publishes the project into a single .bimd file (ZIP): project.bimr + each model as .bimc
+    /// (point clouds with the original file). It opens on any PC, without the source files.
     pub fn publish_bimd(&mut self, path: &str) -> Result<String, String> {
         let path = with_ext(path, "bimd");
         let origin = self.origin_f64();
@@ -953,17 +953,17 @@ impl App {
                 }
                 continue;
             };
-            // modelul virtual al obiectelor de coordonare: se reface din proiect, nu se impacheteaza
+            // the virtual model of the coordination objects: rebuilt from the project, not packed
             if m.path == crate::coord_objects::COORD_PATH {
                 continue;
             }
             let stem: String = std::path::Path::new(&m.path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| format!("model{slot}")).chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
             let (name, data) = if m.cloud.is_some() {
-                // nor de puncte: fisierul original (E57 / LAS)
+                // point cloud: the original file (E57 / LAS)
                 let ext = std::path::Path::new(&m.path).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_else(|| "e57".into());
                 (format!("models/{slot}_{stem}.{ext}"), std::fs::read(&m.path).map_err(|e| format!("{}: {e}", m.name))?)
             } else {
-                // geometria originala (fara transformarea modelului - ea ramane in proiect)
+                // the original geometry (without the model transform - that stays in the project)
                 let base = self.base_models.get(slot).cloned().flatten().unwrap_or(m.clone());
                 let raw = crate::bimc::from_model(&base, origin);
                 let f = tmp.join(format!("{slot}.bimc"));
@@ -982,8 +982,8 @@ impl App {
             n += 1;
         }
         let _ = std::fs::remove_dir_all(&tmp);
-        // tot ce proiectul citeste din alte fisiere intra in pachet: desenele 2D (overlay) si texturile
-        // materialelor folosite - pe alt PC calea originala nu exista
+        // everything the project reads from other files goes into the package: the 2D drawings (overlay) and the textures
+        // of the materials used - on another PC the original path does not exist
         let mut embedded: HashMap<String, String> = HashMap::new();
         let mut embed = |zip: &mut crate::markup::Zip, total: &mut u64, dir: &str, src: &str| -> Option<String> {
             if src.trim().is_empty() {
@@ -1026,8 +1026,8 @@ impl App {
         Ok(format!("Published {} ({n} models, {:.1} MB)", crate::file_name(&path), bytes.len() as f64 / 1e6))
     }
 
-    /// Deschide un .bimd: se despacheteaza in %LOCALAPPDATA%\ManageBIM\Published\<nume>, apoi proiectul se incarca
-    /// de acolo. Save scrie din nou in .bimd.
+    /// Opens a .bimd: it is unpacked into %LOCALAPPDATA%\ManageBIM\Published\<name>, then the project is loaded
+    /// from there. Save writes to the .bimd again.
     pub fn open_bimd(&mut self, path: &str) {
         let r = (|| -> Result<std::path::PathBuf, String> {
             let data = std::fs::read(path).map_err(|e| format!("Cannot read {path}: {e}"))?;
@@ -1043,14 +1043,14 @@ impl App {
                     return Err(format!("invalid path in the .bimd file: {m}"));
                 }
                 let out = dir.join(m.replace('/', "\\"));
-                // despachetat o singura data (acelasi .bimd = acelasi folder)
+                // unpacked only once (the same .bimd = the same folder)
                 if !out.is_file() {
                     let data = zip.read(m).ok_or_else(|| format!("{m} missing in the .bimd file"))?;
                     std::fs::write(&out, data).map_err(|e| e.to_string())?;
                 }
                 *m = out.to_string_lossy().to_string();
             }
-            // desenele 2D si texturile impachetate: despachetate langa modele, caile refacute
+            // the packed 2D drawings and textures: unpacked next to the models, paths rebuilt
             let extract = |p: &mut String| -> Result<(), String> {
                 if !(p.starts_with("overlays/") || p.starts_with("textures/")) {
                     return Ok(());
@@ -1092,7 +1092,7 @@ impl App {
         }
     }
 
-    /// Inapoi la pagina de start: proiectul se inchide (salvarea automata pastreaza o copie).
+    /// Back to the start page: the project closes (autosave keeps a copy).
     pub fn close_to_start(&mut self) {
         self.reset();
         self.project_path = None;
@@ -1100,12 +1100,12 @@ impl App {
         self.confirm_start = false;
     }
 
-    /// E ceva deschis (modele, proiect nou sau issue-uri) care s-ar pierde?
+    /// Is something open (models, a new project or issues) that would be lost?
     pub fn has_open_project(&self) -> bool {
         self.loaded_models().next().is_some() || !self.loads.is_empty() || self.blank_project || self.project_path.is_some() || self.bimd_path.is_some() || !self.viewpoints.is_empty()
     }
 
-    /// Din pagina de start: cu un proiect deschis se intreaba intai daca se salveaza.
+    /// From the start page: with a project open, it first asks whether to save.
     pub fn start_action(&mut self, a: StartAction) {
         if self.has_open_project() {
             self.start_pending = Some(a);
@@ -1146,23 +1146,23 @@ impl App {
     }
 }
 
-/// mesajul intern al unei incarcari anulate de utilizator
+/// the internal message of a load cancelled by the user
 pub const CANCELLED: &str = "cancelled by the user";
 
-/// Memoria estimata pentru un fisier deschis: geometria triangulata + proprietatile ocupa de cateva ori
-/// dimensiunea fisierului text (IFC / DXF / OBJ); cache-ul .bimc si norii de puncte sunt mai compacti.
+/// The estimated memory for an opened file: the triangulated geometry + the properties take several times
+/// the size of the text file (IFC / DXF / OBJ); the .bimc cache and point clouds are more compact.
 pub fn estimated_memory(path: &str, size: u64) -> u64 {
     let ext = std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     let factor = match ext.as_str() {
         "bimc" | "e57" | "las" | "laz" | "glb" => 2,
         "ifc" | "ifczip" | "dxf" | "obj" | "fbx" | "stl" | "ply" => 4,
-        // DWG / STEP / Navisworks: conversie externa, geometria rezultata e mult mai mare decat fisierul
+        // DWG / STEP / Navisworks: external conversion, the resulting geometry is much larger than the file
         _ => 6,
     };
     size.saturating_mul(factor)
 }
 
-/// Memoria fizica libera acum (octeti); None daca nu se poate afla.
+/// Free physical memory now (bytes); None if it cannot be determined.
 pub fn available_memory() -> Option<u64> {
     #[cfg(windows)]
     {
@@ -1182,7 +1182,7 @@ pub fn available_memory() -> Option<u64> {
             fn GlobalMemoryStatusEx(s: *mut MemoryStatusEx) -> i32;
         }
         let mut s = MemoryStatusEx { length: std::mem::size_of::<MemoryStatusEx>() as u32, load: 0, total_phys: 0, avail_phys: 0, total_page: 0, avail_page: 0, total_virtual: 0, avail_virtual: 0, avail_ext_virtual: 0 };
-        // SAFETY: structura are dimensiunea si campurile din documentatia Win32 (MEMORYSTATUSEX)
+        // SAFETY: the struct has the size and fields from the Win32 documentation (MEMORYSTATUSEX)
         (unsafe { GlobalMemoryStatusEx(&mut s) } != 0).then_some(s.avail_phys)
     }
     #[cfg(not(windows))]

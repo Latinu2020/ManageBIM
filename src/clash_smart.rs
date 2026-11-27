@@ -1,6 +1,6 @@
-//! Reguli de clash "inteligente": recunoasterea elementelor (disciplina + fel), conexiunile normale care
-//! nu sunt clash-uri reale (perete-placa, grinda-stalp, teava-suport, izolatie-teava...), responsabilul
-//! (disciplina care se muta) si sistemul pentru grupare.
+//! "Smart" clash rules: recognising the elements (discipline + kind), the normal connections that
+//! are not real clashes (wall-slab, beam-column, pipe-support, insulation-pipe...), the assignee
+//! (the discipline that moves) and the system for grouping.
 
 use crate::model::Element;
 
@@ -25,7 +25,7 @@ impl Discipline {
             Discipline::Other => "Other",
         }
     }
-    /// cine are prioritate (nu se muta): structura > arhitectura > tubulatura > tevi > electric
+    /// who has priority (does not move): structure > architecture > ductwork > pipes > electrical
     pub fn priority(self) -> i32 {
         match self {
             Discipline::Structure => 50,
@@ -46,17 +46,17 @@ pub enum Kind {
     Column,
     Footing,
     Roof,
-    Opening, // usi, ferestre
+    Opening, // doors, windows
     Stair,
     Railing,
-    Covering, // finisaje, plafoane
+    Covering, // finishes, ceilings
     Pipe,
     Duct,
     Cable,
     Fitting,
-    Support, // suporti, bratari, console
+    Support, // supports, clamps, brackets
     Insulation,
-    Terminal, // guri de aer, sprinklere, corpuri
+    Terminal, // air terminals, sprinklers, fixtures
     Equipment,
     Other,
 }
@@ -65,10 +65,10 @@ fn has(t: &str, keys: &[&str]) -> bool {
     keys.iter().any(|k| t.contains(k))
 }
 
-/// Felul elementului, din tipul IFC / categoria Revit / numele lui.
+/// The kind of the element, from its IFC type / Revit category / name.
 pub fn kind_of(e: &Element) -> Kind {
     let t = format!("{} {}", e.ifc_type, e.name).to_lowercase();
-    // ordinea conteaza: cele mai specifice intai
+    // the order matters: the most specific first
     if has(&t, &["insulation", "izolatie", "lagging"]) {
         return Kind::Insulation;
     }
@@ -126,7 +126,7 @@ pub fn kind_of(e: &Element) -> Kind {
     Kind::Other
 }
 
-/// Disciplina: din fel, apoi din numele modelului (ARH / STR / MEP...) daca felul nu spune.
+/// Discipline: from the kind, then from the model name (ARH / STR / MEP...) if the kind does not tell.
 pub fn discipline_of(e: &Element, model_name: &str) -> Discipline {
     use Kind::*;
     let structural = format!("{} {}", e.ifc_type, e.name).to_lowercase().contains("structural");
@@ -159,7 +159,7 @@ pub fn discipline_of(e: &Element, model_name: &str) -> Discipline {
     }
 }
 
-/// Perechile care se ating normal in constructie (nu sunt clash-uri reale cat timp patrunderea e mica).
+/// The pairs that touch normally in construction (they are not real clashes as long as the penetration is small).
 pub fn normal_joint(a: Kind, b: Kind) -> bool {
     use Kind::*;
     let pair = |x: Kind, y: Kind| (a == x && b == y) || (a == y && b == x);
@@ -198,7 +198,7 @@ pub fn normal_joint(a: Kind, b: Kind) -> bool {
         || pair(Equipment, Duct)
 }
 
-/// Sistemul elementului (pentru grupare): System Name / System Classification / System Type...
+/// The element's system (for grouping): System Name / System Classification / System Type...
 pub fn system_of(e: &Element) -> Option<String> {
     const KEYS: [&str; 6] = ["System Name", "System Classification", "System Type", "System", "SystemName", "Sistem"];
     for k in KEYS {
@@ -209,7 +209,7 @@ pub fn system_of(e: &Element) -> Option<String> {
     None
 }
 
-/// Cine trebuie sa rezolve: disciplina cu prioritatea mai mica (ea se muta).
+/// Who has to resolve it: the discipline with the lower priority (it moves).
 pub fn responsible(da: Discipline, db: Discipline) -> Option<Discipline> {
     if da == db || (da == Discipline::Other && db == Discipline::Other) {
         return None;

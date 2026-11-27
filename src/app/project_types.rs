@@ -7,8 +7,8 @@ pub enum SectionMode {
     Box,
 }
 
-/// Directia sectiunii exportate in DWG / DXF. `Current` foloseste planul de
-/// taiere activ; celelalte taie modelul dupa o directie, la pozitia aleasa.
+/// The direction of the section exported to DWG / DXF. `Current` uses the active
+/// cut plane; the others cut the model along a direction, at the chosen position.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum CadView {
     #[default]
@@ -36,7 +36,7 @@ impl CadView {
         }
     }
 
-    /// axa planului de taiere: 0 = X constant, 1 = Y constant, 2 = Z constant (plan)
+    /// the axis of the cut plane: 0 = constant X, 1 = constant Y, 2 = constant Z (plan)
     pub fn axis(self) -> Option<usize> {
         match self {
             CadView::Front | CadView::Back => Some(1),
@@ -46,7 +46,7 @@ impl CadView {
         }
     }
 
-    /// din spate / dreapta axa orizontala e inversata (ca in vederea din acea directie)
+    /// from the back / right the horizontal axis is flipped (as in the view from that direction)
     pub fn mirrored(self) -> bool {
         matches!(self, CadView::Back | CadView::Right)
     }
@@ -55,7 +55,7 @@ impl CadView {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct PlaneDef {
     pub enabled: bool,
-    /// 0 Sus(+Z) 1 Jos(-Z) 2 +X 3 -X 4 +Y 5 -Y
+    /// 0 Top(+Z) 1 Bottom(-Z) 2 +X 3 -X 4 +Y 5 -Y
     pub dir: u8,
     pub offset: f32,
 }
@@ -84,7 +84,7 @@ impl Default for Section {
 }
 
 impl Section {
-    /// planuri (n, w): pastreaza punctele cu n·p <= w
+    /// planes (n, w): keeps the points with n·p <= w
     pub fn gpu_planes(&self) -> Vec<Vec4> {
         if !self.enabled {
             return Vec::new();
@@ -151,7 +151,7 @@ pub struct Viewpoint {
     pub name: String,
     pub cam: Camera,
     pub section: Section,
-    /// planul de taiere ales (Cut View) la momentul salvarii
+    /// the chosen cut plane (Cut View) at the time of saving
     #[serde(default)]
     pub cad_view: CadView,
     #[serde(default)]
@@ -167,23 +167,23 @@ pub struct Viewpoint {
     pub comments: Vec<crate::markup::VpComment>,
     #[serde(default)]
     pub selected: Vec<ElemId>,
-    /// numele View Template-ului activ la salvare ( stilul de afisare se aplica la restaurare )
+    /// the name of the View Template active at save time ( the display style is applied on restore )
     #[serde(default)]
     pub template: String,
-    /// masuratorile (cote) vizibile cand s-a salvat viewpoint-ul
+    /// the measurements (dimensions) visible when the viewpoint was saved
     #[serde(default)]
     pub measures: Vec<Measure>,
-    /// folderul (si subfolderele, "Nivel 2/Instalatii"); gol = radacina
+    /// the folder (and subfolders, "Nivel 2/Instalatii"); empty = root
     #[serde(default)]
     pub folder: String,
-    /// aspectul vederii la salvare (stil vizual, axe, niveluri, capace, culori) - viewpoint-ul revine
-    /// exact cum a fost salvat, indiferent ce View Template e aplicat intre timp
+    /// the view look at save time (visual style, grids, levels, caps, colours) - the viewpoint comes back
+    /// exactly as it was saved, regardless of which View Template is applied in the meantime
     #[serde(default)]
     pub look: Option<VpLook>,
 }
 
 
-/// Plansa Multi view calculata: segmente (layer, x0 y0 x1 y1 in m), texte, cadrul fiecarei vederi.
+/// The computed Multi view sheet: segments (layer, x0 y0 x1 y1 in m), texts, the frame of each view.
 #[derive(Clone, Default)]
 pub struct MultiViewSheet {
     pub segs: Vec<(String, [f64; 4])>,
@@ -192,7 +192,7 @@ pub struct MultiViewSheet {
     pub gap: f64,
 }
 
-/// Aspectul salvat cu un viewpoint (independent de View Templates).
+/// The look saved with a viewpoint (independent of View Templates).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VpLook {
     pub visual_style: crate::render::VisualStyle,
@@ -209,7 +209,7 @@ pub struct ProjectFile {
     pub models: Vec<String>,
     pub origin: Option<[f64; 3]>,
     pub camera: Camera,
-    /// lumini punctuale (lampi) in model
+    /// point lights (lamps) in the model
     #[serde(default)]
     pub lights: Vec<crate::lights::SceneLight>,
     #[serde(default)]
@@ -229,17 +229,17 @@ pub struct ProjectFile {
     pub model_xf: Vec<ModelXf>,
     #[serde(default)]
     pub elem_offsets: Vec<(ElemId, [f32; 3])>,
-    /// scale per-element (stil SketchUp), non-distructiv
+    /// per-element scale (SketchUp style), non-destructive
     #[serde(default)]
     pub elem_scale: Vec<(ElemId, [f32; 3])>,
     #[serde(default)]
     pub animations: Vec<Animation>,
-    /// View Templates salvate în proiect (vizibilitate + secțiune + stil)
+    /// View Templates saved in the project (visibility + section + style)
     #[serde(default)]
     pub view_templates: Vec<ViewTemplate>,
     #[serde(default)]
     pub render: RenderSettings,
-    /// niveluri definite de utilizator (cota fata de ±0.00) si cota reala a lui ±0.00
+    /// user-defined levels (elevation relative to ±0.00) and the real elevation of ±0.00
     #[serde(default)]
     pub user_levels: Vec<UserLevel>,
     #[serde(default)]
@@ -269,7 +269,7 @@ pub struct ProjectFile {
     /// ViewCube "Home" view
     #[serde(default)]
     pub home: Option<Camera>,
-    /// traseul de mers (puncte pe podea, metri)
+    /// the walk path (points on the floor, metres)
     #[serde(default)]
     pub walk_path: Vec<[f32; 3]>,
     /// Appearance Profiler
@@ -280,7 +280,7 @@ pub struct ProjectFile {
     pub qto: Option<crate::qto::QtoSetup>,
     #[serde(default)]
     pub check_rules: Vec<crate::check::Rule>,
-    /// parametrii adaugati de utilizator pe elemente
+    /// the parameters added by the user on elements
     #[serde(default)]
     pub user_params: Vec<UserParam>,
     #[serde(default)]
@@ -291,7 +291,7 @@ pub struct ProjectFile {
     pub overlays: Vec<CadOverlay>,
 }
 
-/// Un nivel de grupare al arborelui de selectie: proprietatea (categorie, nume) dupa care se grupeaza.
+/// A grouping level of the selection tree: the property (category, name) to group by.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TreeLevel {
     pub cat: String,
@@ -304,12 +304,12 @@ impl TreeLevel {
     }
 }
 
-/// Arborele implicit (ca pana acum): Level > IFC Type > elemente.
+/// The default tree (as before): Level > IFC Type > elements.
 pub fn default_tree_levels() -> Vec<TreeLevel> {
     vec![TreeLevel::new(ITEM_CAT, "Level"), TreeLevel::new(ITEM_CAT, "IFC Type")]
 }
 
-/// Fisier .bimtree: configuratia arborelui, refolosibila in alte proiecte.
+/// .bimtree file: the tree configuration, reusable in other projects.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TreeFile {
     pub app: String,
@@ -322,13 +322,13 @@ pub const TREE_FILE_KIND: &str = "selection-tree";
 
 pub struct TreeNode {
     pub label: String,
-    /// toate elementele de sub acest nod
+    /// all elements under this node
     pub ids: Vec<u32>,
-    /// gol = ultimul nivel (sub el se listeaza elementele)
+    /// empty = the last level (the elements are listed under it)
     pub children: Vec<TreeNode>,
 }
 
-/// arbore de selectie al unui model, grupat dupa nivelurile alese de utilizator
+/// the selection tree of a model, grouped by the levels chosen by the user
 pub struct ModelTree {
     pub roots: Vec<TreeNode>,
 }
@@ -351,7 +351,7 @@ fn group_tree(m: &Model, ids: &[u32], levels: &[TreeLevel]) -> Vec<TreeNode> {
         groups.entry(v).or_default().push(i);
     }
     let mut keys: Vec<String> = groups.keys().cloned().collect();
-    // ordine naturala ("Level 2" < "Level 10"), grupul "(no ...)" la final
+    // natural order ("Level 2" < "Level 10"), the "(no ...)" group at the end
     keys.sort_by(|a, b| (*a == none).cmp(&(*b == none)).then_with(|| crate::profiler::natural_cmp(a, b)));
     keys.into_iter()
         .map(|k| {

@@ -7,9 +7,9 @@ using Autodesk.Navisworks.Api;
 namespace ManageBIM.Navis
 {
     /// <summary>
-    /// Exportul documentului Navisworks deschis (NWD / NWC / NWF / orice format incarcat) in .bimc:
-    /// un element ManageBIM pentru fiecare obiect Navisworks (ex. un element Revit), cu toata
-    /// geometria lui triangulata, culoarea afisata, toate proprietatile, GUID si nivel.
+    /// Export of the open Navisworks document (NWD / NWC / NWF / any loaded format) to .bimc:
+    /// one ManageBIM element for each Navisworks object (e.g. a Revit element), with all its
+    /// triangulated geometry, the displayed color, all properties, GUID and level.
     /// </summary>
     public static class NwExporter
     {
@@ -19,7 +19,7 @@ namespace ManageBIM.Navis
             public long Triangles;
             public long Bytes;
             public List<string> Warnings = new List<string>();
-            /// timpii pe etape (pentru jurnal)
+            /// the times per stage (for the log)
             public string Timing = "";
         }
 
@@ -32,15 +32,15 @@ namespace ManageBIM.Navis
             long tCollect, tMeta = 0, tGeo = 0, tWrite = 0;
             progress?.Invoke(0.0, "Reading the model structure");
 
-            // 1) elementele cu geometrie, grupate pe "obiect" (nivelul pe care il selecteaza Navisworks)
-            // o singura parcurgere de sus in jos: elementul = primul nod de sus care NU e fisier, layer sau
-            // grup (collection) - pentru Revit, elementul Revit. Mai fin decat FindFirstObjectAncestor (care
-            // lipea de ex. toate tubulaturile unei categorii intr-un singur obiect) si fara sa urcam prin
-            // ierarhie pentru fiecare nod (la milioane de noduri asta dura zeci de minute).
-            // Fara dictionar cu cheie ModelItem: hash-ul lui e slab si la zeci de mii de obiecte cautarile
-            // deveneau tot mai lente (~1 000 noduri / s). Fiecare nod poarta direct indicele obiectului sau.
-            var order = new List<ModelItem>();          // obiectele, in ordinea din Selection Tree
-            var members = new List<List<ModelItem>>();  // nodurile de geometrie ale fiecarui obiect
+            // 1) the elements with geometry, grouped by "object" (the level that Navisworks selects)
+            // a single top-down pass: the element = the first node from the top that is NOT a file, layer or
+            // group (collection) - for Revit, the Revit element. Finer than FindFirstObjectAncestor (which
+            // glued e.g. all the ducts of a category into a single object) and without climbing the
+            // hierarchy for each node (with millions of nodes that took tens of minutes).
+            // No dictionary keyed by ModelItem: its hash is weak and with tens of thousands of objects the lookups
+            // became slower and slower (~1 000 nodes / s). Each node carries its object index directly.
+            var order = new List<ModelItem>();          // the objects, in the Selection Tree order
+            var members = new List<List<ModelItem>>();  // the geometry nodes of each object
             var stack = new Stack<(ModelItem item, int obj, bool root)>();
             var modelRoots = new List<ModelItem>();
             foreach (Model mdl in doc.Models) modelRoots.Add(mdl.RootItem);
@@ -61,13 +61,13 @@ namespace ManageBIM.Navis
                 {
                     if (cur < 0)
                     {
-                        // geometrie direct sub fisier / layer: element de sine statator
+                        // geometry directly under file / layer: a standalone element
                         order.Add(it);
                         members.Add(new List<ModelItem> { it });
                     }
                     else members[cur].Add(it);
                 }
-                // copiii in ordine inversa pe stiva -> parcurgere in ordinea din Selection Tree
+                // the children in reverse order on the stack -> traversal in the Selection Tree order
                 kids.Clear();
                 foreach (ModelItem c in it.Children) kids.Add(c);
                 for (int k = kids.Count - 1; k >= 0; k--) stack.Push((kids[k], cur, false));
@@ -79,8 +79,8 @@ namespace ManageBIM.Navis
                 }
             }
 
-            // "obiecte" care sunt de fapt grupuri mari (modele din 3ds / FBX / DWG fara blocuri, ansambluri):
-            // peste SplitAbove noduri de geometrie -> fiecare nod devine un element (cu proprietatile obiectului)
+            // "objects" that are actually large groups (models from 3ds / FBX / DWG without blocks, assemblies):
+            // above SplitAbove geometry nodes -> each node becomes an element (with the object properties)
             const int SplitAbove = 50;
             var units = new List<(ModelItem item, List<ModelItem> geo, ModelItem parent)>(order.Count);
             int split = 0, geoNodes = 0, objects = 0;
@@ -88,7 +88,7 @@ namespace ManageBIM.Navis
             {
                 ModelItem obj = order[i];
                 var list = members[i];
-                if (list.Count == 0) continue; // obiect fara geometrie (ex. doar adnotari)
+                if (list.Count == 0) continue; // object without geometry (e.g. only annotations)
                 objects++;
                 geoNodes += list.Count;
                 if (list.Count > SplitAbove)
@@ -101,7 +101,7 @@ namespace ManageBIM.Navis
             members = null;
             tCollect = sw.ElapsedMilliseconds;
 
-            // 2) geometrie + proprietati pentru fiecare element, scrise imediat (memorie constanta)
+            // 2) geometry + properties for each element, written immediately (constant memory)
             long nprops = 0;
             using (var outp = new BimcStream(path))
             {
@@ -118,7 +118,7 @@ namespace ManageBIM.Navis
                     }
                     var e = new BimcElement();
                     long t0 = sw.ElapsedMilliseconds;
-                    // element dintr-un grup impartit: proprietatile nodului + ale obiectului parinte
+                    // element of a split group: the node properties + those of the parent object
                     FillMetadata(obj, parent != null ? new List<ModelItem> { parent } : geo, e);
                     long t1 = sw.ElapsedMilliseconds;
                     tMeta += t1 - t0;
@@ -133,7 +133,7 @@ namespace ManageBIM.Navis
                     tGeo += t2 - t1;
                     if (e.TriangleCount == 0) continue;
                     nprops += e.Props.Count;
-                    outp.Add(e); // codat si scris; geometria elementului se elibereaza aici
+                    outp.Add(e); // encoded and written; the element geometry is released here
                     tWrite += sw.ElapsedMilliseconds - t2;
                 }
                 res.Elements = (int)outp.Elements;
@@ -157,17 +157,17 @@ namespace ManageBIM.Navis
             return res;
         }
 
-        /// nod de tip fisier (si fisierele atasate / xref din NWF, NWD compuse)
+        /// file-type node (and the attached files / xref from NWF, composite NWD)
         private static bool IsFileNode(ModelItem it)
         {
             string c = it.ClassName ?? "";
             return c == "LcOaPartition" || c.IndexOf("Partition", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        // ------------------------------------------------------------------ metadate
+        // ------------------------------------------------------------------ metadata
         /// <summary>
-        /// Toate proprietatile: categoriile obiectului + categoriile care exista doar pe nodurile lui de
-        /// geometrie (ex. Material, Geometry) + calea din Selection Tree.
+        /// All properties: the object categories + the categories that exist only on its
+        /// geometry nodes (e.g. Material, Geometry) + the Selection Tree path.
         /// </summary>
         private static void FillMetadata(ModelItem obj, List<ModelItem> geo, BimcElement e)
         {
@@ -180,7 +180,7 @@ namespace ManageBIM.Navis
             foreach (PropertyCategory cat in src.PropertyCategories)
             {
                 string g = cat.DisplayName;
-                // aceeasi categorie pe obiect si pe geometrie: o pastram o singura data (cea a obiectului)
+                // the same category on the object and on the geometry: we keep it only once (the object's)
                 if (!seen.Add(g)) continue;
                 foreach (DataProperty p in cat.Properties)
                 {
@@ -190,14 +190,14 @@ namespace ManageBIM.Navis
                     catch { continue; }
                     if (string.IsNullOrEmpty(v)) continue;
                     e.Add(g, n, v);
-                    // GUID stabil intre versiuni: IFC GlobalId (din Revit / IFC), altfel GUID-ul Navisworks
+                    // GUID stable between versions: IFC GlobalId (from Revit / IFC), otherwise the Navisworks GUID
                     if (guid == null && (n == "IfcGUID" || n == "IFC GUID" || n == "GlobalId" || n == "IfcGlobalId" || n == "Ifc GUID")) guid = v;
                     if (level == null && (n == "Level" || n == "Base Constraint" || n == "Reference Level" || n == "Building Storey")) level = v;
                     if (category == null && n == "Category" && g != "Item") category = v;
                     if (layer == null && g == "Item" && n == "Layer") layer = v;
                 }
             }
-            // calea din Selection Tree (fisier > nivel / strat > ... > obiect)
+            // the Selection Tree path (file > level / layer > ... > object)
             var chain = new List<string>();
             for (ModelItem p = obj.Parent; p != null; p = p.Parent)
                 if (!string.IsNullOrEmpty(p.DisplayName)) chain.Add(p.DisplayName);
@@ -211,7 +211,7 @@ namespace ManageBIM.Navis
             e.Type = category ?? obj.ClassDisplayName ?? "";
         }
 
-        /// stratul (layer) din ierarhie - pentru modele fara proprietate "Level" (DWG, NWC din AutoCAD)
+        /// the layer from the hierarchy - for models without a "Level" property (DWG, NWC from AutoCAD)
         private static string LayerOf(ModelItem obj)
         {
             for (ModelItem p = obj.Parent; p != null; p = p.Parent)
@@ -231,29 +231,29 @@ namespace ManageBIM.Navis
 
         private static byte ToByte(double v) => (byte)Math.Max(0, Math.Min(255, Math.Round(v * 255.0)));
 
-        // ------------------------------------------------------------------ geometrie (COM API)
-        // Nota: Navisworks intoarce un obiect COM nou la fiecare acces la frag.Geometry, deci geometria
-        // instantiata nu poate fi recunoscuta / refolosita prin API (testat: 0 potriviri) - o triangulam per fragment.
-        // Fara Autodesk.Navisworks.Interop.ComApi (versiune diferita in fiecare an): calea si fragmentele prin
-        // IDispatch (cateva apeluri / fragment), varfurile prin vtable (NwCom.cs) - acelasi DLL in 2022-2026.
+        // ------------------------------------------------------------------ geometry (COM API)
+        // Note: Navisworks returns a new COM object on every access to frag.Geometry, so the instanced
+        // geometry cannot be recognized / reused through the API (tested: 0 matches) - we triangulate it per fragment.
+        // Without Autodesk.Navisworks.Interop.ComApi (a different version every year): the path and fragments through
+        // IDispatch (a few calls / fragment), the vertices through the vtable (NwCom.cs) - the same DLL in 2022-2026.
         private static void AddGeometry(ModelItem item, BimcElement e, uint color, double toM)
         {
             dynamic path = NwCom.ToPath(item);
             int[] own = NwCom.Ints((object)path.ArrayData);
             foreach (dynamic frag in path.Fragments())
             {
-                // geometria instantiata e impartita intre mai multe cai: pastram doar fragmentele acestui element
+                // the instanced geometry is shared between several paths: we keep only the fragments of this element
                 int[] fp = NwCom.Ints((object)frag.path.ArrayData);
                 if (!own.SequenceEqual(fp)) continue;
                 double[] m = NwCom.Doubles((object)frag.GetLocalToWorldMatrix().Matrix, 16);
                 var sink = new TriangleSink(e, color, m, toM);
-                // 0 = eNONE: fara normale (ManageBIM le recalculeaza) - mai putine date prin COM pe fiecare varf
+                // 0 = eNONE: no normals (ManageBIM recomputes them) - less data through COM per vertex
                 frag.GenerateSimplePrimitives(0, sink);
             }
         }
     }
 
-    /// primeste triunghiurile de la Navisworks (coordonate locale fragmentului) si le transforma in metri
+    /// receives the triangles from Navisworks (fragment local coordinates) and transforms them to meters
     [ComVisible(true)]
     [ClassInterface(ClassInterfaceType.None)]
     public sealed class TriangleSink : INwSimplePrimitivesCB
@@ -262,7 +262,7 @@ namespace ManageBIM.Navis
             private readonly uint color;
             private readonly double[] m;
             private readonly double s;
-            // tampon refolosit: coordonatele vin ca float[*] (indexat de la 1) - copiere directa, fara boxing
+            // reused buffer: the coordinates come as float[*] (indexed from 1) - direct copy, no boxing
             private readonly float[] c = new float[3];
 
             internal TriangleSink(BimcElement e, uint color, double[] m, double toM) { this.e = e; this.color = color; this.m = m; s = toM; }
@@ -271,7 +271,7 @@ namespace ManageBIM.Navis
             {
                 var a = (Array)((INwSimpleVertex)v).get_coord();
                 Array.Copy(a, a.GetLowerBound(0), c, 0, 3);
-                // matrice coloana (translatia in elementele 12..14)
+                // column matrix (the translation in elements 12..14)
                 double x = c[0], y = c[1], z = c[2];
                 return new V3((m[0] * x + m[4] * y + m[8] * z + m[12]) * s, (m[1] * x + m[5] * y + m[9] * z + m[13]) * s, (m[2] * x + m[6] * y + m[10] * z + m[14]) * s);
             }

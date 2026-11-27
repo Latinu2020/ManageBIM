@@ -1,20 +1,20 @@
-//! Clash Detective ca in Navisworks: starea testelor (New / Done / Old), import / export al testelor
-//! (XML Navisworks "Import / Export Clash Tests" si CSV), matricea de clash pe teste (selectia A pe randuri,
-//! selectia B pe coloane, ca in add-in-urile "Clash Matrix" pentru Navisworks) si sumarul dupa Update All.
+//! Clash Detective as in Navisworks: the state of the tests (New / Done / Old), import / export of the tests
+//! (Navisworks XML "Import / Export Clash Tests" and CSV), the clash matrix by tests (selection A in rows,
+//! selection B in columns, as in the "Clash Matrix" add-ins for Navisworks) and the summary after Update All.
 use crate::app::*;
 use crate::clash::{ClashStatus, ClashType};
 use crate::e57::Node;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Starea unui test, ca in coloana Status din Navisworks.
+/// The state of a test, as in the Status column in Navisworks.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TestState {
-    /// niciodata rulat
+    /// never run
     New,
-    /// rulat, configuratia nu s-a schimbat de atunci
+    /// run, the configuration has not changed since
     Done,
-    /// configuratia (selectii, tip, toleranta, reguli) s-a schimbat dupa ultima rulare
+    /// the configuration (selections, type, tolerance, rules) changed after the last run
     Old,
 }
 
@@ -28,7 +28,7 @@ impl TestState {
     }
 }
 
-/// Amprenta configuratiei unui test (fara rezultate): se schimba cand testul trebuie rulat din nou.
+/// The fingerprint of a test's configuration (without results): it changes when the test must be run again.
 pub fn run_key(t: &ClashTest) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -46,7 +46,7 @@ pub fn test_state(t: &ClashTest) -> TestState {
     }
 }
 
-/// Numarul de clash-uri pe stari: [New, Active, Reviewed, Approved, Resolved].
+/// The number of clashes by status: [New, Active, Reviewed, Approved, Resolved].
 pub fn status_counts(t: &ClashTest) -> [usize; 5] {
     let mut c = [0; 5];
     for r in &t.results {
@@ -55,7 +55,7 @@ pub fn status_counts(t: &ClashTest) -> [usize; 5] {
     c
 }
 
-/// Configuratia unui test (ce se exporta / importa; fara rezultate).
+/// The configuration of a test (what is exported / imported; without results).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TestDef {
     pub name: String,
@@ -91,9 +91,9 @@ impl TestDef {
     }
 }
 
-// ------------------------------------------------------------------ selectii <-> text
+// ------------------------------------------------------------------ selections <-> text
 
-/// "All elements", "Set: X", "Model: X", "Type: X", "Discipline: X" -> selector (inversul lui Selector::label).
+/// "All elements", "Set: X", "Model: X", "Type: X", "Discipline: X" -> selector (the inverse of Selector::label).
 pub fn selector_from_label(s: &str) -> Selector {
     let s = s.trim();
     let mk = |kind, v: &str| Selector { kind, value: v.trim().to_string() };
@@ -105,7 +105,7 @@ pub fn selector_from_label(s: &str) -> Selector {
     if s.is_empty() || s.eq_ignore_ascii_case("all elements") || s.eq_ignore_ascii_case("all") || s == "/" {
         return mk(SelKind::All, "");
     }
-    // un nume simplu = set de selectie (ca in Navisworks)
+    // a plain name = selection set (as in Navisworks)
     mk(SelKind::Set, s)
 }
 
@@ -160,7 +160,7 @@ fn kid<'a>(n: &'a Node, name: &str) -> Option<&'a Node> {
     n.kids.iter().find(|k| k.name == name)
 }
 
-/// O conditie findspec Navisworks -> regula de cautare ManageBIM.
+/// A Navisworks findspec condition -> a ManageBIM search rule.
 fn rule_of(c: &Node) -> Option<SearchRule> {
     let cat = kid(c, "category").and_then(|x| kid(x, "name")).map(|x| x.text.trim().to_string()).unwrap_or_default();
     let prop = kid(c, "property").and_then(|x| kid(x, "name")).map(|x| x.text.trim().to_string()).unwrap_or_default();
@@ -190,20 +190,20 @@ fn rule_of(c: &Node) -> Option<SearchRule> {
     Some(SearchRule::new(g, f, op, &value, or))
 }
 
-/// Rezultatul unui import: testele, seturile noi si avertismentele.
+/// The result of an import: the tests, the new sets and the warnings.
 pub struct Imported {
     pub tests: Vec<TestDef>,
     pub sets: Vec<SelSet>,
     pub warnings: Vec<String>,
 }
 
-/// Citeste un XML de teste Navisworks (Clash Detective > Import / Export > Export Clash Tests, sau un raport
-/// XML) - si cel scris de ManageBIM, care pastreaza exact selectiile si regulile.
+/// Reads a Navisworks tests XML (Clash Detective > Import / Export > Export Clash Tests, or an XML
+/// report) - and the one written by ManageBIM, which keeps the selections and rules exactly.
 pub fn parse_tests_xml(text: &str) -> Result<Imported, String> {
     let text = text.trim_start_matches('\u{feff}');
     let root = crate::e57::parse_xml(text).map_err(|_| "This is not a valid XML file.".to_string())?;
     let mut warnings = Vec::new();
-    // seturile din fisier (si din foldere)
+    // the sets from the file (and from folders)
     let mut nodes = Vec::new();
     all_named(&root, "selectionset", &mut nodes);
     let mut file_sets: Vec<SelSet> = Vec::new();
@@ -220,7 +220,7 @@ pub fn parse_tests_xml(text: &str) -> Result<Imported, String> {
         }
         file_sets.push(SelSet { name, kind: SetKind::Search(rules) });
     }
-    // definitiile exacte scrise de ManageBIM
+    // the exact definitions written by ManageBIM
     let extra: HashMap<String, TestDef> = text
         .find("<!--managebim-tests:")
         .and_then(|i| {
@@ -259,7 +259,7 @@ pub fn parse_tests_xml(text: &str) -> Result<Imported, String> {
                 None => Selector { kind: SelKind::All, value: String::new() },
                 Some(l) => {
                     if let Some(set) = l.strip_prefix("lcop_selection_set_tree/") {
-                        // "Folder/Set" -> numele setului; etichetele ManageBIM ("Model: X") se recunosc
+                        // "Folder/Set" -> the set name; the ManageBIM labels ("Model: X") are recognised
                         let n = set.rsplit('/').next().unwrap_or(set).trim();
                         let s = selector_from_label(n);
                         if s.kind != SelKind::Set {
@@ -283,7 +283,7 @@ pub fn parse_tests_xml(text: &str) -> Result<Imported, String> {
             }
         }
         let ty = type_from(t.attr("test_type").unwrap_or("hard"));
-        // toleranta in unitatile fisierului (implicit metri)
+        // the tolerance in the file units (metres by default)
         let units = root.attr("units").or_else(|| {
             let mut v = Vec::new();
             all_named(&root, "batchtest", &mut v);
@@ -300,7 +300,7 @@ pub fn parse_tests_xml(text: &str) -> Result<Imported, String> {
         let mut rules = ClashRules::default();
         rules.auto_assign = false;
         rules.normal_joints = false;
-        // regulile Navisworks: "in acelasi fisier" e singura care are echivalent direct
+        // the Navisworks rules: "in the same file" is the only one with a direct equivalent
         let mut rn = Vec::new();
         all_named(t, "rule", &mut rn);
         let mut same_file = false;
@@ -315,12 +315,12 @@ pub fn parse_tests_xml(text: &str) -> Result<Imported, String> {
         }
         tests.push(TestDef { name, a, b, ty, tol_mm: (tol_mm * 1000.0).round() / 1000.0, ignore_same_file: same_file, rules, sev_mm: sev() });
     }
-    // doar seturile folosite de teste (sau toate, daca nu s-a gasit nimic)
+    // only the sets used by tests (or all of them, if nothing was found)
     let sets: Vec<SelSet> = file_sets.into_iter().filter(|s| used_sets.contains(&s.name)).collect();
     Ok(Imported { tests, sets, warnings })
 }
 
-/// CSV / Excel: un rand pe test. Coloanele se recunosc dupa nume (oricare ordine).
+/// CSV / Excel: one row per test. The columns are recognised by name (any order).
 pub fn parse_tests_rows(rows: &[Vec<String>]) -> Result<Imported, String> {
     let h = rows.iter().position(|r| r.iter().any(|c| c.trim().eq_ignore_ascii_case("name") || c.trim().eq_ignore_ascii_case("test name") || c.trim().eq_ignore_ascii_case("test"))).ok_or("No header row with a \"Name\" column.")?;
     let cols: Vec<String> = rows[h].iter().map(|c| c.trim().trim_start_matches('\u{feff}').to_lowercase()).collect();
@@ -384,18 +384,18 @@ pub const CSV_HEADERS: [&str; 22] = [
     "Ignore same file", "Ignore same level", "Ignore same type", "Ignore normal joints", "Joint (mm)", "Auto assign", "Major from (mm)", "Critical from (mm)", "Run",
 ];
 
-// ------------------------------------------------------------------ matricea pe teste
+// ------------------------------------------------------------------ the matrix by tests
 
-/// Matricea testelor: selectia A pe randuri, selectia B pe coloane; fiecare celula = testele acelei perechi.
+/// The test matrix: selection A in rows, selection B in columns; each cell = the tests of that pair.
 pub struct TestMatrix {
     pub rows: Vec<String>,
     pub cols: Vec<String>,
-    /// (rand, coloana) -> indicii testelor
+    /// (row, column) -> the test indices
     pub cells: HashMap<(usize, usize), Vec<usize>>,
 }
 
 impl TestMatrix {
-    /// [New, Active, Reviewed, Approved, Resolved] pentru o celula (suma testelor ei).
+    /// [New, Active, Reviewed, Approved, Resolved] for a cell (the sum of its tests).
     pub fn counts(&self, tests: &[ClashTest], r: usize, c: usize) -> Option<[usize; 5]> {
         let ix = self.cells.get(&(r, c))?;
         let mut s = [0; 5];
@@ -430,13 +430,13 @@ pub fn test_matrix(tests: &[ClashTest]) -> TestMatrix {
     TestMatrix { rows, cols, cells }
 }
 
-/// Sumarul dupa Update All: pe test, (nume, inainte [5], dupa [5]).
+/// The summary after Update All: per test, (name, before [5], after [5]).
 pub type UpdateSummary = Vec<(String, [usize; 5], [usize; 5])>;
 
 impl App {
-    // ------------------------------------------------------------------ butoanele Navisworks
+    // ------------------------------------------------------------------ the Navisworks buttons
 
-    /// Reset All: sterge rezultatele tuturor testelor (testele raman, cu starea New).
+    /// Reset All: deletes the results of all tests (the tests remain, with the New status).
     pub fn clash_reset_all(&mut self) {
         for t in &mut self.clash.tests {
             t.results.clear();
@@ -447,7 +447,7 @@ impl App {
         self.toast("All clash results removed - the tests are back to New.");
     }
 
-    /// Compact All: sterge clash-urile Resolved din toate testele.
+    /// Compact All: deletes the Resolved clashes from all tests.
     pub fn clash_compact_all(&mut self) {
         let mut n = 0;
         for t in &mut self.clash.tests {
@@ -459,7 +459,7 @@ impl App {
         self.toast(format!("Compact All: {n} resolved clashes removed."));
     }
 
-    /// Delete All: sterge toate testele (ramane un test gol).
+    /// Delete All: deletes all tests (an empty test remains).
     pub fn clash_delete_all(&mut self) {
         self.clash.tests.clear();
         self.clash.tests.push(ClashTest::new("Test 1".into()));
@@ -475,7 +475,7 @@ impl App {
         self.colors_dirty = true;
     }
 
-    /// Update All: ruleaza toate testele unul dupa altul; la final apare sumarul (ce e nou, ce e activ, ce s-a rezolvat).
+    /// Update All: runs all tests one after another; at the end the summary appears (what is new, what is active, what was resolved).
     pub fn clash_update_all(&mut self) {
         if self.clash.job.is_some() || self.clash.tests.is_empty() {
             return;
@@ -487,12 +487,12 @@ impl App {
         self.cur_test = 0;
         self.run_clash(0);
         if self.clash.job.is_none() {
-            // primul test nu a putut porni (selectie goala): trecem la urmatorul
+            // the first test could not start (empty selection): we move on to the next one
             self.clash_queue_next();
         }
     }
 
-    /// urmatorul test din coada; la final, sumarul Update All
+    /// the next test in the queue; at the end, the Update All summary
     pub fn clash_queue_next(&mut self) {
         while !self.clash.queue.is_empty() && self.clash.job.is_none() {
             let n = self.clash.queue.remove(0);
@@ -510,7 +510,7 @@ impl App {
                     })
                     .collect();
                 self.update_summary = Some(sum);
-                // inapoi la testul pe care il aveai deschis
+                // back to the test you had open
                 if let Some(c) = self.update_all_cur.take() {
                     self.cur_test = c.min(self.clash.tests.len().saturating_sub(1));
                     self.cur_result = None;
@@ -522,8 +522,8 @@ impl App {
 
     // ------------------------------------------------------------------ import
 
-    /// Import Clash Tests: XML Navisworks / ManageBIM, CSV sau Excel. Testele cu acelasi nume se actualizeaza
-    /// (rezultatele raman), celelalte se adauga.
+    /// Import Clash Tests: Navisworks / ManageBIM XML, CSV or Excel. Tests with the same name are updated
+    /// (the results remain), the others are added.
     pub fn import_clash_tests(&mut self, path: &str) {
         let lower = path.to_lowercase();
         let parsed = if lower.ends_with(".xml") {
@@ -542,7 +542,7 @@ impl App {
                 n_sets += 1;
             }
         }
-        // testul gol implicit ("Test 1" fara rezultate) e inlocuit
+        // the default empty test ("Test 1" with no results) is replaced
         if self.clash.tests.len() == 1 && self.clash.tests[0].results.is_empty() && self.clash.tests[0].last_run.is_empty() && !imp.tests.iter().any(|t| t.name == self.clash.tests[0].name) {
             self.clash.tests.clear();
         }
@@ -577,7 +577,7 @@ impl App {
 
     // ------------------------------------------------------------------ export
 
-    /// Seturile cerute de selectiile testelor, care nu exista ca seturi: Model / Type / Discipline -> search sets.
+    /// The sets required by the test selections that do not exist as sets: Model / Type / Discipline -> search sets.
     fn selector_sets(&self) -> Vec<SelSet> {
         let mut out: Vec<SelSet> = Vec::new();
         for t in &self.clash.tests {
@@ -590,7 +590,7 @@ impl App {
                     SelKind::Model => vec![SearchRule::new(ITEM_CAT, "Model", SearchOp::Contains, &model_label(&s.value), false)],
                     SelKind::Type => vec![SearchRule::new(ITEM_CAT, "IFC Type", SearchOp::Equals, &s.value, false)],
                     SelKind::Discipline => {
-                        // tipurile din modelele incarcate care apartin disciplinei (SAU intre ele)
+                        // the types from the loaded models that belong to the discipline (OR between them)
                         let mut types: Vec<String> = Vec::new();
                         for (_, m) in self.loaded_models() {
                             for e in &m.elements {
@@ -610,8 +610,8 @@ impl App {
         out
     }
 
-    /// XML-ul testelor pentru Navisworks (Clash Detective > Import / Export > Import Clash Tests) +
-    /// seturile folosite + definitiile exacte ManageBIM (comentariu, ignorat de Navisworks).
+    /// The tests XML for Navisworks (Clash Detective > Import / Export > Import Clash Tests) +
+    /// the sets used + the exact ManageBIM definitions (a comment, ignored by Navisworks).
     pub fn clash_tests_xml(&self) -> (String, Vec<String>) {
         use crate::markup::esc;
         let extra = self.selector_sets();
@@ -625,7 +625,7 @@ impl App {
         let mut tests = String::new();
         for t in &self.clash.tests {
             let side = |tag: &str, s: &Selector| format!("<{tag}><clashselection selfintersect=\"0\" primtypes=\"1\"><locator>{}</locator></clashselection></{tag}>", esc(&locator(s)));
-            // regulile ManageBIM nu au echivalent sigur in schema Navisworks: raman in comentariul managebim-tests
+            // the ManageBIM rules have no reliable equivalent in the Navisworks schema: they stay in the managebim-tests comment
             let rules = "<rules/>";
             tests.push_str(&format!(
                 "    <clashtest name=\"{}\" test_type=\"{}\" status=\"new\" tolerance=\"{:.6}\" merge_composites=\"0\">\n      <linkage mode=\"none\"/>\n      {}\n      {}\n      {rules}\n    </clashtest>\n",
@@ -636,7 +636,7 @@ impl App {
                 side("right", &t.b)
             ));
         }
-        // seturile proiectului + cele generate din selectii
+        // the project sets + the ones generated from selections
         let (sets, warn) = self.navis_selectionsets_xml_with(&extra);
         let defs: Vec<TestDef> = self.clash.tests.iter().map(TestDef::of).collect();
         let json = serde_json::to_vec(&defs).unwrap_or_default();
@@ -709,10 +709,10 @@ impl App {
         }
     }
 
-    // ------------------------------------------------------------------ matricea in Excel
+    // ------------------------------------------------------------------ the matrix in Excel
 
-    /// Matricea pe teste in Excel: foaia "Matrix" (deschise / total pe perechea A x B), cate o foaie pe stare
-    /// si foaia "Tests" (fiecare test cu toate starile).
+    /// The matrix by tests in Excel: the "Matrix" sheet (open / total for the A x B pair), one sheet per status
+    /// and the "Tests" sheet (each test with all statuses).
     pub fn export_test_matrix(&mut self, path: &str) {
         use crate::qto::{Cell, Sheet};
         let m = test_matrix(&self.clash.tests);
@@ -745,7 +745,7 @@ impl App {
                 .collect();
             Sheet { name: name.into(), title: title.into(), headers: headers.clone(), widths: widths.clone(), rows, total_from: Some(1) }
         };
-        // foaia principala: textul celulei = testele si starile lor
+        // the main sheet: the cell text = the tests and their statuses
         let main_rows: Vec<Vec<Cell>> = (0..m.rows.len())
             .map(|r| {
                 let mut row = vec![Cell::S(m.rows[r].clone())];
@@ -801,7 +801,7 @@ impl App {
         }
     }
 
-    /// Testele noi din matricea de seturi: cate un test pentru fiecare pereche bifata care nu are inca test.
+    /// New tests from the set matrix: one test for each ticked pair that does not have a test yet.
     pub fn create_tests_from_matrix(&mut self, pairs: &[(Selector, Selector)], ty: ClashType, tol_mm: f32) -> usize {
         let mut n = 0;
         if self.clash.tests.len() == 1 && self.clash.tests[0].results.is_empty() && self.clash.tests[0].last_run.is_empty() && !pairs.is_empty() {
@@ -886,7 +886,7 @@ mod tests {
         assert_eq!(d.a.label(), "Discipline: Structure");
         assert_eq!(d.b.label(), "Set: Ducts");
         assert!(d.rules.same_level);
-        // XML: definitiile ManageBIM se pastreaza exact
+        // XML: the ManageBIM definitions are kept exactly
         let (x, _) = a.clash_tests_xml();
         let imp = parse_tests_xml(&x).unwrap();
         assert_eq!(imp.tests[0].a.label(), "Discipline: Structure");

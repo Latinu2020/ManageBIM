@@ -7,7 +7,7 @@ using AcApp = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
 [assembly: ExtensionApplication(typeof(ManageBIM.Acad.Plugin))]
 [assembly: CommandClass(typeof(ManageBIM.Acad.Commands))]
-// comenzile de referinta (MBREFERENCE / MBREFRELOAD / MBREFUNLOAD): fara linia asta AutoCAD / Plant 3D nu le vede
+// the reference commands (MBREFERENCE / MBREFRELOAD / MBREFUNLOAD): without this line AutoCAD / Plant 3D does not see them
 [assembly: CommandClass(typeof(ManageBIM.Acad.RefCommands))]
 [assembly: CommandClass(typeof(ManageBIM.Acad.LevelCommands))]
 
@@ -74,7 +74,7 @@ namespace ManageBIM.Acad
                 Image = Icons.Small(),
             });
             tab.Panels.Add(new RibbonPanel { Source = src });
-            // referinte din ManageBIM (.mbref): atasare / reincarcare / detasare, ca la XREF
+            // references from ManageBIM (.mbref): attach / reload / detach, as with XREF
             var refs = new RibbonPanelSource { Title = "Reference" };
             foreach (var (text, cmd, tip) in new[]
             {

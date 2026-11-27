@@ -1,4 +1,4 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
@@ -64,7 +64,7 @@ impl App {
         self.anim_objects(self.cur_anim, t);
     }
 
-    /// Elementele unui set animat.
+    /// The elements of an animated set.
     pub fn anim_set_items(&self, s: &crate::anim::AnimSet) -> Vec<ElemId> {
         if !s.items.is_empty() {
             return s.items.clone();
@@ -72,7 +72,7 @@ impl App {
         self.resolve_selector(&s.target)
     }
 
-    /// Aplica starea seturilor de obiecte animate la timpul t (culoare, transparenta, vizibilitate).
+    /// Applies the state of the animated object sets at time t (color, transparency, visibility).
     pub fn anim_objects(&mut self, anim: usize, t: f32) {
         let mut map: HashMap<ElemId, ([u8; 4], bool)> = HashMap::new();
         if let Some(a) = self.animations.get(anim) {
@@ -82,7 +82,7 @@ impl App {
                     let base = self.elem(id).map(|(m, e)| m.tri_color.get(e.tri_start as usize).copied().unwrap_or([200, 200, 200, 255])).unwrap_or([200, 200, 200, 255]);
                     let c = k.color.unwrap_or([base[0], base[1], base[2]]);
                     let alpha = ((1.0 - k.transparency.clamp(0.0, 1.0)) * base[3] as f32) as u8;
-                    // complet transparent = ascuns
+                    // fully transparent = hidden
                     map.insert(id, ([c[0], c[1], c[2], alpha], k.visible && alpha > 2));
                 }
             }
@@ -93,9 +93,9 @@ impl App {
         }
     }
 
-    /// Real-time preview in the viewport (si Record).
+    /// Real-time preview in the viewport (and Record).
     pub fn anim_tick(&mut self, dt: f32) {
-        // Record: un keyframe la fiecare 0,2 s cand camera s-a miscat
+        // Record: a keyframe every 0.2 s when the camera has moved
         if let Some((start, keys)) = &mut self.anim_rec {
             let t = start.elapsed().as_secs_f32();
             let moved = keys.last().is_none_or(|k| {
@@ -111,7 +111,7 @@ impl App {
         let mut t = t + dt * self.anim_dir;
         if t > dur || t < 0.0 {
             if self.anim_pp && dur > 0.0 {
-                // ping-pong: schimba directia
+                // ping-pong: reverse direction
                 self.anim_dir = -self.anim_dir;
                 t = t.clamp(0.0, dur);
             } else if self.anim_loop && dur > 0.0 {
@@ -126,7 +126,7 @@ impl App {
         self.goto_anim_time(t);
     }
 
-    /// Redare inainte (dir 1) sau inapoi (dir -1) de la timpul curent.
+    /// Playback forward (dir 1) or backward (dir -1) from the current time.
     pub fn play_anim(&mut self, dir: f32) {
         let dur = self.animations.get(self.cur_anim).map(|a| a.duration()).unwrap_or(0.0);
         if dur <= 0.0 {
@@ -142,7 +142,7 @@ impl App {
         self.anim_play = Some(t);
     }
 
-    /// Pas la keyframe-ul urmator (dir 1) sau anterior (dir -1).
+    /// Step to the next (dir 1) or previous (dir -1) keyframe.
     pub fn step_anim(&mut self, dir: i32) {
         let Some(a) = self.animations.get(self.cur_anim) else { return };
         let ts = a.key_times();
@@ -154,8 +154,8 @@ impl App {
         }
     }
 
-    /// Record (Navisworks Animation > Record): porneste / opreste inregistrarea navigarii; la oprire
-    /// devine o animatie noua.
+    /// Record (Navisworks Animation > Record): starts / stops recording the navigation; when stopped
+    /// it becomes a new animation.
     pub fn toggle_record(&mut self) {
         match self.anim_rec.take() {
             None => {
@@ -184,7 +184,7 @@ impl App {
         }
     }
 
-    /// Animatie prin toate viewpoint-urile salvate, in ordine.
+    /// Animation through all saved viewpoints, in order.
     pub fn anim_from_viewpoints(&mut self) {
         if self.viewpoints.is_empty() {
             return self.error("Save some viewpoints first (Viewpoint › Save View).");
@@ -195,7 +195,7 @@ impl App {
             a.keys.push(crate::anim::Keyframe { t: i as f32 * self.key_step, cam: v.cam });
         }
         if a.keys.len() == 1 {
-            // un singur viewpoint: camera sta pe loc cat un pas
+            // a single viewpoint: the camera stays put for one step
             let k = a.keys[0];
             a.keys.push(crate::anim::Keyframe { t: self.key_step, cam: k.cam });
         }
@@ -205,15 +205,15 @@ impl App {
         self.anim_time = 0.0;
     }
 
-    /// Import 4D: secventa de constructie din TimeLiner ca animatie (camera = vederea curenta). Fara
-    /// planificare, intai se importa una (CSV, MS Project, Primavera P6).
+    /// 4D import: the construction sequence from TimeLiner as an animation (camera = the current view). Without
+    /// a schedule, one is imported first (CSV, MS Project, Primavera P6).
     pub fn import_4d_animation(&mut self) {
         let Some((s, e)) = self.sim_range() else {
             self.anim_4d_pending = true;
             self.toast("Choose the construction schedule (CSV, MS Project XML or Primavera P6 XML) - the 4D animation is created from it.");
             return self.request_path(Purpose::ImportTasksCsv);
         };
-        // ~1 s pe saptamana de santier, intre 10 s si 60 s
+        // ~1 s per site week, between 10 s and 60 s
         let weeks = ((e - s + 1).max(1) as f32) / 7.0;
         let dur = weeks.clamp(10.0, 60.0);
         let mut a = crate::anim::Animation::new(format!("4D sequence {}", self.animations.iter().filter(|a| a.kind == crate::anim::AnimKind::FourD).count() + 1));
@@ -269,7 +269,7 @@ impl App {
         if path.extension().map(|e| e.to_string_lossy().to_lowercase()) != Some(fmt.ext().to_string()) {
             path.set_extension(fmt.ext());
         }
-        // marimea vine si din proiect (nevalidata): limitele din UI
+        // the size also comes from the project (unvalidated): the limits from the UI
         let (w, h, fps, q) = (self.render.width.clamp(64, 7680) & !1, self.render.height.clamp(64, 4320) & !1, self.render.fps.clamp(1, 120), self.render.quality);
         let ss = if self.render.supersample && fmt != VideoFormat::Gif { 2 } else { 1 };
         let frames = (anim.duration() * fps as f32).ceil() as u32 + 1;
@@ -277,12 +277,12 @@ impl App {
             Ok(s) => s,
             Err(e) => return self.error(e),
         };
-        // coada limitata: un cadru 4K supersampled are ~500 MB; captura asteapta encoderul in loc sa umple memoria
+        // bounded queue: a supersampled 4K frame is ~500 MB; the capture waits for the encoder instead of filling memory
         let (tx, rx) = std::sync::mpsc::sync_channel::<Frame>(2);
         let (dtx, drx) = channel();
         let p2 = path.clone();
         std::thread::spawn(move || {
-            // o panica in encoder devine eroare (altfel exportul ar ramane „in curs” pentru totdeauna)
+            // a panic in the encoder becomes an error (otherwise the export would stay „in progress” forever)
             let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
                 let mut sink = sink;
                 let mut res = Ok(());
@@ -307,7 +307,7 @@ impl App {
         self.stop_anim();
         let saved_sel = std::mem::take(&mut self.selected);
         self.colors_dirty = true;
-        // Render with materials: video in stilul Realistic (materiale, texturi, umbre); vederea revine la final
+        // Render with materials: video in the Realistic style (materials, textures, shadows); the view is restored at the end
         let saved_style = if self.render.with_materials {
             let prev = (self.settings.visual_style, self.materials_on);
             self.settings.visual_style = crate::render::VisualStyle::Realistic;
@@ -323,8 +323,8 @@ impl App {
         self.render_job = Some(RenderJob { anim: self.cur_anim, frame: 0, frames, fps, ss, w: w * ss, h: h * ss, tx: Some(tx), done: drx, path, waiting: false, started: Instant::now(), saved_sel, saved_style });
     }
 
-    /// Ce se scrie pe imaginile / cadrele exportate: (titlu, randuri culoare + text, jos).
-    /// 4D: data simularii si sarcinile in lucru (sus); Appearance Profiler: legenda culorilor (jos).
+    /// What is written on the exported images / frames: (title, color + text rows, bottom).
+    /// 4D: the simulation date and the tasks in progress (top); Appearance Profiler: the color legend (bottom).
     pub fn image_overlays(&self) -> Vec<(String, Vec<([u8; 4], String)>, bool)> {
         let mut out = Vec::new();
         if self.render.overlay_4d && self.sim_view() && !self.tasks.is_empty() {
@@ -366,8 +366,8 @@ impl App {
 
     /// Drives the export: one captured frame per UI frame. Called before the viewport is drawn.
     pub fn start_pathtrace(&mut self) {
-        // Un job terminat ramane in `self.pt.job` (ca sa putem exporta PNG-ul),
-        // dar NU trebuie sa blocheze o randare noua.
+        // A finished job stays in `self.pt.job` (so we can export the PNG),
+        // but it must NOT block a new render.
         if let Some(j) = &self.pt.job {
             if !j.done.load(std::sync::atomic::Ordering::Relaxed) {
                 self.toast("Path trace already running.");
@@ -378,8 +378,8 @@ impl App {
             self.error("Open a model first - path tracing needs geometry.");
             return;
         }
-        // „Render with materials”: materialele (auto dupa tipul IFC daca nu exista) intra in scena,
-        // apoi vederea 3D revine cum era
+        // „Render with materials”: the materials (auto by IFC type if none exist) enter the scene,
+        // then the 3D view returns to how it was
         let restore = if self.render.with_materials && !self.materials_on {
             if self.mats.assign.is_empty() {
                 self.auto_materials();
@@ -392,7 +392,7 @@ impl App {
             }
             None
         };
-        // fara nuanta de selectie si cu aspectul final calculat chiar acum
+        // without the selection tint and with the final appearance computed right now
         self.materials_changed();
         self.rebuild_colors();
         let scene = std::sync::Arc::new(crate::pathtrace::Scene::build(self));
@@ -407,7 +407,7 @@ impl App {
         self.pt.notified = false;
         self.pt.done_at = None;
         let denoise = self.settings.render_denoise && crate::oidn::available().is_ok();
-        // luminile: soare, mediu (IBL) si expunerea generala
+        // the lights: sun, environment (IBL) and the overall exposure
         let env = (self.render.env_mode, self.render.env_intensity.clamp(0.0, 3.0), self.render.env_rotation);
         let light = self.render.sun_power.clamp(0.1, 3.0) * self.render.exposure.clamp(0.1, crate::anim::MAX_BRIGHTNESS);
         let hdri = if self.render.hdri_path.is_empty() { None } else {
@@ -440,18 +440,18 @@ impl App {
             ctx.request_repaint();
             return;
         }
-        // Worker-ul tine mutex-ul cat timp randreaza un sample intreg. Cu try_lock
-        // nu blocam firul UI (la 512/1024 px altfel aplicatia pare inghetata).
+        // The worker holds the mutex while it renders a whole sample. With try_lock
+        // we do not block the UI thread (at 512/1024 px the app would otherwise seem frozen).
         let done = job.done.load(std::sync::atomic::Ordering::Relaxed);
-        // dupa terminare imaginea nu se mai schimba: nu refacem textura la fiecare cadru
+        // after it finishes the image no longer changes: we do not rebuild the texture every frame
         if done && self.pt.notified && self.pt.tex.is_some() {
             return;
         }
         let w = job.width as usize;
         let h = job.height as usize;
         let mut pixels = Vec::with_capacity(w * h * 4);
-        // tonemap ACES identic cu exportul PNG (ce vezi = ce salvezi)
-        // imaginea curatata de OIDN, daca exista; altfel media esantioanelor
+        // ACES tonemap identical to the PNG export (what you see = what you save)
+        // the image cleaned by OIDN, if there is one; otherwise the mean of the samples
         let den = if done { job.denoised.lock().ok().and_then(|d| d.clone()) } else { None };
         if let Some(img) = den {
             for p in img.chunks_exact(3) {
@@ -481,8 +481,8 @@ impl App {
                 self.pt.done_at = Some(job.started.elapsed().as_secs_f32());
                 self.toast(format!("✅ {} · {} {} · {:.1}s — {}", crate::i18n::tr("Path trace FINISHED"), job.count.load(std::sync::atomic::Ordering::Relaxed), crate::i18n::tr("samples"), self.pt.done_at.unwrap_or(0.0), crate::i18n::tr("Export PNG is ready")));
             }
-        // Repaint doar cat timp randarea e activa. Daca o cerem si dupa
-        // terminare, egui ramane intr-o bucla permanenta si aplicatia "merge" continuu.
+        // Repaint only while the render is active. If we request it after
+        // it finishes too, egui stays in a permanent loop and the app "runs" continuously.
         if !job.done.load(std::sync::atomic::Ordering::Relaxed) {
             ctx.request_repaint();
         }
@@ -494,7 +494,7 @@ impl App {
             self.error("No path trace running.");
             return;
         };
-        // imaginea curatata (deja medie) sau suma esantioanelor / numar
+        // the cleaned image (already averaged) or the sum of the samples / count
         let den = job.denoised.lock().ok().and_then(|d| d.clone());
         let r = match den {
             Some(img) => crate::pathtrace::save_png(path, &img, 1, job.width, job.height),
@@ -519,17 +519,17 @@ impl App {
                 }
                 f
             });
-            // captura pentru fisele de clash ale raportului Dashboard
+            // capture for the clash cards of the Dashboard report
             if self.still_path.is_none() && self.render_job.is_none() && self.dashboard_capture_done(&r) {
                 return;
             }
-            // captura ceruta de un asistent AI (MCP capture_view)
+            // capture requested by an AI assistant (MCP capture_view)
             if self.still_path.is_none() && self.render_job.is_none() && self.mcp.capture.is_some() {
                 self.mcp_capture_done(&r);
                 return;
             }
             if let Some(p) = self.still_path.take() {
-                // vederea revine cum era (stil, materiale, selectie)
+                // the view returns to how it was (style, materials, selection)
                 if let Some((style, mat, sel)) = self.still_restore.take() {
                     let changed = self.settings.visual_style != style || self.materials_on != mat;
                     self.settings.visual_style = style;
@@ -569,13 +569,13 @@ impl App {
         }
         let Some(j) = self.render_job.as_ref() else { return };
         if j.frame >= j.frames {
-            // toate cadrele trimise: inchide encoderul si asteapta rezultatul
+            // all frames sent: close the encoder and wait for the result
             if let Some(j) = self.render_job.as_mut() {
                 j.tx = None;
             }
             let res = match self.render_job.as_ref().map(|j| j.done.try_recv()) {
                 Some(Ok(r)) => Some(r),
-                // firul encoderului a disparut fara rezultat: exportul se inchide cu eroare, vederea revine
+                // the encoder thread disappeared without a result: the export closes with an error, the view is restored
                 Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => Some(Err("The video encoder stopped unexpectedly.".to_string())),
                 _ => None,
             };

@@ -1,4 +1,4 @@
-//! Actualizarea incrementala a culorilor trebuie sa dea exact acelasi buffer ca o reconstructie completa.
+//! The incremental color update must give exactly the same buffer as a complete rebuild.
 use bimrust::app::*;
 use bimrust::model::ElemId;
 use bimrust::render::Upload;
@@ -17,7 +17,7 @@ fn app() -> App {
     app
 }
 
-/// "GPU" simulat: aplica Colors / ColorRange pe bufferele fiecarui slot; intoarce cati octeti s-au trimis
+/// simulated "GPU": applies Colors / ColorRange on the buffers of each slot; returns how many bytes were sent
 fn apply(app: &App, gpu: &mut HashMap<u32, (Vec<u8>, Vec<u8>)>) -> usize {
     let mut sent = 0;
     for u in std::mem::take(&mut app.renderer.lock().unwrap().pending) {
@@ -39,7 +39,7 @@ fn apply(app: &App, gpu: &mut HashMap<u32, (Vec<u8>, Vec<u8>)>) -> usize {
     sent
 }
 
-/// reconstructie completa de referinta pentru starea curenta
+/// complete reference rebuild for the current state
 fn reference(app: &mut App) -> HashMap<u32, (Vec<u8>, Vec<u8>)> {
     let saved = std::mem::take(&mut app.looks);
     app.colors_dirty = true;
@@ -69,15 +69,15 @@ fn incremental_colors_match_full_rebuild() {
     let full = step(&mut app, &mut gpu, "initial");
     assert!(full > 0);
 
-    // un click de selectie: se trimite doar elementul selectat
+    // a selection click: only the selected element is sent
     app.selected.insert(ElemId { m: 0, e: 5 });
     let s = step(&mut app, &mut gpu, "select one");
     assert!(s > 0 && s * 20 < full, "select should send a small range, sent {s} of {full}");
 
-    // nimic schimbat -> nimic trimis
+    // nothing changed -> nothing sent
     assert_eq!(step(&mut app, &mut gpu, "no change"), 0);
 
-    // selectie in alt model + deselectare + ascundere + culoare + elemente vecine (interval comun)
+    // selection in another model + deselection + hiding + color + neighboring elements (shared range)
     app.selected.clear();
     app.selected.insert(ElemId { m: 1, e: 2 });
     app.hidden.insert(ElemId { m: 0, e: 7 });
@@ -85,11 +85,11 @@ fn incremental_colors_match_full_rebuild() {
     app.overrides.insert(ElemId { m: 1, e: 0 }, [255, 0, 0, 255]);
     step(&mut app, &mut gpu, "mixed changes");
 
-    // selectie mare (peste 1/3 din triunghiuri) -> reconstructie completa, tot corecta
+    // large selection (over 1/3 of the triangles) -> complete rebuild, still correct
     app.selected = app.all_ids().into_iter().filter(|i| i.m == 0).collect();
     step(&mut app, &mut gpu, "select everything");
 
-    // inapoi la normal
+    // back to normal
     app.selected.clear();
     app.hidden.clear();
     app.overrides.clear();

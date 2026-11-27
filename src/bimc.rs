@@ -14,13 +14,13 @@ use glam::DVec3;
 use std::collections::HashMap;
 
 pub const MAGIC: &[u8; 4] = b"BIMC";
-/// versiunea scrisa de ManageBIM (cache-urile proprii). v3 = v1 + geometrie partajata: un element a carui
-/// geometrie cuantizata e IDENTICA cu a unui element anterior (doar deplasata) trimite la ea, cu deplasarea.
-/// Proprietatile, numele si culorile raman ale fiecarui element; la citire geometria se reface exact.
+/// the version written by ManageBIM (its own caches). v3 = v1 + shared geometry: an element whose
+/// quantised geometry is IDENTICAL to that of an earlier element (only displaced) refers to it, with the displacement.
+/// The properties, names and colours stay per element; on reading, the geometry is rebuilt exactly.
 pub const VERSION: u16 = 3;
-/// cea mai noua versiune pe care o putem citi. v2 = "pe bucati" (add-in-ul Navisworks, modele foarte mari):
-///   "BIMC" u16 2 u16 2, apoi bucati: u8 tip | u32 marime necomprimata | u32 marime comprimata | DEFLATE
-///   tip 1 siruri noi, 2 elemente (codare v1), 3 info + avertismente, 0 sfarsit
+/// the newest version we can read. v2 = "chunked" (the Navisworks add-in, very large models):
+///   "BIMC" u16 2 u16 2, then chunks: u8 type | u32 uncompressed size | u32 compressed size | DEFLATE
+///   type 1 new strings, 2 elements (v1 encoding), 3 info + warnings, 0 end
 pub const MAX_READ_VERSION: u16 = 3;
 /// quantisation: 1 unit = 0.1 mm
 const Q: f64 = 10_000.0;
@@ -71,8 +71,8 @@ struct ElemScratch {
     idx: Vec<u32>,
 }
 
-/// Codarea unui element (comuna v1 / v2): metadate ca indici in tabela de siruri, geometrie indexata
-/// cuantizata la 0.1 mm si codata delta, culori pe secvente.
+/// The encoding of an element (shared by v1 / v2): metadata as indices into the string table, indexed geometry
+/// quantised to 0.1 mm and delta-coded, colours in runs.
 fn write_element(body: &mut W, st: &mut Strings, e: &RawElement, sc: &mut ElemScratch) {
     for s in [&e.name, &e.ifc_type, &e.guid, &e.storey] {
         let a = st.id(s);
@@ -132,7 +132,7 @@ fn write_element(body: &mut W, st: &mut Strings, e: &RawElement, sc: &mut ElemSc
     }
 }
 
-/// Geometria cuantizata a unui element: varfuri (0.1 mm) + indici, exact ca in codarea v1.
+/// The quantised geometry of an element: vertices (0.1 mm) + indices, exactly as in the v1 encoding.
 fn quantize(e: &RawElement) -> (Vec<[i64; 3]>, Vec<u32>) {
     let mut vmap: HashMap<[i64; 3], u32> = HashMap::new();
     let mut verts = Vec::new();
@@ -151,11 +151,11 @@ fn quantize(e: &RawElement) -> (Vec<[i64; 3]>, Vec<u32>) {
     (verts, idx)
 }
 
-/// Modul de scriere al geometriei unui element in v3.
+/// How the geometry of an element is written in v3.
 enum Geo {
-    /// geometrie proprie (tag 0), sau proprie si refolosita de elemente urmatoare (tag 2)
+    /// own geometry (tag 0), or own and reused by later elements (tag 2)
     Own { shared: bool },
-    /// aceeasi geometrie ca geometria partajata `id`, deplasata cu `delta` (unitati de 0.1 mm)
+    /// the same geometry as the shared geometry `id`, displaced by `delta` (units of 0.1 mm)
     Ref { id: u32, delta: [i64; 3] },
 }
 
@@ -194,8 +194,8 @@ fn write_colors(body: &mut W, colors: &[[u8; 4]]) {
     }
 }
 
-/// Pentru fiecare element: geometria proprie sau trimiterea la o geometrie identica (doar deplasata).
-/// Comparatia e exacta pe intregii cuantizati, deci geometria refacuta la citire e identica cu v1.
+/// For each element: its own geometry or the reference to an identical geometry (only displaced).
+/// The comparison is exact on the quantised integers, so the geometry rebuilt on reading is identical to v1.
 fn plan_shared(raw: &RawModel) -> (Vec<Geo>, usize) {
     use std::hash::{Hash, Hasher};
     let q: Vec<(Vec<[i64; 3]>, Vec<u32>)> = raw.elements.iter().map(quantize).collect();
@@ -215,11 +215,11 @@ fn plan_shared(raw: &RawModel) -> (Vec<Geo>, usize) {
         let (oa, ob) = (a.0[0], b.0[0]);
         a.0.iter().zip(&b.0).all(|(p, r)| p[0] - oa[0] == r[0] - ob[0] && p[1] - oa[1] == r[1] - ob[1] && p[2] - oa[2] == r[2] - ob[2])
     };
-    // hash -> elementele "reprezentant" (prima aparitie a fiecarei geometrii)
+    // hash -> the "representative" elements (the first occurrence of each geometry)
     let mut reps: HashMap<u64, Vec<usize>> = HashMap::new();
     let mut ref_of: Vec<Option<usize>> = vec![None; q.len()];
     for i in 0..q.len() {
-        // geometriile mici (< 4 triunghiuri) nu merita trimiteri
+        // small geometries (< 4 triangles) are not worth references
         if q[i].1.len() < 12 {
             continue;
         }
@@ -274,7 +274,7 @@ pub fn encode(raw: &RawModel) -> Vec<u8> {
     }
     body.u(raw.elements.len() as u64);
     for (e, g) in raw.elements.iter().zip(&plan) {
-        // metadate: identice cu v1 (fiecare element isi pastreaza numele, tipul, proprietatile)
+        // metadata: identical to v1 (each element keeps its name, type, properties)
         for s in [&e.name, &e.ifc_type, &e.guid, &e.storey] {
             let a = st.id(s);
             body.u(a as u64);
@@ -301,7 +301,7 @@ pub fn encode(raw: &RawModel) -> Vec<u8> {
                 }
             }
         }
-        // culorile raman ale fiecarui element (aceeasi geometrie poate avea alt material)
+        // the colours stay per element (the same geometry can have another material)
         write_colors(&mut body, &e.colors);
     }
     // payload = string table + body
@@ -357,7 +357,7 @@ impl<'a> R<'a> {
     }
 }
 
-/// Un element (aceeasi codare in v1 si in bucatile ELEMENTS din v2).
+/// One element (the same encoding in v1 and in the ELEMENTS chunks of v2).
 fn read_element(r: &mut R, strs: &[String], lim: usize, verts: &mut Vec<DVec3>) -> Result<RawElement, String> {
     let s = |i: u64| -> Result<String, String> { strs.get(i as usize).cloned().ok_or_else(|| "Bad string index".to_string()) };
     let name = s(r.u()?)?;
@@ -401,7 +401,7 @@ fn read_element(r: &mut R, strs: &[String], lim: usize, verts: &mut Vec<DVec3>) 
     Ok(RawElement { name, ifc_type, guid, storey, props, tris, colors, default_hidden })
 }
 
-/// v3: metadate ca in v1, apoi tag geometrie (0 proprie, 2 proprie + partajata, 1 trimitere), apoi culorile.
+/// v3: metadata as in v1, then the geometry tag (0 own, 2 own + shared, 1 reference), then the colours.
 fn read_element_v3(r: &mut R, strs: &[String], lim: usize, shared: &mut Vec<(Vec<[i64; 3]>, Vec<u32>)>) -> Result<RawElement, String> {
     let s = |i: u64| -> Result<String, String> { strs.get(i as usize).cloned().ok_or_else(|| "Bad string index".to_string()) };
     let name = s(r.u()?)?;
@@ -472,7 +472,7 @@ fn read_element_v3(r: &mut R, strs: &[String], lim: usize, shared: &mut Vec<(Vec
     Ok(RawElement { name, ifc_type, guid, storey, props, tris, colors, default_hidden })
 }
 
-/// v2: bucati independente, fiecare comprimata separat (scrise pe masura exportului).
+/// v2: independent chunks, each compressed separately (written as the export goes).
 fn decode_v2(mut b: &[u8]) -> Result<RawModel, String> {
     let mut strs: Vec<String> = Vec::new();
     let mut elements = Vec::new();
@@ -525,13 +525,13 @@ fn decode_v2(mut b: &[u8]) -> Result<RawModel, String> {
                     warnings.push(s(r.u()?)?);
                 }
             }
-            _ => {} // tipuri viitoare: ignorate
+            _ => {} // future types: ignored
         }
     }
     Ok(RawModel { elements, info, warnings })
 }
 
-/// v2 din Rust (aceeasi structura ca add-in-ul Navisworks) - folosit la teste si pentru modele foarte mari.
+/// v2 from Rust (the same structure as the Navisworks add-in) - used in tests and for very large models.
 pub fn encode_v2(raw: &RawModel, chunk_elements: usize) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(MAGIC);
@@ -566,7 +566,7 @@ pub fn encode_v2(raw: &RawModel, chunk_elements: usize) -> Vec<u8> {
         for e in part {
             write_element(&mut w, &mut st, e, &mut sc);
         }
-        // sirurile noi inaintea elementelor care le folosesc
+        // the new strings before the elements that use them
         flush_strings(&mut out, &st, &mut written);
         chunk(&mut out, 2, &w.buf);
     }
@@ -605,8 +605,8 @@ pub fn decode(data: &[u8]) -> Result<RawModel, String> {
     }
     let payload = match flags & 0xff {
         0 => {
-            // marimea declarata vine din fisier: LZ4 nu comprima mai mult de ~255:1, altfel e antet corupt
-            // (altfel s-ar aloca pana la 4 GB inainte de a afla ca fisierul e stricat)
+            // the declared size comes from the file: LZ4 does not compress more than ~255:1, otherwise the header is corrupt
+            // (otherwise up to 4 GB would be allocated before finding out that the file is broken)
             if data.len() < 12 {
                 return Err("Corrupt .bimc header".into());
             }
@@ -652,7 +652,7 @@ pub fn decode(data: &[u8]) -> Result<RawModel, String> {
     let ne = r.n(lim)?;
     let mut elements = Vec::with_capacity(ne);
     let mut verts: Vec<DVec3> = Vec::new();
-    // v3: geometriile partajate (intregi cuantizati), in ordinea aparitiei
+    // v3: the shared geometries (quantised integers), in order of appearance
     let mut shared: Vec<(Vec<[i64; 3]>, Vec<u32>)> = Vec::new();
     for _ in 0..ne {
         if ver >= 3 {

@@ -1,4 +1,4 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
@@ -55,9 +55,9 @@ impl App {
         let _ = dt;
     }
 
-    /// Mers lin: tastele si joystick-ul de mouse seteaza o viteza TINTA (`walk_target`, `walk_turn_target`)
-    /// in fiecare cadru; aici viteza reala se apropie de ea cu accelerare / franare (fara salturi,
-    /// independent de FPS), apoi tintele se reseteaza pentru cadrul urmator.
+    /// Smooth walking: the keys and the mouse joystick set a TARGET velocity (`walk_target`, `walk_turn_target`)
+    /// on every frame; here the real velocity approaches it with acceleration / braking (no jumps,
+    /// independent of FPS), then the targets are reset for the next frame.
     pub fn walk_tick(&mut self, dt: f32) {
         let dt = dt.clamp(0.0, 0.05);
         if self.path_run.is_some() {
@@ -88,7 +88,7 @@ impl App {
         }
     }
 
-    /// se misca (sau incetineste) camera in modul mers - pentru repaint continuu
+    /// the camera moves (or slows down) in walk mode - for continuous repaint
     pub fn walk_active(&self) -> bool {
         self.walk_vel != Vec3::ZERO || self.walk_turn != 0.0 || self.path_run.as_ref().map(|r| !r.paused).unwrap_or(false)
     }
@@ -103,23 +103,23 @@ impl App {
         }
     }
 
-    /// Punctul de pe podea de sub cursor (pentru traseul de mers): pe o suprafata orizontala / rampa
-    /// direct; pe un perete sau tavan coboara cu o raza verticala pe podeaua de sub el.
+    /// The floor point under the cursor (for the walk path): on a horizontal surface / ramp
+    /// directly; on a wall or ceiling it goes down with a vertical ray to the floor below it.
     pub fn walk_floor_hit(&self, uv: glam::Vec2, aspect: f32) -> Option<Vec3> {
         let (o, d) = self.cam.ray(uv, aspect);
         let (_, _, hit, tri) = self.pick(o, d)?;
         let n = (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalize_or_zero();
-        // triunghi degenerat (punct de nor) sau suprafata de calcat (panta < ~60°)
+        // degenerate triangle (cloud point) or walkable surface (slope < ~60°)
         if n == Vec3::ZERO || n.z.abs() > 0.5 {
             return Some(hit);
         }
-        // perete: putin inapoi spre camera, apoi in jos pana la podea
+        // wall: a little back toward the camera, then down to the floor
         let back = hit - d.normalize_or_zero() * 0.15;
         let (_, t, _, _) = self.pick(back + Vec3::Z * 0.05, Vec3::NEG_Z)?;
         Some(back + Vec3::Z * 0.05 - Vec3::Z * t)
     }
 
-    /// Porneste / opreste (pauza) mersul pe traseu.
+    /// Starts / stops (pauses) walking along the path.
     pub fn walk_path_play(&mut self) {
         if let Some(r) = self.path_run.as_mut() {
             if r.dist >= r.length() {
@@ -142,7 +142,7 @@ impl App {
         self.path_run = None;
     }
 
-    /// Traseul ca animatie (Animator): se poate edita, reda si exporta video.
+    /// The path as an animation (Animator): it can be edited, played back and exported as video.
     pub fn walk_path_to_animation(&mut self) {
         let Some(r) = walk::PathRun::new(&self.walk_path) else {
             self.toast("Draw a walk path first (at least 2 points).");
@@ -174,7 +174,7 @@ impl App {
                 let nz = (eye.z - self.fall_speed * dt).max(target);
                 self.cam.eye[2] = nz;
             } else if eye.z < target - 0.01 && target - eye.z < 0.6 {
-                // trepte / rampe: urca lin
+                // steps / ramps: climbs smoothly
                 self.cam.eye[2] = eye.z + (target - eye.z).min(4.0 * dt);
                 self.fall_speed = 0.0;
             } else {
@@ -185,8 +185,8 @@ impl App {
 }
 
 impl App {
-    /// Traseul de mers pentru Navisworks: `Outbox\walkpath.txt`, citit de comanda add-in-ului
-    /// "ManageBIM Walk path" (o animatie de viewpoint-uri). Puncte in coordonate reale (metri), la ochi.
+    /// The walk path for Navisworks: `Outbox\walkpath.txt`, read by the add-in command
+    /// "ManageBIM Walk path" (a viewpoint animation). Points in real coordinates (meters), at eye level.
     pub fn send_walk_path_to_navisworks(&mut self) {
         if self.walk_path.len() < 2 {
             return self.error("Draw a walk path first (at least two points).");
@@ -205,7 +205,7 @@ impl App {
     }
 }
 
-/// Formatul MBWALK 1: NAME, SPEED (m/s), EYE (m), FOV (grade), apoi un rand P x y z per punct (pardoseala, metri).
+/// The MBWALK 1 format: NAME, SPEED (m/s), EYE (m), FOV (degrees), then one row P x y z per point (floor, meters).
 pub fn walk_path_text(name: &str, speed: f32, eye: f32, fov: f32, pts: &[glam::DVec3]) -> String {
     let mut s = String::from("MBWALK 1\n");
     s.push_str(&format!("NAME\t{}\n", name.replace(['\t', '\n', '\r'], " ")));

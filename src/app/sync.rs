@@ -1,8 +1,8 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
-    /// Porneste / opreste selectia sincronizata cu Revit si Navisworks.
+    /// Starts / stops the selection synchronized with Revit and Navisworks.
     pub fn set_sync(&mut self, on: bool) {
         self.settings.sync_selection = on;
         self.settings.save();
@@ -10,7 +10,7 @@ impl App {
         self.sync.sent = u64::MAX;
         self.sync.seen = [None; 2];
         if on {
-            // "Send to ManageBIM" din Revit / Navisworks: modelul trimis se adauga imediat in scena.
+            // "Send to ManageBIM" from Revit / Navisworks: the sent model is added to the scene immediately.
             self.scan_inbox();
             self.toast("Live Link on: selection follows Revit / Navisworks; new models sent from them are added automatically (Revit: ManageBIM › Sync Selection; Navisworks: Tool Add-ins › Sync Selection).");
         }
@@ -26,7 +26,7 @@ impl App {
         h.finish()
     }
 
-    /// identificator -> element, pentru toate modelele incarcate (refacut cand se schimba modelele)
+    /// identifier -> element, for all loaded models (rebuilt when the models change)
     pub(super) fn sync_index(&mut self) -> &HashMap<String, ElemId> {
         let key: usize = self.loaded_models().map(|(i, m)| m.elements.len() * 31 + i).sum::<usize>() + self.loaded_models().count();
         if self.sync.index_key != key || self.sync.index.is_empty() {
@@ -44,13 +44,13 @@ impl App {
         &self.sync.index
     }
 
-    /// Apelat la fiecare cadru: trimite selectia cand se schimba, citeste selectia add-in-urilor.
+    /// Called on every frame: sends the selection when it changes, reads the add-ins' selection.
     pub fn sync_tick(&mut self) {
         if !self.settings.sync_selection || self.sync.last_poll.elapsed().as_millis() < 250 {
             return;
         }
         self.sync.last_poll = Instant::now();
-        // ---- primit din Revit / Navisworks
+        // ---- received from Revit / Navisworks
         if let Some(dir) = crate::sync::sync_dir() {
             for (k, (file, who)) in crate::sync::PEERS.iter().enumerate() {
                 let p = dir.join(file);
@@ -60,7 +60,7 @@ impl App {
                 }
                 self.sync.seen[k] = Some(t);
                 self.sync.peer_seen[k] = Some(Instant::now());
-                // selectia veche (de dinainte de pornirea legaturii) nu se aplica
+                // the old selection (from before the link started) is not applied
                 if t < self.sync.enabled_at {
                     continue;
                 }
@@ -77,7 +77,7 @@ impl App {
                         self.apply(Action::Focus(found));
                     }
                 }
-                // nu o trimitem inapoi (fara ecou)
+                // we do not send it back (no echo)
                 self.sync.sent = self.sel_hash();
                 if !ids.is_empty() && n_found == 0 {
                     self.sync.last_msg = format!("{who}: selection not found in the loaded models");
@@ -86,7 +86,7 @@ impl App {
                 }
             }
         }
-        // ---- trimis catre Revit / Navisworks
+        // ---- sent to Revit / Navisworks
         let h = self.sel_hash();
         if h != self.sync.sent {
             self.sync.sent = h;

@@ -3,8 +3,8 @@ use crate::model::ElemId;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-/// Rezolutia texturilor pe GPU: toate straturile array-ului au aceeasi marime.
-/// 512 = 1 MB/strat, 1024 = 4 MB, 2048 = 16 MB (la 2048 limitam numarul de straturi).
+/// The texture resolution on the GPU: all layers of the array have the same size.
+/// 512 = 1 MB/layer, 1024 = 4 MB, 2048 = 16 MB (at 2048 we limit the number of layers).
 pub const DEFAULT_TEX_SIZE: u32 = 512;
 static TEX_RES: AtomicU32 = AtomicU32::new(DEFAULT_TEX_SIZE);
 
@@ -12,7 +12,7 @@ pub fn tex_size() -> u32 {
     TEX_RES.load(Ordering::Relaxed)
 }
 
-/// 0 = 512, 1 = 1024, 2 = 2048. Intoarce valoarea actuala.
+/// 0 = 512, 1 = 1024, 2 = 2048. Returns the current value.
 pub fn set_tex_tier(tier: u32) -> u32 {
     let s = match tier { 1 => 1024, 2 => 2048, _ => 512 };
     TEX_RES.store(s, Ordering::Relaxed);
@@ -23,9 +23,9 @@ pub fn tex_tier() -> u32 {
     match tex_size() { 1024 => 1, 2048 => 2, _ => 0 }
 }
 
-/// Numarul maxim de straturi din array, ca sa nu depasim ~256 MB de memorie GPU.
+/// The maximum number of layers in the array, so we do not exceed ~256 MB of GPU memory.
 pub fn max_textures() -> usize {
-    // 512 px = 1 MB/strat, 1024 = 4 MB, 2048 = 16 MB
+    // 512 px = 1 MB/layer, 1024 = 4 MB, 2048 = 16 MB
     match tex_size() {
         2048 => 16,
         1024 => 64,
@@ -33,7 +33,7 @@ pub fn max_textures() -> usize {
     }
 }
 
-/// codul special pentru materialele PBR impachetate; stratul e in octetul urmator (0..255)
+/// the special code for the packed PBR materials; the layer is in the next byte (0..255)
 pub const PBR_CODE: u8 = 200;
 
 fn one() -> f32 { 1.0 }
@@ -91,7 +91,7 @@ pub struct Material {
     /// external image texture (PNG / JPG); empty = procedural pattern
     #[serde(default)]
     pub texture: String,
-    /// PBR (freepbr.com, ambientCG, Poly Haven...): toate hartile se pastreaza si se folosesc in 3D / randare
+    /// PBR (freepbr.com, ambientCG, Poly Haven...): all maps are kept and used in 3D / rendering
     #[serde(default)]
     pub normal_map: String,
     #[serde(default)]
@@ -102,22 +102,22 @@ pub struct Material {
     pub ao_map: String,
     #[serde(default)]
     pub height_map: String,
-    /// intensitatile ajustabile in interfata (0..2); se aplica la incarcarea texturilor pe GPU
+    /// the intensities adjustable in the interface (0..2); applied when loading the textures to the GPU
     #[serde(default = "one")]
     pub normal_strength: f32,
     #[serde(default = "one")]
     pub rough_mult: f32,
     #[serde(default = "one")]
     pub metal_mult: f32,
-    /// OpenPBR Surface: strat de luciu (clearcoat) 0..100 si rugozitatea lui 0..100
+    /// OpenPBR Surface: gloss layer (clearcoat) 0..100 and its roughness 0..100
     #[serde(default)]
     pub coat: u8,
     #[serde(default)]
     pub coat_roughness: u8,
-    /// OpenPBR Surface: efect de tesatura (sheen) 0..100
+    /// OpenPBR Surface: fabric effect (sheen) 0..100
     #[serde(default)]
     pub sheen: u8,
-    /// indicent de refractie (1.0..2.5); 1.5 = sticla
+    /// index of refraction (1.0..2.5); 1.5 = glass
     #[serde(default = "default_ior")]
     pub ior: f32,
 }
@@ -135,12 +135,12 @@ impl Material {
         }
     }
 
-    /// Are harti PBR dincolo de albedo?
+    /// Does it have PBR maps beyond albedo?
     pub fn is_pbr(&self) -> bool {
         !self.normal_map.is_empty() || !self.roughness_map.is_empty() || !self.metallic_map.is_empty() || !self.ao_map.is_empty()
     }
 
-    /// Toate imaginile materialului (pentru gasirea fisierelor mutate).
+    /// All the images of the material (for finding moved files).
     pub fn maps(&self) -> Vec<&str> {
         [self.texture.as_str(), self.normal_map.as_str(), self.roughness_map.as_str(), self.metallic_map.as_str(), self.ao_map.as_str(), self.height_map.as_str()]
             .into_iter().filter(|s| !s.is_empty()).collect()
@@ -154,7 +154,7 @@ impl Material {
     pub fn gpu(&self, layer: Option<u8>) -> [u8; 4] {
         let s = ((self.scale.clamp(0.05, 4.05) - 0.05) / 4.0 * 255.0).round() as u8;
         match layer {
-            // stratul PBR e in octetul 1 (0..255); proprietatile vin din harti, deci il putem folosi
+            // the PBR layer is in byte 1 (0..255); the properties come from the maps, so we can use it
             Some(l) if self.is_pbr() => [PBR_CODE, l, 0, s],
             Some(l) => [16 + l.min(181), (self.gloss.min(100) as f32 * 2.55) as u8, (self.metal.min(100) as f32 * 2.55) as u8, s],
             None => [self.pattern.code(), (self.gloss.min(100) as f32 * 2.55) as u8, (self.metal.min(100) as f32 * 2.55) as u8, s],
@@ -165,7 +165,7 @@ impl Material {
 pub fn library() -> Vec<Material> {
     use Pattern::*;
     vec![
-        // Materiale cu valori PBR realiste (luciu / metalicitate 0..255) pentru randare profesională.
+        // Materials with realistic PBR values (gloss / metalness 0..255) for professional rendering.
         Material::new("Concrete", [186, 186, 180], 0, 8, 0, Stone, 1.6),
         Material::new("Exposed concrete", [156, 156, 152], 0, 7, 0, Stone, 0.8),
         Material::new("Brick red", [162, 78, 56], 0, 6, 0, Brick, 0.5),
@@ -250,7 +250,7 @@ fn yes() -> bool {
 
 pub const MAX_TEXTURES: usize = 64;
 
-/// Miniatura unei texturi pentru lista de materiale (RGBA, `size` x `size`).
+/// The thumbnail of a texture for the material list (RGBA, `size` x `size`).
 #[derive(Clone)]
 pub struct Thumb {
     pub size: usize,
@@ -259,8 +259,8 @@ pub struct Thumb {
 
 pub const THUMB_SIZE: u32 = 64;
 
-/// Miniatura unei imagini, din cache-ul de pe disc (`<biblioteca>/thumbs`) sau calculata si salvata acolo.
-/// Cheia cache-ului contine calea, marimea si data fisierului: o textura inlocuita primeste miniatura noua.
+/// The thumbnail of an image, from the disk cache (`<biblioteca>/thumbs`) or computed and saved there.
+/// The cache key contains the path, size and file date: a replaced texture gets a new thumbnail.
 pub fn thumbnail(path: &str) -> Result<Thumb, String> {
     use std::hash::{Hash, Hasher};
     let meta = std::fs::metadata(path).map_err(|e| format!("{path}: {e}"))?;
@@ -298,11 +298,11 @@ pub fn thumbnail(path: &str) -> Result<Thumb, String> {
 /// Loads a PNG / JPG and resamples it to TEX_SIZE x TEX_SIZE RGBA (bilinear).
 pub fn load_texture(path: &str) -> Result<Vec<u8>, String> {
     let (w, h, rgba) = decode_file(path)?;
-    // randul 0 al imaginii (sus) ajunge sus pe perete
+    // row 0 of the image (top) ends up at the top of the wall
     Ok(resample_impl(w, h, &rgba, tex_size(), true))
 }
 
-/// PNG / JPG -> (latime, inaltime, RGBA)
+/// PNG / JPG -> (width, height, RGBA)
 pub fn decode_file(path: &str) -> Result<(u32, u32, Vec<u8>), String> {
     let data = std::fs::read(path).map_err(|e| format!("Cannot read texture {path}: {e}"))?;
     let (w, h, rgba): (u32, u32, Vec<u8>) = if data.starts_with(&[0x89, b'P', b'N', b'G']) {
@@ -342,7 +342,7 @@ pub fn decode_file(path: &str) -> Result<(u32, u32, Vec<u8>), String> {
     Ok((w, h, rgba))
 }
 
-/// Redimensionare biliniara la n x n; `flip` pune randul de sus al imaginii jos (texturile GPU).
+/// Bilinear resize to n x n; `flip` puts the top row of the image at the bottom (GPU textures).
 fn resample_impl(w: u32, h: u32, rgba: &[u8], n: u32, flip: bool) -> Vec<u8> {
     let mut out = vec![0u8; (n * n * 4) as usize];
     for y in 0..n {
@@ -366,15 +366,15 @@ fn resample_impl(w: u32, h: u32, rgba: &[u8], n: u32, flip: bool) -> Vec<u8> {
     out
 }
 
-/// miniatura: fara intoarcere
+/// thumbnail: no flipping
 pub fn resample(w: u32, h: u32, rgba: &[u8], n: u32) -> Vec<u8> {
     resample_impl(w, h, rgba, n, false)
 }
 
-/// Imparte hartile PBR in 2 straturi GPU de aceeasi marime:
-/// - strat A: RGB = albedo * AO, A = rugozitate * rough_mult
-/// - strat B: RGB = normala tangenta (xy * normal_strength), A = metalicitate * metal_mult
-/// Shader-ul si path trace-ul decodeaza ambele straturi; modificarile de intensitate se vad imediat.
+/// Splits the PBR maps into 2 GPU layers of the same size:
+/// - layer A: RGB = albedo * AO, A = roughness * rough_mult
+/// - layer B: RGB = tangent normal (xy * normal_strength), A = metalness * metal_mult
+/// The shader and the path tracer decode both layers; intensity changes are visible immediately.
 pub fn pack_pbr(
     albedo: &[u8], normal: Option<&[u8]>, rough: Option<&[u8]>, metal: Option<&[u8]>, ao: Option<&[u8]>,
     normal_strength: f32, rough_mult: f32, metal_mult: f32,
@@ -389,9 +389,9 @@ pub fn pack_pbr(
         for c in 0..3 {
             a[i + c] = (albedo.get(i + c).copied().unwrap_or(200) as f32 * ao_v).round() as u8;
         }
-        // rugozitate: 0 = luciu oglinda, 1 = mat; valoarea din harta e deja 0..255
+        // roughness: 0 = mirror gloss, 1 = matte; the value from the map is already 0..255
         a[i + 3] = (px(rough, i, 0, 128) as f32 * rough_mult.clamp(0.0, 2.0)).round().clamp(0.0, 255.0) as u8;
-        // normala OpenGL: (0.5, 0.5, 1) = plana; harta DirectX (normal-dx) are canalul Y inversat
+        // OpenGL normal: (0.5, 0.5, 1) = flat; the DirectX map (normal-dx) has the Y channel inverted
         let nx = (px(normal, i, 0, 128) as f32 / 255.0 * 2.0 - 1.0) * normal_strength.clamp(0.0, 2.0);
         let ny = (px(normal, i, 1, 128) as f32 / 255.0 * 2.0 - 1.0) * normal_strength.clamp(0.0, 2.0);
         let nz = (px(normal, i, 2, 255) as f32 / 255.0 * 2.0 - 1.0).max(0.05);
@@ -404,21 +404,21 @@ pub fn pack_pbr(
     (a, b)
 }
 
-// ===================================================================== biblioteca utilizatorului
+// ===================================================================== the user library
 
-/// %APPDATA%\ManageBIM\Materials - aici stau texturile importate si `library.bimmat` (materialele tale,
-/// disponibile in orice proiect).
+/// %APPDATA%\ManageBIM\Materials - the imported textures and `library.bimmat` live here (your materials,
+/// available in any project).
 pub fn user_library_dir() -> Option<std::path::PathBuf> {
     crate::formats::config_root().map(|d| d.join("ManageBIM").join("Materials"))
 }
 
-/// Materialele salvate de utilizator (gol daca nu exista inca).
+/// The materials saved by the user (empty if none exist yet).
 pub fn user_library() -> Vec<Material> {
     let Some(f) = user_library_dir().map(|d| d.join("library.bimmat")) else { return Vec::new() };
     std::fs::read_to_string(f).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
 }
 
-/// Adauga / inlocuieste (dupa nume) materialele in biblioteca utilizatorului.
+/// Adds / replaces (by name) the materials in the user library.
 pub fn save_to_user_library(mats: &[Material]) -> Result<std::path::PathBuf, String> {
     let dir = user_library_dir().ok_or("APPDATA is not set")?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -436,8 +436,8 @@ pub fn save_to_user_library(mats: &[Material]) -> Result<std::path::PathBuf, Str
     Ok(f)
 }
 
-/// Folderul bibliotecii PBR livrate cu aplicatia: `<exe>\materials` (installer) sau, la rularea
-/// din sursele proiectului, `third_party\pbr-library` (descarcat de `fetch_pro_library`).
+/// The folder of the PBR library shipped with the application: `<exe>\materials` (installer) or, when running
+/// from the project sources, `third_party\pbr-library` (downloaded by `fetch_pro_library`).
 pub fn bundled_library_dir() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?.to_path_buf();
@@ -449,8 +449,8 @@ pub fn bundled_library_dir() -> Option<std::path::PathBuf> {
     cands.into_iter().find(|d| d.join("library.bimmat").is_file())
 }
 
-/// Biblioteca PBR livrata cu aplicatia (materiale scanate ambientCG, CC0); caile din fisier sunt
-/// relative la folderul ei. Gol daca nu e instalata.
+/// The PBR library shipped with the application (ambientCG scanned materials, CC0); the paths in the file are
+/// relative to its folder. Empty if it is not installed.
 pub fn bundled_library() -> Vec<Material> {
     let Some(dir) = bundled_library_dir() else { return Vec::new() };
     let Some(mut mats) = std::fs::read_to_string(dir.join("library.bimmat")).ok().and_then(|s| serde_json::from_str::<Vec<Material>>(&s).ok()) else { return Vec::new() };
@@ -461,19 +461,19 @@ pub fn bundled_library() -> Vec<Material> {
             }
         }
     }
-    // doar materialele ale caror imagini exista (installer partial / fisiere sterse)
+    // only the materials whose images exist (partial installer / deleted files)
     mats.retain(|m| m.texture.is_empty() || std::path::Path::new(&m.texture).is_file());
     mats
 }
 
-/// Material din biblioteca procedurala veche (gen_pbr_library): imagini in `Materials\PBR Library\<nume>\albedo.png`.
+/// Material from the old procedural library (gen_pbr_library): images in `Materials\PBR Library\<nume>\albedo.png`.
 pub fn is_generated(m: &Material) -> bool {
     let t = m.texture.replace('\\', "/").to_ascii_lowercase();
     t.contains("/materials/pbr library/") && t.ends_with("/albedo.png")
 }
 
-/// Biblioteca completa: materialele incluse, inlocuite de biblioteca PBR livrata cu aplicatia,
-/// apoi de ale utilizatorului (cele cu acelasi nume le inlocuiesc).
+/// The complete library: the included materials, replaced by the PBR library shipped with the application,
+/// then by the user's own (the ones with the same name replace them).
 pub fn full_library() -> Vec<Material> {
     let mut lib = library();
     let bundled = bundled_library();
@@ -484,8 +484,8 @@ pub fn full_library() -> Vec<Material> {
         }
     }
     for m in user_library() {
-        // texturile procedurale generate de gen_pbr_library (0.27.21) nu mai inlocuiesc
-        // materialele scanate livrate cu aplicatia; materialele proprii ale utilizatorului da
+        // the procedural textures generated by gen_pbr_library (0.27.21) no longer replace
+        // the scanned materials shipped with the application; the user's own materials do
         if is_generated(&m) && bundled.iter().any(|b| b.name == m.name) {
             continue;
         }
@@ -502,9 +502,9 @@ fn is_image(n: &str) -> bool {
     l.ends_with(".png") || l.ends_with(".jpg") || l.ends_with(".jpeg")
 }
 
-/// rolul unei imagini dintr-un pachet PBR, dupa nume (freepbr, ambientCG, Poly Haven, textures.com...)
-/// Rolul e in Ultimul cuvant din nume, nu oriunde in el: "Metal063_2K_Color.png" e albedo,
-/// nu metallic (desi numele materialului contine "metal").
+/// the role of an image from a PBR pack, by name (freepbr, ambientCG, Poly Haven, textures.com...)
+/// The role is in the Last word of the name, not anywhere in it: "Metal063_2K_Color.png" is albedo,
+/// not metallic (although the material name contains "metal").
 pub fn pbr_role(file: &str) -> Option<&'static str> {
     let l = file.to_ascii_lowercase();
     let base = l.rsplit(['/', '\\']).next().unwrap_or(&l);
@@ -513,7 +513,7 @@ pub fn pbr_role(file: &str) -> Option<&'static str> {
     }
     let stem = base.rsplit_once('.').map(|(a, _)| a).unwrap_or(base);
     let words: Vec<&str> = stem.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).collect();
-    // rolurile se cauta in ultimele doua cuvinte (ex. "normal dx", "base color")
+    // the roles are searched in the last two words (e.g. "normal dx", "base color")
     for w in words.iter().rev().take(2) {
         if w.contains("normal") || *w == "nrm" || *w == "nor" || w.contains("nor_gl") || w.contains("norgl") || w.contains("normdx") || w.contains("normgl") {
             return Some("normal");
@@ -542,13 +542,13 @@ pub fn pbr_role(file: &str) -> Option<&'static str> {
 
 /// "fabric-pattern-07-bl.zip" -> "Fabric pattern 07"
 pub fn pbr_name(path: &str) -> String {
-    // numele fisierului fara extensie, cu / sau \ ca separator (cai Windows si Linux deopotriva)
+    // the file name without extension, with / or \ as separator (Windows and Linux paths alike)
     let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
     let stem = file.rsplit_once('.').map(|(a, _)| a).unwrap_or(file).to_string();
     let mut words: Vec<String> = stem.split(['-', '_', ' ', '.']).filter(|w| !w.is_empty()).map(|w| w.to_string()).collect();
     while words.len() > 1 {
         let last = words.last().map(|w| w.to_ascii_lowercase()).unwrap_or_default();
-        // sufixe cunoscute + hash-uri de genul "xqucc9" (freepbr.com)
+        // known suffixes + hashes like "xqucc9" (freepbr.com)
         let hash = last.len() >= 5 && last.chars().any(|c| c.is_ascii_digit()) && last.chars().all(|c| c.is_ascii_alphanumeric());
         if matches!(last.as_str(), "bl" | "ue" | "unity" | "png" | "jpg" | "1k" | "2k" | "4k" | "8k" | "pbr" | "freepbr" | "material" | "diffuse") || hash {
             words.pop();
@@ -564,7 +564,7 @@ pub fn pbr_name(path: &str) -> String {
     }
 }
 
-/// media unui canal (0..255) pe imaginea 512x512 RGBA
+/// the average of a channel (0..255) over the 512x512 RGBA image
 fn avg(rgba: &[u8], ch: usize) -> f32 {
     let n = rgba.len() / 4;
     if n == 0 {
@@ -573,9 +573,9 @@ fn avg(rgba: &[u8], ch: usize) -> f32 {
     rgba.chunks_exact(4).map(|p| p[ch] as f64).sum::<f64>() as f32 / n as f32
 }
 
-/// Importa un pachet PBR (arhiva .zip descarcata sau folderul dezarhivat) in biblioteca utilizatorului:
-/// imaginile se copiaza in `dest\<nume>\`, iar materialul primeste textura de culoare (albedo),
-/// luciul din harta de rugozitate si metalicitatea din harta metallic.
+/// Imports a PBR pack (downloaded .zip archive or the unzipped folder) into the user library:
+/// the images are copied to `dest\<nume>\`, and the material gets the color texture (albedo),
+/// the gloss from the roughness map and the metalness from the metallic map.
 pub fn import_pbr(path: &str, dest_root: &std::path::Path) -> Result<Material, String> {
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     let p = std::path::Path::new(path);
@@ -619,7 +619,7 @@ pub fn import_pbr(path: &str, dest_root: &std::path::Path) -> Result<Material, S
         std::fs::write(&f, b).map_err(|e| format!("Cannot write {}: {e}", f.display()))?;
         paths.push((pbr_role(n), f));
     }
-    // alegerea fisierului pentru fiecare rol: se prefera normala OpenGL fata de DirectX
+    // picking the file for each role: the OpenGL normal is preferred over DirectX
     let get = |role: &str| -> String {
         let mut best: Option<(u8, String)> = None;
         for (r, f) in &paths {
@@ -640,7 +640,7 @@ pub fn import_pbr(path: &str, dest_root: &std::path::Path) -> Result<Material, S
         best.map(|(_, p)| p).unwrap_or_default()
     };
     let tex = paths[albedo].1.to_string_lossy().to_string();
-    // validare: imaginea de culoare trebuie sa fie citibila la rezolutia curenta
+    // validation: the color image must be readable at the current resolution
     load_texture(&tex)?;
     let map = |role: &str| {
         let p = get(role);
@@ -683,9 +683,9 @@ mod bundled_tests {
     }
 }
 
-/// Copiaza hartile unui material importat (MaterialX, .bimmat) in biblioteca ta
-/// (`<biblioteca>/<nume>/`) si schimba caile: materialul ramane intreg daca folderul descarcat e sters.
-/// Hartile deja din biblioteca sau inexistente raman cum sunt. Intoarce numarul de fisiere copiate.
+/// Copies the maps of an imported material (MaterialX, .bimmat) into your library
+/// (`<biblioteca>/<nume>/`) and changes the paths: the material stays whole if the downloaded folder is deleted.
+/// The maps already in the library or missing stay as they are. Returns the number of copied files.
 pub fn adopt_maps(m: &mut Material) -> usize {
     let Some(root) = user_library_dir() else { return 0 };
     let safe: String = m.name.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();

@@ -1,14 +1,14 @@
-//! FreeCAD (.FCStd) fara FreeCAD: fisierul e o arhiva ZIP cu `Document.xml` (obiectele, vizibilitatea,
-//! fisierul BREP al fiecarei forme), `GuiDocument.xml` (culorile) si formele in format BREP OpenCascade
-//! (`*.brp`). Citim arhiva, luam obiectele VIZIBILE care au o forma si le trimitem cititorului OCCT
-//! (`crate::occt`). Un obiect FreeCAD = un element ManageBIM, cu culoarea lui.
+//! FreeCAD (.FCStd) without FreeCAD: the file is a ZIP archive with `Document.xml` (the objects, the visibility,
+//! the BREP file of each shape), `GuiDocument.xml` (the colors) and the shapes in OpenCascade BREP format
+//! (`*.brp`). We read the archive, take the VISIBLE objects that have a shape and pass them to the OCCT reader
+//! (`crate::occt`). One FreeCAD object = one ManageBIM element, with its color.
 use crate::model::{Prop, RawElement, RawModel};
 use std::collections::HashMap;
 
-/// Intrarile unei arhive ZIP (doar ce ne trebuie: stored + deflate, fara ZIP64 / criptare).
+/// The entries of a ZIP archive (only what we need: stored + deflate, no ZIP64 / encryption).
 pub struct Zip {
     data: Vec<u8>,
-    entries: HashMap<String, (u16, usize, usize)>, // nume -> (metoda, offset date, marime comprimata)
+    entries: HashMap<String, (u16, usize, usize)>, // name -> (method, data offset, compressed size)
 }
 
 fn u16_at(b: &[u8], o: usize) -> Option<usize> {
@@ -27,7 +27,7 @@ impl Zip {
         let mut count = u16_at(&data, eocd + 10).ok_or_else(bad)?;
         let mut p = u32_at(&data, eocd + 16).ok_or_else(bad)?;
         let u64_at = |b: &[u8], o: usize| b.get(o..o + 8).map(|s| u64::from_le_bytes(s.try_into().unwrap()) as usize);
-        // ZIP64 (arhive mari sau scrise de unele programe chiar si cand sunt mici): EOCD64 prin locator
+        // ZIP64 (large archives, or written by some programs even when small): EOCD64 through the locator
         if (count == 0xFFFF || p == 0xFFFF_FFFF) && eocd >= 20 && u32_at(&data, eocd - 20) == Some(0x0706_4b50) {
             if let Some(e64) = u64_at(&data, eocd - 20 + 8) {
                 if u32_at(&data, e64) == Some(0x0606_4b50) {
@@ -47,7 +47,7 @@ impl Zip {
             let (nl, el, cl) = (u16_at(&data, p + 28).ok_or_else(bad)?, u16_at(&data, p + 30).ok_or_else(bad)?, u16_at(&data, p + 32).ok_or_else(bad)?);
             let mut local = u32_at(&data, p + 42).ok_or_else(bad)?;
             let name = String::from_utf8_lossy(data.get(p + 46..p + 46 + nl).ok_or_else(bad)?).to_string();
-            // campul extra ZIP64 (0x0001): marimile / offset-ul de 8 octeti, doar cele marcate 0xFFFFFFFF
+            // the ZIP64 extra field (0x0001): the 8-byte sizes / offset, only the ones marked 0xFFFFFFFF
             if csize == 0xFFFF_FFFF || local == 0xFFFF_FFFF || usize32 == 0xFFFF_FFFF {
                 let mut x = p + 46 + nl;
                 let end = x + el;
@@ -98,7 +98,7 @@ impl Zip {
     }
 }
 
-/// Valoarea atributului `attr="..."` din primul tag care incepe in `s` (fara entitati XML exotice).
+/// The value of attribute `attr="..."` from the first tag that starts in `s` (no exotic XML entities).
 fn attr(s: &str, attr: &str) -> Option<String> {
     let k = format!("{attr}=\"");
     let i = s.find(&k)? + k.len();
@@ -110,7 +110,7 @@ fn unescape(s: &str) -> String {
     s.replace("&quot;", "\"").replace("&apos;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
 }
 
-/// Blocurile `<tag name="X" ...> ... </tag>` dintr-o sectiune: (nume, continut).
+/// The `<tag name="X" ...> ... </tag>` blocks in a section: (name, content).
 fn blocks<'a>(s: &'a str, tag: &str) -> Vec<(String, &'a str)> {
     let open = format!("<{tag} name=\"");
     let close = format!("</{tag}>");
@@ -120,7 +120,7 @@ fn blocks<'a>(s: &'a str, tag: &str) -> Vec<(String, &'a str)> {
         let r = &rest[i..];
         let name = attr(r, "name").unwrap_or_default();
         let end = r.find(&close).map(|e| e + close.len()).unwrap_or(r.len());
-        // tag gol `<tag name="X" ... />`: fara continut
+        // empty tag `<tag name="X" ... />`: no content
         let head_end = r.find('>').unwrap_or(0);
         let body = if r[..head_end].ends_with('/') { "" } else { &r[..end] };
         out.push((name, body));
@@ -129,7 +129,7 @@ fn blocks<'a>(s: &'a str, tag: &str) -> Vec<(String, &'a str)> {
     out
 }
 
-/// Continutul proprietatii `<Property name="N" ...> ... </Property>` dintr-un obiect.
+/// The content of property `<Property name="N" ...> ... </Property>` in an object.
 fn property<'a>(obj: &'a str, name: &str) -> Option<&'a str> {
     let k = format!("<Property name=\"{name}\"");
     let i = obj.find(&k)?;
@@ -138,15 +138,15 @@ fn property<'a>(obj: &'a str, name: &str) -> Option<&'a str> {
     Some(&r[..e])
 }
 
-/// Culoare FreeCAD impachetata (r<<24 | g<<16 | b<<8 | a) -> RGB.
+/// Packed FreeCAD color (r<<24 | g<<16 | b<<8 | a) -> RGB.
 fn packed(v: u32) -> [u8; 3] {
     [(v >> 24) as u8, (v >> 16) as u8, (v >> 8) as u8]
 }
 
-/// Culoarea si transparenta (0..1) unui view provider din GuiDocument.xml.
+/// The color and transparency (0..1) of a view provider from GuiDocument.xml.
 fn gui_color(zip: &Zip, vp: &str) -> Option<([u8; 3], f32)> {
-    // FreeCAD 1.x: ShapeAppearance = lista de materiale (binar): u32 n, apoi per material
-    // ambient, diffuse, specular, emissive (u32 impachetate, LE), shininess, transparency (f32)...
+    // FreeCAD 1.x: ShapeAppearance = list of materials (binary): u32 n, then per material
+    // ambient, diffuse, specular, emissive (packed u32, LE), shininess, transparency (f32)...
     if let Some(f) = property(vp, "ShapeAppearance").and_then(|p| attr(p, "file")) {
         if let Some(b) = zip.read(&f) {
             if let (Some(n), Some(d)) = (u32_at(&b, 0), u32_at(&b, 8)) {
@@ -157,13 +157,13 @@ fn gui_color(zip: &Zip, vp: &str) -> Option<([u8; 3], f32)> {
             }
         }
     }
-    // versiunile vechi: ShapeColor + Transparency (0..100)
+    // old versions: ShapeColor + Transparency (0..100)
     let c = property(vp, "ShapeColor").and_then(|p| attr(p, "value")).and_then(|v| v.parse::<u32>().ok())?;
     let t = property(vp, "Transparency").and_then(|p| attr(p, "value")).and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
     Some((packed(c), (t / 100.0).clamp(0.0, 1.0)))
 }
 
-/// Un obiect FreeCAD cu forma de afisat.
+/// A FreeCAD object with a shape to display.
 #[derive(Debug, Clone)]
 pub struct FcObject {
     pub name: String,
@@ -173,7 +173,7 @@ pub struct FcObject {
     pub color: Option<([u8; 3], f32)>,
 }
 
-/// Obiectele vizibile cu forma 3D (fara schite, axe, plane de origine).
+/// The visible objects with a 3D shape (no sketches, axes, origin planes).
 pub fn visible_objects(zip: &Zip) -> Result<Vec<FcObject>, String> {
     let doc = zip.text("Document.xml").ok_or("Document.xml is missing - not a FreeCAD document.")?;
     let types: HashMap<String, String> = {
@@ -184,17 +184,17 @@ pub fn visible_objects(zip: &Zip) -> Result<Vec<FcObject>, String> {
     let gui = zip.text("GuiDocument.xml").unwrap_or_default();
     let vps: HashMap<String, &str> = blocks(&gui, "ViewProvider").into_iter().collect();
     let data = doc.find("<ObjectData").map(|i| &doc[i..]).unwrap_or("");
-    // un Body PartDesign afiseaza forma ultimei operatii (Tip): operatiile (Pad, Pocket...) ar dubla geometria
+    // a PartDesign Body displays the shape of the last operation (Tip): the operations (Pad, Pocket...) would duplicate the geometry
     let has_body = types.values().any(|t| t == "PartDesign::Body");
     let mut out = Vec::new();
     for (name, body) in blocks(data, "Object") {
         let kind = types.get(&name).cloned().unwrap_or_default();
-        // App::* = containere (App::Part, grupuri, BuildingPart Arch) - forma lor repeta copiii
+        // App::* = containers (App::Part, groups, BuildingPart Arch) - their shape repeats the children
         if kind.starts_with("Sketcher::") || kind.starts_with("App::") || (has_body && kind.starts_with("PartDesign::") && kind != "PartDesign::Body") {
             continue;
         }
         let Some(file) = property(body, "Shape").and_then(|p| attr(p, "file")) else { continue };
-        // vizibilitatea: in Document.xml (FreeCAD 0.19+) sau in GuiDocument.xml (versiuni vechi)
+        // visibility: in Document.xml (FreeCAD 0.19+) or in GuiDocument.xml (old versions)
         let vis = property(body, "Visibility").or_else(|| vps.get(&name).and_then(|v| property(v, "Visibility"))).and_then(|p| attr(p, "value"));
         if vis.as_deref() == Some("false") {
             continue;
@@ -245,11 +245,11 @@ pub fn load_fcstd(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, 
                 return Err(e);
             }
             Err(_) => {
-                no_surface += 1; // linii / puncte (ex. Draft wires) - nimic de afisat in 3D
+                no_surface += 1; // lines / points (e.g. Draft wires) - nothing to display in 3D
                 continue;
             }
         };
-        // toate solidele obiectului = un singur element (cum il vezi in arborele FreeCAD)
+        // all solids of the object = a single element (as you see it in the FreeCAD tree)
         let (mut tris, mut colors) = (Vec::new(), Vec::new());
         let mut solids = 0usize;
         for e in m.elements {

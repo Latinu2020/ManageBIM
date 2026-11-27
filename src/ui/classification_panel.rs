@@ -1,15 +1,15 @@
-//! Fereastra de clasificare BIM: catalog local (Uniclass / OmniClass / importat din CSV-JSON) si
-//! cautare online in buildingSMART Data Dictionary (bSDD). Codul ales se scrie pe elementele
-//! selectate ca proprietate "Classification" (grupul = sistemul / dictionarul) plus
-//! "Classification URI" pentru clasele bSDD; la exportul IFC devin IfcClassificationReference.
+//! The BIM classification window: local catalog (Uniclass / OmniClass / imported from CSV-JSON) and
+//! online search in the buildingSMART Data Dictionary (bSDD). The chosen code is written on the selected
+//! elements as the "Classification" property (the group = the system / dictionary) plus
+//! "Classification URI" for the bSDD classes; on IFC export they become IfcClassificationReference.
 use super::*;
 
-/// numele proprietatilor scrise pe elemente
+/// the names of the properties written on the elements
 const P_CLASS: &str = "Classification";
 const P_URI: &str = "Classification URI";
 
 impl App {
-    /// Fereastra Classification (deschisa din BIM › bSDD).
+    /// The Classification window (opened from BIM › bSDD).
     pub(super) fn classification_window(&mut self, ctx: &egui::Context) {
         self.poll_bsdd();
         if !self.class_open {
@@ -30,7 +30,7 @@ impl App {
         }
     }
 
-    /// Citeste rezultatele cautarilor bSDD care ruleaza pe fir separat.
+    /// Reads the results of the bSDD searches running on a separate thread.
     fn poll_bsdd(&mut self) {
         if let Some(rx) = &self.bsdd_rx {
             match rx.try_recv() {
@@ -78,7 +78,7 @@ impl App {
         self.bsdd_status = "Searching bSDD…".into();
     }
 
-    /// Scrie clasificarea pe elementele selectate.
+    /// Writes the classification on the selected elements.
     fn assign_class(&mut self, system: &str, code: &str, name: &str, uri: &str) {
         let v: Vec<_> = self.selected.iter().copied().collect();
         if v.is_empty() {
@@ -92,7 +92,7 @@ impl App {
         self.toast(format!("{code} ({system}) assigned to {n} element(s)"));
     }
 
-    /// Sterge toate clasificarile atribuite manual pe elementele selectate.
+    /// Deletes all the manually assigned classifications on the selected elements.
     fn clear_classes(&mut self) {
         let v: Vec<_> = self.selected.iter().copied().collect();
         let groups: std::collections::BTreeSet<String> = self.user_params.iter().filter(|p| p.name.eq_ignore_ascii_case(P_CLASS)).map(|p| p.group.clone()).collect();
@@ -104,7 +104,7 @@ impl App {
         self.toast(format!("{n} classification(s) removed"));
     }
 
-    /// Clasificarile existente pe elementul principal selectat (sistem, valoare).
+    /// The existing classifications on the main selected element (system, value).
     fn current_classes(&self) -> Vec<(String, String)> {
         let Some(id) = self.primary.or_else(|| self.selected.iter().next().copied()) else { return Vec::new() };
         let Some((_, e)) = self.elem(id) else { return Vec::new() };
@@ -118,7 +118,7 @@ impl App {
 
     pub(super) fn classification_ui(&mut self, ui: &mut egui::Ui) {
         let sel_count = self.selected.len();
-        // ---- antet: selectia si clasificarile ei
+        // ---- header: the selection and its classifications
         egui::Frame::none().fill(ui.visuals().faint_bg_color).rounding(crate::theme::RADIUS_SM).inner_margin(egui::Margin::symmetric(8.0, 6.0)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
@@ -141,7 +141,7 @@ impl App {
             }
         });
         ui.add_space(4.0);
-        // ---- taburi
+        // ---- tabs
         ui.horizontal(|ui| {
             for (i, (icon, label, tip)) in [("📚", "Local catalogue", "Offline list: built-in Uniclass / OmniClass, or your own CSV / JSON"), ("🌐", "bSDD online", "Search the buildingSMART Data Dictionary (IFC, Uniclass, ETIM, NL-SfB, CCI, …)")].into_iter().enumerate() {
                 if ui.selectable_label(self.class_tab == i, RichText::new(format!("{icon} {label}")).strong()).on_hover_text(tip).clicked() {
@@ -182,7 +182,7 @@ impl App {
         ui.label(RichText::new(format!("{} of {} entries", shown.len(), self.settings.classifications.len())).small().weak());
         let mut assign: Option<(String, String, String, String)> = None;
         let mut remove: Option<usize> = None;
-        // inaltime fixa a tabelului: fereastra nu mai creste / scade cu numarul de randuri
+        // fixed table height: the window no longer grows / shrinks with the number of rows
         let h = (ui.available_height() - 6.0).clamp(160.0, 430.0);
         egui_extras::TableBuilder::new(ui)
             .id_salt("class_local_tbl")
@@ -281,7 +281,7 @@ impl App {
         let mut assign: Option<crate::bsdd::BsddClass> = None;
         let mut keep: Option<crate::bsdd::BsddClass> = None;
         let rows = self.bsdd_results.clone();
-        // inaltime fixa a tabelului: fereastra nu mai creste / scade cu numarul de randuri
+        // fixed table height: the window no longer grows / shrinks with the number of rows
         let h = (ui.available_height() - 6.0).clamp(160.0, 430.0);
         egui_extras::TableBuilder::new(ui)
             .id_salt("class_bsdd_tbl")

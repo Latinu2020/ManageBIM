@@ -1,5 +1,5 @@
-//! Verificare generala: proiectul demo trece prin functiile principale, ca un utilizator.
-//! Orice eroare raportata de aplicatie (toast de eroare) intr-un pas care trebuie sa mearga pica testul.
+//! General check: the demo project goes through the main functions, like a user.
+//! Any error reported by the application (error toast) in a step that must work fails the test.
 
 use bimrust::app::App;
 use std::path::PathBuf;
@@ -15,7 +15,7 @@ fn wait(app: &mut App) {
     app.poll_jobs();
 }
 
-/// erorile aparute de la ultimul apel
+/// the errors raised since the last call
 fn errors(app: &mut App) -> Vec<String> {
     let e: Vec<String> = app.toasts.iter().filter(|t| t.2).map(|t| t.0.clone()).collect();
     app.toasts.clear();
@@ -30,7 +30,7 @@ fn file_ok(p: &PathBuf, min: u64) {
 #[test]
 fn demo_project_end_to_end() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    // setari si date izolate (nu ating folderele utilizatorului)
+    // isolated settings and data (they do not touch the user folders)
     let root = std::env::temp_dir().join(format!("mb_smoke_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("appdata")).unwrap();
@@ -42,7 +42,7 @@ fn demo_project_end_to_end() {
     let o = |n: &str| out.join(n);
     let s = |p: &PathBuf| p.to_string_lossy().to_string();
 
-    // ---- 1. proiectul demo: doua modele + planificarea 4D
+    // ---- 1. the demo project: two models + the 4D schedule
     let mut app = App::new(vec![]);
     app.open_demo();
     wait(&mut app);
@@ -53,7 +53,7 @@ fn demo_project_end_to_end() {
     assert!(n_elems > 100, "{n_elems} elements");
     assert!(!app.tasks.is_empty(), "4D schedule imported");
 
-    // ---- 2. selectie, Select Same Type, ascundere, Undo / Redo
+    // ---- 2. selection, Select Same Type, hiding, Undo / Redo
     app.lod_moved = std::time::Instant::now() - std::time::Duration::from_secs(5);
     app.history_tick(false);
     let first = app.all_ids()[0];
@@ -72,7 +72,7 @@ fn demo_project_end_to_end() {
     app.clear_selection();
     assert!(errors(&mut app).is_empty());
 
-    // ---- 3. clash: arhitectura+structura fata de instalatii, cu regulile inteligente
+    // ---- 3. clash: architecture+structure against MEP, with the smart rules
     let mut t = bimrust::app::ClashTest::new("Arch vs MEP".into());
     t.a = bimrust::app::Selector { kind: bimrust::app::SelKind::Model, value: app.models[models[0]].as_ref().unwrap().name.clone() };
     t.b = bimrust::app::Selector { kind: bimrust::app::SelKind::Model, value: app.models[models[1]].as_ref().unwrap().name.clone() };
@@ -91,7 +91,7 @@ fn demo_project_end_to_end() {
         file_ok(&o("matrix.xlsx"), 1000);
     }
 
-    // ---- 4. Model Checker: reguli de pornire, rulare, rapoarte, IDS dus-intors
+    // ---- 4. Model Checker: starter rules, run, reports, IDS round trip
     app.check_rules.extend(bimrust::check::starter_rules());
     app.run_check();
     assert!(app.check_results.is_some());
@@ -105,7 +105,7 @@ fn demo_project_end_to_end() {
     assert_eq!(app.check_rules.len(), n_rules, "IDS import gives the same rules back");
     assert!(errors(&mut app).is_empty());
 
-    // ---- 5. viewpoints in foldere + export Navisworks
+    // ---- 5. viewpoints in folders + Navisworks export
     app.vp_folder_cur = "Level 1/MEP".into();
     app.save_viewpoint();
     app.vp_folder_cur.clear();
@@ -115,7 +115,7 @@ fn demo_project_end_to_end() {
     let xml = std::fs::read_to_string(o("viewpoints.xml")).unwrap();
     assert!(xml.contains("<viewfolder name=\"Level 1\""));
 
-    // ---- 6. exporturi: IFC, viewer web, DWG (sectiunea pe nivel: 2D si pe plansa)
+    // ---- 6. exports: IFC, web viewer, DWG (the level section: 2D and on sheet)
     app.ifc_selection = false;
     app.export_ifc(&s(&o("export.ifc")));
     file_ok(&o("export.ifc"), 10_000);
@@ -133,11 +133,11 @@ fn demo_project_end_to_end() {
         app.section.enabled = false;
     }
     assert!(errors(&mut app).is_empty());
-    // IFC-ul exportat se redeschide
+    // the exported IFC is reopened
     let raw = bimrust::load_any(&s(&o("export.ifc")), &|_, _| {}).expect("exported IFC reopens");
     assert!(raw.elements.len() * 10 >= n_elems * 9, "exported IFC keeps the elements ({} of {n_elems})", raw.elements.len());
 
-    // ---- 7. salvare + redeschidere proiect (cu .bak la a doua salvare)
+    // ---- 7. save + reopen project (with .bak on the second save)
     let proj = o("demo.bimr");
     app.save_project(&s(&proj));
     app.save_project(&s(&proj));
@@ -157,7 +157,7 @@ fn demo_project_end_to_end() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-/// Previzualizare (manuala): planul complet al proiectului demo ca DXF + SVG in target/ (cargo test -- --ignored plan_preview).
+/// Preview (manual): the full plan of the demo project as DXF + SVG in target/ (cargo test -- --ignored plan_preview).
 #[test]
 #[ignore]
 fn plan_preview() {
@@ -170,7 +170,7 @@ fn plan_preview() {
     app.open_demo();
     wait(&mut app);
     let li = std::env::var("MB_LEVEL").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
-    // demo-ul nu are axe: axe pe stalpi (5 x 3) pentru previzualizare
+    // the demo has no grids: grids on the columns (5 x 3) for the preview
     let bb = app.scene_aabb();
     let o = app.origin_f64();
     let (x0, y0, x1, y1) = (bb.min.x as f64 + o.x, bb.min.y as f64 + o.y, bb.max.x as f64 + o.x, bb.max.y as f64 + o.y);
@@ -184,7 +184,7 @@ fn plan_preview() {
         let p = std::path::Path::new("target").join(format!("{name}.dxf"));
         app.export_section_cad(&p.to_string_lossy());
         let dxf = std::fs::read_to_string(&p).unwrap();
-        // DXF -> SVG (LINE si TEXT)
+        // DXF -> SVG (LINE and TEXT)
         let g: Vec<&str> = dxf.lines().collect();
         let (mut lines, mut texts) = (Vec::new(), Vec::new());
         let mut i = 0;
@@ -236,8 +236,8 @@ fn plan_preview() {
     }
 }
 
-/// Previzualizare (manuala): proiect demo cu sectiune pe nivel si soare jos, pentru verificarea umbrelor
-/// (cargo test -- --ignored shadow_preview_project; MB_OUT = calea .bimr).
+/// Preview (manual): demo project with a level section and a low sun, for checking the shadows
+/// (cargo test -- --ignored shadow_preview_project; MB_OUT = the .bimr path).
 #[test]
 #[ignore]
 fn shadow_preview_project() {

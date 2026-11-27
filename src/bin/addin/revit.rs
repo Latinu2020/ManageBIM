@@ -1,5 +1,5 @@
-//! Installer per utilizator pentru add-in-ul ManageBIM din Revit (2023 - 2027).
-//! Fisierele sunt incluse in .exe la compilare, din installers\payload\revit.
+//! Per-user installer for the ManageBIM add-in for Revit (2023 - 2027).
+//! The files are embedded in the .exe at compile time, from installers\payload\revit.
 
 #[path = "common.rs"]
 mod common;

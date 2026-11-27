@@ -1,8 +1,8 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
-    /// Editorul cartusului (planse PDF si DWG pe plansa): campuri, format, scara.
+    /// The title block editor (PDF sheets and DWG on sheet): fields, format, scale.
     pub(super) fn title_block_window(&mut self, ctx: &egui::Context) {
         if !self.title_block_open {
             return;
@@ -81,8 +81,8 @@ impl App {
         }
     }
 
-    /// Lista viewpoint-urilor pe foldere: tragi un viewpoint pe un folder; meniul ⋯ al folderului exporta doar
-    /// continutul lui (BCF, PDF, Excel, HTML, Navisworks XML cu foldere).
+    /// The list of viewpoints in folders: drag a viewpoint onto a folder; the folder's ⋯ menu exports only
+    /// its content (BCF, PDF, Excel, HTML, Navisworks XML with folders).
     pub(super) fn vp_tree_ui(&mut self, ui: &mut egui::Ui, restore: &mut Option<usize>) {
         let folders = self.vp_all_folders();
         let mut move_to: Option<(usize, String)> = None;
@@ -100,7 +100,7 @@ impl App {
             _ => Color32::GRAY,
         };
         egui::ScrollArea::vertical().id_salt("vp_list").auto_shrink([false, false]).show(ui, |ui| {
-            // ---- un rand de viewpoint (se poate trage)
+            // ---- a viewpoint row (can be dragged)
             let item = |ui: &mut egui::Ui, i: usize, depth: usize, this: &mut App, restore: &mut Option<usize>, move_to: &mut Option<(usize, String)>, rename_vp: &mut Option<usize>| {
                 let status = this.viewpoints[i].issue.status.clone();
                 let name = this.viewpoints[i].name.clone();
@@ -119,7 +119,7 @@ impl App {
                 let mut resp_out: Option<egui::Response> = None;
                 ui.horizontal(|ui| {
                     ui.add_space(depth as f32 * 14.0);
-                    // MANERUL DE DRAG e separat de eticheta: altfel dnd-ul mananca clickul.
+                    // the DRAG HANDLE is separate from the label: otherwise dnd eats the click.
                     let _drag = ui.dnd_drag_source(egui::Id::new(("vp_drag", i)), i, |ui| {
                         let (dr, _) = ui.allocate_exact_size(EV::splat(12.0), egui::Sense::hover());
                         ui.painter().circle_filled(dr.center(), 4.5, col);
@@ -180,7 +180,7 @@ impl App {
                     });
                 }
             };
-            // ---- antetul unui folder: tinta de plasare + meniu
+            // ---- the header of a folder: drop target + menu
             let header = |ui: &mut egui::Ui, f: &str, label: &str, depth: usize, count: usize, this: &mut App, act: &mut Option<(String, &'static str)>, renaming: &mut Option<(String, String)>, move_to: &mut Option<(usize, String)>| -> bool {
                 let cur = this.vp_folder_cur == f;
                 let open_id = egui::Id::new(("vp_folder_open", f));
@@ -200,8 +200,8 @@ impl App {
                             if ui.input(|i| i.key_pressed(Key::Escape)) {
                                 *act = Some((String::new(), "rename_cancel"));
                             }
-                            // confirmarea si la click in afara (nu doar Enter), altfel
-                            // redenumirea se pierde daca utilizatorul apasa in alta parte
+                            // confirm also on a click outside (not only Enter), otherwise
+                            // the rename is lost if the user clicks somewhere else
                             if te.lost_focus() && act.is_none() {
                                 if buf.trim().is_empty() {
                                     *act = Some((String::new(), "rename_cancel"));
@@ -219,8 +219,8 @@ impl App {
                         }
                         ui.menu_button("⋯", |ui| {
                             if f.is_empty() {
-                                // radacina virtuala: nu are nume de sters, dar putem
-                                // crea foldere si schimba eticheta afisata
+                                // virtual root: it has no name to delete, but we can
+                                // create folders and change the displayed label
                                 for (lbl, key) in [("➕ New folder", "sub"), ("✏ Rename label", "rename")] {
                                     if ui.button(lbl).clicked() {
                                         *act = Some((f.to_string(), key));
@@ -253,7 +253,7 @@ impl App {
                 ui.data_mut(|d| d.insert_temp(open_id, open));
                 open
             };
-            // radacina: viewpoint-urile fara folder
+            // root: the viewpoints without a folder
             let root_n = self.viewpoints.iter().filter(|v| v.folder.is_empty()).count();
             let root_label = self.settings.vp_root_label.clone();
             header(ui, "", &root_label, 0, root_n, self, &mut act, &mut renaming, &mut move_to);
@@ -262,7 +262,7 @@ impl App {
                     item(ui, i, 1, self, restore, &mut move_to, &mut rename_vp);
                 }
             }
-            // folderele (sortate: parintii inaintea copiilor); cele din folderele inchise nu se arata
+            // the folders (sorted: parents before children); the ones in collapsed folders are not shown
             let mut closed: Vec<String> = Vec::new();
             for f in &folders {
                 if closed.iter().any(|c| f.starts_with(&format!("{c}/"))) {
@@ -310,7 +310,7 @@ impl App {
                     if let Some((old, new)) = f.split_once('\u{1}') {
                         let new = new.trim().replace('/', "-");
                         if !new.is_empty() && old.is_empty() {
-                            // radacina virtuala: doar eticheta se schimba
+                            // virtual root: only the label changes
                             self.settings.vp_root_label = new;
                             self.settings.save();
                         } else if !new.is_empty() {
@@ -341,7 +341,7 @@ impl App {
                     renaming = None;
                 }
                 "delete" => {
-                    // viewpoint-urile urca in folderul parinte
+                    // the viewpoints move up to the parent folder
                     let parent = f.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
                     for v in &mut self.viewpoints {
                         if v.folder == f || v.folder.starts_with(&format!("{f}/")) {
@@ -367,7 +367,7 @@ impl App {
         });
     }
 
-    /// folder nou la radacina (sau in folderul curent)
+    /// new folder at the root (or in the current folder)
     pub(super) fn vp_new_folder(&mut self) {
         let base = if self.vp_folder_cur.is_empty() { String::new() } else { format!("{}/", self.vp_folder_cur) };
         let mut k = 1;
@@ -379,12 +379,12 @@ impl App {
         self.vp_folders.push(name.clone());
         self.vp_folder_cur = name.clone();
         let short = name.rsplit('/').next().unwrap_or("").to_string();
-        // il redenumesti imediat
+        // you rename it immediately
         self.vp_rename_pending = Some((name, short));
     }
 
-    /// Desenele 2D suprapuse: linii proiectate peste model (deasupra lui, ca un plan pe masa).
-    /// Legenda colorarii dupa parametru (Appearance Profiler) in coltul stanga-jos al vederii.
+    /// The overlaid 2D drawings: lines projected over the model (above it, like a plan on the table).
+    /// The legend of the coloring by parameter (Appearance Profiler) in the bottom-left corner of the view.
     pub(super) fn draw_profile_legend(&self, painter: &egui::Painter, rect: Rect) {
         if !self.profile.active || self.profile.rules.is_empty() || !self.profile_legend {
             return;
@@ -418,12 +418,12 @@ impl App {
             let tr = |x: f32, y: f32| {
                 let (mut x, y) = (x * c - y * s + ov.dx, x * s + y * c + ov.dy);
                 if ov.mirror {
-                    x = -x; // Back / Right: se intoarce oglindirea de la export
+                    x = -x; // Back / Right: the mirroring from the export is undone
                 }
                 match ov.vert {
-                    Some(0) => Vec3::new(x, ov.z, y), // plan YZ, taietura la Y
-                    Some(1) => Vec3::new(ov.z, x, y), // plan XZ, taietura la X
-                    _ => Vec3::new(x, y, ov.z),       // plan XY la cota Z
+                    Some(0) => Vec3::new(x, ov.z, y), // YZ plane, cut at Y
+                    Some(1) => Vec3::new(ov.z, x, y), // XZ plane, cut at X
+                    _ => Vec3::new(x, y, ov.z),       // XY plane at elevation Z
                 }
             };
             for g in ov.segs.iter() {
@@ -438,8 +438,8 @@ impl App {
         }
     }
 
-    /// Fereastra suprapunerilor DWG / DXF: vizibilitate, cota (nivel), deplasare, rotatie, culoare.
-    /// Fereastra de gestionare a şabloanelor de vizualizare: aplicare, redenumire, ştergere.
+    /// The DWG / DXF overlays window: visibility, elevation (level), offset, rotation, color.
+    /// The window for managing the view templates: apply, rename, delete.
     pub(super) fn view_templates_window(&mut self, ctx: &egui::Context) {
         if !self.view_templates_open { return; }
         let mut open = true;
@@ -486,7 +486,7 @@ impl App {
                                 ui.set_width(ui.available_width());
                                 let t = &mut self.view_templates[i];
                                 ui.horizontal(|ui| {
-                                    // numarul scurtaturii Ctrl+1..9
+                                    // the number of the Ctrl+1..9 shortcut
                                     let key = if i < 9 { format!("{}", i + 1) } else { "·".into() };
                                     ui.label(RichText::new(key).monospace().strong().color(accent())).on_hover_text("Ctrl + this number applies the template");
                                     if t.is_default {
@@ -506,7 +506,7 @@ impl App {
                                         if ui.add(egui::Button::new(RichText::new("▶ Apply").strong())).clicked() { apply = Some(i); }
                                     });
                                 });
-                                // rezumat: ce contine sablonul
+                                // summary: what the template contains
                                 let mut chips: Vec<String> = vec![t.visual_style.label().to_string()];
                                 if t.section.enabled {
                                     chips.push(if t.section.mode == crate::app::SectionMode::Box { "Section box".into() } else { "Section planes".into() });
@@ -523,7 +523,7 @@ impl App {
                                         });
                                     }
                                 });
-                                // ce aplica (ca „Include" din View Templates in Revit)
+                                // what it applies (like „Include" in Revit View Templates)
                                 ui.horizontal_wrapped(|ui| {
                                     ui.label(RichText::new("Applies").small().weak());
                                     for (k, label) in crate::app::VT_INCLUDE.iter().enumerate() {
@@ -556,7 +556,7 @@ impl App {
                 self.view_templates.insert(i + 1, c);
             }
         }
-        // redenumire: viewpoint-urile legate de sablon il urmeaza
+        // rename: the viewpoints linked to the template follow it
         if let Some((old, new)) = renamed {
             for v in self.viewpoints.iter_mut().filter(|v| v.template == old) {
                 v.template = new.clone();
@@ -565,7 +565,7 @@ impl App {
         if let Some(i) = del {
             if i < self.view_templates.len() {
                 let gone = self.view_templates.remove(i).name;
-                // legaturile catre sablonul sters dispar (viewpoint-ul isi pastreaza aspectul propriu)
+                // the links to the deleted template disappear (the viewpoint keeps its own look)
                 for v in self.viewpoints.iter_mut().filter(|v| v.template == gone) {
                     v.template.clear();
                 }
@@ -577,10 +577,10 @@ impl App {
         self.view_templates_open = open;
     }
 
-    /// Previewul 2D al desenului din cubul de sectiune, in stil Inventor: foaie crem cu chenar si
-    /// cartus, contur taiat gros, muchii vizibile, linii ascunse intrerupte, hasura fina.
-    /// Zoom cu rotita, deplasare cu mouse-ul, comutatoare si export direct in PDF / DWG.
-    /// Desenul e EXACT cel exportat (aceeasi functie `section_drawing`, aceleasi coordonate reale).
+    /// The 2D preview of the drawing from the section box, in Inventor style: cream sheet with border and
+    /// title block, thick cut outline, visible edges, dashed hidden lines, fine hatch.
+    /// Zoom with the wheel, pan with the mouse, toggles and direct export to PDF / DWG.
+    /// The drawing is EXACTLY the exported one (the same `section_drawing` function, the same real coordinates).
     pub(super) fn section_preview_window(&mut self, ctx: &egui::Context) {
         if !self.section_preview_open {
             return;
@@ -598,7 +598,7 @@ impl App {
             .resizable(true)
             .collapsible(false)
             .show(ctx, |ui| {
-                // ---- bara de unelte
+                // ---- the toolbar
                 let mut changed = false;
                 ui.horizontal_wrapped(|ui| {
                     let view = self.settings.cad_view;
@@ -626,10 +626,10 @@ impl App {
                 if changed {
                     self.settings.save();
                 }
-                // ---- foaia
+                // ---- the sheet
                 let (area, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
                 let painter = ui.painter_at(area);
-                let paper = Color32::from_rgb(246, 243, 232); // crem, ca foaia din Inventor
+                let paper = Color32::from_rgb(246, 243, 232); // cream, like the Inventor sheet
                 let ink = Color32::from_rgb(20, 22, 26);
                 painter.rect_filled(area, 4.0, Color32::from_rgb(120, 124, 132));
                 let sheet = area.shrink(10.0);
@@ -645,16 +645,16 @@ impl App {
                     painter.text(frame.center(), Align2::CENTER_CENTER, "Nothing to draw here - move the cube or the cut over the model", FontId::proportional(13.0), Color32::from_rgb(90, 90, 90));
                     return;
                 }
-                // cartusul (jos-dreapta) - zona de desen e restul cadrului
+                // the title block (bottom-right) - the drawing area is the rest of the frame
                 let tb = egui::Rect::from_min_size(egui::pos2(frame.right() - 250.0, frame.bottom() - 58.0), egui::vec2(250.0, 58.0));
                 let draw_area = egui::Rect::from_min_max(frame.min + egui::vec2(14.0, 14.0), egui::pos2(frame.right() - 14.0, tb.top() - 8.0));
-                // zoom / deplasare
+                // zoom / pan
                 if resp.hovered() {
                     let scroll = ui.input(|i| i.smooth_scroll_delta.y);
                     if scroll.abs() > 0.1 {
                         let old = self.prev_zoom;
                         let z = (old * (1.0 + scroll * 0.0025)).clamp(0.2, 60.0);
-                        // zoom spre cursor
+                        // zoom toward the cursor
                         if let Some(h) = resp.hover_pos() {
                             let c = draw_area.center() + egui::vec2(self.prev_pan[0], self.prev_pan[1]);
                             let d = h - c;
@@ -688,7 +688,7 @@ impl App {
                 let (cx, cy) = ((x0 + x1) * 0.5, (y0 + y1) * 0.5);
                 let pt = |x: f64, y: f64| egui::pos2(c.x + ((x - cx) as f32) * sc, c.y - ((y - cy) as f32) * sc);
                 let clip = painter.with_clip_rect(draw_area.expand(4.0));
-                // ordinea: fine (hasura, axe) -> ascunse -> vizibile -> conturul taiat gros
+                // the order: fine (hatch, grids) -> hidden -> visible -> the thick cut outline
                 let rank = |l: &str| match l.to_ascii_uppercase().as_str() {
                     "HATCH" | "GRIDS" | "LEVELS" | "DIMS" => 0,
                     "HIDDEN" | "BEHIND" => 1,
@@ -724,7 +724,7 @@ impl App {
                     let size = (t.mm as f32 * 2.2 * self.prev_zoom.sqrt()).clamp(7.0, 18.0);
                     clip.text(pt(t.x, t.y), Align2::LEFT_BOTTOM, &t.s, FontId::proportional(size), Color32::from_rgb(25, 30, 40));
                 }
-                // ---- cartusul, ca in Inventor (proiect / titlu / scara / data / numar)
+                // ---- the title block, like in Inventor (project / title / scale / date / number)
                 painter.rect_filled(tb, 0.0, paper);
                 painter.rect_stroke(tb, 0.0, Stroke::new(1.2_f32, ink));
                 let mid = tb.left() + 160.0;
@@ -738,7 +738,7 @@ impl App {
                 let scale = if self.title_block.scale > 0 { format!("1:{}", self.title_block.scale) } else { "Fit".into() };
                 painter.text(egui::pos2(mid + 6.0, tb.top() + 31.0), Align2::LEFT_TOP, format!("SCALE {scale}"), FontId::proportional(9.0), ink);
                 painter.text(egui::pos2(mid + 6.0, tb.top() + 44.0), Align2::LEFT_TOP, self.title_block.paper.clone(), FontId::proportional(9.0), ink);
-                // indicatorul de zoom, discret
+                // the zoom indicator, subtle
                 painter.text(egui::pos2(frame.left() + 6.0, frame.bottom() - 6.0), Align2::LEFT_BOTTOM, format!("{:.0}%  ·  wheel: zoom  ·  drag: pan  ·  double-click: fit", self.prev_zoom * 100.0), FontId::proportional(10.0), Color32::from_rgb(110, 110, 110));
             });
         self.section_preview_open = open;
@@ -747,8 +747,8 @@ impl App {
         }
     }
 
-    /// Fereastra Multi view: alegi vederile cubului de sectiune si distanta dintre ele, vezi plansa
-    /// (exact cea exportata) si exporti PDF / DWG. Zoom cu rotita, deplasare cu mouse-ul.
+    /// The Multi view window: you choose the section box views and the distance between them, you see the sheet
+    /// (exactly the exported one) and you export PDF / DWG. Zoom with the wheel, pan with the mouse.
     pub(super) fn multiview_window(&mut self, ctx: &egui::Context) {
         if !self.mv_open {
             return;
@@ -766,7 +766,7 @@ impl App {
             .resizable(true)
             .collapsible(false)
             .show(ctx, |ui| {
-                // ---- vederile si distanta
+                // ---- the views and the distance
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new("Views").strong());
                     for (k, name) in ["Front", "Right", "Back", "Left", "Top", "Bottom"].iter().enumerate() {
@@ -843,7 +843,7 @@ impl App {
                     pan = egui::Vec2::ZERO;
                 }
                 ui.data_mut(|d| d.insert_temp(vid, (zoom, pan)));
-                // limitele: segmente + titluri
+                // the limits: segments + titles
                 let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
                 for (_, f) in &sheet.frames {
                     x0 = x0.min(f[0]);
@@ -861,7 +861,7 @@ impl App {
                 let (cx, cy) = ((x0 + x1) * 0.5, (y0 + y1) * 0.5);
                 let pt = |x: f64, y: f64| egui::pos2(c.x + ((x - cx) as f32) * sc, c.y - ((y - cy) as f32) * sc);
                 let clip = painter.with_clip_rect(frame.shrink(2.0));
-                // cadrul fiecarei vederi (doar in preview) + distanta dintre vederi
+                // the frame of each view (only in the preview) + the distance between the views
                 let blue = Color32::from_rgb(70, 120, 200);
                 for (name, f) in &sheet.frames {
                     let r = egui::Rect::from_two_pos(pt(f[0], f[1]), pt(f[2], f[3])).expand(4.0);
@@ -872,7 +872,7 @@ impl App {
                         clip.text(r.left_top() + egui::vec2(2.0, -2.0), Align2::LEFT_BOTTOM, name, FontId::proportional(10.0), blue);
                     }
                 }
-                // cota distantei intre primele doua vederi alaturate pe acelasi rand
+                // the dimension of the distance between the first two adjacent views on the same row
                 if sheet.frames.len() > 1 {
                     let a = sheet.frames[0].1;
                     if let Some((_, b)) = sheet.frames.iter().skip(1).find(|(_, b)| (b[1] - a[1]).abs() < 1e-6 && b[0] > a[2]) {
@@ -933,10 +933,10 @@ impl App {
         }
     }
 
-    /// Segmentele + textele desenului 2D al sectiunii: tăietura, hașura, cote în lanț, niveluri, grile.
-    /// Aceleași funcții folosite de exportul DWG / PDF (`hatch_lines`, `section_annotations`).
+    /// The segments + texts of the 2D section drawing: cut, hatch, chain dimensions, levels, grids.
+    /// The same functions used by the DWG / PDF export (`hatch_lines`, `section_annotations`).
     fn section_preview_drawing(&self) -> (Vec<(String, [f64; 4])>, Vec<crate::app::CadText>) {
-        // EXACT aceeași sursă ca exportul DWG / PDF - nu mai există discrepanță.
+        // EXACTLY the same source as the DWG / PDF export - there is no discrepancy anymore.
         match self.section_drawing() {
             Some((segs, texts, _, _)) => (segs, texts),
             None => (Vec::new(), Vec::new()),

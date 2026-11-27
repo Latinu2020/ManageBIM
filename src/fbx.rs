@@ -1,5 +1,5 @@
-//! FBX nativ (Autodesk FBX, binar si ASCII) prin ufbx (MIT, legat static): fiecare nod cu mesh = un element,
-//! cu numele nodului, calea in ierarhie si culorile materialelor. Coordonate convertite in metri, Z in sus.
+//! Native FBX (Autodesk FBX, binary and ASCII) through ufbx (MIT, statically linked): each node with a mesh = one element,
+//! with the node name, the path in the hierarchy and the material colors. Coordinates converted to meters, Z up.
 use crate::model::{Prop, RawElement, RawModel};
 use glam::DVec3;
 use std::ffi::{c_char, c_int, CStr, CString};

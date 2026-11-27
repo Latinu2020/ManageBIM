@@ -1,4 +1,4 @@
-//! Interfata grafica (egui): meniuri, bara de unelte, panouri, viewport 3D.
+//! Graphical interface (egui): menus, toolbar, panels, 3D viewport.
 use crate::app::*;
 use crate::clash::{ClashStatus, ClashType};
 use crate::model::ElemId;
@@ -48,7 +48,7 @@ mod docking;
 mod ifc_mapping;
 pub use prop_editor::PropEditor;
 
-/// culoarea de accent a temei curente (Dark / Light / Nord)
+/// accent color of the current theme (Dark / Light / Nord)
 fn accent() -> Color32 {
     crate::theme::accent()
 }
@@ -74,7 +74,7 @@ fn label_bg(p: &egui::Painter, pos: Pos2, text: &str, col: Color32) {
     p.galley(r.min + EV::splat(4.0), g, Color32::WHITE);
 }
 
-/// ca `label_bg`, centrat orizontal pe `pos` (textul deasupra punctului)
+/// like `label_bg`, centered horizontally on `pos` (the text above the point)
 fn label_bg_center(p: &egui::Painter, pos: Pos2, text: &str, col: Color32) {
     let w = p.layout_no_wrap(text.to_string(), FontId::proportional(13.0), Color32::WHITE).size().x;
     label_bg(p, pos - EV::new(w * 0.5 + 8.0, 0.0), text, col);
@@ -99,7 +99,7 @@ fn date_edit(ui: &mut egui::Ui, id: egui::Id, d: &mut i32) -> bool {
 }
 
 impl eframe::App for App {
-    /// inchidere normala: fara oferta de recuperare la urmatoarea pornire
+    /// normal shutdown: no recovery offer on the next start
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.autosave.finish();
     }
@@ -115,11 +115,11 @@ impl eframe::App for App {
             theme::apply(ctx, self.settings.theme);
             self.theme_dirty = false;
         }
-        // marimea intregii interfate (fonturi + tabele + panouri); egui o aplica la finalul cadrului
+        // size of the whole interface (fonts + tables + panels); egui applies it at the end of the frame
         ctx.set_zoom_factor(self.settings.ui_scale);
-        // inaltimea textului (0 = implicit); temele o citesc la aplicare
+        // text height (0 = default); the themes read it when applied
         theme::set_font_base(self.settings.font_size);
-        // schimbarea fontului se aplica imediat (refontuirea e scumpa, doar la schimbare)
+        // a font change applies immediately (re-fonting is expensive, only on change)
         if self.font_family_cur != self.settings.font_family {
             self.font_family_cur = self.settings.font_family.clone();
             theme::install_fonts_with(ctx, &self.settings.font_family);
@@ -132,7 +132,7 @@ impl eframe::App for App {
         self.mcp_step(ctx);
         self.check_file_changes();
         if self.loaded_models().next().is_some() {
-            // aplicatia sta in repaus fara input: o trezim periodic ca sa observe fisierele modificate
+            // the app idles without input: we wake it periodically so it notices modified files
             ctx.request_repaint_after(std::time::Duration::from_secs(2));
         }
         self.update_mode();
@@ -145,7 +145,7 @@ impl eframe::App for App {
         self.pathtrace_step(ctx);
         self.update_sim(dt);
 
-        // fisiere trase in fereastra
+        // files dragged into the window
         let dropped: Vec<String> = ctx.input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.as_ref().map(|p| p.to_string_lossy().to_string())).collect());
         for p in dropped {
             self.open_path(&p, true);
@@ -158,7 +158,7 @@ impl eframe::App for App {
         } else {
             self.ribbon(ctx);
         }
-        // pagina de start: doar ribbon-ul (inactiv) si ecranul de pornire pe toata fereastra
+        // start page: only the ribbon (inactive) and the start screen over the whole window
         if self.start_screen() {
             egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| self.viewport(ui, true));
             self.tools_window(ctx);
@@ -170,10 +170,10 @@ impl eframe::App for App {
             return;
         }
         self.status_bar(ctx);
-        // panoul de jos: cel mult jumatate din ecran (65% doar cand e maximizat), vederea 3D ramane vizibila
+        // bottom panel: at most half the screen (65% only when maximized), the 3D view stays visible
         let maxh = (ctx.screen_rect().height() * if self.settings.layout.bottom_tall { 0.65 } else { 0.5 }).max(200.0);
         let side_max = (ctx.screen_rect().width() * 0.38).max(260.0);
-        // zonele de panouri: fixate (pin) sau auto-hide (banda subtire cu file, panoul apare peste model)
+        // panel zones: pinned or auto-hide (thin strip with tabs, the panel appears over the model)
         let mut strips: [Option<Rect>; 3] = [None; 3];
         if !self.settings.layout.hide_all {
             let ah = self.settings.layout.autohide;
@@ -182,11 +182,11 @@ impl eframe::App for App {
                 if ah[2] {
                     strips[2] = Some(egui::TopBottomPanel::bottom("bottom_strip").exact_height(26.0).resizable(false).show(ctx, |ui| self.dock_strip(ui, Dock::Bottom)).response.rect);
                 } else {
-                    // se ridica / coboara cu animatie din filele din bara de stare
+                    // rises / lowers with an animation from the tabs in the status bar
                     let open = self.settings.layout.bottom_open;
                     let h0 = if self.settings.layout.bottom_tall { maxh } else { 220.0 };
                     let r = egui::TopBottomPanel::bottom("bottom").frame(pf).resizable(true).default_height(h0).min_height(60.0).max_height(maxh).show_animated(ctx, open, |ui| self.dock_area(ui, Dock::Bottom));
-                    // manerul de redimensionare, vizibil pe marginea de sus (trage in sus / in jos)
+                    // resize handle, visible on the top edge (drag up / down)
                     if let Some(r) = r.filter(|_| open) {
                         let top = r.response.rect.center_top();
                         let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("bottom_grip")));
@@ -210,44 +210,44 @@ impl eframe::App for App {
             }
         }
         if self.split_view {
-            // Split-view: două jumătăți în aceeași fereastră, cu separator trasabil.
+            // Split-view: two halves in the same window, with a draggable separator.
             egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
                 let rect = ui.available_rect_before_wrap();
                 let half = rect.width() * self.split_ratio.clamp(0.05, 0.95);
                 let left = Rect::from_min_max(rect.min, egui::pos2(rect.min.x + half, rect.max.y));
                 let right = Rect::from_min_max(egui::pos2(rect.min.x + half, rect.min.y), rect.max);
-                // jumătatea activă = cea sub cursor (acolo se desenează ViewCube / nav_bar o singură dată)
+                // active half = the one under the cursor (ViewCube / nav_bar is drawn there only once)
                 let pointer = ctx.input(|i| i.pointer.hover_pos());
                 let active_right = pointer.is_some_and(|p| p.x >= rect.min.x + half);
-                // --- jumatatea stanga (camera A) ---
+                // --- left half (camera A) ---
                 ui.allocate_new_ui(egui::UiBuilder::new().max_rect(left), |ui| self.viewport(ui, !active_right));
-                // --- separatorul trasabil (stretch) ---
+                // --- the draggable separator (stretch) ---
                 let sep = ui.painter();
                 sep.rect_filled(Rect::from_center_size(egui::pos2(rect.min.x + half, rect.center().y), egui::vec2(3.0, rect.height())), 0.0, accent());
                 let drag = ui.interact(Rect::from_center_size(egui::pos2(rect.min.x + half, rect.center().y), egui::vec2(10.0, rect.height())), egui::Id::new("split_sep"), egui::Sense::drag());
                 if drag.dragged() {
                     self.split_ratio = ((drag.interact_pointer_pos().map(|p| p.x).unwrap_or(rect.min.x + half) - rect.min.x) / rect.width()).clamp(0.05, 0.95);
                 }
-                // --- jumatatea dreapta (camera B), prin swap temporar ---
+                // --- right half (camera B), via a temporary swap ---
                 std::mem::swap(&mut self.cam, &mut self.cam_b);
                 std::mem::swap(&mut self.section, &mut self.section_b);
                 ui.allocate_new_ui(egui::UiBuilder::new().max_rect(right), |ui| self.viewport(ui, active_right));
                 std::mem::swap(&mut self.cam, &mut self.cam_b);
                 std::mem::swap(&mut self.section, &mut self.section_b);
-                // evidențiază jumătatea activă cu un contur discret
+                // highlight the active half with a subtle outline
                 let ar = if active_right { right } else { left };
                 ui.painter().rect_stroke(ar.shrink(1.0), crate::theme::RADIUS_MD, egui::Stroke::new(1.0_f32, accent().gamma_multiply(0.5)));
-                // Link-ul sincronizează camerele DOAR la activare (în ribbon), nu în fiecare frame —
-                // altfel camera B n-ar putea fi mișcată independent pentru comparație.
-                // etichete + buton de inchidere pe jumatatea dreapta
+                // Link syncs the cameras ONLY on activation (in the ribbon), not on every frame —
+                // otherwise camera B could not be moved independently for comparison.
+                // labels + close button on the right half
                 ui.painter().text(left.center_top() + egui::vec2(0.0, 12.0), Align2::CENTER_TOP, "A", FontId::proportional(11.0), accent());
                 ui.painter().text(right.center_top() + egui::vec2(0.0, 12.0), Align2::CENTER_TOP, "B", FontId::proportional(11.0), accent());
             });
         } else {
             egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| self.viewport(ui, true));
         }
-        // Bara de navigare e un Area global: o desenăm O SINGURĂ DATĂ, centrată pe toată zona
-        // de model, și o facem să opereze pe jumătatea activă (A sau B) în split-view.
+        // The navigation bar is a global Area: we draw it ONCE, centered on the whole
+        // model area, and make it operate on the active half (A or B) in split-view.
         if self.settings.nav_bar && self.loaded_models().next().is_some() && self.render_job.is_none() {
             let full = ctx.available_rect();
             if self.split_view {
@@ -266,15 +266,15 @@ impl eframe::App for App {
             }
         }
         self.flyout_ui(ctx, strips);
-        // mers: tastele (shortcuts) si mouse-ul (viewport) au setat viteza tinta - aplicam lin
+        // walking: the keys (shortcuts) and the mouse (viewport) set the target speed - we apply it smoothly
         self.walk_tick(dt);
-        // Live Link: selectia sincronizata cu Revit / Navisworks (sondare usoara, de 4 ori pe secunda)
+        // Live Link: selection synced with Revit / Navisworks (light polling, 4 times per second)
         if self.settings.sync_selection {
             self.sync_tick();
             ctx.request_repaint_after(std::time::Duration::from_millis(300));
         }
         self.section_follow_tick();
-        // istoricul vizualizarii (Undo / Redo)
+        // view history (Undo / Redo)
         let pointer_down = ctx.input(|i| i.pointer.any_down());
         self.history_tick(pointer_down);
         self.float_windows(ctx);
@@ -290,7 +290,7 @@ impl eframe::App for App {
             self.layout_saved = self.settings.layout.clone();
             self.settings.save();
         }
-        // seturile s-au schimbat -> reevalueaza materialele atribuite pe seturi
+        // the sets changed -> re-evaluate the materials assigned by sets
         let sig = {
             use std::hash::{Hash, Hasher};
             let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -336,12 +336,12 @@ impl App {
     // ================================================================== shortcuts
     fn shortcuts(&mut self, ctx: &egui::Context) {
         let typing = ctx.wants_keyboard_input();
-        // F11: toate panourile ascunse / inapoi (tot ecranul pentru model)
+        // F11: all panels hidden / back (full screen for the model)
         if ctx.input(|i| i.key_pressed(Key::F11)) {
             self.settings.layout.hide_all = !self.settings.layout.hide_all;
             self.flyout = None;
         }
-        // PgUp / PgDn: nivelul de deasupra / dedesubt, cand o sectiune pe nivel e activa
+        // PgUp / PgDn: the level above / below, when a level section is active
         if !typing && self.section.enabled && self.section_level.is_some() {
             if ctx.input(|i| i.key_pressed(Key::PageUp)) {
                 self.section_level_step(1);
@@ -366,17 +366,17 @@ impl App {
         if crate::keybind::pressed(ctx, &bind_find) {
             self.open_panel(Panel::Find);
         }
-        // paleta de comenzi (merge si cand scrii intr-un camp)
+        // command palette (works even while typing in a field)
         if crate::keybind::pressed(ctx, &bind_palette) {
             self.palette_open = !self.palette_open;
             self.palette_q.clear();
             self.palette_sel = 0;
         }
-        // F1 = scurtaturile de tastatura
+        // F1 = keyboard shortcuts
         if ctx.input(|i| i.key_pressed(Key::F1)) {
             self.keys_open = !self.keys_open;
         }
-        // F5 = Refresh modelele modificate, Ctrl+F5 = reincarca tot
+        // F5 = Refresh modified models, Ctrl+F5 = reload everything
         if ctx.input(|i| i.key_pressed(Key::F5)) {
             self.refresh_models(ctrl);
         }
@@ -386,7 +386,7 @@ impl App {
                 None => self.request_path(Purpose::SaveProject),
             }
         }
-        // Ctrl+1..9: salt direct la View Template-ul cu acel număr (ca Navisworks Saved Views)
+        // Ctrl+1..9: jump straight to the View Template with that number (like Navisworks Saved Views)
         if ctrl && !typing {
             for i in 0..self.view_templates.len().min(9) {
                 let key = match i { 0 => Key::Num1, 1 => Key::Num2, 2 => Key::Num3, 3 => Key::Num4, 4 => Key::Num5, 5 => Key::Num6, 6 => Key::Num7, 7 => Key::Num8, _ => Key::Num9 };
@@ -399,7 +399,7 @@ impl App {
         if typing {
             return;
         }
-        // Undo / Redo al vizualizarii: selectie, ascunse, sectiune, camera
+        // Undo / Redo of the view: selection, hidden, section, camera
         let (kz, ky) = ctx.input(|i| (i.key_pressed(Key::Z), i.key_pressed(Key::Y)));
         if ctrl && kz {
             if ctx.input(|i| i.modifiers.shift) {
@@ -435,7 +435,7 @@ impl App {
             self.cur_measure.clear();
         }
         if self.tool == Tool::WalkPath {
-            // Backspace / Delete: sterge ultimul punct; Enter: gata
+            // Backspace / Delete: deletes the last point; Enter: done
             if ctx.input(|i| i.key_pressed(Key::Backspace) || i.key_pressed(Key::Delete)) {
                 self.walk_path.pop();
             }
@@ -460,7 +460,7 @@ impl App {
                 self.clear_selection();
             }
         }
-        // mers / zbor
+        // walk / fly
         let (w, s2, a2, d, q, e, up, dn, lf, rt, shift) = ctx.input(|i| {
             (
                 i.key_down(Key::W),
@@ -496,7 +496,7 @@ impl App {
             v.z -= 1.0;
         }
         if self.nav == NavMode::Walk && !ctrl {
-            // in modul Walk sagetile stanga / dreapta rotesc (ca in Navisworks)
+            // in Walk mode the left / right arrows rotate (as in Navisworks)
             if lf && !a2 {
                 v.x += 1.0;
                 self.walk_turn_target += 1.0;
@@ -507,7 +507,7 @@ impl App {
             }
         }
         if v != Vec3::ZERO && !ctrl {
-            // viteza tinta; walk_tick accelereaza / franeaza lin (Shift = de 2.5 ori mai repede)
+            // target speed; walk_tick accelerates / brakes smoothly (Shift = 2.5 times faster)
             if self.path_run.is_some() {
                 self.path_run = None;
             }
@@ -529,10 +529,10 @@ impl App {
         self.cur_measure.clear();
     }
 
-    // ================================================================== meniu
+    // ================================================================== menu
     // ================================================================== ribbon
     fn save_now(&mut self) {
-        // proiect deschis dintr-un .bimd: se publica din nou acolo (ca NWD)
+        // project opened from a .bimd: it is published there again (like NWD)
         if let Some(p) = self.bimd_path.clone() {
             match self.publish_bimd(&p) {
                 Ok(m) => self.toast(m),
@@ -628,8 +628,8 @@ impl App {
         }
     }
 
-    /// Bara de sus, deasupra ribbonului: cautare, Model focus, tema, Setari si
-    /// numele proiectului. E mutata aici ca sa nu impinga / suprapuna taburile.
+    /// Top bar, above the ribbon: search, Model focus, theme, Settings and
+    /// the project name. Moved here so it does not push / overlap the tabs.
     /// Quick lighting (top bar and navigation bar): brightness, ambient, sun, shadows. True when
     /// "More lighting…" was clicked (the caller closes its popup).
     pub(super) fn quick_light_ui(&mut self, ui: &mut egui::Ui) -> bool {
@@ -751,7 +751,7 @@ impl App {
                         _ => None,
                     })
                 });
-                // captura de ecran poate sa nu mai vina (fereastra minimizata / driver): nu asteptam la infinit
+                // the screenshot may never come (minimized window / driver): we do not wait forever
                 if shot.is_none() {
                     let j = self.report_job.as_mut().unwrap();
                     j.shot_wait = j.shot_wait.saturating_add(1);
@@ -788,7 +788,7 @@ impl App {
                     let item = self.report_item(i, png, w2, h2);
                     let n = self.report_job.as_ref().map(|j| j.list.len()).unwrap_or(0);
                     let Some(j) = self.report_job.as_mut() else { return };
-                    // viewpoint sters intre timp: pagina lui se sare
+                    // viewpoint deleted in the meantime: its page is skipped
                     if let Some(item) = item {
                         j.items.push(item);
                     }
@@ -802,7 +802,7 @@ impl App {
         }
     }
 
-    /// Clash Detective in mod Focus: o fereastra aproape cat ecranul, cu spatiu pentru multe teste / clashuri.
+    /// Clash Detective in Focus mode: a window almost as large as the screen, with room for many tests / clashes.
     fn clash_focus_window(&mut self, ctx: &egui::Context) {
         if !self.clash.focus_mode {
             return;
@@ -846,10 +846,10 @@ impl App {
             let compact_id = egui::Id::new("status_compact");
             let status_compact = ui.data(|d| d.get_temp::<bool>(compact_id)).unwrap_or(false);
             ui.horizontal(|ui| {
-                // filele panourilor de jos (Find Items, Clash, TimeLiner...): clic = panoul se ridica,
-                // clic pe fila deschisa = coboara (tot ecranul pentru model)
+                // bottom panel tabs (Find Items, Clash, TimeLiner...): click = the panel rises,
+                // click on the open tab = it lowers (full screen for the model)
                 let bottom = self.settings.layout.in_area(Dock::Bottom);
-                // "Add panel" e mereu prezent, chiar si cand bara de jos e goala.
+                // "Add panel" is always present, even when the bottom bar is empty.
                 if !bottom.is_empty() && !self.settings.layout.hide_all && !self.settings.layout.autohide[2] {
                     let active = self.settings.layout.active[2];
                     let open = self.settings.layout.bottom_open;
@@ -890,7 +890,7 @@ impl App {
                 if nm == 0 {
                     ui.label(RichText::new("No model open").weak());
                 } else {
-                    // nivelul curent: alegerea lui face sectiunea pe nivel (ca in Navisworks / Revit)
+                    // current level: choosing it makes the level section (as in Navisworks / Revit)
                     let levels = self.scene_grids().levels;
                     if !levels.is_empty() {
                         let cur = self.section_level.filter(|_| self.section.enabled).and_then(|i| levels.get(i)).map(|l| l.0.clone()).unwrap_or_else(|| "All levels".into());
@@ -914,7 +914,7 @@ impl App {
                     }
                     ui.label(format!("{} {} · {} elements", nm, if nm == 1 { "model" } else { "models" }, thousands(ne))).on_hover_text(format!("{} triangles", thousands(nt)));
                 }
-                // nor de puncte incarcat: densitatea direct in bara de stare (glisare = schimbare, clic = fereastra)
+                // point cloud loaded: the density right in the status bar (drag = change, click = window)
                 if self.loaded_models().any(|(_, m)| m.cloud.is_some()) {
                     ui.separator();
                     let mut pct = (self.cloud_density * 100.0).round();
@@ -942,7 +942,7 @@ impl App {
                 }
                 if self.settings.sync_selection {
                     ui.separator();
-                    // verde = un add-in a raspuns in ultimele 10 minute
+                    // green = an add-in replied in the last 10 minutes
                     let live: Vec<&str> = crate::sync::PEERS.iter().enumerate().filter(|(k, _)| self.sync.peer_seen[*k].map(|t| t.elapsed().as_secs() < 600).unwrap_or(false)).map(|(_, p)| p.1).collect();
                     let (txt, col) = if live.is_empty() { ("Live Link: waiting for Revit / Navisworks".to_string(), ui.visuals().weak_text_color()) } else { (format!("Live Link: {}", live.join(" + ")), Color32::from_rgb(70, 190, 110)) };
                     let r = ui.label(crate::theme::icon_job("🔗", &txt, 13.0, col));
@@ -965,7 +965,7 @@ impl App {
                     self.notes_bell(ui);
                     self.update_badge(ui);
                     ui.label(RichText::new(format!("{:.0} FPS", self.fps)).weak()).on_hover_text("Frames per second");
-                    // unitatea de lungime: acelasi sistem ca in Settings (m / mm / in / ft)
+                    // length unit: the same system as in Settings (m / mm / in / ft)
                     let cur_u = if self.settings.unit_system.is_empty() { "m".to_string() } else { self.settings.unit_system.clone() };
                     ui.menu_button(RichText::new(&cur_u).strong(), |ui| {
                         ui.label(RichText::new("Length unit").small().weak());
@@ -986,7 +986,7 @@ impl App {
                         self.osnap_on = !self.osnap_on;
                     }
                 });
-                // bara nu incape (ecran ingust / interfata marita): filele raman doar cu iconite; revin cand e loc
+                // the bar does not fit (narrow screen / enlarged interface): tabs keep only icons; they come back when there is room
                 let right_start = rr.response.rect.left();
                 let gap = right_start - left_end;
                 let tabs = self.settings.layout.in_area(Dock::Bottom).len() as f32;
@@ -1190,7 +1190,7 @@ impl App {
                             self.save_now();
                             self.run_start_action(pending);
                         } else {
-                            // fara fisier inca: Save As; actiunea se reia apoi din pagina de start
+                            // no file yet: Save As; the action then resumes from the start page
                             self.confirm_start = false;
                             self.start_pending = None;
                             self.show_start = false;
@@ -1221,7 +1221,7 @@ impl App {
             egui::Window::new("# Grids").open(&mut open).collapsible(false).default_width(470.0).show(ctx, |ui| {
                 ui.checkbox(&mut self.use_user_grids, "Use my grids (instead of the grids in the models)");
                 ui.add_space(4.0);
-                // generator: originea si rotatia se pot alege cu clic in model (snap pe colturi)
+                // generator: origin and rotation can be picked with a click in the model (snap to corners)
                 egui::CollapsingHeader::new(RichText::new("Generate a grid").strong()).default_open(self.user_grids.is_empty()).show(ui, |ui| {
                     let gg = &mut self.grid_gen;
                     egui::Grid::new("gg").num_columns(4).spacing([8.0, 4.0]).show(ui, |ui| {
@@ -1265,7 +1265,7 @@ impl App {
                         ui.label(RichText::new(if self.grid_pick == 1 { "Click the origin in the 3D view…" } else { "Click a point along the first axis direction…" }).color(accent()));
                     }
                 });
-                // mutare / rotire a axelor existente
+                // moving / rotating the existing grids
                 egui::CollapsingHeader::new(RichText::new("Move / rotate my axes").strong()).default_open(false).show(ui, |ui| {
                     let id = ui.make_persistent_id("gridmove");
                     let mut mv: (f64, f64, f64) = ui.data_mut(|d| d.get_temp(id)).unwrap_or((0.0, 0.0, 0.0));
@@ -1283,7 +1283,7 @@ impl App {
                     });
                     ui.data_mut(|d| d.insert_temp(id, mv));
                 });
-                // lista
+                // list
                 egui::CollapsingHeader::new(RichText::new(format!("My axes ({})", self.user_grids.len())).strong()).default_open(true).show(ui, |ui| {
                     let mut del = None;
                     egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
@@ -1315,7 +1315,7 @@ impl App {
                             let last = self.user_grids.last().cloned();
                             let g = match last {
                                 Some(l) => {
-                                    // paralela cu ultima, la 6 m
+                                    // parallel to the last one, 6 m away
                                     let d = glam::DVec2::from(l.b) - glam::DVec2::from(l.a);
                                     let nrm = glam::DVec2::new(-d.y, d.x).normalize_or_zero() * 6.0;
                                     crate::app::UserGrid { name: crate::app::grid_label(&l.name, 1), a: (glam::DVec2::from(l.a) + nrm).into(), b: (glam::DVec2::from(l.b) + nrm).into() }
@@ -1342,7 +1342,7 @@ impl App {
                             self.user_grids.clear();
                         }
                     });
-                    // import din DWG / DXF (planul de axe al arhitectului / structuristului)
+                    // import from DWG / DXF (the architect's / structural engineer's grid plan)
                     ui.horizontal_wrapped(|ui| {
                         if ui.button("📥 Import from DWG / DXF…").on_hover_text("Grid lines from the drawing (layer GRID / AXE / AX…) with the tags from their bubbles; units from the drawing").clicked() {
                             self.request_path(Purpose::ImportGridsCad);
@@ -1455,8 +1455,8 @@ impl App {
         if self.toasts.is_empty() {
             return;
         }
-        // 0.28: O SINGURA notificare vizibila (cea mai noua; erorile au prioritate), cu un contor „+N"
-        // pentru celelalte - nu se mai aduna cate trei peste model; istoria completa e in Log (Project)
+        // 0.28: ONE visible notification (the newest; errors take priority), with a „+N" counter
+        // for the others - they no longer pile up three at a time over the model; the full history is in Log (Project)
         let total = self.toasts.len();
         let shown = self.toasts.iter().rposition(|t| t.2).unwrap_or(total - 1);
         let (m, t, err) = self.toasts[shown].clone();
@@ -1484,7 +1484,7 @@ impl App {
     }
 }
 
-/// 12345678 -> "12 345 678" (mai usor de citit in bara de stare)
+/// 12345678 -> "12 345 678" (easier to read in the status bar)
 fn thousands(n: usize) -> String {
     let s = n.to_string();
     let mut out = String::with_capacity(s.len() + s.len() / 3);
@@ -1497,15 +1497,15 @@ fn thousands(n: usize) -> String {
     out
 }
 
-/// buton de ribbon: iconita sus si eticheta dedesubt (Full) sau doar iconita (Compact, numele in tooltip).
-/// Fara contur: hover = fundalul se lumineaza, activ = nuanta de accent.
+/// ribbon button: icon on top and label below (Full) or icon only (Compact, the name in the tooltip).
+/// No outline: hover = the background lightens, active = accent tint.
 fn rows_has(tabs: &[(String, Vec<(String, String)>)], tab: &str, name: &str) -> bool {
     tabs.iter().any(|t| t.0 == tab && t.1.iter().any(|(n, _)| n.eq_ignore_ascii_case(name)))
 }
 
-/// Eticheta unui buton din ribbon pe cel mult doua randuri, fara text taiat: un rand daca incape in
-/// `w`, altfel impartita la spatiul care da randurile cele mai egale; fontul scade putin doar daca un
-/// singur cuvant e mai lat decat butonul.
+/// Label of a ribbon button on at most two rows, with no cut text: one row if it fits in
+/// `w`, otherwise split at the space that gives the most even rows; the font shrinks slightly only if a
+/// single word is wider than the button.
 fn ribbon_label_lines(ui: &egui::Ui, label: &str, w: f32) -> Vec<(String, FontId)> {
     let width = |t: &str, f: &FontId| ui.fonts(|fo| fo.layout_no_wrap(t.to_string(), f.clone(), Color32::WHITE).size().x);
     for size in [10.5_f32, 9.5, 8.8] {
@@ -1528,9 +1528,9 @@ fn ribbon_label_lines(ui: &egui::Ui, label: &str, w: f32) -> Vec<(String, FontId
         if let Some((_, a, b)) = best {
             return vec![(a, f.clone()), (b, f)];
         }
-        // un singur cuvant lung (ex. „Placeholder"): despartit in silabe aproximative cu cratima
+        // a single long word (e.g. „Placeholder"): split into approximate syllables with a hyphen
         if words.len() == 1 && size < 9.0 {
-            // intai un font putin mai mic pe un singur rand (cuvintele scurte nu se mai despart: „Prope-rties")
+            // first a slightly smaller font on a single row (short words are no longer split: „Prope-rties")
             for s2 in [8.2_f32, 7.6] {
                 let f2 = FontId::proportional(s2);
                 if width(label, &f2) <= w {
@@ -1554,7 +1554,7 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     let enabled = enabled && ui.is_enabled();
     let compact = crate::theme::RIBBON_COMPACT.load(std::sync::atomic::Ordering::Relaxed);
     let font = FontId::proportional(10.5);
-    // Dimensiune FIXA pentru toate butoanele din ribbon; etichetele se scurteaza ca sa nu se suprapuna.
+    // FIXED size for all ribbon buttons; labels are shortened so they do not overlap.
     let size = if compact {
         egui::vec2(28.0, 30.0)
     } else {
@@ -1562,7 +1562,7 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     };
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let p = ui.painter();
-    // hover cu fade (tranzitie scurta), activ = nuanta de accent; colturi rotunjite + contur fin (stil Mitcad)
+    // hover with fade (short transition), active = accent tint; rounded corners + thin outline (Mitcad style)
     let hov = ui.ctx().animate_bool_with_time(resp.id.with("rh"), enabled && resp.hovered(), 0.12);
     let rounding = egui::Rounding::same(crate::theme::RADIUS_MD);
     if on {
@@ -1570,13 +1570,13 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     } else if hov > 0.0 {
         p.rect_filled(rect, rounding, ui.visuals().widgets.hovered.weak_bg_fill.gamma_multiply(hov));
     }
-    // contur discret: doar cand e hover/activ, ca sa nu incarce ribbon-ul
+    // subtle outline: only when hover/active, so it does not clutter the ribbon
     if on || hov > 0.0 {
         let stroke_col = if on { accent() } else { crate::theme::border().gamma_multiply(0.55 + 0.45 * hov) };
         p.rect_stroke(rect, rounding, egui::Stroke::new(1.0_f32, stroke_col));
     }
     let col = if !enabled { ui.visuals().weak_text_color().gamma_multiply(0.6) } else if on { accent() } else { ui.visuals().text_color() };
-    // iconita colorata pe categorii (doar activ si neselectat; dezactivat ramane gri)
+    // icon colored by category (only active and unselected; disabled stays gray)
     let icol = if enabled && !on && crate::theme::COLOR_ICONS.load(std::sync::atomic::Ordering::Relaxed) {
         crate::theme::icon_tint(icon, ui.visuals().dark_mode).unwrap_or(col)
     } else {
@@ -1584,7 +1584,7 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     };
     let icon_c = if compact { rect.center() } else { rect.center_top() + egui::vec2(0.0, 12.0) };
     if let Some(fmt) = icon.strip_prefix("fmt:") {
-        // iconita de format de fisier (IFC / GLB / BCF ...): foaie cu colt indoit + eticheta colorata
+        // file format icon (IFC / GLB / BCF ...): sheet with a folded corner + colored label
         file_format_icon(p, icon_c, fmt, enabled && !on, col);
     } else if compact {
         p.text(rect.center(), Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), icol);
@@ -1592,8 +1592,8 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
         p.text(icon_c, Align2::CENTER_CENTER, crate::theme::ph(icon), crate::theme::icon_font(17.0), icol);
     }
     if !compact {
-        // eticheta intreaga (0.28): pe un rand daca incape, altfel pe doua (impartita la spatiul cel mai
-        // echilibrat); un cuvant prea lung primeste un font putin mai mic - nu mai taiem textul cu „…"
+        // full label (0.28): on one row if it fits, otherwise on two (split at the most
+        // balanced space); a word that is too long gets a slightly smaller font - we no longer cut the text with „…"
         let lines = ribbon_label_lines(ui, &label, rect.width() - 4.0);
         let n = lines.len() as f32;
         for (k, (t, f)) in lines.iter().enumerate() {
@@ -1610,8 +1610,8 @@ fn rbtn(ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled
     }
 }
 
-/// Iconita de format de fisier: o foaie cu coltul indoit si o eticheta colorata cu extensia
-/// (IFC albastru buildingSMART, GLB verde Khronos, BCF portocaliu...) - ca in Revit / Navisworks.
+/// File format icon: a sheet with a folded corner and a colored label with the extension
+/// (IFC buildingSMART blue, GLB Khronos green, BCF orange...) - as in Revit / Navisworks.
 fn file_format_icon(p: &egui::Painter, c: egui::Pos2, fmt: &str, colored: bool, base: Color32) {
     let tag_col = if !colored {
         base
@@ -1634,11 +1634,11 @@ fn file_format_icon(p: &egui::Painter, c: egui::Pos2, fmt: &str, colored: bool, 
     let r = l + w;
     let b = t + h;
     let stroke = egui::Stroke::new(1.3_f32, base.gamma_multiply(0.9));
-    // conturul foii cu coltul dreapta-sus taiat
+    // sheet outline with the top-right corner cut
     let pts = vec![egui::pos2(l, t), egui::pos2(r - fold, t), egui::pos2(r, t + fold), egui::pos2(r, b), egui::pos2(l, b), egui::pos2(l, t)];
     p.add(egui::Shape::line(pts, stroke));
     p.add(egui::Shape::line(vec![egui::pos2(r - fold, t), egui::pos2(r - fold, t + fold), egui::pos2(r, t + fold)], stroke));
-    // eticheta cu extensia, iesita spre stanga peste foaie
+    // the label with the extension, sticking out to the left over the sheet
     let font = FontId::new(7.5, egui::FontFamily::Proportional);
     let galley = p.layout_no_wrap(fmt.to_string(), font, Color32::WHITE);
     let tw = galley.size().x + 5.0;
@@ -1647,8 +1647,8 @@ fn file_format_icon(p: &egui::Painter, c: egui::Pos2, fmt: &str, colored: bool, 
     p.galley(egui::pos2(tag.center().x - galley.size().x * 0.5, tag.center().y - galley.size().y * 0.5), galley, Color32::WHITE);
 }
 
-/// grupa de ribbon = card ridicat (fara chenar, fara separator); titlul sub butoane doar in modul Full.
-/// Golul dintre carduri separa grupele.
+/// ribbon group = raised card (no border, no separator); the title below the buttons only in Full mode.
+/// The gap between the cards separates the groups.
 fn rgroup(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui)) {
     let title = crate::i18n::tr(title);
     let compact = crate::theme::RIBBON_COMPACT.load(std::sync::atomic::Ordering::Relaxed);
@@ -1682,7 +1682,7 @@ fn rgroup(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui)) {
     });
 }
 
-/// suprafata cardurilor: putin mai deschisa decat panoul (in tema Light: alb pur)
+/// card surface: slightly lighter than the panel (in the Light theme: pure white)
 pub fn card_fill(v: &egui::Visuals) -> Color32 {
     let p = v.panel_fill;
     if v.dark_mode {
@@ -1755,7 +1755,7 @@ pub fn draw_redlines(painter: &egui::Painter, rect: Rect, reds: &[crate::markup:
                 painter.add(egui::Shape::closed_line(e, st));
             }
             RedKind::Cloud => {
-                // revision cloud: arcuri de-a lungul dreptunghiului
+                // revision cloud: arcs along the rectangle
                 let corners = [bx.left_top(), bx.right_top(), bx.right_bottom(), bx.left_bottom()];
                 let bump = (12.0 + r.width * 2.0).max(8.0);
                 let mut path = Vec::new();
@@ -1822,7 +1822,7 @@ fn fmt_count(n: usize) -> String {
     }
 }
 
-/// Eticheta si culoarea cardului unui fisier recent, dupa tip.
+/// Label and card color of a recent file, by type.
 fn file_badge(path: &str) -> (&'static str, Color32) {
     let ext = std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     match ext.as_str() {
@@ -1840,12 +1840,12 @@ fn file_badge(path: &str) -> (&'static str, Color32) {
     }
 }
 
-/// Data locala a unui fisier: "18 Nov 2026 19:50".
+/// Local date of a file: "18 Nov 2026 19:50".
 fn fmt_date(t: std::time::SystemTime) -> String {
     let secs = t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0) + local_offset_secs();
     let days = secs.div_euclid(86_400);
     let tod = secs.rem_euclid(86_400);
-    // zile -> data civila (Howard Hinnant)
+    // days -> civil date (Howard Hinnant)
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
@@ -1859,7 +1859,7 @@ fn fmt_date(t: std::time::SystemTime) -> String {
     format!("{d} {} {y} {:02}:{:02}", M[(m - 1) as usize], tod / 3600, tod % 3600 / 60)
 }
 
-/// Decalajul fusului orar local (secunde), din Windows; 0 in alta parte.
+/// Local time zone offset (seconds), from Windows; 0 elsewhere.
 pub(crate) fn local_offset_secs() -> i64 {
     #[cfg(windows)]
     {
@@ -1874,7 +1874,7 @@ pub(crate) fn local_offset_secs() -> i64 {
         }
         let mut tz = Tzi { bias: 0, _rest: [0; 168] };
         let r = unsafe { GetTimeZoneInformation(&mut tz) };
-        // bias in minute: UTC = local + bias; vara (r == 2) se scade si DaylightBias (de obicei -60)
+        // bias in minutes: UTC = local + bias; in summer (r == 2) DaylightBias is also subtracted (usually -60)
         let dst = if r == 2 { i32::from_le_bytes([tz._rest[164], tz._rest[165], tz._rest[166], tz._rest[167]]) } else { 0 };
         return -((tz.bias + dst) as i64) * 60;
     }
@@ -1882,7 +1882,7 @@ pub(crate) fn local_offset_secs() -> i64 {
     0
 }
 
-/// Textul unei restrictii de nume: "A, B" = una dintre valori, "/regex/" = model, gol = oricare.
+/// Text of a name restriction: "A, B" = one of the values, "/regex/" = pattern, empty = any.
 fn value_text(v: &crate::check::Value) -> String {
     use crate::check::Value;
     match v {
@@ -1915,7 +1915,7 @@ fn parse_value_text(s: &str) -> crate::check::Value {
     Value::OneOf(t.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
 }
 
-/// camp text legat de o restrictie (textul se pastreaza cat timp scrii, ca sa nu sara virgulele)
+/// text field bound to a restriction (the text is kept while you type, so the commas do not jump)
 fn value_field(ui: &mut egui::Ui, v: &mut crate::check::Value, id: egui::Id, hint: &str, width: f32) -> bool {
     let mut s: String = ui.data_mut(|d| d.get_temp(id)).unwrap_or_else(|| value_text(v));
     if parse_value_text(&s) != *v {
@@ -1934,7 +1934,7 @@ fn value_field(ui: &mut egui::Ui, v: &mut crate::check::Value, id: egui::Id, hin
     ch
 }
 
-/// O conditie a unei reguli: tip / proprietate / atribut ... ; intoarce (modificat, de sters)
+/// One condition of a rule: type / property / attribute ... ; returns (modified, to delete)
 fn facet_editor(ui: &mut egui::Ui, f: &mut crate::check::Facet, salt: impl std::hash::Hash + Copy, requirement: bool) -> (bool, bool) {
     use crate::check::{Card, Kind};
     let mut ch = false;
@@ -1992,11 +1992,11 @@ fn facet_editor(ui: &mut egui::Ui, f: &mut crate::check::Facet, salt: impl std::
     (ch, rm)
 }
 
-/// Rand de arbore / lista in stilul redesign-ului: punct colorat (categorie), text, insigna cu numarul
-/// elementelor la dreapta; selectat = nuanta de accent + bara de 2 px pe stanga; hover = fundal mai deschis.
+/// Tree / list row in the redesign style: colored dot (category), text, badge with the number
+/// of elements on the right; selected = accent tint + 2 px bar on the left; hover = lighter background.
 fn tree_row(ui: &mut egui::Ui, label: &str, count: Option<usize>, dot: Option<Color32>, selected: bool, strong: bool, weak: bool) -> egui::Response {
     let h = 21.0;
-    // panourile laterale sunt intr-un ScrollArea orizontal: latimea vizibila, nu cea "infinita"
+    // the side panels are in a horizontal ScrollArea: the visible width, not the "infinite" one
     let w = (ui.clip_rect().right() - ui.cursor().left() - 4.0).min(ui.available_width()).max(60.0);
     let (rect, resp) = ui.allocate_exact_size(EV::new(w, h), Sense::click());
     if !ui.is_rect_visible(rect) {
@@ -2004,7 +2004,7 @@ fn tree_row(ui: &mut egui::Ui, label: &str, count: Option<usize>, dot: Option<Co
     }
     let v = ui.visuals();
     let p = ui.painter();
-    // tranzitie lina la hover
+    // smooth transition on hover
     let hov = ui.ctx().animate_bool_with_time(resp.id.with("hov"), resp.hovered(), 0.12);
     if selected {
         p.rect_filled(rect, 5.0, accent().gamma_multiply(0.16));
@@ -2039,7 +2039,7 @@ fn tree_row(ui: &mut egui::Ui, label: &str, count: Option<usize>, dot: Option<Co
     resp
 }
 
-/// culoare stabila pentru o categorie / tip (acelasi nume = aceeasi culoare peste tot)
+/// stable color for a category / type (same name = same color everywhere)
 fn cat_color(label: &str) -> Color32 {
     let mut h: u32 = 2166136261;
     for b in label.bytes() {
@@ -2049,9 +2049,9 @@ fn cat_color(label: &str) -> Color32 {
     Color32::from_rgb(c[0], c[1], c[2])
 }
 
-// ===================================================================== paleta de comenzi (Ctrl+K)
+// ===================================================================== command palette (Ctrl+K)
 
-/// O comanda din paleta: nume, categorie, iconita, cuvinte cheie (si in romana), actiunea.
+/// A palette command: name, category, icon, keywords (also in Romanian), the action.
 struct Cmd {
     name: &'static str,
     cat: &'static str,
@@ -2067,7 +2067,7 @@ fn commands() -> Vec<Cmd> {
         };
     }
     vec![
-        // ---- fisier / proiect
+        // ---- file / project
         c!("Open model…", "File", "📂", "deschide open ifc rvt nwd dwg e57", |a| a.request_path(Purpose::OpenModel { append: false })),
         c!("Append model…", "File", "➕", "adauga append federate", |a| a.request_path(Purpose::OpenModel { append: true })),
         c!("Open project…", "File", "📁", "proiect bimr", |a| a.request_path(Purpose::OpenProject)),
@@ -2083,7 +2083,7 @@ fn commands() -> Vec<Cmd> {
         c!("Publish project (.bimd)…", "File", "📦", "publica nwd bimd", |a| a.request_path(Purpose::PublishBimd)),
         c!("Refresh changed models", "File", "⟳", "reincarca refresh f5", |a| a.refresh_models(false)),
         c!("Start page", "File", "🏠", "pagina start recente recent", |a| a.show_start = true),
-        // ---- selectie
+        // ---- selection
         c!("Select all", "Select", "⬚", "selecteaza tot ctrl+a", |a| {
             let all = a.all_ids();
             a.apply(Action::Select(all, false));
@@ -2107,7 +2107,7 @@ fn commands() -> Vec<Cmd> {
             let s: Vec<ElemId> = a.selected.iter().copied().collect();
             a.apply(Action::Focus(s));
         }),
-        // ---- vizualizare
+        // ---- view
         c!("Fit all", "View", "⛶", "zoom extents tot modelul", |a| {
             let bb = a.scene_aabb();
             let mut t = a.cam;
@@ -2134,7 +2134,7 @@ fn commands() -> Vec<Cmd> {
             a.settings.save();
         }),
         c!("Hide / show all panels (F11)", "View", "🗔", "panouri ecran complet", |a| a.settings.layout.hide_all = !a.settings.layout.hide_all),
-        // ---- navigare / unelte
+        // ---- navigation / tools
         c!("Orbit", "Navigate", "🔄", "roteste", |a| {
             a.nav = NavMode::Orbit;
             a.tool = Tool::Select;
@@ -2143,7 +2143,7 @@ fn commands() -> Vec<Cmd> {
         c!("Walk", "Navigate", "🚶", "mers plimbare", |a| a.nav = NavMode::Walk),
         c!("Measure point to point", "Review", "📏", "masoara distanta", |a| a.tool = Tool::Measure(MeasureKind::PointToPoint)),
         c!("Markup (cloud)", "Review", "✏", "redline nor adnotare", |a| a.tool = Tool::Redline(crate::markup::RedKind::Cloud)),
-        // ---- sectiuni
+        // ---- sections
         c!("Section box around selection", "Sections", "⬚", "sectiune selectie box", |a| a.section_to_selection()),
         c!("Section off", "Sections", "✂", "opreste sectiunea", |a| a.section.enabled = false),
         c!("Section cut to DWG / DXF (2D in model)…", "Sections", "📐", "taietura plan autocad dwg dxf export model space", |a| {
@@ -2163,7 +2163,7 @@ fn commands() -> Vec<Cmd> {
         c!("Apply view template", "View", "◫", "apply view template manage vizibilitate sectiune stil", |a| a.view_templates_open = !a.view_templates_open),
         c!("2D Section Preview (map window)", "Annotation", "🗺", "preview 2d sectiune fereastra mica inainte de export", |a| a.section_preview_open = !a.section_preview_open),
         c!("Section cut to PDF…", "Annotation", "📄", "sectiune export pdf plansa", |a| a.request_path(Purpose::ExportSectionPdf)),
-        // ---- panouri
+        // ---- panels
         c!("Selection Tree", "Panels", "🌲", "arbore", |a| a.open_panel(Panel::Tree)),
         c!("Properties", "Panels", "ℹ", "proprietati", |a| a.open_panel(Panel::Properties)),
         c!("Find Items", "Panels", "🔍", "cauta gaseste ctrl+f", |a| a.open_panel(Panel::Find)),
@@ -2199,7 +2199,7 @@ fn commands() -> Vec<Cmd> {
         c!("Import BCF…", "Export", "📥", "bcf import", |a| a.request_path(Purpose::ImportBcf)),
         c!("Reference for Revit / AutoCAD…", "Share", "🔗", "mbref referinta", |a| a.request_path(Purpose::ExportReference)),
         c!("Render image…", "Render", "🖼", "imagine png", |a| a.request_path(Purpose::RenderImage)),
-        // ---- coordonare
+        // ---- coordination
         c!("Live Link: sync selection on / off", "Coordination", "🔗", "revit navisworks sincronizare selectie", |a| {
             let on = !a.settings.sync_selection;
             a.set_sync(on);
@@ -2208,13 +2208,13 @@ fn commands() -> Vec<Cmd> {
         c!("Import IDS…", "Coordination", "📥", "ids buildingsmart", |a| a.request_path(Purpose::ImportCheckRules)),
         c!("Export IDS…", "Coordination", "📤", "ids buildingsmart export cerinte", |a| a.request_path(Purpose::ExportIds)),
         c!("Clash matrix (Excel)…", "Coordination", "▦", "matrice clash", |a| a.request_path(Purpose::ExportClashMatrix)),
-        // ---- ajutor
+        // ---- help
         c!("User manual", "Help", "❓", "manual ajutor help documentatie", |a| a.manual_open = true),
         c!("Open demo project", "Help", "🏗", "demo exemplu proiect", |a| a.open_demo()),
     ]
 }
 
-/// potrivire "fuzzy": toate literele cautarii, in ordine; scor mai mare pentru cuvinte intregi / inceputuri
+/// "fuzzy" match: all letters of the query, in order; higher score for whole words / word starts
 fn fuzzy(q: &str, text: &str) -> Option<i32> {
     if q.is_empty() {
         return Some(0);
@@ -2226,7 +2226,7 @@ fn fuzzy(q: &str, text: &str) -> Option<i32> {
             score += 100 - (p as i32).min(60) + if p == 0 || t.as_bytes().get(p - 1) == Some(&b' ') { 40 } else { 0 };
             continue;
         }
-        // subsecventa
+        // subsequence
         let mut it = t.chars();
         let mut gaps = 0;
         for c in w.chars() {
@@ -2250,10 +2250,10 @@ fn fuzzy(q: &str, text: &str) -> Option<i32> {
 impl App {
 }
 
-// ===================================================================== manualul integrat
+// ===================================================================== built-in manual
 
-/// Capitolele manualului: (iconita, titlu, text). Randurile care incep cu "- " sunt liste,
-/// cele care incep cu "# " sunt subtitluri, "> " = sfat.
+/// Manual chapters: (icon, title, text). Rows starting with "- " are lists,
+/// those starting with "# " are subtitles, "> " = tip.
 const MANUAL: [(&str, &str, &str); 14] = [
     ("🏠", "Getting started", "ManageBIM opens IFC, Revit (through the add-in), Navisworks NWD / NWC, DWG / DXF, STEP, glTF, FBX, OBJ, E57 / LAS point clouds and more.
 # First steps
@@ -2332,7 +2332,7 @@ impl App {
 
 }
 
-/// distanta (px) de la punctul `p` la segmentul `a`-`b` de pe ecran
+/// distance (px) from point `p` to the segment `a`-`b` on screen
 fn seg_dist_px(a: Pos2, b: Pos2, p: Pos2) -> f32 {
     let ab = b - a;
     let t = ((p - a).dot(ab) / ab.length_sq().max(1e-6)).clamp(0.0, 1.0);

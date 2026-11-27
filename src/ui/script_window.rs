@@ -1,5 +1,5 @@
-//! Fereastra Script Library (Rhai): biblioteca de scripturi, constructorul vizual si manualul.
-//! Mutata din ui.rs in 0.28 (fisierul depasea 6 000 de linii).
+//! The Script Library window (Rhai): the script library, the visual builder and the manual.
+//! Moved from ui.rs in 0.28 (the file exceeded 6 000 lines).
 use super::*;
 
 impl App {
@@ -112,7 +112,7 @@ impl App {
                         }
                     }
                     ui.separator();
-                    // ghidul urmeaza limba interfetei (0.28): in engleza descrierile `en`, regulile doar in romana
+                    // the guide follows the interface language (0.28): in English the `en` descriptions, the rules only in Romanian
                     let ro = crate::i18n::is_romanian();
                     ui.collapsing(RichText::new(if ro { "📖 Manual scripturi (Rhai)" } else { "📖 Script manual (Rhai)" }).strong(), |ui| {
                         ui.label(RichText::new(if ro { "Nu trebuie să scrii cod: folosește «Visual script builder» de mai sus. Acest ghid e pentru când vrei să scrii singur." } else { "No code needed: use the Visual script builder above. This guide is for when you want to write scripts yourself." }).small().weak());

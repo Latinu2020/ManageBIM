@@ -8,8 +8,8 @@ using Autodesk.Revit.UI;
 namespace ManageBIM.Revit
 {
     /// <summary>
-    /// "ManageBIM Issues": alegi un issue din ManageBIM -> vedere 3D cu aceeasi camera si acelasi section box,
-    /// cu elementele issue-ului selectate. Coordonatele ManageBIM sunt cele partajate (shared), in metri.
+    /// "ManageBIM Issues": you pick an issue from ManageBIM -> a 3D view with the same camera and the same section box,
+    /// with the issue's elements selected. The ManageBIM coordinates are the shared ones, in metres.
     /// </summary>
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
@@ -36,7 +36,7 @@ namespace ManageBIM.Revit
             if (pick == null || pick.Count == 0) return Result.Cancelled;
             MbIssue it = issues[pick[0]];
 
-            // shared (metri) -> coordonate interne Revit (picioare); exportul face invers: toShared = total.Inverse
+            // shared (metres) -> Revit internal coordinates (feet); the export does the opposite: toShared = total.Inverse
             Transform total = doc.ActiveProjectLocation?.GetTotalTransform() ?? Transform.Identity;
             XYZ P(double[] v) => total.OfPoint(new XYZ(v[0] / FeetToMetres, v[1] / FeetToMetres, v[2] / FeetToMetres));
             XYZ D(double[] v) => total.OfVector(new XYZ(v[0], v[1], v[2])).Normalize();
@@ -52,12 +52,12 @@ namespace ManageBIM.Revit
                 view.Name = name;
                 XYZ fwd = D(it.Fwd);
                 XYZ up = D(it.Up);
-                // sus perpendicular pe directie (cerinta Revit)
+                // up perpendicular to the direction (a Revit requirement)
                 up = (up - fwd.Multiply(up.DotProduct(fwd))).Normalize();
                 view.SetOrientation(new ViewOrientation3D(P(it.Eye), up, fwd));
                 if (it.BoxMin != null && it.BoxMax != null)
                 {
-                    // cutia e aliniata la axele partajate: transformarea cutiei = shared -> intern
+                    // the box is aligned to the shared axes: the box transform = shared -> internal
                     var bb = new BoundingBoxXYZ
                     {
                         Transform = total,
@@ -71,7 +71,7 @@ namespace ManageBIM.Revit
             uidoc.ActiveView = view;
             string markInfo = it.Lines.Count + it.Texts.Count > 0 ? AddMarkups(doc, view, it, P, D) : "";
 
-            // elementele issue-ului: UniqueId (export Revit) sau parametrul IFC GUID
+            // the issue's elements: UniqueId (Revit export) or the IFC GUID parameter
             var ids = new List<ElementId>();
             var want = new HashSet<string>(it.Selected.Select(g => g.Contains(":") ? g.Substring(g.LastIndexOf(':') + 1) : g));
             foreach (string g in want.ToList())
@@ -104,13 +104,13 @@ namespace ManageBIM.Revit
         }
 
         /// <summary>
-        /// Markup-urile issue-ului in vederea 3D: liniile ca Model Lines colorate (stil de linie "ManageBIM Markup RRGGBB")
-        /// pe un plan perpendicular pe directia camerei, imediat in interiorul section box-ului, grupate intr-un grup
-        /// "ManageBIM markup - ..." (se sterge usor); textele ca Text Notes in vederea blocata.
+        /// The issue's markups in the 3D view: the lines as coloured Model Lines (line style "ManageBIM Markup RRGGBB")
+        /// on a plane perpendicular to the camera direction, just inside the section box, grouped in a group
+        /// "ManageBIM markup - ..." (easy to delete); the texts as Text Notes in the locked view.
         /// </summary>
         private static string AddMarkups(Document doc, View3D view, MbIssue it, Func<double[], XYZ> P, Func<double[], XYZ> D)
         {
-            // distanta planului (metri): la intrarea in section box (+10 cm), altfel 2 m in fata camerei
+            // the plane distance (metres): at the entry into the section box (+10 cm), otherwise 2 m in front of the camera
             double d = 2.0;
             if (it.BoxMin != null && it.BoxMax != null)
             {
@@ -171,9 +171,9 @@ namespace ManageBIM.Revit
                 }
                 if (it.Texts.Count > 0)
                 {
-                    // textele cer o vedere 3D blocata
+                    // the texts require a locked 3D view
                     try { if (!view.IsLocked) view.SaveOrientationAndLock(); } catch { }
-                    // inaltimea textului: ~3.5% din inaltimea vederii la planul markup-urilor (marime pe hartie = model / scara)
+                    // the text height: ~3.5% of the view height at the markup plane (size on paper = model / scale)
                     double viewH = it.OrthoHeight > 0 ? it.OrthoHeight : 2 * d * Math.Tan(it.FovDeg * Math.PI / 360.0);
                     double paperFt = Math.Max(0.0066, Math.Min(0.1, viewH * 0.035 / FeetToMetres / Math.Max(1, view.Scale)));
                     foreach (var t in it.Texts)
@@ -195,8 +195,8 @@ namespace ManageBIM.Revit
         }
 
         /// <summary>
-        /// Tip de text "ManageBIM Markup RRGGBB h.hmm": copie a tipului implicit, cu culoarea markup-ului, bold,
-        /// fara chenar, inaltimea data (picioare, pe hartie). Refolosit daca exista deja.
+        /// Text type "ManageBIM Markup RRGGBB h.hmm": a copy of the default type, with the markup colour, bold,
+        /// no border, the given height (feet, on paper). Reused if it already exists.
         /// </summary>
         private static ElementId MarkupTextType(Document doc, int r, int g, int b, double paperFt)
         {
@@ -220,7 +220,7 @@ namespace ManageBIM.Revit
             catch { return def; }
         }
 
-        /// <summary>Stil de linie "ManageBIM Markup RRGGBB" (subcategorie a Lines), creat la nevoie.</summary>
+        /// <summary>Line style "ManageBIM Markup RRGGBB" (a subcategory of Lines), created when needed.</summary>
         private static GraphicsStyle MarkupStyle(Document doc, int r, int g, int b)
         {
             try
@@ -235,7 +235,7 @@ namespace ManageBIM.Revit
             catch { return null; }
         }
 
-        /// <summary>Nume de vedere valid si unic (Revit refuza unele caractere si numele duplicate).</summary>
+        /// <summary>A valid and unique view name (Revit refuses some characters and duplicate names).</summary>
         private static string ViewName(Document doc, string name)
         {
             foreach (char c in "{}[]|;<>?`~:\\") name = name.Replace(c, '-');

@@ -1,10 +1,10 @@
-//! Argumentele si caile pentru installerul unui add-in; logica propriu-zisa e in
-//! `bimrust::addin_install` (testata separat).
+//! The arguments and paths for an add-in installer; the actual logic is in
+//! `bimrust::addin_install` (tested separately).
 //!
 //!   ManageBIM-Revit-AddIn.exe [--install | --uninstall]
 //!
-//! Rularea fara argumente face instalarea. MB_INSTALL_ROOT redirectioneaza %APPDATA%
-//! (la fel ca -TestRoot din install.ps1), util pentru teste.
+//! Running without arguments does the install. MB_INSTALL_ROOT redirects %APPDATA%
+//! (same as -TestRoot in install.ps1), useful for tests.
 
 use bimrust::addin_install::{self, Job};
 use std::path::PathBuf;

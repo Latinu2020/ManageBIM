@@ -1,5 +1,5 @@
-﻿//! Fereastra "AI connection": pornirea serverului MCP si configuratiile gata de copiat pentru
-//! Claude Code, Claude Desktop, OpenCode, VS Code si clientii pentru modele locale (Ollama).
+﻿//! The "AI connection" window: starting the MCP server and the ready-to-copy configurations for
+//! Claude Code, Claude Desktop, OpenCode, VS Code and the clients for local models (Ollama).
 use super::*;
 use egui_phosphor::regular as P;
 use std::sync::atomic::Ordering;
@@ -7,17 +7,17 @@ use std::sync::atomic::Ordering;
 const GREEN: Color32 = Color32::from_rgb(70, 185, 105);
 const RED: Color32 = Color32::from_rgb(225, 80, 70);
 
-/// buton cu iconita (fontul de iconite) + text
+/// button with an icon (the icon font) + text
 fn ij(icon: &str, text: &str, ui: &egui::Ui) -> egui::WidgetText {
     crate::theme::icon_job(icon, text, 14.0, ui.visuals().text_color()).into()
 }
 
-/// doar iconita
+/// icon only
 fn ib(icon: &str) -> RichText {
     RichText::new(icon).font(crate::theme::icon_font(15.0))
 }
 
-/// Comutator in stil iOS / Windows 11.
+/// iOS / Windows 11 style toggle switch.
 fn switch(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
     let size = egui::vec2(38.0, 20.0);
     let (r, mut resp) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -33,7 +33,7 @@ fn switch(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
     resp
 }
 
-/// Cadru "card" cu titlu mic.
+/// "Card" frame with a small title.
 fn card<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     egui::Frame::none()
         .fill(ui.visuals().faint_bg_color)
@@ -49,7 +49,7 @@ fn card<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui) -> R)
         .inner
 }
 
-/// Bloc de cod cu butonul Copy in colt.
+/// Code block with the Copy button in the corner.
 fn code_block(ui: &mut egui::Ui, text: &str) -> bool {
     let mut copied = false;
     egui::Frame::none()
@@ -89,7 +89,7 @@ impl App {
             .default_height(640.0)
             .collapsible(false)
             .show(ctx, |ui| {
-                // ---- antet: descriere + starea serverului
+                // ---- header: description + server status
                 let (state, col) = match (&self.mcp.server, self.mcp.status.is_empty()) {
                     (Some(_), _) => (crate::i18n::tr("Running"), GREEN),
                     (None, false) => (crate::i18n::tr("Error"), RED),
@@ -109,7 +109,7 @@ impl App {
                 ui.add_space(8.0);
 
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                    // ---- serverul
+                    // ---- the server
                     card(ui, "Server", |ui| {
                         egui::Grid::new("mcp_srv").num_columns(2).spacing([16.0, 10.0]).show(ui, |ui| {
                             ui.label(crate::i18n::tr("Enable server"));
@@ -201,7 +201,7 @@ impl App {
                     });
                     ui.add_space(10.0);
 
-                    // ---- clientii: cate un tab, pasi numerotati, configuratia de copiat
+                    // ---- the clients: one tab each, numbered steps, the configuration to copy
                     let port = self.settings.mcp.port;
                     let token = self.settings.mcp.token.clone();
                     let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "ManageBIM.exe".into());
@@ -243,7 +243,7 @@ impl App {
                     ui.data_mut(|d| d.insert_temp(tab_id, tab));
                     ui.add_space(10.0);
 
-                    // ---- uneltele disponibile
+                    // ---- the available tools
                     card(ui, "Tools available to the assistant", |ui| {
                         egui::Grid::new("mcp_tools").num_columns(2).spacing([12.0, 4.0]).striped(true).show(ui, |ui| {
                             for t in crate::mcp::tools() {

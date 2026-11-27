@@ -1,8 +1,8 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
-    // ------------------------------------------------------------------ sectiune
+    // ------------------------------------------------------------------ section
     pub(super) fn init_section_defaults(&mut self) {
         let bb = self.scene_aabb();
         if !bb.is_valid() {
@@ -25,14 +25,14 @@ impl App {
         }
     }
 
-    /// Section box in jurul selectiei (cu o margine mica); intoarce cutia elementelor.
+    /// Section box around the selection (with a small margin); returns the box of the elements.
     pub(super) fn section_box_on_selection(&mut self) -> Option<crate::model::Aabb> {
         let s: Vec<ElemId> = self.selected.iter().copied().collect();
         let bb = self.ids_aabb(&s);
         if !bb.is_valid() {
             return None;
         }
-        // margine: 2% din marimea selectiei, minim 5 cm
+        // margin: 2% of the selection size, minimum 5 cm
         let pad = Vec3::splat((bb.size().length() * 0.02).max(0.05));
         self.section.enabled = true;
         self.section.mode = SectionMode::Box;
@@ -41,7 +41,7 @@ impl App {
         Some(bb)
     }
 
-    /// "Follow": cutia urmareste selectia (doar cand selectia se schimba; camera ramane pe loc).
+    /// "Follow": the box follows the selection (only when the selection changes; the camera stays in place).
     pub(super) fn section_follow_tick(&mut self) {
         if !self.section_follow || self.selected.is_empty() {
             return;
@@ -80,7 +80,7 @@ impl App {
             ui.checkbox(&mut self.section_caps, "Filled cuts").on_hover_text("Cut faces drawn solid and hatched (closed solids), instead of seeing inside the elements");
             ui.checkbox(&mut self.show_section_plane, "Show plane").on_hover_text("Draw the section plane as a transparent green surface");
         });
-        // sectiune dupa nivel: un nivel intreg (cu margini sub / deasupra), taietura de plan sau doar elementele nivelului
+        // section by level: a whole level (with margins below / above), a plane cut or only the elements of the level
         let levels = self.scene_grids().levels;
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("By level").strong());
@@ -175,7 +175,7 @@ impl App {
         }
     }
 
-    // ------------------------------------------------------------------ masuratori
+    // ------------------------------------------------------------------ measurements
     pub(super) fn measure_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
             let mut t = self.tool;
@@ -223,7 +223,7 @@ impl App {
         }
     }
 
-    // ------------------------------------------------------------------ modele
+    // ------------------------------------------------------------------ models
     // ------------------------------------------------------------------ project (NWF-style)
     pub(super) fn fmt_time(t: std::time::SystemTime) -> String {
         let secs = t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) as i64;
@@ -347,7 +347,7 @@ impl App {
                         ],
                     ),
                     ("Model", {
-                        // cheile "~..." sunt date interne (axe, niveluri); arata doar numarul lor
+                        // the "~..." keys are internal data (grids, levels); show only their count
                         let mut v: Vec<(String, String)> = m.info.iter().filter(|(k, _)| !k.starts_with('~')).cloned().collect();
                         let ga = self.grid_data(i);
                         if !ga.grids.is_empty() {
@@ -634,7 +634,7 @@ impl App {
                 Ok(v) => ui.label(RichText::new(format!("✔ OpenCascade (STEP / IGES / BREP / FCStd / DWG solids): {v}")).small()),
                 Err(e) => ui.label(RichText::new(format!("✖ OpenCascade runtime unavailable ({e}) - reinstall ManageBIM (the occt folder is missing).")).small().color(Color32::from_rgb(210, 140, 60))),
             };
-            // versiunea Navisworks folosita la NWD / NWC / RVT (cand sunt instalate mai multe)
+            // the Navisworks version used for NWD / NWC / RVT (when several are installed)
             let years = crate::formats::navis_years();
             if !years.is_empty() {
                 ui.horizontal(|ui| {
@@ -677,8 +677,8 @@ impl App {
         }
     }
 
-    // ================================================================== ferestre
-    /// Fereastra "As-built check": modelul fata de norul de puncte.
+    // ================================================================== windows
+    /// The "As-built check" window: the model versus the point cloud.
     pub(super) fn asbuilt_window(&mut self, ctx: &egui::Context) {
         use crate::asbuilt::Status;
         if !self.asbuilt_open {
@@ -735,7 +735,7 @@ impl App {
                     return;
                 };
                 ui.separator();
-                // rezumat pe stari: clic = filtru, butoane select / isolate
+                // summary by status: click = filter, select / isolate buttons
                 ui.horizontal_wrapped(|ui| {
                     for s in Status::ALL {
                         let n = res.iter().filter(|r| r.status == s).count();

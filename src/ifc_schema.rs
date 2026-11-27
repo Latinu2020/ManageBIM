@@ -1,11 +1,11 @@
-//! Schemele IFC EXPRESS (IFC2X3, IFC4, IFC4X3 - fisierele oficiale buildingSMART, in `third_party/ifc-schema`):
-//! ordinea atributelor fiecarei entitati (cu mostenirea), tipurile lor si relatiile inverse. Folosite ca sa
-//! transformam ifcXML / ifcJSON (atribute cu nume) inapoi in IFC STEP (atribute pe pozitie), pe care il
-//! citeste apoi cititorul IFC obisnuit - deci aceeasi geometrie si aceleasi proprietati ca un .ifc.
+//! The IFC EXPRESS schemas (IFC2X3, IFC4, IFC4X3 - the official buildingSMART files, in `third_party/ifc-schema`):
+//! the attribute order of each entity (with inheritance), their types and the inverse relations. Used to
+//! turn ifcXML / ifcJSON (named attributes) back into IFC STEP (positional attributes), which is
+//! then read by the usual IFC reader - so the same geometry and the same properties as an .ifc.
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-/// Tipul de baza la care se reduce un TYPE / atribut.
+/// The base type a TYPE / attribute reduces to.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Base {
     Str,
@@ -17,7 +17,7 @@ pub enum Base {
     Enum,
     Select,
     Entity,
-    /// LIST / SET / ARRAY / BAG OF <tip interior>
+    /// LIST / SET / ARRAY / BAG OF <inner type>
     Agg(Box<Base>, String),
     Unknown,
 }
@@ -25,20 +25,20 @@ pub enum Base {
 #[derive(Default, Debug)]
 pub struct Entity {
     pub parent: Option<String>,
-    /// atributele proprii explicite: (nume, expresia tipului)
+    /// the own explicit attributes: (name, type expression)
     pub own: Vec<(String, String)>,
-    /// inverse: (nume, tipul relatiei, atributul relatiei care ne refera)
+    /// inverse: (name, the relation type, the relation attribute that refers to us)
     pub inverse: Vec<(String, String, String)>,
 }
 
 #[derive(Default)]
 pub struct Schema {
     pub name: String,
-    /// cheile: nume cu majuscule (IFCWALL)
+    /// the keys: upper-case names (IFCWALL)
     pub entities: HashMap<String, Entity>,
-    /// TYPE: nume majuscule -> expresia de baza
+    /// TYPE: upper-case name -> the base expression
     pub types: HashMap<String, String>,
-    /// numele cu majusculele originale (IFCWALL -> IfcWall)
+    /// the names with the original capitalisation (IFCWALL -> IfcWall)
     pub proper: HashMap<String, String>,
 }
 
@@ -91,7 +91,7 @@ impl Schema {
                 let inner = &head[p + 10..];
                 e.parent = inner.split('(').nth(1).and_then(|x| x.split(')').next()).map(|x| x.trim().to_string());
             }
-            // sectiunile: explicite pana la DERIVE / INVERSE / UNIQUE / WHERE
+            // the sections: explicit until DERIVE / INVERSE / UNIQUE / WHERE
             let mut section = "explicit";
             for stmt in attrs.split(';') {
                 let st = stmt.trim();
@@ -129,7 +129,7 @@ impl Schema {
         s
     }
 
-    /// toate atributele explicite in ordinea STEP (ale parintilor intai)
+    /// all the explicit attributes in STEP order (the parents' first)
     pub fn attrs(&self, entity: &str) -> Vec<(String, String)> {
         let mut chain = Vec::new();
         let mut cur = Some(entity.to_uppercase());
@@ -144,7 +144,7 @@ impl Schema {
         chain.iter().rev().flat_map(|e| e.own.iter().cloned()).collect()
     }
 
-    /// relatia inversa `name` a entitatii (cautata si la parinti): (tipul relatiei, atributul ei)
+    /// the inverse relation `name` of the entity (also searched in the parents): (the relation type, its attribute)
     pub fn inverse(&self, entity: &str, name: &str) -> Option<(String, String)> {
         let mut cur = Some(entity.to_uppercase());
         let mut n = 0;
@@ -183,7 +183,7 @@ impl Schema {
         false
     }
 
-    /// tipul de baza al unei expresii de tip ("OPTIONAL IfcLabel", "LIST [1:?] OF IfcLengthMeasure"...)
+    /// the base type of a type expression ("OPTIONAL IfcLabel", "LIST [1:?] OF IfcLengthMeasure"...)
     pub fn base(&self, expr: &str) -> Base {
         let e = expr.trim().trim_start_matches("OPTIONAL").trim().trim_start_matches("UNIQUE").trim();
         for agg in ["LIST", "SET", "ARRAY", "BAG"] {
@@ -233,7 +233,7 @@ static IFC2X3: OnceLock<Schema> = OnceLock::new();
 static IFC4: OnceLock<Schema> = OnceLock::new();
 static IFC4X3: OnceLock<Schema> = OnceLock::new();
 
-/// Schema dupa numele din fisier (IFC2X3 / IFC4 / IFC4X3...); implicit IFC4.
+/// The schema by the name in the file (IFC2X3 / IFC4 / IFC4X3...); IFC4 by default.
 pub fn schema(name: &str) -> &'static Schema {
     let n = name.to_uppercase();
     if n.contains("2X3") {

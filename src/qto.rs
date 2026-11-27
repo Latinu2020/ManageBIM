@@ -1,6 +1,6 @@
-//! Quantification (ca in Navisworks): cantitati grupate dupa orice proprietati, cu totaluri.
-//! Surse: geometria elementului (volum, arii, lungime, inaltime) sau proprietati numerice IFC
-//! (Qto_*BaseQuantities: NetVolume, NetSideArea, Length...), adunate pe grupuri.
+//! Quantification (as in Navisworks): quantities grouped by any properties, with totals.
+//! Sources: the element geometry (volume, areas, length, height) or IFC numeric properties
+//! (Qto_*BaseQuantities: NetVolume, NetSideArea, Length...), summed per group.
 use crate::app::TreeLevel;
 use crate::model::{ElemId, Element, Model};
 use serde::{Deserialize, Serialize};
@@ -8,17 +8,17 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum QtyColumn {
     Count,
-    /// volumul inchis de mesh (m³)
+    /// the volume enclosed by the mesh (m³)
     Volume,
-    /// suma ariilor tuturor fetelor (m²)
+    /// the sum of the areas of all faces (m²)
     Surface,
-    /// aria fetelor orientate in sus, proiectata in plan (m²) - placi, pardoseli, acoperisuri
+    /// the area of the upward-facing faces, projected in plan (m²) - slabs, floors, roofs
     PlanArea,
-    /// cea mai mare dimensiune orizontala a cutiei (m) - pereti, grinzi, conducte
+    /// the largest horizontal dimension of the box (m) - walls, beams, pipes
     Length,
-    /// inaltimea cutiei (m)
+    /// the height of the box (m)
     Height,
-    /// suma unei proprietati numerice (ex. Qto_WallBaseQuantities / NetVolume)
+    /// the sum of a numeric property (e.g. Qto_WallBaseQuantities / NetVolume)
     Prop { cat: String, prop: String },
 }
 
@@ -67,7 +67,7 @@ impl QtoScope {
     }
 }
 
-/// Configuratia unei cantitati: refolosibila ca sablon (.bimqto) si salvata in proiect.
+/// The configuration of a quantity: reusable as a template (.bimqto) and saved in the project.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct QtoSetup {
     pub name: String,
@@ -111,9 +111,9 @@ impl QtoSetup {
     }
 }
 
-// ====================================================================== geometrie
+// ====================================================================== geometry
 
-/// Cantitatile geometrice ale unui element (in metri, coordonatele modelului).
+/// The geometric quantities of an element (in metres, model coordinates).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct GeoQty {
     pub volume: f64,
@@ -126,33 +126,33 @@ pub struct GeoQty {
 pub fn geo_qty(m: &Model, e: &Element) -> GeoQty {
     let t = m.tris(e);
     let (mut vol, mut surf, mut plan) = (0.0f64, 0.0f64, 0.0f64);
-    // volum prin tetraedre cu varful in centrul elementului (stabil numeric fata de originea scenei)
+    // volume through tetrahedra with the apex at the element centre (numerically stable relative to the scene origin)
     let c = e.aabb.center().as_dvec3();
     for tri in t.chunks_exact(3) {
         let (a, b, d) = (tri[0].as_dvec3() - c, tri[1].as_dvec3() - c, tri[2].as_dvec3() - c);
         vol += a.dot(b.cross(d)) / 6.0;
         let n = (b - a).cross(d - a);
         surf += n.length() * 0.5;
-        // fata orientata in sus (normala cu z > 0.5): aria proiectata in plan
+        // upward-facing face (normal with z > 0.5): the area projected in plan
         let len = n.length();
         if len > 0.0 && n.z / len > 0.5 {
             plan += n.z * 0.5;
         }
     }
     let s = e.aabb.size();
-    // lungimea pe directia elementului (pereti / grinzi / tevi pe diagonala), nu pe axele X / Y
+    // the length along the element direction (walls / beams / pipes on a diagonal), not along the X / Y axes
     let length = plan_length(t).unwrap_or(s.x.max(s.y) as f64);
     GeoQty { volume: vol.abs(), surface: surf, plan, length, height: s.z as f64 }
 }
 
-/// Cea mai mare dimensiune in plan masurata pe axele principale ale punctelor (PCA 2D).
-/// Un perete de 10 m rotit la 45° are 10 m (cutia aliniata la X / Y ar da 7.07 m pe fiecare axa).
+/// The largest dimension in plan measured along the principal axes of the points (2D PCA).
+/// A 10 m wall rotated by 45° has 10 m (the box aligned to X / Y would give 7.07 m on each axis).
 pub fn plan_length(pts: &[glam::Vec3]) -> Option<f64> {
     if pts.len() < 3 {
         return None;
     }
-    // vârfurile apar de mai multe ori (coplanare pe fețe); ponderarea inegală înclină axele PCA-ului
-    // (o cutie 3x2 ar da 3.23 m); eliminăm dublele la 1 mm înainte de calcul
+    // vertices appear several times (coplanar on faces); unequal weighting tilts the PCA axes
+    // (a 3x2 box would give 3.23 m); we remove duplicates at 1 mm before the calculation
     let seen: std::collections::HashSet<(i64, i64)> = pts.iter().map(|p| ((p.x as f64 * 1000.0).round() as i64, (p.y as f64 * 1000.0).round() as i64)).collect();
     if seen.len() < 3 {
         return None;
@@ -167,7 +167,7 @@ pub fn plan_length(pts: &[glam::Vec3]) -> Option<f64> {
         syy += dy * dy;
         sxy += dx * dy;
     }
-    // directia proprie principala a matricei de covarianta 2x2
+    // the main eigen-direction of the 2x2 covariance matrix
     let ang = 0.5 * (2.0 * sxy).atan2(sxx - syy);
     let (u, v) = ((ang.cos(), ang.sin()), (-ang.sin(), ang.cos()));
     let ext = |d: (f64, f64)| {
@@ -205,17 +205,17 @@ mod length_tests {
     }
 }
 
-// ====================================================================== rezultat
+// ====================================================================== result
 
 pub struct QtoRow {
-    /// valorile de grupare (cate una pentru fiecare nivel din group_by)
+    /// the grouping values (one for each level in group_by)
     pub keys: Vec<String>,
     pub ids: Vec<ElemId>,
-    /// valorile fiecarui element (paralel cu ids) - pentru foaia detaliata din Excel
+    /// the values of each element (parallel to ids) - for the detailed sheet in Excel
     pub item_values: Vec<Vec<Option<f64>>>,
-    /// suma pe coloana; None = niciun element din grup nu are valoarea
+    /// the column sum; None = no element in the group has the value
     pub values: Vec<Option<f64>>,
-    /// cate elemente din grup nu au valoarea coloanei (proprietate lipsa)
+    /// how many elements in the group do not have the column value (missing property)
     pub missing: Vec<u32>,
 }
 
@@ -225,7 +225,7 @@ pub struct QtoResult {
     pub totals: Vec<Option<f64>>,
     pub missing: Vec<u32>,
     pub count: usize,
-    /// unitatea pentru coloanele de tip proprietate (din prima valoare gasita, ex. "m³")
+    /// the unit for the property-type columns (from the first value found, e.g. "m³")
     pub units: Vec<String>,
 }
 
@@ -246,7 +246,7 @@ impl QtoResult {
         }
     }
 
-    /// Rezumat pe grupuri (BOM UTF-8, separator ';' - se deschide direct in Excel).
+    /// Summary per group (UTF-8 BOM, separator ';' - opens directly in Excel).
     pub fn summary_csv(&self) -> String {
         let q = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
         let mut s = String::from("\u{feff}");
@@ -269,7 +269,7 @@ impl QtoResult {
     }
 }
 
-/// numar pentru CSV: cu virgula zecimala (Excel in romana / europa) - fara separator de mii
+/// number for CSV: with a decimal comma (Excel in Romanian / Europe) - no thousands separator
 pub fn csv_num(v: Option<f64>, c: &QtyColumn) -> String {
     fmt(v, c).replace('–', "").replace('.', ",")
 }
@@ -288,11 +288,11 @@ pub struct Sheet {
     pub headers: Vec<String>,
     pub widths: Vec<f64>,
     pub rows: Vec<Vec<Cell>>,
-    /// rand TOTAL cu formule SUM pe coloanele numerice incepand cu aceasta coloana
+    /// TOTAL row with SUM formulas on the numeric columns starting with this column
     pub total_from: Option<usize>,
 }
 
-/// Fisier .xlsx cu mai multe foi: titlu, antet albastru, filtre, rand de total cu formule SUM.
+/// .xlsx file with several sheets: title, blue header, filters, a total row with SUM formulas.
 pub fn xlsx(sheets: &[Sheet]) -> Vec<u8> {
     use crate::markup::{col_name, esc, Zip};
     let mut zip = Zip::default();
@@ -301,7 +301,7 @@ pub fn xlsx(sheets: &[Sheet]) -> Vec<u8> {
     let mut rels = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">");
     for (k, sh) in sheets.iter().enumerate() {
         let n = k + 1;
-        // numele foii: max 31 caractere, fara []:*?/\
+        // the sheet name: max 31 characters, without []:*?/\
         let sname: String = sh.name.chars().filter(|c| !"[]:*?/\\".contains(*c)).take(31).collect();
         ct.push_str(&format!("<Override PartName=\"/xl/worksheets/sheet{n}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"));
         wb.push_str(&format!("<sheet name=\"{}\" sheetId=\"{n}\" r:id=\"rId{n}\"/>", esc(&sname)));
@@ -357,14 +357,14 @@ pub fn xlsx(sheets: &[Sheet]) -> Vec<u8> {
     zip.add("_rels/.rels", b"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>");
     zip.add("xl/workbook.xml", wb.as_bytes());
     zip.add("xl/_rels/workbook.xml.rels", rels.as_bytes());
-    // stiluri: 0 normal, 1 antet, 2 text cu chenar, 3 titlu, 4 TOTAL text, 5 numar 0.000, 6 TOTAL numar
+    // styles: 0 normal, 1 header, 2 bordered text, 3 title, 4 TOTAL text, 5 number 0.000, 6 TOTAL number
     zip.add("xl/styles.xml", b"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><numFmts count=\"1\"><numFmt numFmtId=\"164\" formatCode=\"#,##0.000\"/></numFmts><fonts count=\"4\"><font><sz val=\"10\"/><name val=\"Calibri\"/></font><font><b/><sz val=\"10\"/><color rgb=\"FFFFFFFF\"/><name val=\"Calibri\"/></font><font><b/><sz val=\"14\"/><color rgb=\"FF1E3A8A\"/><name val=\"Calibri\"/></font><font><b/><sz val=\"10\"/><name val=\"Calibri\"/></font></fonts><fills count=\"4\"><fill><patternFill patternType=\"none\"/></fill><fill><patternFill patternType=\"gray125\"/></fill><fill><patternFill patternType=\"solid\"><fgColor rgb=\"FF3B82F6\"/><bgColor indexed=\"64\"/></patternFill></fill><fill><patternFill patternType=\"solid\"><fgColor rgb=\"FFE2E8F0\"/><bgColor indexed=\"64\"/></patternFill></fill></fills><borders count=\"2\"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style=\"thin\"><color rgb=\"FFCBD5E1\"/></left><right style=\"thin\"><color rgb=\"FFCBD5E1\"/></right><top style=\"thin\"><color rgb=\"FFCBD5E1\"/></top><bottom style=\"thin\"><color rgb=\"FFCBD5E1\"/></bottom><diagonal/></border></borders><cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs><cellXfs count=\"7\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/><xf numFmtId=\"0\" fontId=\"1\" fillId=\"2\" borderId=\"1\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\"/><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"1\" xfId=\"0\" applyBorder=\"1\"/><xf numFmtId=\"0\" fontId=\"2\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/><xf numFmtId=\"0\" fontId=\"3\" fillId=\"3\" borderId=\"1\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\"/><xf numFmtId=\"164\" fontId=\"0\" fillId=\"0\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyBorder=\"1\"/><xf numFmtId=\"164\" fontId=\"3\" fillId=\"3\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\"/></cellXfs><cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles></styleSheet>");
     zip.finish()
 }
 
 impl QtoResult {
-    /// Excel: foaia "Summary" (un rand pe grup + TOTAL) si foaia "Items" (un rand pe element).
-    /// `info(id)` -> (model, nume, tip IFC, nivel, GlobalId) pentru foaia detaliata.
+    /// Excel: the "Summary" sheet (one row per group + TOTAL) and the "Items" sheet (one row per element).
+    /// `info(id)` -> (model, name, IFC type, level, GlobalId) for the detailed sheet.
     pub fn to_xlsx(&self, title: &str, info: &dyn Fn(ElemId) -> [String; 5]) -> Vec<u8> {
         let nk = self.setup.group_by.len().max(1);
         let ncols = self.setup.columns.len();

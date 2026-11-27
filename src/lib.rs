@@ -66,19 +66,19 @@ use model::{Model, RawModel};
 pub fn load_any(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     let ext = formats::ext_of(path);
     let r = load_by_ext(path, &ext, progress);
-    // gratarele Plant 3D sunt salvate in DWG doar ca un dreptunghi plat (barele se genereaza la afisare):
-    // le dam grosime, ca sa se vada din orice unghi - pentru toate sursele (DWG nativ, add-in .bimc, NWC)
+    // Plant 3D gratings are saved in DWG only as a flat rectangle (the bars are generated on display):
+    // we give them thickness, so they are visible from any angle - for all sources (native DWG, .bimc add-in, NWC)
     r.map(|mut m| {
-        // Daca fisierul e o taietura exportata din ManageBIM, repunem desenul 2D
-        // in planul 3D exact din care a fost extras (metadatele sint in DXF / sidecar).
+        // If the file is a cut exported from ManageBIM, we put the 2D drawing back
+        // in the exact 3D plane it was extracted from (the metadata is in the DXF / sidecar).
         if matches!(ext.as_str(), "dxf" | "dwg") {
             if let Some((axis, value, mirror, origin)) = formats::read_cut_plane_meta(path) {
                 m.place_on_cut_plane(axis, value, mirror, origin);
                 m.info.insert(0, ("Cut plane".into(), format!("Restored on axis {axis} at {value:.3} m")));
             }
         }
-        // desen dintr-un proiect Plant 3D: obiectele de pe stratul "0" primesc aria (ex. "Area_2") ca nivel,
-        // ca in add-in-ul AutoCAD (Plant 3D nu are niveluri)
+        // drawing from a Plant 3D project: the objects on layer "0" get the area (e.g. "Area_2") as level,
+        // as in the AutoCAD add-in (Plant 3D has no levels)
         if ext == "dwg" {
             if let Some(area) = plant3d::project_area(path) {
                 for e in &mut m.elements {
@@ -96,7 +96,7 @@ pub fn load_any(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
 fn load_by_ext(path: &str, ext: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     match ext {
         "bimc" => bimc::read(path).map(|mut m| {
-            // trimis din AutoCAD / Plant 3D: proprietatile complete din baza proiectului (Piping.dcf)
+            // sent from AutoCAD / Plant 3D: the complete properties from the project database (Piping.dcf)
             match plant3d_db::attach_sent(&mut m) {
                 Ok(Some((db, n))) => m.info.push(("Plant 3D project".into(), format!("{}: properties completed for {n} objects", db.display()))),
                 Ok(None) => {}
@@ -133,7 +133,7 @@ fn load_by_ext(path: &str, ext: &str, progress: &dyn Fn(f32, &str)) -> Result<Ra
     }
 }
 
-/// .ifczip = arhiva ZIP cu un .ifc (de obicei unul singur, cel mai mare): il despachetam temporar si il citim.
+/// .ifczip = a ZIP archive with an .ifc (usually a single one, the largest): we unpack it temporarily and read it.
 fn load_ifczip(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     progress(0.01, "Unzipping IFC");
     let zip = fcstd::Zip::parse(std::fs::read(path).map_err(|e| format!("Cannot read {}: {e}", file_name(path)))?).map_err(|_| format!("{} is not a valid .ifczip archive.", file_name(path)))?;
@@ -152,7 +152,7 @@ fn load_ifczip(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, Str
 }
 
 /// Every extension ManageBIM can open (natively or through a converter).
-/// Modelele sunt primele `SUPPORTED_MODELS` intrari (filtrul din dialogul Open); .bimr / .csv la final.
+/// The models are the first `SUPPORTED_MODELS` entries (the filter in the Open dialog); .bimr / .csv at the end.
 pub const SUPPORTED: [&str; 36] = ["ifc", "ifczip", "ifcxml", "bimc", "glb", "gltf", "fbx", "obj", "stl", "ply", "3mf", "dxf", "dwg", "fcstd", "step", "stp", "iges", "igs", "brep", "brp", "nwd", "nwc", "nwf", "rvt", "e57", "las", "laz", "json", "jsonl", "usda", "usd", "b3dm", "cmpt", "bimd", "bimr", "csv"];
 pub const SUPPORTED_MODELS: usize = 33;
 

@@ -1,7 +1,7 @@
-//! MaterialX / OpenPBR: import si export de materiale cu imagini.
-//! Citim formatul standard (MaterialX 1.38 / 1.39: standard_surface, open_pbr_surface, UsdPreviewSurface,
-//! gltf_pbr, legaturi nodename / nodegraph spre noduri image / tiledimage, fileprefix) - fara a evalua
-//! calcule din graf. Scriem MaterialX 1.39 standard (open_pbr_surface + image + surfacematerial).
+//! MaterialX / OpenPBR: import and export of materials with images.
+//! We read the standard format (MaterialX 1.38 / 1.39: standard_surface, open_pbr_surface, UsdPreviewSurface,
+//! gltf_pbr, nodename / nodegraph connections to image / tiledimage nodes, fileprefix) - without evaluating
+//! computations from the graph. We write standard MaterialX 1.39 (open_pbr_surface + image + surfacematerial).
 
 use crate::materials::{default_ior, Material, Pattern};
 
@@ -22,14 +22,14 @@ fn color(v: &str, default: [u8; 3]) -> [u8; 3] {
     [to8(p[0]), to8(p[1]), to8(p[2])]
 }
 
-/// Citește fișierul MaterialX (XML) și intoarce materialele găsite.
+/// Reads the MaterialX (XML) file and returns the materials found.
 ///
-/// Formatul standard (MaterialX 1.38 / 1.39, ca la ambientCG, Poly Haven, Substance, AMD GPUOpen,
-/// Blender, Houdini, Omniverse): noduri de suprafata `standard_surface`, `open_pbr_surface`,
-/// `UsdPreviewSurface`, `gltf_pbr` legate de `surfacematerial`; intrarile sunt valori sau legaturi
-/// (`nodename`, `nodegraph` + `output`) spre noduri `image` / `tiledimage` / `gltf_image` /
-/// `UsdUVTexture`, eventual prin `normalmap`, `displacement` sau noduri de calcul. `fileprefix` se aplica.
-/// Formatul vechi scris de ManageBIM (`<material><node type="OpenPBR Surface"><input><image/>`) merge si el.
+/// The standard format (MaterialX 1.38 / 1.39, as in ambientCG, Poly Haven, Substance, AMD GPUOpen,
+/// Blender, Houdini, Omniverse): surface nodes `standard_surface`, `open_pbr_surface`,
+/// `UsdPreviewSurface`, `gltf_pbr` connected to `surfacematerial`; the inputs are values or connections
+/// (`nodename`, `nodegraph` + `output`) to `image` / `tiledimage` / `gltf_image` /
+/// `UsdUVTexture`, possibly via `normalmap`, `displacement` or computation nodes. `fileprefix` is applied.
+/// The old format written by ManageBIM (`<material><node type="OpenPBR Surface"><input><image/>`) works too.
 pub fn read(path: &str) -> Result<Vec<Material>, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("Cannot read {path}: {e}"))?;
     let root = crate::e57::parse_xml(&text).map_err(|e| format!("{}: not a valid MaterialX XML file ({}).", crate::file_name(path), e.replace("E57: ", "")))?;
@@ -39,7 +39,7 @@ pub fn read(path: &str) -> Result<Vec<Material>, String> {
     let base = std::path::Path::new(path).parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
     let doc = Doc::new(&root);
     let mut out: Vec<Material> = Vec::new();
-    // 1. materialele standard: <surfacematerial> -> shader
+    // 1. the standard materials: <surfacematerial> -> shader
     for m in root.kids.iter().filter(|k| k.name == "surfacematerial" || k.name == "material" && k.kids.iter().any(|i| i.name == "shaderref")) {
         let shader = m
             .kids
@@ -54,7 +54,7 @@ pub fn read(path: &str) -> Result<Vec<Material>, String> {
             None => nice_name(m.attr("name").unwrap_or("MaterialX")),
         };
         let mut mat = from_shader(&doc, shader, scope, &base, name);
-        // deplasarea: <input name="displacementshader" nodename="..."/> -> displacement -> imagine
+        // displacement: <input name="displacementshader" nodename="..."/> -> displacement -> image
         if let Some(d) = m.kids.iter().find(|i| i.name == "input" && i.attr("name") == Some("displacementshader")).and_then(|i| i.attr("nodename")).and_then(|n| doc.node(None, n)) {
             if let Some(f) = d.0.kids.iter().find(|i| i.name == "input" && i.attr("name") == Some("displacement")).and_then(|i| doc.image_of(i, d.1, &base, 0)) {
                 mat.height_map = f;
@@ -62,7 +62,7 @@ pub fn read(path: &str) -> Result<Vec<Material>, String> {
         }
         out.push(mat);
     }
-    // 2. noduri de suprafata fara surfacematerial (fisiere simple)
+    // 2. surface nodes without surfacematerial (simple files)
     if out.is_empty() {
         for k in &root.kids {
             if is_shader(&k.name) {
@@ -71,7 +71,7 @@ pub fn read(path: &str) -> Result<Vec<Material>, String> {
             }
         }
     }
-    // 3. formatul vechi ManageBIM: <material name><node type="OpenPBR Surface"> <input name value> <image file/>
+    // 3. the old ManageBIM format: <material name><node type="OpenPBR Surface"> <input name value> <image file/>
     if out.is_empty() {
         for m in root.kids.iter().filter(|k| k.name == "material") {
             for n in m.kids.iter().filter(|k| k.name == "node") {
@@ -97,7 +97,7 @@ fn is_shader(n: &str) -> bool {
     matches!(n, "standard_surface" | "open_pbr_surface" | "UsdPreviewSurface" | "gltf_pbr" | "disney_principled" | "node")
 }
 
-/// Indexul nodurilor documentului (si al grafurilor) dupa nume.
+/// Index of the document's nodes (and the graphs') by name.
 struct Doc<'a> {
     root: &'a crate::e57::Node,
     graphs: std::collections::HashMap<&'a str, &'a crate::e57::Node>,
@@ -109,13 +109,13 @@ impl<'a> Doc<'a> {
         Doc { root, graphs }
     }
 
-    /// nodul `name` in graful `scope` (sau la radacina)
+    /// the node `name` in the graph `scope` (or at the root)
     fn node(&self, scope: Option<&'a crate::e57::Node>, name: &str) -> Option<(&'a crate::e57::Node, Option<&'a crate::e57::Node>)> {
         let parent = scope.unwrap_or(self.root);
         parent.kids.iter().find(|k| k.attr("name") == Some(name) && k.name != "input" && k.name != "output").map(|n| (n, scope))
     }
 
-    /// prefixul de fisier cumulat (radacina + graf + nod + intrare)
+    /// the accumulated file prefix (root + graph + node + input)
     fn prefix(&self, scope: Option<&crate::e57::Node>, node: &crate::e57::Node, input: &crate::e57::Node) -> String {
         let mut p = self.root.attr("fileprefix").unwrap_or("").to_string();
         for x in [scope.and_then(|s| s.attr("fileprefix")), node.attr("fileprefix"), input.attr("fileprefix")].into_iter().flatten() {
@@ -124,8 +124,8 @@ impl<'a> Doc<'a> {
         p
     }
 
-    /// Imaginea (fisierul) din spatele unei intrari: valoare `filename`, legatura `nodename` spre un nod de
-    /// imagine (prin normalmap / calcule, max 8 niveluri) sau `nodegraph` + `output`.
+    /// The image (file) behind an input: a `filename` value, a `nodename` connection to an image
+    /// node (through normalmap / computations, max 8 levels) or `nodegraph` + `output`.
     fn image_of(&self, input: &'a crate::e57::Node, scope: Option<&'a crate::e57::Node>, base: &std::path::Path, depth: usize) -> Option<String> {
         if depth > 8 {
             return None;
@@ -133,7 +133,7 @@ impl<'a> Doc<'a> {
         let target = if let Some(n) = input.attr("nodename") {
             self.node(scope, n)
         } else if let Some(g) = input.attr("nodegraph").and_then(|g| self.graphs.get(g)) {
-            // iesirea grafului: <output name="..." nodename="..."/>
+            // the graph output: <output name="..." nodename="..."/>
             let outs: Vec<&crate::e57::Node> = g.kids.iter().filter(|k| k.name == "output").collect();
             let o = input.attr("output").and_then(|on| outs.iter().find(|o| o.attr("name") == Some(on)).copied()).or(outs.first().copied())?;
             self.node(Some(g), o.attr("nodename")?)
@@ -141,14 +141,14 @@ impl<'a> Doc<'a> {
             None
         }?;
         let (node, sc) = target;
-        // nod de imagine: intrarea "file"
+        // image node: the "file" input
         if matches!(node.name.as_str(), "image" | "tiledimage" | "gltf_image" | "UsdUVTexture" | "hextiledimage") {
             let f = node.kids.iter().find(|k| k.name == "input" && k.attr("name") == Some("file"))?;
             let v = f.attr("value")?;
             let full = format!("{}{}", self.prefix(sc, node, f), v);
             return Some(resolve(base, &full));
         }
-        // altfel urmam prima intrare legata (normalmap.in, multiply.in1, mix.fg ...)
+        // otherwise we follow the first connected input (normalmap.in, multiply.in1, mix.fg ...)
         for i in node.kids.iter().filter(|k| k.name == "input") {
             if i.attr("nodename").is_some() || i.attr("nodegraph").is_some() {
                 if let Some(f) = self.image_of(i, sc, base, depth + 1) {
@@ -168,7 +168,7 @@ fn resolve(base: &std::path::Path, f: &str) -> String {
     base.join(f).to_string_lossy().to_string()
 }
 
-/// Materialul ManageBIM dintr-un nod de suprafata (parametrii + imaginile legate).
+/// The ManageBIM material from a surface node (the parameters + the connected images).
 fn from_shader(doc: &Doc, shader: &crate::e57::Node, scope: Option<&crate::e57::Node>, base: &std::path::Path, name: String) -> Material {
     let mut m = Material {
         name,
@@ -216,7 +216,7 @@ fn from_shader(doc: &Doc, shader: &crate::e57::Node, scope: Option<&crate::e57::
                 _ => {}
             }
         }
-        // imagine legata: noul format (nodename / nodegraph) sau vechiul <input><image file/></input>
+        // connected image: the new format (nodename / nodegraph) or the old <input><image file/></input>
         let img = doc.image_of(i, scope, base, 0).or_else(|| i.kids.iter().find(|k| k.name == "image").and_then(|k| k.attr("file")).map(|f| resolve(base, f)));
         if let Some(f) = img {
             match key {
@@ -243,22 +243,22 @@ fn from_shader(doc: &Doc, shader: &crate::e57::Node, scope: Option<&crate::e57::
             }
         }
     }
-    // ambientCG pune coat = 1 cu rugozitatea din aceeasi harta: e de fapt luciul obisnuit, nu un lac
+    // ambientCG sets coat = 1 with the roughness from the same map: it is actually the ordinary gloss, not a lacquer
     if coat_from_map {
         m.coat = 0;
     }
     m
 }
 
-/// Hartile lipsa din fisierele vecine cu acelasi prefix (ex. ambientCG livreaza *_AmbientOcclusion.jpg
-/// fara sa-l lege in .mtlx).
+/// The missing maps from neighboring files with the same prefix (e.g. ambientCG ships *_AmbientOcclusion.jpg
+/// without connecting it in the .mtlx).
 fn fill_sibling_maps(m: &mut Material) {
     let tex = std::path::Path::new(&m.texture);
     let (Some(dir), Some(stem)) = (tex.parent(), tex.file_stem().map(|s| s.to_string_lossy().to_string())) else { return };
     if !tex.exists() {
         return;
     }
-    // prefixul comun: numele fara ultimul cuvant ("Bricks104_1K-JPG_Color" -> "Bricks104_1K-JPG")
+    // the common prefix: the name without the last word ("Bricks104_1K-JPG_Color" -> "Bricks104_1K-JPG")
     let prefix = stem.rsplit_once(['_', '-', ' ']).map(|(a, _)| a.to_ascii_lowercase()).unwrap_or_default();
     if prefix.is_empty() {
         return;
@@ -282,15 +282,15 @@ fn fill_sibling_maps(m: &mut Material) {
     }
 }
 
-/// Scrie materialele in MaterialX standard 1.39: `open_pbr_surface` + noduri `image` + `surfacematerial`
-/// (citit de Blender, Houdini, Maya, Omniverse, MaterialX Viewer si inapoi de ManageBIM).
+/// Writes the materials in standard MaterialX 1.39: `open_pbr_surface` + `image` nodes + `surfacematerial`
+/// (read by Blender, Houdini, Maya, Omniverse, MaterialX Viewer and back by ManageBIM).
 pub fn write(mats: Vec<Material>, sel: Vec<crate::model::ElemId>, path: &str) -> Result<usize, String> {
     let _ = sel;
     let mut xml = String::from("<?xml version=\"1.0\"?>\n<materialx version=\"1.39\">\n");
     let mut n = 0;
     let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
     for m in &mats {
-        // nume MaterialX valid si unic
+        // valid and unique MaterialX name
         let mut safe: String = m.name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
         if safe.is_empty() || safe.chars().next().is_some_and(|c| c.is_ascii_digit()) {
             safe = format!("M_{safe}");
@@ -342,7 +342,7 @@ pub fn write(mats: Vec<Material>, sel: Vec<crate::model::ElemId>, path: &str) ->
         }
         xml.push_str(&nodes);
         xml.push_str(&format!("  <open_pbr_surface name=\"{sh}\" type=\"surfaceshader\">\n{inputs}  </open_pbr_surface>\n"));
-        // inaltimea si AO: ca intrari ale materialului (citite inapoi de ManageBIM)
+        // height and AO: as material inputs (read back by ManageBIM)
         let mut extra = String::new();
         if !m.height_map.is_empty() {
             let img = format!("{safe}_height_img");
@@ -350,7 +350,7 @@ pub fn write(mats: Vec<Material>, sel: Vec<crate::model::ElemId>, path: &str) ->
             xml.push_str(&format!("  <displacement name=\"{safe}_displacement\" type=\"displacementshader\">\n    <input name=\"displacement\" type=\"float\" nodename=\"{img}\" />\n    <input name=\"scale\" type=\"float\" value=\"0.02\" />\n  </displacement>\n"));
             extra.push_str(&format!("    <input name=\"displacementshader\" type=\"displacementshader\" nodename=\"{safe}_displacement\" />\n"));
         }
-        // id MaterialX valid + numele afisat (cu spatii) in `uiname`
+        // valid MaterialX id + the display name (with spaces) in `uiname`
         xml.push_str(&format!("  <surfacematerial name=\"{safe}\" uiname=\"{}\" type=\"material\">\n    <input name=\"surfaceshader\" type=\"surfaceshader\" nodename=\"{sh}\" />\n{extra}  </surfacematerial>\n", esc(&m.name)));
         n += 1;
     }
@@ -359,9 +359,9 @@ pub fn write(mats: Vec<Material>, sel: Vec<crate::model::ElemId>, path: &str) ->
     Ok(n)
 }
 
-/// Un material ca pachet portabil: `<nume>.mtlx` + folderul `<nume>_textures` cu hartile copiate,
-/// referite relativ (se muta / trimite impreuna). `resolve` transforma caile salvate in cai reale.
-/// Intoarce numarul de harti copiate.
+/// A material as a portable package: `<name>.mtlx` + the `<name>_textures` folder with the copied maps,
+/// referenced relatively (they are moved / sent together). `resolve` turns the saved paths into real paths.
+/// Returns the number of maps copied.
 pub fn write_package(m: &Material, path: &str, resolve: impl Fn(&str) -> String) -> Result<usize, String> {
     let p = std::path::Path::new(path);
     let stem = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "material".into());
@@ -392,7 +392,7 @@ pub fn write_package(m: &Material, path: &str, resolve: impl Fn(&str) -> String)
     Ok(copied)
 }
 
-/// "WoodFloor051_1K_JPG" (ambientCG) -> "WoodFloor051": fara sufixele de rezolutie / format.
+/// "WoodFloor051_1K_JPG" (ambientCG) -> "WoodFloor051": without the resolution / format suffixes.
 fn nice_name(n: &str) -> String {
     let has_res = n.split(['_', '-', ' ']).any(|w| matches!(w.to_ascii_lowercase().as_str(), "1k" | "2k" | "4k" | "8k"));
     if has_res {
@@ -406,7 +406,7 @@ fn nice_name(n: &str) -> String {
 mod tests {
     #[test]
     fn roundtrip_materialx() {
-        // o cale absoluta pe fiecare sistem (pe Linux / FreeBSD "C:/..." e relativa si e rezolvata fata de fisier)
+        // an absolute path on each system (on Linux / FreeBSD "C:/..." is relative and is resolved against the file)
         #[cfg(windows)]
         const ROOT: &str = "C:/";
         #[cfg(not(windows))]
@@ -433,14 +433,14 @@ mod tests {
         assert_eq!(r.texture, format!("{ROOT}tex/albedo.png"));
         assert_eq!(r.normal_map, format!("{ROOT}tex/normal.png"));
         assert!((r.gloss as i32 - 70).abs() <= 1);
-        // fisierul scris e MaterialX standard
+        // the written file is standard MaterialX
         let x = std::fs::read_to_string(&p).unwrap();
         assert!(x.contains("<open_pbr_surface") && x.contains("<surfacematerial") && x.contains("<image"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Fisierul .mtlx din arhivele ambientCG (standard_surface + tiledimage + normalmap + displacement);
-    /// AO-ul nu e legat in .mtlx, dar e luat din fisierul vecin.
+    /// The .mtlx file from the ambientCG archives (standard_surface + tiledimage + normalmap + displacement);
+    /// the AO is not connected in the .mtlx, but it is taken from the neighboring file.
     #[test]
     fn ambientcg_mtlx() {
         let dir = std::env::temp_dir().join(format!("mb_mtlx_acg_{}", std::process::id()));
@@ -500,7 +500,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// "Save as file": .mtlx + folderul cu texturi, recitit cu toate hartile (inclusiv AO, prin fisierul vecin)
+    /// "Save as file": .mtlx + the folder with textures, re-read with all the maps (including AO, via the neighboring file)
     #[test]
     fn package_roundtrip() {
         let dir = std::env::temp_dir().join(format!("mb_mtlx_pkg_{}", std::process::id()));
@@ -531,7 +531,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// nodegraph + output + fileprefix (Substance / GPUOpen) si formatul vechi ManageBIM
+    /// nodegraph + output + fileprefix (Substance / GPUOpen) and the old ManageBIM format
     #[test]
     fn nodegraph_and_legacy_formats() {
         let dir = std::env::temp_dir().join(format!("mb_mtlx_ng_{}", std::process::id()));

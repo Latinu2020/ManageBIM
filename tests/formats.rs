@@ -20,7 +20,7 @@ fn dxf_blocks_layers_units() {
     assert!((size(wall).z - 3.0).abs() < 1e-6, "extruded polyline thickness");
     assert!(m.elements.iter().any(|e| e.storey == "M-DUCT" && e.tris.len() > 30));
 }
-/// Atributele blocului (ATTRIB) si XDATA devin proprietati; TAG da numele elementului.
+/// The block attributes (ATTRIB) and XDATA become properties; TAG gives the element name.
 #[test]
 fn dxf_block_attributes_and_xdata() {
     let m = load("attribs.dxf");
@@ -50,7 +50,7 @@ fn stl_ply() {
     assert_eq!(p.elements[0].tris.len(), 2);
     assert_eq!(p.elements[0].colors[0], [200, 40, 40, 255]);
 }
-/// PLY segmentat: un element pe `segment`, proprietatile fetelor si varfurilor, comentariile antetului.
+/// Segmented PLY: one element per `segment`, the face and vertex properties, the header comments.
 #[test]
 fn ply_segments_and_properties() {
     let m = load("segmented.ply");
@@ -65,7 +65,7 @@ fn ply_segments_and_properties() {
     assert_eq!(a.colors[0], [255, 0, 0, 255], "face colour wins");
     assert_eq!(m.elements[1].colors[0], [0, 0, 255, 255]);
 }
-/// glTF cu EXT_mesh_features + EXT_structural_metadata: o plasa cu 2 obiecte -> 2 elemente cu proprietati.
+/// glTF with EXT_mesh_features + EXT_structural_metadata: a mesh with 2 objects -> 2 elements with properties.
 #[test]
 fn gltf_mesh_features_split_objects() {
     use base64::Engine;
@@ -76,7 +76,7 @@ fn gltf_mesh_features_split_objects() {
             buf.extend_from_slice(&v.to_le_bytes());
         }
     }
-    buf.extend_from_slice(&[0, 0, 0, 1, 1, 1, 0, 0]); // 72..80: feature id pe varf (+ padding)
+    buf.extend_from_slice(&[0, 0, 0, 1, 1, 1, 0, 0]); // 72..80: feature id per vertex (+ padding)
     buf.extend_from_slice(b"WallDoor"); // 80..88
     for o in [0u32, 4, 8] {
         buf.extend_from_slice(&o.to_le_bytes()); // 88..100
@@ -120,7 +120,7 @@ fn gltf_mesh_features_split_objects() {
     let door = m.elements.iter().find(|e| e.name == "Facade · Door").unwrap();
     assert!(door.props.iter().any(|p| p.group == "Part" && p.name == "name" && p.value == "Door"));
 }
-/// 3MF: unitati, culori din basematerials, componente transformate, metadate pe obiect si pe model.
+/// 3MF: units, colours from basematerials, transformed components, metadata on the object and on the model.
 #[test]
 fn threemf_objects_materials_components() {
     let model = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -175,7 +175,7 @@ fn fbx_nodes_hierarchy_materials_units() {
     let green = m.elements.iter().find(|e| e.name == "Green box").expect("Green box");
     assert_eq!(red.tris.len(), 12, "6 quads -> 12 triangles");
     let s = size(red);
-    // 2 x 1 x 1 m (in orice ordine a axelor dupa conversia Z-sus)
+    // 2 x 1 x 1 m (in any axis order after the Z-up conversion)
     let mut d = [s.x, s.y, s.z];
     d.sort_by(|a, b| a.total_cmp(b));
     assert!((d[0] - 1.0).abs() < 1e-6 && (d[1] - 1.0).abs() < 1e-6 && (d[2] - 2.0).abs() < 1e-6, "metres: {s:?}");
@@ -189,7 +189,7 @@ fn fbx_nodes_hierarchy_materials_units() {
 
 #[test]
 fn ifczip_opens() {
-    // arhivam un IFC de test intr-un .ifczip (stored) si il deschidem
+    // we archive a test IFC into an .ifczip (stored) and open it
     let ifc = std::fs::read("tests/fixtures/demo_instalatii.ifc").unwrap();
     let name = b"model/demo.ifc";
     let crc = {
@@ -270,7 +270,7 @@ fn e57_point_cloud_reads_scans_points_and_colours() {
     assert_eq!(c.pos.len(), c.col.len());
     assert_eq!(c.scans.iter().map(|s| s.2 as usize).sum::<usize>(), c.pos.len());
     assert!(c.pos.len() > 1_000_000);
-    // coordonate rezonabile (o biserica: zeci de metri) si culori reale, nu doar gri
+    // reasonable coordinates (a church: tens of metres) and real colours, not just grey
     let far = c.pos.iter().filter(|p| p.iter().any(|v| v.abs() > 500.0)).count();
     assert!(far * 1000 < c.pos.len(), "{far} points far away");
     let coloured = c.col.iter().filter(|k| !(k[0] == k[1] && k[1] == k[2])).count();
@@ -280,7 +280,7 @@ fn e57_point_cloud_reads_scans_points_and_colours() {
     eprintln!("bbox {lo:?} .. {hi:?}, base {:?}", c.base);
 }
 
-/// Timpii pe etape la incarcarea unui DWG mare (rulat manual): MB_PROFILE_FILE=cale cargo test --release --test formats profile_load -- --ignored --nocapture
+/// The per-stage times when loading a large DWG (run manually): MB_PROFILE_FILE=cale cargo test --release --test formats profile_load -- --ignored --nocapture
 #[test]
 #[ignore]
 fn profile_load() {
@@ -310,7 +310,7 @@ fn raw_center() -> glam::DVec3 {
     glam::DVec3::ZERO
 }
 
-/// Arhiva ambientCG (ex. Asphalt033_1K-JPG.zip, comprimata deflate) -> material PBR cu toate hartile.
+/// ambientCG archive (e.g. Asphalt033_1K-JPG.zip, deflate-compressed) -> a PBR material with all the maps.
 #[test]
 fn ambientcg_zip_import() {
     let src = std::path::Path::new("third_party/pbr-library/Pro Library/Asphalt033");

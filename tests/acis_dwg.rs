@@ -1,8 +1,8 @@
-//! Solide ACIS (3DSOLID) din DWG / DXF prin cititorul incorporat: acadrust (SAT / SAB) -> descriere B-rep
-//! -> OpenCascade (mbo_brep_from_desc) -> triunghiuri. Fixture-urile se genereaza in test cu scriitorul
-//! acadrust: primitive ACIS (cutie, cilindru, sfera, tor, con) si corpuri construite inregistrare cu
-//! inregistrare (cutie cu gaura = scadere booleana, cutie cu muchie racordata = fillet, fata B-spline),
-//! exact cum le salveaza AutoCAD (plane / cone-surface / ellipse-curve / spline-surface).
+//! ACIS solids (3DSOLID) from DWG / DXF through the built-in reader: acadrust (SAT / SAB) -> B-rep description
+//! -> OpenCascade (mbo_brep_from_desc) -> triangles. The fixtures are generated in the test with the
+//! acadrust writer: ACIS primitives (box, cylinder, sphere, torus, cone) and bodies built record by
+//! record (box with a hole = boolean subtraction, box with a rounded edge = fillet, B-spline face),
+//! exactly as AutoCAD saves them (plane / cone-surface / ellipse-curve / spline-surface).
 use acadrust::entities::acis::{primitives, SatDocument, SatPointer, SatToken, Sense, Sidedness};
 use acadrust::entities::solid3d::{AcisData, Solid3D};
 use acadrust::tables::Layer;
@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::path::PathBuf;
 
-// ------------------------------------------------------------------ constructor SAT minimal
+// ------------------------------------------------------------------ minimal SAT builder
 fn ptr(i: i32) -> SatPointer {
     SatPointer::new(i)
 }
@@ -62,13 +62,13 @@ impl Brep {
         self.lines.insert((ia, ib), e);
         (e, false)
     }
-    /// arc (sau cerc complet daca a == b) pe cercul (centru, normala, axa mare = raza)
+    /// arc (or full circle if a == b) on the circle (center, normal, major axis = radius)
     fn arc(&mut self, a: [f64; 3], b: [f64; 3], center: [f64; 3], normal: [f64; 3], major: [f64; 3], t0: f64, t1: f64) -> i32 {
         let (ia, ib) = (self.v(a), self.v(b));
         let c = self.sat.add_ellipse_curve(center, normal, major, 1.0);
         self.sat.add_edge(ptr(self.vrec[ia]), t0, ptr(self.vrec[ib]), t1, SatPointer::NULL, ptr(c), Sense::Forward)
     }
-    /// elipsa completa (un varf, pe axa mare)
+    /// full ellipse (one vertex, on the major axis)
     fn ellipse(&mut self, center: [f64; 3], major: [f64; 3], ratio: f64) -> i32 {
         let a = [center[0] + major[0], center[1] + major[1], center[2] + major[2]];
         let ia = self.v(a);
@@ -122,7 +122,7 @@ impl Brep {
             }
             self.set(f, 3, shell);
         }
-        // partenerii coedge-urilor (inel pe muchie) si legaturile muchie -> coedge, varf -> muchie
+        // the coedge partners (ring on the edge) and the edge -> coedge, vertex -> edge links
         let mut by_edge: HashMap<i32, Vec<i32>> = HashMap::new();
         for &(c, e) in &self.coedges {
             by_edge.entry(e).or_default().push(c);
@@ -144,8 +144,8 @@ impl Brep {
     }
 }
 
-/// Cutie [0,100]x[0,100]x[0,20] mm minus cilindrul r 20 din (50,50): fata gaurii e cone-surface
-/// (cilindru) cu sensul "reversed", buclele de sus / jos au cate un cerc gaura.
+/// Box [0,100]x[0,100]x[0,20] mm minus the r 20 cylinder at (50,50): the hole face is a cone-surface
+/// (cylinder) with "reversed" sense, the top / bottom loops each have a hole circle.
 fn box_with_hole() -> SatDocument {
     let mut b = Brep::new();
     let (z0, z1) = (0.0, 20.0);
@@ -168,27 +168,27 @@ fn box_with_hole() -> SatDocument {
         let l = b.poly(&q);
         b.face(s, Sense::Forward, vec![l]);
     }
-    // gaura: cilindru cu normala spre exterior fata de axa -> fata "reversed" (normala spre gol)
+    // hole: cylinder with the normal pointing outward from the axis -> "reversed" face (normal toward the void)
     let cyl = b.sat.add_cone_surface([50.0, 50.0, 0.0], [0.0, 0.0, 1.0], [20.0, 0.0, 0.0], 1.0, 1.0, 0.0);
     b.face(cyl, Sense::Reversed, vec![vec![(c_top, false)], vec![(c_bot, true)]]);
     b.finish()
 }
 
-/// Cutie [0,100]x[0,50]x[0,20] mm cu muchia verticala din (100,50) racordata cu r 10 (fillet):
-/// fata de racordare e un cilindru (cone-surface), marginile ei sunt arce (ellipse-curve).
+/// Box [0,100]x[0,50]x[0,20] mm with the vertical edge at (100,50) rounded with r 10 (fillet):
+/// the fillet face is a cylinder (cone-surface), its boundaries are arcs (ellipse-curve).
 fn filleted_box() -> SatDocument {
     let mut b = Brep::new();
     let (z0, z1, r) = (0.0, 20.0, 10.0);
     let p = |x: f64, y: f64, z: f64| [x, y, z];
     let arc_b = b.arc(p(100.0, 40.0, z0), p(90.0, 50.0, z0), p(90.0, 40.0, z0), [0.0, 0.0, 1.0], [r, 0.0, 0.0], 0.0, PI / 2.0);
     let arc_t = b.arc(p(100.0, 40.0, z1), p(90.0, 50.0, z1), p(90.0, 40.0, z1), [0.0, 0.0, 1.0], [r, 0.0, 0.0], 0.0, PI / 2.0);
-    // sus (+z): (0,0) (100,0) (100,40) ~arc~ (90,50) (0,50)
+    // top (+z): (0,0) (100,0) (100,40) ~arc~ (90,50) (0,50)
     let top = b.plane(p(0.0, 0.0, z1), [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
     let mut l = vec![b.line(p(0.0, 0.0, z1), p(100.0, 0.0, z1)), b.line(p(100.0, 0.0, z1), p(100.0, 40.0, z1)), (arc_t, false)];
     l.push(b.line(p(90.0, 50.0, z1), p(0.0, 50.0, z1)));
     l.push(b.line(p(0.0, 50.0, z1), p(0.0, 0.0, z1)));
     b.face(top, Sense::Forward, vec![l]);
-    // jos (-z): sens invers
+    // bottom (-z): reverse direction
     let bot = b.plane(p(0.0, 0.0, z0), [0.0, 0.0, -1.0], [1.0, 0.0, 0.0]);
     let mut l = vec![b.line(p(0.0, 0.0, z0), p(0.0, 50.0, z0)), b.line(p(0.0, 50.0, z0), p(90.0, 50.0, z0)), (arc_b, true)];
     l.push(b.line(p(100.0, 40.0, z0), p(100.0, 0.0, z0)));
@@ -212,7 +212,7 @@ fn filleted_box() -> SatDocument {
     b.finish()
 }
 
-/// Trunchi eliptic (raport 0.5) pe Z, de la z 0 (axa mare r0) la z h (axa mare r1); r0 == r1 = cilindru eliptic.
+/// Elliptic frustum (ratio 0.5) along Z, from z 0 (major axis r0) to z h (major axis r1); r0 == r1 = elliptic cylinder.
 fn elliptic_frustum(x: f64, r0: f64, r1: f64, h: f64) -> SatDocument {
     let mut b = Brep::new();
     let e_bot = b.ellipse([x, 0.0, 0.0], [r0, 0.0, 0.0], 0.5);
@@ -228,7 +228,7 @@ fn elliptic_frustum(x: f64, r0: f64, r1: f64, h: f64) -> SatDocument {
     b.finish()
 }
 
-/// Cutia primitiva cu fata de sus inlocuita de o suprafata B-spline biliniara (exactsur) in acelasi plan.
+/// The primitive box with the top face replaced by a bilinear B-spline surface (exactsur) in the same plane.
 fn box_with_spline_top() -> SatDocument {
     let mut sat = primitives::build_box([50.0, 25.0, 10.0], 100.0, 50.0, 20.0);
     let ctrl = [[-10.0, -10.0, 20.0], [110.0, -10.0, 20.0], [-10.0, 60.0, 20.0], [110.0, 60.0, 20.0]];
@@ -239,7 +239,7 @@ fn box_with_spline_top() -> SatDocument {
     sat
 }
 
-// ------------------------------------------------------------------ fisiere DWG / DXF
+// ------------------------------------------------------------------ DWG / DXF files
 enum Fmt {
     Dwg(DxfVersion),
     Dxf(DxfVersion),
@@ -272,11 +272,11 @@ fn write(name: &str, solids: Vec<(SatDocument, &str, i16)>, fmt: Fmt, sab: bool)
     p
 }
 
-/// OCCT are stare globala in libraria C++: incarcarile concurente din teste
-/// pot returna modelul altui fixture. Le serializam (ca in smoke.rs).
+/// OCCT has global state in the C++ library: concurrent loads from tests
+/// may return another fixture's model. We serialize them (as in smoke.rs).
 static ACIS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// None daca ManageBIM a fost compilat fara OCCT - testele se sar atunci.
+/// None if ManageBIM was compiled without OCCT - the tests are then skipped.
 fn load(p: &PathBuf) -> Option<RawModel> {
     let _guard = ACIS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if !occt::BUILT_WITH_OCCT {
@@ -300,7 +300,7 @@ fn bbox(tris: &[[DVec3; 3]]) -> (DVec3, DVec3) {
     (mn, mx)
 }
 
-/// volum cu semn, in mm3 (pozitiv = normale spre exterior)
+/// signed volume, in mm3 (positive = outward normals)
 fn volume_mm3(e: &RawElement) -> f64 {
     e.tris.iter().map(|t| t[0].dot(t[1].cross(t[2])) / 6.0).sum::<f64>() * 1e9
 }
@@ -325,7 +325,7 @@ fn no_acis_warnings(m: &RawModel) {
     assert!(!m.warnings.iter().any(|w| w.contains("ACIS")), "unexpected ACIS warnings: {:?}", m.warnings);
 }
 
-// ------------------------------------------------------------------ teste
+// ------------------------------------------------------------------ tests
 #[test]
 fn dwg_box_and_cylinder_sat() {
     let p = write(
@@ -340,7 +340,7 @@ fn dwg_box_and_cylinder_sat() {
 
     let b = solid(&m, "Steel");
     assert_box(b, [0.0, 0.0, 0.0], [100.0, 50.0, 20.0], 100_000.0, 1e-6);
-    // culoarea entitatii (ACI 1 = rosu) si proprietatile
+    // the entity color (ACI 1 = red) and the properties
     assert!(b.colors.iter().all(|c| c[0] > 200 && c[1] < 80), "entity colour: {:?}", b.colors.first());
     assert!(b.props.iter().any(|p| p.name == "Faces" && p.value == "6"));
     assert!(!b.guid.is_empty());
@@ -361,7 +361,7 @@ fn dwg_boolean_subtraction_hole() {
     no_acis_warnings(&m);
     let e = solid(&m, "Plate");
     assert_box(e, [0.0, 0.0, 0.0], [100.0, 100.0, 20.0], 200_000.0 - PI * 400.0 * 20.0, 0.005);
-    // nimic in interiorul gaurii (r < 19.9 mm in jurul axei)
+    // nothing inside the hole (r < 19.9 mm around the axis)
     let inside = e.tris.iter().flatten().any(|q| ((q.x * 1000.0 - 50.0).powi(2) + (q.y * 1000.0 - 50.0).powi(2)).sqrt() < 19.9);
     assert!(!inside, "triangles inside the hole");
 }
@@ -374,14 +374,14 @@ fn dwg_fillet() {
     let e = solid(&m, "Fillet");
     let want = 100_000.0 - (100.0 - PI * 25.0) * 20.0;
     assert_box(e, [0.0, 0.0, 0.0], [100.0, 50.0, 20.0], want, 0.002);
-    // coltul (100, 50) e rotunjit: niciun punct mai departe de 10 mm fata de centrul racordarii in acel cadran
+    // the corner (100, 50) is rounded: no point farther than 10 mm from the fillet center in that quadrant
     let corner = e.tris.iter().flatten().any(|q| q.x * 1000.0 > 90.0 && q.y * 1000.0 > 40.0 && ((q.x * 1000.0 - 90.0).powi(2) + (q.y * 1000.0 - 40.0).powi(2)).sqrt() > 10.05);
     assert!(!corner, "sharp corner left after the fillet");
 }
 
 #[test]
 fn dwg_spline_face_and_sab() {
-    // AC1032 (2018): ACIS binar (SAB)
+    // AC1032 (2018): binary ACIS (SAB)
     let p = write("spline_sab", vec![(box_with_spline_top(), "Spline", 4), (primitives::build_box([0.0, 0.0, 0.0], 10.0, 10.0, 10.0), "Sab", 6)], Fmt::Dwg(DxfVersion::AC1032), true);
     let Some(m) = load(&p) else { return };
     no_acis_warnings(&m);
@@ -421,14 +421,14 @@ fn dwg_elliptic_cylinder_and_cone() {
     no_acis_warnings(&m);
     let want = PI * 20.0 * 10.0 * 30.0;
     assert_box(solid(&m, "ECyl"), [-20.0, -10.0, 0.0], [20.0, 10.0, 30.0], want, 0.01);
-    // trunchi eliptic = 0.5 x trunchiul circular
+    // elliptic frustum = 0.5 x the circular frustum
     let want = 0.5 * PI * 30.0 / 3.0 * (400.0 + 280.0 + 196.0);
     assert_box(solid(&m, "ECone"), [80.0, -10.0, 0.0], [120.0, 10.0, 30.0], want, 0.01);
 }
 
 #[test]
 fn dxf_file_with_acis_and_body_transform() {
-    // corp cu transformare ACIS: rotatie 90 grade in jurul Z + translatie (1000, 0, 0)
+    // body with an ACIS transform: 90 degree rotation around Z + translation (1000, 0, 0)
     let mut sat = primitives::build_box([50.0, 25.0, 10.0], 100.0, 50.0, 20.0);
     let t = sat.add_transform([[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], [1000.0, 0.0, 0.0], 1.0);
     sat.records[0].tokens[3] = SatToken::Pointer(ptr(t));
@@ -442,10 +442,10 @@ fn dxf_file_with_acis_and_body_transform() {
 
 #[test]
 fn untranslatable_solid_is_reported_not_fatal() {
-    // corp ACIS gol (fara fete) langa un solid valid: doar cel gol e raportat
+    // empty ACIS body (no faces) next to a valid solid: only the empty one is reported
     let p = write("empty", vec![(SatDocument::new_body(), "Empty", 1), (primitives::build_box([0.0, 0.0, 0.0], 10.0, 10.0, 10.0), "Ok", 2)], Fmt::Dwg(DxfVersion::AC1015), false);
     let Some(m) = load(&p) else { return };
-    // Cu OCCT nativ elementul poate primi alt nume / layer; important e ca solidul valid exista.
+    // With native OCCT the element may get another name / layer; what matters is that the valid solid exists.
     let solids: Vec<&bimrust::model::RawElement> = m.elements.iter().filter(|e| e.ifc_type == "3D Solid").collect();
     assert_eq!(solids.len(), 1, "{:?}", m.elements.iter().map(|e| (&e.name, &e.ifc_type, &e.storey)).collect::<Vec<_>>());
     assert!(!solids[0].tris.is_empty(), "the valid solid must have triangles");

@@ -1,18 +1,18 @@
-//! Cititoare CAD native prin OpenCascade (OCCT, LGPL-2.1 + exceptie): STEP, IGES, BREP.
+//! Native CAD readers via OpenCascade (OCCT, LGPL-2.1 + exception): STEP, IGES, BREP.
 //!
-//! OCCT e legat DINAMIC: `mbocct.dll` (shim C peste OCCT, `src/occt/mbocct.cpp`) si DLL-urile OCCT
-//! stau in subfolderul `occt\` de langa ManageBIM.exe si se incarca abia cand deschizi un astfel de
-//! fisier. Fara ele ManageBIM merge normal, doar STEP / IGES / BREP / FCStd nu se pot deschide.
+//! OCCT is linked DYNAMICALLY: `mbocct.dll` (C shim over OCCT, `src/occt/mbocct.cpp`) and the OCCT DLLs
+//! live in the `occt\` subfolder next to ManageBIM.exe and are loaded only when you open such a
+//! file. Without them ManageBIM works normally, only STEP / IGES / BREP / FCStd cannot be opened.
 //!
-//! Fiecare piesa frunza din ansamblu devine un element ManageBIM: nume (instanta / piesa), calea
-//! de ansamblu ca proprietate, culori pe fata (XCAF), coordonate in metri.
+//! Each leaf part of the assembly becomes a ManageBIM element: name (instance / part), the assembly
+//! path as a property, per-face colors (XCAF), coordinates in meters.
 #[cfg(windows)]
 use crate::model::{Prop, RawElement};
 use crate::model::RawModel;
 use glam::DVec3;
 use std::path::PathBuf;
 
-/// Formatul citit de OCCT
+/// The format read by OCCT
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CadKind {
     Step = 0,
@@ -38,7 +38,7 @@ impl CadKind {
     }
 }
 
-/// Calitatea triangularii: deflexia liniara relativa la marimea piesei si cea unghiulara (radiani).
+/// Triangulation quality: linear deflection relative to the part size and the angular one (radians).
 #[derive(Clone, Copy, Debug)]
 pub struct MeshQuality {
     pub rel_deflection: f64,
@@ -51,10 +51,10 @@ impl Default for MeshQuality {
     }
 }
 
-/// ManageBIM a fost compilat cu OCCT (build.rs a gasit third_party\occt si a facut mbocct.dll)?
+/// Was ManageBIM compiled with OCCT (build.rs found third_party\occt and built mbocct.dll)?
 pub const BUILT_WITH_OCCT: bool = option_env!("MBOCCT_BUILD_DIR").is_some();
 
-/// Folderele in care se cauta `mbocct.dll`, in ordine.
+/// The folders in which `mbocct.dll` is searched for, in order.
 pub fn search_dirs() -> Vec<PathBuf> {
     let mut v = Vec::new();
     if let Some(d) = std::env::var_os("MANAGEBIM_OCCT_DIR") {
@@ -62,7 +62,7 @@ pub fn search_dirs() -> Vec<PathBuf> {
     }
     if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
         v.push(dir.join("occt"));
-        // testele / exemplele ruleaza din target\<profil>\deps sau \examples
+        // the tests / examples run from target\<profile>\deps or \examples
         if let Some(up) = dir.parent() {
             v.push(up.join("occt"));
         }
@@ -98,7 +98,7 @@ mod ffi {
         pub part_xyz: unsafe extern "C" fn(*const MboModel, c_int) -> *const f64,
         pub part_rgba: unsafe extern "C" fn(*const MboModel, c_int) -> *const u8,
         pub free: unsafe extern "C" fn(*mut MboModel),
-        /// traducatorul ACIS (mbocct.dll mai vechi nu il are)
+        /// the ACIS translator (older mbocct.dll does not have it)
         pub brep_from_desc: Option<unsafe extern "C" fn(*const i32, c_int, *const f64, c_int, f64, f64) -> *mut MboModel>,
     }
 
@@ -123,10 +123,10 @@ mod ffi {
             return Err("OpenCascade runtime (occt\\mbocct.dll) not found next to ManageBIM.exe.".into());
         };
         let dll = std::fs::canonicalize(&dll).unwrap_or(dll);
-        // \\?\ din canonicalize nu deranjeaza LoadLibraryExW, dar il scoatem pentru mesaje
+        // \\?\ from canonicalize does not bother LoadLibraryExW, but we strip it for messages
         let shown = dll.to_string_lossy().trim_start_matches(r"\\?\").to_string();
         let wide: Vec<u16> = shown.encode_utf16().chain(std::iter::once(0)).collect();
-        // dependintele (TK*.dll, msvcp140.dll) se cauta intai in folderul lui mbocct.dll
+        // the dependencies (TK*.dll, msvcp140.dll) are searched first in the folder of mbocct.dll
         let h = unsafe { LoadLibraryExW(wide.as_ptr(), std::ptr::null_mut(), LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS) };
         if h.is_null() {
             let code = unsafe { GetLastError() };
@@ -180,12 +180,12 @@ mod ffi {
     }
 }
 
-/// OCCT e disponibil (DLL-urile gasite si incarcate)?
+/// Is OCCT available (the DLLs found and loaded)?
 pub fn available() -> bool {
     status().is_ok()
 }
 
-/// Versiunea OCCT si folderul DLL-urilor, sau motivul pentru care lipseste.
+/// The OCCT version and the DLL folder, or the reason it is missing.
 pub fn status() -> Result<String, String> {
     #[cfg(windows)]
     {
@@ -199,10 +199,10 @@ pub fn status() -> Result<String, String> {
     }
 }
 
-/// Un corp B-rep construit si triangulat de OCCT din descrierea neutra (vezi `crate::acis`).
+/// A B-rep body built and triangulated by OCCT from the neutral description (see `crate::acis`).
 #[derive(Clone, Debug, Default)]
 pub struct BrepMesh {
-    /// triunghiuri in unitatile descrierii, orientate spre exterior
+    /// triangles in the description units, oriented outward
     pub tris: Vec<[DVec3; 3]>,
     pub faces: usize,
     pub faces_failed: usize,
@@ -212,8 +212,8 @@ pub struct BrepMesh {
     pub warnings: Vec<String>,
 }
 
-/// Construieste fetele OCCT din descrierea B-rep (`ints` / `reals`, formatul din mbocct.cpp), le repara
-/// (ShapeFix) si le trianguleaza. Fir-sigur: se poate apela in paralel.
+/// Builds the OCCT faces from the B-rep description (`ints` / `reals`, the format in mbocct.cpp), repairs them
+/// (ShapeFix) and triangulates them. Thread-safe: can be called in parallel.
 pub fn brep_from_desc(ints: &[i32], reals: &[f64], q: MeshQuality) -> Result<BrepMesh, String> {
     #[cfg(not(windows))]
     {
@@ -266,7 +266,7 @@ pub fn brep_from_desc(ints: &[i32], reals: &[f64], q: MeshQuality) -> Result<Bre
     }
 }
 
-/// Citeste un fisier STEP / IGES / BREP prin OCCT.
+/// Reads a STEP / IGES / BREP file via OCCT.
 pub fn load(path: &str, kind: CadKind, q: MeshQuality, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     #[cfg(not(windows))]
     {
@@ -279,7 +279,7 @@ pub fn load(path: &str, kind: CadKind, q: MeshQuality, progress: &dyn Fn(f32, &s
         let api = ffi::api()?;
         let t0 = std::time::Instant::now();
         let cpath = CString::new(path).map_err(|_| "Invalid file path".to_string())?;
-        // callback de progres: ctx = &&dyn Fn (pointer subtire catre pointerul gros)
+        // progress callback: ctx = &&dyn Fn (thin pointer to the fat pointer)
         extern "C" fn tramp(ctx: *mut c_void, f: f64, msg: *const c_char) {
             let cb = unsafe { &*(ctx as *const &dyn Fn(f32, &str)) };
             let m = ffi::s(msg);
@@ -291,7 +291,7 @@ pub fn load(path: &str, kind: CadKind, q: MeshQuality, progress: &dyn Fn(f32, &s
         if m.is_null() {
             return Err("OpenCascade returned no result.".into());
         }
-        // eliberare garantata, si la erori
+        // guaranteed release, on errors too
         struct Guard(&'static ffi::Api, *mut ffi::MboModel);
         impl Drop for Guard {
             fn drop(&mut self) {
@@ -353,9 +353,9 @@ pub fn load(path: &str, kind: CadKind, q: MeshQuality, progress: &dyn Fn(f32, &s
             elements.push(RawElement {
                 name,
                 ifc_type: "Part".into(),
-                // id stabil (calea XCAF a instantei): Refresh / Compare potrivesc elementele intre versiuni
+                // stable id (the XCAF path of the instance): Refresh / Compare match the elements between versions
                 guid: format!("{}:{}", kind.label(), id),
-                // "storey" = ansamblul parinte: arborele grupeaza piesele pe sub-ansamblu
+                // "storey" = the parent assembly: the tree groups the parts by sub-assembly
                 storey: if parent.is_empty() { stem.clone() } else { parent },
                 props,
                 tris,

@@ -1,9 +1,9 @@
-//! Actualizari: verificarea la pornire / la cerere, insigna din bara de stare si fereastra
-//! "Update available" cu descarcarea si pornirea installerului.
+//! Updates: the check at startup / on request, the badge in the status bar and the window
+//! "Update available" with downloading and starting the installer.
 use super::*;
 
 impl App {
-    /// Porneste verificarea (la pornire, daca e activata in setari; sau manual).
+    /// Starts the check (at startup, if enabled in settings; or manually).
     pub(super) fn check_updates(&mut self, manual: bool) {
         if self.update_rx.is_some() {
             return;
@@ -15,7 +15,7 @@ impl App {
         }
     }
 
-    /// Apelat in fiecare cadru: verificarea automata o data, apoi rezultatele firelor.
+    /// Called every frame: the automatic check once, then the results of the threads.
     pub(super) fn poll_updates(&mut self, ctx: &egui::Context) {
         if !self.update_checked {
             self.update_checked = true;
@@ -62,7 +62,7 @@ impl App {
         }
     }
 
-    /// Insigna din bara de stare cand exista o versiune noua.
+    /// The badge in the status bar when there is a new version.
     pub(super) fn update_badge(&mut self, ui: &mut egui::Ui) {
         let Some(u) = &self.update_info else { return };
         let txt = format!("⬆ Update {}", u.version);
@@ -117,7 +117,7 @@ impl App {
 }
 
 impl App {
-    /// Clopotelul din bara de stare: mesajele recente (si erorile) raman de citit dupa ce dispar.
+    /// The bell in the status bar: the recent messages (and the errors) remain readable after they disappear.
     pub(super) fn notes_bell(&mut self, ui: &mut egui::Ui) {
         use egui_phosphor::regular as P;
         let unseen = self.notes.len().saturating_sub(self.notes_seen);

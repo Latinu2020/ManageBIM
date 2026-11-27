@@ -3,6 +3,13 @@
 Versiunea apare în **View › Help › About** și în proprietățile fișierului `ManageBIM-Setup-<versiune>.exe`.
 La fiecare livrare: crește versiunea în `Cargo.toml` (și `installers\setup\Cargo.toml`) și adaugă o secțiune aici.
 
+## 0.29.0-rc3 - 2026-11-27 (release candidate)
+- **Ray Trace view is clean sooner**: while the camera moves and in the first samples, a quick edge-aware filter (guided by each surface's colour and orientation) removes most of the grain; edges and textures stay sharp, and the filter fades out as samples add up (the converged image is not blurred).
+- **Indirect light** (CPU and GPU renders): sunlight now bounces once off the surfaces it hits - a sunny floor lights the ceiling above it, walls tint each other - so interiors and spaces under slabs are no longer flat and dark.
+- **Damaged point clouds can no longer close ManageBIM**: a damaged E57 or LAZ header made the reader ask for terabytes of memory (which ends the application, not just the reading), and damaged E57 text could stop it too; both now give a clear error. The robustness test now also builds and damages E57 files (3,359 damaged files, none crash).
+- **Revit add-in self-test**: `tools\test-addins.ps1` now also tests Revit - it starts Revit with a sample model, the add-in exports the 3D view like *Send to ManageBIM* and closes Revit (only when started by the test). If Revit is waiting for you to allow the unsigned add-in ("Always Load"), the test says so.
+- Code care: `ClashState`, `MaterialsState` and `McpState` group the app state; the navigation bar and the view cube have their own files; the code comments are in English.
+
 ## 0.29.0-rc2 - 2026-11-27 (release candidate)
 - **Ray Trace view fixed**: only one rectangle of the view was refreshed (the part matching the 3D view's place in the window), the rest kept adding old frames and turned pale with ghosts of earlier views. Every pixel is now refreshed; the same fix applies to GPU renders and path-traced captures.
 - **Path Trace renders only in its window**: while a final render runs, the 3D view goes back to normal (the live Ray Trace view pauses and resumes afterwards); an AI capture with `ray_trace` no longer leaves Ray Trace turned on.

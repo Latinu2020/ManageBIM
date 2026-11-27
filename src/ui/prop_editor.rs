@@ -1,13 +1,13 @@
-//! Fereastra "Property editor": alegi elemente (in 3D sau in arbore) si le adaugi proprietati -
-//! fie libere (set + nume + valoare), fie din seturile standard IFC (Pset_WallCommon, Pset_DoorCommon,
-//! Pset_ManufacturerTypeInformation...) propuse dupa clasa IFC a elementelor. Totul ajunge in exportul IFC
-//! (seturile standard cu tipul corect). Valorile originale din model nu se pierd: o suprascriere stearsa
-//! readuce valoarea initiala.
+//! The "Property editor" window: you pick elements (in 3D or in the tree) and add properties to them -
+//! either free (set + name + value), or from the standard IFC sets (Pset_WallCommon, Pset_DoorCommon,
+//! Pset_ManufacturerTypeInformation...) suggested by the IFC class of the elements. Everything reaches the IFC export
+//! (the standard sets with the correct type). The original values in the model are not lost: a deleted override
+//! restores the initial value.
 use super::*;
 use crate::ifc_psets::{psets_for, PKind, PSETS};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Starea ferestrei (in App ca un singur camp).
+/// The window state (in App as a single field).
 #[derive(Default)]
 pub struct PropEditor {
     pub open: bool,
@@ -17,16 +17,16 @@ pub struct PropEditor {
     pub rows: Vec<(String, String)>,
     pub pset: String,
     pub vals: BTreeMap<String, String>,
-    /// valorile gasite pe selectie la incarcare (se aplica doar ce difera de ele)
+    /// the values found on the selection at load (only what differs from them is applied)
     pub loaded: BTreeMap<String, String>,
-    /// semnatura selectiei pentru care s-au incarcat valorile
+    /// the signature of the selection for which the values were loaded
     pub sig: u64,
-    /// toate seturile, nu doar cele potrivite clasei
+    /// all sets, not only those matching the class
     pub all: bool,
 }
 
 impl App {
-    /// Deschide fereastra (din ribbon / Properties).
+    /// Opens the window (from the ribbon / Properties).
     pub(super) fn open_prop_editor(&mut self) {
         self.pe.open = true;
         if self.pe.group.trim().is_empty() {
@@ -37,12 +37,12 @@ impl App {
         }
     }
 
-    /// Elementele tinta: selectia, fara obiectele de coordonare (care au proprietatile lor).
+    /// The target elements: the selection, without the coordination objects (which have their own properties).
     fn pe_targets(&self) -> Vec<ElemId> {
         self.selected.iter().copied().filter(|id| Some(id.m as usize) != self.coord_slot && self.elem(*id).is_some()).collect()
     }
 
-    /// Valoarea comuna a proprietatii pe tinte: Some(v) daca toate au aceeasi, None daca difera / lipseste.
+    /// The common value of the property on the targets: Some(v) if all have the same, None if it differs / is missing.
     fn pe_common(&self, ids: &[ElemId], group: &str, name: &str) -> (Option<String>, bool) {
         let mut val: Option<String> = None;
         let mut varies = false;
@@ -62,7 +62,7 @@ impl App {
             return;
         }
         let ids = self.pe_targets();
-        // clasele IFC ale selectiei (pentru seturile standard)
+        // the IFC classes of the selection (for the standard sets)
         let mut classes: BTreeMap<String, usize> = BTreeMap::new();
         for id in &ids {
             if let Some((_, e)) = self.elem(*id) {
@@ -77,7 +77,7 @@ impl App {
             self.pe.pset.hash(&mut h);
             h.finish()
         };
-        // seturile propuse: ale claselor selectate, apoi cele generale
+        // the suggested sets: those of the selected classes, then the general ones
         let mut offered: Vec<&'static crate::ifc_psets::PsetDef> = Vec::new();
         if self.pe.all || classes.is_empty() {
             offered.extend(PSETS.iter());
@@ -93,7 +93,7 @@ impl App {
         if !offered.iter().any(|p| p.name == self.pe.pset) {
             self.pe.pset = offered.first().map(|p| p.name.to_string()).unwrap_or_default();
         }
-        // valorile curente se reincarca cand se schimba selectia sau setul
+        // the current values are reloaded when the selection or the set changes
         if sig != self.pe.sig {
             self.pe.sig = sig;
             self.pe.vals.clear();
@@ -119,7 +119,7 @@ impl App {
             .resizable(true)
             .collapsible(false)
             .show(ctx, |ui| {
-                // ---- tinta
+                // ---- target
                 egui::Frame::none().fill(card_fill(ui.visuals())).rounding(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     if ids.is_empty() {
@@ -189,7 +189,7 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.label("Property set");
                         ui.add(egui::TextEdit::singleline(&mut self.pe.group).desired_width(220.0).hint_text("User Data"));
-                        // tab-urile existente pe selectie
+                        // the existing tabs on the selection
                         let mut existing: BTreeSet<String> = BTreeSet::new();
                         for id in &ids {
                             for (t, _) in self.user_tabs_of(*id) {
@@ -235,7 +235,7 @@ impl App {
                             apply_custom = true;
                         }
                     });
-                    // ce a adaugat deja utilizatorul pe selectie
+                    // what the user has already added on the selection
                     ui.separator();
                     ui.label(RichText::new("Added on the selection").small().strong());
                     let mut rows: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();

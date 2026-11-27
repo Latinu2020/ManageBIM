@@ -1,9 +1,9 @@
-//! bimc-convert: converteste modele (IFC, glTF, STEP, DWG, OBJ, FBX...) in formatul nativ ManageBIM (.bimc),
-//! din linia de comanda. Fisierul .bimc se deschide instant in ManageBIM.
+//! bimc-convert: converts models (IFC, glTF, STEP, DWG, OBJ, FBX...) to the native ManageBIM format (.bimc),
+//! from the command line. The .bimc file opens instantly in ManageBIM.
 //!
 //!   bimc-convert model.ifc                 -> model.ifc.bimc (langa model)
 //!   bimc-convert model.ifc iesire.bimc      -> iesire.bimc
-//!   bimc-convert a.ifc b.ifc c.dwg          -> cate un .bimc pentru fiecare
+//!   bimc-convert a.ifc b.ifc c.dwg          -> one .bimc for each
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -14,7 +14,7 @@ fn main() -> ExitCode {
         eprintln!("       bimc-convert <model1> <model2> ...   (one .bimc next to each model)");
         return ExitCode::from(if args.is_empty() { 2 } else { 0 });
     }
-    // doua argumente si al doilea e .bimc = intrare + iesire; altfel fiecare argument e un model
+    // two arguments and the second is .bimc = input + output; otherwise each argument is a model
     let jobs: Vec<(String, String)> = if args.len() == 2 && args[1].to_lowercase().ends_with(".bimc") && !args[0].to_lowercase().ends_with(".bimc") {
         vec![(args[0].clone(), args[1].clone())]
     } else {

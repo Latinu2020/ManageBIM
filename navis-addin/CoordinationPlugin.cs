@@ -16,7 +16,7 @@ using Control = System.Windows.Forms.Control;
 
 namespace ManageBIM.Navis
 {
-    /// <summary>Un obiect de coordonare trimis din ManageBIM (coordonate partajate, metri).</summary>
+    /// <summary>A coordination object sent from ManageBIM (shared coordinates, meters).</summary>
     internal sealed class MbCoord
     {
         public string Kind = "", Name = "", Guid = "", Status = "";
@@ -27,10 +27,10 @@ namespace ManageBIM.Navis
     }
 
     /// <summary>
-    /// "ManageBIM Coordination": arata in Navisworks zonele de mentenanta, golurile propuse si volumele
-    /// rezervate trimise din ManageBIM (Outbox\coordination.txt) - DOAR afisare. API-ul Navisworks nu creeaza
-    /// geometrie direct, asa ca obiectele se scriu intr-un DXF (fete 3D, un strat pe obiect) adaugat cu
-    /// Append, apoi colorate dupa tip si facute transparente. Trimiterile anterioare se ascund.
+    /// "ManageBIM Coordination": shows in Navisworks the maintenance zones, proposed openings and reserved
+    /// volumes sent from ManageBIM (Outbox\coordination.txt) - display ONLY. The Navisworks API does not create
+    /// geometry directly, so the objects are written to a DXF (3D faces, one layer per object) added with
+    /// Append, then colored by type and made transparent. Previous sends are hidden.
     /// </summary>
     [Plugin("ManageBIMCoordination", "MBIM", DisplayName = "ManageBIM Coordination", ToolTip = "Show the clearance zones, voids and placeholders sent from ManageBIM (display only)")]
     [AddInPlugin(AddInLocation.None)]
@@ -83,7 +83,7 @@ namespace ManageBIM.Navis
             var chosen = CoordPreview.Show(objs, "Show in Navisworks", out bool replace);
             if (chosen == null || chosen.Count == 0) return 0;
 
-            // DXF in metri, coordonate partajate (aceleasi cu modelele exportate din Revit / ManageBIM)
+            // DXF in meters, shared coordinates (the same as the models exported from Revit / ManageBIM)
             string dir = Path.Combine(Path.GetTempPath(), "ManageBIM");
             Directory.CreateDirectory(dir);
             string path = Path.Combine(dir, FilePrefix + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".dxf");
@@ -91,7 +91,7 @@ namespace ManageBIM.Navis
 
             if (replace)
             {
-                // trimiterile anterioare: ascunse (API-ul nu permite scoaterea unui model adaugat)
+                // previous sends: hidden (the API does not allow removing an appended model)
                 var old = new ModelItemCollection();
                 foreach (Model m in doc.Models)
                     if (Path.GetFileName(m.FileName ?? "").StartsWith(FilePrefix, StringComparison.OrdinalIgnoreCase)) old.Add(m.RootItem);
@@ -102,7 +102,7 @@ namespace ManageBIM.Navis
             catch (Exception e) { MessageBox.Show("Navisworks could not append the coordination objects:\n" + path + "\n\n" + e.Message, "ManageBIM"); return 1; }
             if (doc.Models.Count <= before) { MessageBox.Show("Navisworks did not add the coordination objects:\n" + path, "ManageBIM"); return 1; }
 
-            // culoare dupa tip + transparenta, pe stratul fiecarui obiect
+            // color by type + transparency, on each object's layer
             Model added = doc.Models.Cast<Model>().LastOrDefault(m => string.Equals(m.FileName, path, StringComparison.OrdinalIgnoreCase)) ?? doc.Models.Last();
             foreach (var kind in chosen.Select(o => o.Kind).Distinct())
             {
@@ -118,11 +118,11 @@ namespace ManageBIM.Navis
             return 0;
         }
 
-        /// <summary>DXF R12 cu 3DFACE: 6 fete pe cutie (rotita in jurul verticalei), un strat pe obiect
-        /// ("Void - nume"), culoarea reala pe entitate.</summary>
+        /// <summary>DXF R12 with 3DFACE: 6 faces per box (rotated around the vertical), one layer per object
+        /// ("Void - name"), the real color on the entity.</summary>
         private static string Dxf(List<MbCoord> objs)
         {
-            // AC1018 (AutoCAD 2004): culoarea reala (cod 420) e citita; unitati: metri
+            // AC1018 (AutoCAD 2004): the true color (code 420) is read; units: meters
             var sb = new StringBuilder("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1018\n9\n$INSUNITS\n70\n6\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
             string F(double v) => v.ToString("0.0000", CultureInfo.InvariantCulture);
             var used = new HashSet<string>();
@@ -150,7 +150,7 @@ namespace ManageBIM.Navis
         }
     }
 
-    /// <summary>Fereastra de previzualizare: lista cu bife si vederea de sus (aceeasi ca in Revit).</summary>
+    /// <summary>Preview window: the list with checkboxes and the top view (the same as in Revit).</summary>
     internal static class CoordPreview
     {
         public static List<MbCoord> Show(List<MbCoord> objs, string okText, out bool replace)

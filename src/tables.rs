@@ -1,12 +1,12 @@
-//! Tabele CSV / Excel (.xlsx) pentru biblioteca de materiale si profilul de culori (Appearance Profiler):
-//! export, editare in Excel, import inapoi. Citirea .xlsx: prima foaie, valori text / numere.
+//! CSV / Excel (.xlsx) tables for the material library and the colour profile (Appearance Profiler):
+//! export, editing in Excel, import back. Reading .xlsx: the first sheet, text / number values.
 use crate::materials::{Material, Pattern};
 use crate::profiler::{Profile, ProfileMode, ProfileRule, Unmatched};
 use crate::qto::{Cell, Sheet};
 
-// ------------------------------------------------------------------ citire / scriere generica
+// ------------------------------------------------------------------ generic reading / writing
 
-/// Randurile unui CSV (separator `;`, `,` sau tab, detectat din prima linie; ghilimele ca in Excel).
+/// The rows of a CSV (separator `;`, `,` or tab, detected from the first line; quotes as in Excel).
 pub fn csv_rows(text: &str) -> Vec<Vec<String>> {
     let text = text.trim_start_matches('\u{feff}');
     let first = text.lines().next().unwrap_or("");
@@ -57,7 +57,7 @@ fn csv_cell(s: &str) -> String {
     if s.contains([';', '"', '\n', '\r']) { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() }
 }
 
-/// CSV pentru Excel in romana / Europa: `;` intre coloane, BOM UTF-8 (diacriticele apar corect).
+/// CSV for Excel in Romanian / Europe: `;` between columns, UTF-8 BOM (diacritics appear correctly).
 pub fn to_csv(headers: &[&str], rows: &[Vec<String>]) -> String {
     let mut s = String::from("\u{feff}");
     s.push_str(&headers.iter().map(|h| csv_cell(h)).collect::<Vec<_>>().join(";"));
@@ -96,13 +96,13 @@ fn xml_unescape(s: &str) -> String {
     out
 }
 
-/// Textul din toate `<t>...</t>` dintr-un fragment (celule inlineStr / sharedStrings cu formatare).
+/// The text of all `<t>...</t>` in a fragment (inlineStr / sharedStrings cells with formatting).
 fn t_text(frag: &str) -> String {
     let mut s = String::new();
     let mut rest = frag;
     while let Some(i) = rest.find("<t") {
         let after = &rest[i + 2..];
-        // <t> sau <t xml:space=...>, nu <tc...>
+        // <t> or <t xml:space=...>, not <tc...>
         if !(after.starts_with('>') || after.starts_with(' ')) {
             rest = after;
             continue;
@@ -127,7 +127,7 @@ fn attr_of(tag: &str, name: &str) -> Option<String> {
     Some(tag[i..j].to_string())
 }
 
-/// Coloana (0..) din referinta celulei ("C12" -> 2).
+/// The column (0..) from the cell reference ("C12" -> 2).
 fn col_index(r: &str) -> usize {
     let mut n = 0usize;
     for c in r.chars().take_while(|c| c.is_ascii_alphabetic()) {
@@ -136,7 +136,7 @@ fn col_index(r: &str) -> usize {
     n.saturating_sub(1)
 }
 
-/// Prima foaie dintr-un .xlsx, ca randuri de text (numerele cu punct zecimal).
+/// The first sheet of an .xlsx, as rows of text (numbers with a decimal point).
 pub fn xlsx_rows(data: Vec<u8>) -> Result<Vec<Vec<String>>, String> {
     let zip = crate::fcstd::Zip::parse(data).map_err(|_| "Not a valid Excel workbook (.xlsx).".to_string())?;
     let shared: Vec<String> = zip
@@ -144,7 +144,7 @@ pub fn xlsx_rows(data: Vec<u8>) -> Result<Vec<Vec<String>>, String> {
         .map(|x| x.split("<si").skip(1).map(|si| t_text(si.split("</si>").next().unwrap_or(""))).collect())
         .unwrap_or_default();
     let mut sheets: Vec<&String> = zip.names().filter(|n| n.starts_with("xl/worksheets/sheet") && n.ends_with(".xml")).collect();
-    // sheet1.xml inaintea sheet10.xml
+    // sheet1.xml before sheet10.xml
     sheets.sort_by_key(|n| n.trim_start_matches("xl/worksheets/sheet").trim_end_matches(".xml").parse::<u32>().unwrap_or(u32::MAX));
     let name = sheets.first().ok_or("The workbook has no sheet.")?.to_string();
     let x = zip.text(&name).ok_or("Cannot read the first sheet.")?;
@@ -183,7 +183,7 @@ pub fn xlsx_rows(data: Vec<u8>) -> Result<Vec<Vec<String>>, String> {
     Ok(rows)
 }
 
-/// Randurile unui fisier .csv sau .xlsx (dupa extensie / continut).
+/// The rows of a .csv or .xlsx file (by extension / content).
 pub fn read_rows(path: &str) -> Result<Vec<Vec<String>>, String> {
     let data = std::fs::read(path).map_err(|e| format!("Cannot read the file: {e}"))?;
     if data.starts_with(b"PK") {
@@ -193,7 +193,7 @@ pub fn read_rows(path: &str) -> Result<Vec<Vec<String>>, String> {
     }
 }
 
-/// Tabelul cu antet: gaseste randul de antet (primul care contine `key`) si intoarce (coloane, randuri de date).
+/// The table with a header: finds the header row (the first that contains `key`) and returns (columns, data rows).
 fn table<'a>(rows: &'a [Vec<String>], key: &str) -> Option<(Vec<String>, &'a [Vec<String>])> {
     let h = rows.iter().position(|r| r.iter().any(|c| c.trim().eq_ignore_ascii_case(key)))?;
     Some((rows[h].iter().map(|c| c.trim().to_lowercase()).collect(), &rows[h + 1..]))
@@ -204,7 +204,7 @@ fn get<'a>(cols: &[String], row: &'a [String], names: &[&str]) -> Option<&'a str
     row.get(i).map(|s| s.trim()).filter(|s| !s.is_empty())
 }
 
-/// Numar din text (si cu virgula zecimala).
+/// A number from text (also with a decimal comma).
 fn num(s: Option<&str>) -> Option<f64> {
     let s = s?.trim().trim_end_matches('%').trim().replace(',', ".");
     s.parse::<f64>().ok().filter(|x| x.is_finite())
@@ -214,7 +214,7 @@ pub fn hex(c: [u8; 3]) -> String {
     format!("#{:02X}{:02X}{:02X}", c[0], c[1], c[2])
 }
 
-/// "#RRGGBB", "RRGGBB" sau "r,g,b" / "r g b".
+/// "#RRGGBB", "RRGGBB" or "r,g,b" / "r g b".
 pub fn parse_color(s: &str) -> Option<[u8; 3]> {
     let t = s.trim().trim_start_matches('#');
     if t.len() == 6 && t.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -246,7 +246,7 @@ fn as_text(rows: &[Vec<Cell>]) -> Vec<Vec<String>> {
         .collect()
 }
 
-// ------------------------------------------------------------------ materiale
+// ------------------------------------------------------------------ materials
 
 const MAT_HEADERS: [&str; 8] = ["Name", "Colour", "Transparency %", "Gloss", "Metallic", "Texture", "Texture size m", "Image"];
 
@@ -280,7 +280,7 @@ fn pattern_of(s: &str) -> Pattern {
     Pattern::ALL.into_iter().find(|p| p.label().to_lowercase() == s || format!("{p:?}").to_lowercase() == s).unwrap_or(Pattern::None)
 }
 
-/// Materialele dintr-un tabel (coloanele dupa nume, in orice ordine; lipsa = valori implicite).
+/// The materials from a table (columns by name, in any order; missing = default values).
 pub fn materials_from_rows(rows: &[Vec<String>]) -> Result<Vec<Material>, String> {
     let (cols, data) = table(rows, "name").ok_or("No \"Name\" column found (expected the columns of a ManageBIM material export).")?;
     let mut out = Vec::new();
@@ -309,7 +309,7 @@ pub fn materials_from_rows(rows: &[Vec<String>]) -> Result<Vec<Material>, String
     Ok(out)
 }
 
-// ------------------------------------------------------------------ profil de culori
+// ------------------------------------------------------------------ colour profile
 
 const PROF_HEADERS: [&str; 6] = ["Value", "From", "To", "Colour", "Opacity %", "Visible"];
 

@@ -1,5 +1,5 @@
-//! .bimc v3 (geometrie partajata): rezultatul citit trebuie sa fie IDENTIC cu codarea fara partajare (v2 / v1),
-//! iar proprietatile, numele si culorile raman ale fiecarui element.
+//! .bimc v3 (shared geometry): the result read must be IDENTICAL to the encoding without sharing (v2 / v1),
+//! and the properties, names and colors stay those of each element.
 use bimrust::bimc;
 use bimrust::model::{Prop, RawElement, RawModel};
 use glam::DVec3;
@@ -36,11 +36,11 @@ fn shared_geometry_keeps_props_colors_and_exact_geometry() {
     let p = |v: &str| vec![Prop { group: "Plant 3D".into(), name: "Tag".into(), value: v.into() }];
     let mut els = Vec::new();
     for i in 0..40 {
-        // 40 flanse identice, mutate, fiecare cu alta proprietate si unele cu alta culoare
+        // 40 identical flanges, moved, each with a different property and some with a different color
         let col = if i % 3 == 0 { [255, 0, 0, 255] } else { [0, 120, 200, 255] };
         els.push(cube(DVec3::new(1000.0 + i as f64 * 1.7, 2000.0 - i as f64 * 0.31, 15.0 + i as f64 * 0.013), &format!("F{i}"), col, p(&format!("FL-{i}"))));
     }
-    // geometrie diferita (alta marime) cu acelasi nume de tip: NU trebuie confundata
+    // different geometry (another size) with the same type name: must NOT be confused
     let mut big = cube(DVec3::new(5.0, 5.0, 5.0), "Big", [9, 9, 9, 255], p("X"));
     for t in big.tris.iter_mut() {
         for v in t.iter_mut() {
@@ -54,7 +54,7 @@ fn shared_geometry_keeps_props_colors_and_exact_geometry() {
     let a = bimc::decode(&v3).unwrap();
     let b = bimc::decode(&bimc::encode_v2(&raw, 7)).unwrap();
     same(&a, &b);
-    // ... si fata de original (cuantizare 0.1 mm)
+    // ... and relative to the original (0.1 mm quantization)
     for (x, y) in a.elements.iter().zip(&raw.elements) {
         for (s, t) in x.tris.iter().zip(&y.tris) {
             for k in 0..3 {
@@ -65,7 +65,7 @@ fn shared_geometry_keeps_props_colors_and_exact_geometry() {
     assert_eq!(a.elements[40].name, "Big");
     let size_big = (a.elements[40].tris.iter().flatten().map(|p| p.x).fold(f64::MIN, f64::max)) - 5.0;
     assert!((size_big - 0.6).abs() < 1e-6, "different geometry not shared");
-    // DEFLATE (formatul .NET) citeste la fel
+    // DEFLATE (the .NET format) reads the same
     same(&bimc::decode(&bimc::encode_deflate(&raw)).unwrap(), &b);
 }
 

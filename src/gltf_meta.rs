@@ -1,23 +1,23 @@
-//! glTF: EXT_structural_metadata (tabele de proprietati) + EXT_mesh_features (ID de obiect pe varf).
-//! Folosite de Cesium / 3D Tiles 1.1, exporturile CityGML -> glTF, iTwin etc.: o singura plasa contine mai
-//! multe obiecte (cladiri, pereti, ferestre), fiecare cu randul lui de proprietati. Citim JSON-ul brut
-//! (crate-ul `gltf` nu expune extensiile) si datele binare din bufferViews.
+//! glTF: EXT_structural_metadata (property tables) + EXT_mesh_features (object ID per vertex).
+//! Used by Cesium / 3D Tiles 1.1, CityGML -> glTF exports, iTwin etc.: a single mesh contains several
+//! objects (buildings, walls, windows), each with its own row of properties. We read the raw JSON
+//! (the `gltf` crate does not expose the extensions) and the binary data from the bufferViews.
 use serde_json::Value;
 
-/// Tabelele de proprietati: (numele clasei, randuri [(proprietate, valoare)]).
+/// The property tables: (class name, rows [(property, value)]).
 #[derive(Default, Debug)]
 pub struct Meta {
     pub tables: Vec<(String, Vec<Vec<(String, String)>>)>,
 }
 
-/// ID-urile de obiect ale unei primitive: valoarea pe varf, tabelul asociat, valoarea "fara obiect".
+/// The object IDs of a primitive: the per-vertex value, the associated table, the "no object" value.
 pub struct FeatureIds {
     pub per_vertex: Vec<u32>,
     pub table: Option<usize>,
     pub null: Option<u32>,
 }
 
-/// JSON-ul unui .gltf sau al primului chunk dintr-un .glb.
+/// The JSON of a .gltf or of the first chunk of a .glb.
 pub fn json_of(bytes: &[u8]) -> Option<Value> {
     if bytes.len() >= 20 && &bytes[..4] == b"glTF" {
         let len = u32::from_le_bytes(bytes[12..16].try_into().ok()?) as usize;
@@ -87,7 +87,7 @@ fn components(ty: &str) -> usize {
     }
 }
 
-/// Citeste toate tabelele de proprietati (randurile ca text).
+/// Reads all property tables (the rows as text).
 pub fn read_meta(json: &Value, buffers: &[Vec<u8>]) -> Meta {
     let mut meta = Meta::default();
     let Some(ext) = json.get("extensions").and_then(|e| e.get("EXT_structural_metadata")) else { return meta };
@@ -149,7 +149,7 @@ pub fn read_meta(json: &Value, buffers: &[Vec<u8>]) -> Meta {
                             })
                         }
                         _ => {
-                            // SCALAR / VECn / MATn, eventual lista (fixa sau cu offset-uri)
+                            // SCALAR / VECn / MATn, possibly a list (fixed or with offsets)
                             let k = components(ty);
                             let s = comp_size(ct);
                             let (start, n) = if is_array {
@@ -165,7 +165,7 @@ pub fn read_meta(json: &Value, buffers: &[Vec<u8>]) -> Meta {
                                 (r * k, k)
                             };
                             let nums: Vec<String> = (0..n).filter_map(|i| values.get((start + i) * s..(start + i + 1) * s).map(|b| read_num(ct, b))).map(|x| {
-                                // offset / scale din schema (valori normalizate sau cuantizate)
+                                // offset / scale from the schema (normalized or quantized values)
                                 let sc = pdef.and_then(|d| d.get("scale")).and_then(|v| v.as_f64()).unwrap_or(1.0);
                                 let of = pdef.and_then(|d| d.get("offset")).and_then(|v| v.as_f64()).unwrap_or(0.0);
                                 fmt_num(x * sc + of)
@@ -184,14 +184,14 @@ pub fn read_meta(json: &Value, buffers: &[Vec<u8>]) -> Meta {
     meta
 }
 
-/// ID-urile de obiect ale primitivei `mesh` / `prim` (primul set din EXT_mesh_features), pe varf.
+/// The object IDs of primitive `mesh` / `prim` (the first set from EXT_mesh_features), per vertex.
 pub fn feature_ids(json: &Value, buffers: &[Vec<u8>], mesh: usize, prim: usize, nverts: usize) -> Option<FeatureIds> {
     let p = json.get("meshes")?.get(mesh)?.get("primitives")?.get(prim)?;
     let set = p.get("extensions")?.get("EXT_mesh_features")?.get("featureIds")?.as_array()?.iter().find(|f| f.get("texture").is_none())?;
     let table = set.get("propertyTable").and_then(|v| v.as_u64()).map(|v| v as usize);
     let null = set.get("nullFeatureId").and_then(|v| v.as_u64()).map(|v| v as u32);
     let per_vertex = match set.get("attribute").and_then(|v| v.as_u64()) {
-        // fara atribut: ID implicit = indexul varfului
+        // no attribute: default ID = the vertex index
         None => (0..nverts as u32).collect(),
         Some(a) => {
             let acc = p.get("attributes")?.get(format!("_FEATURE_ID_{a}"))?.as_u64()? as usize;
@@ -213,7 +213,7 @@ pub fn feature_ids(json: &Value, buffers: &[Vec<u8>], mesh: usize, prim: usize, 
     Some(FeatureIds { per_vertex, table, null })
 }
 
-/// Un atribut scalar al varfurilor (ex. _BATCHID, _FEATURE_ID_0) ca numere intregi.
+/// A scalar vertex attribute (e.g. _BATCHID, _FEATURE_ID_0) as integers.
 fn read_scalar_attr(json: &Value, buffers: &[Vec<u8>], prim: &Value, name: &str) -> Option<Vec<u32>> {
     let acc = prim.get("attributes")?.get(name)?.as_u64()? as usize;
     let acc = json.get("accessors")?.get(acc)?;
@@ -231,7 +231,7 @@ fn read_scalar_attr(json: &Value, buffers: &[Vec<u8>], prim: &Value, name: &str)
     Some((0..count).map(|i| b.get(off + i * stride..off + i * stride + s).map(|x| read_num(ct, x) as u32).unwrap_or(0)).collect())
 }
 
-/// 3D Tiles 1.0 (.b3dm): obiectul fiecarui varf vine din atributul _BATCHID, randurile din tabelul de lot.
+/// 3D Tiles 1.0 (.b3dm): the object of each vertex comes from the _BATCHID attribute, the rows from the batch table.
 pub fn batch_ids(json: &Value, buffers: &[Vec<u8>], mesh: usize, prim: usize, table: Option<usize>) -> Option<FeatureIds> {
     let table = table?;
     let p = json.get("meshes")?.get(mesh)?.get("primitives")?.get(prim)?;
@@ -239,8 +239,8 @@ pub fn batch_ids(json: &Value, buffers: &[Vec<u8>], mesh: usize, prim: usize, ta
     Some(FeatureIds { per_vertex, table: Some(table), null: None })
 }
 
-/// Tabelul de lot JSON (3D Tiles 1.0): { "prop": [v0, v1, ...] } -> randuri. Valorile binare
-/// ({"byteOffset", "componentType"}) se citesc din `bin`.
+/// The JSON batch table (3D Tiles 1.0): { "prop": [v0, v1, ...] } -> rows. The binary values
+/// ({"byteOffset", "componentType"}) are read from `bin`.
 pub fn batch_table_rows(json: &Value, bin: &[u8], count: usize) -> Vec<Vec<(String, String)>> {
     let mut rows = vec![Vec::new(); count];
     let Some(m) = json.as_object() else { return rows };
@@ -260,7 +260,7 @@ pub fn batch_table_rows(json: &Value, bin: &[u8], count: usize) -> Vec<Vec<(Stri
                 }
             }
             Value::Object(o) => {
-                // valori binare: componentType + type (SCALAR / VECn)
+                // binary values: componentType + type (SCALAR / VECn)
                 let off = o.get("byteOffset").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
                 let ct = match o.get("componentType").and_then(|x| x.as_str()).unwrap_or("FLOAT") {
                     "BYTE" => "INT8",
@@ -293,7 +293,7 @@ mod tests {
 
     #[test]
     fn table_with_strings_scalars_and_bools() {
-        // 2 randuri: name (STRING), height (FLOAT32), isPublic (BOOLEAN)
+        // 2 rows: name (STRING), height (FLOAT32), isPublic (BOOLEAN)
         let mut buf = Vec::new();
         let names = b"HallTower";
         buf.extend_from_slice(names); // view 0: 0..9

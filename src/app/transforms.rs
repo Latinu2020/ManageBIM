@@ -1,4 +1,4 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
@@ -31,7 +31,7 @@ impl App {
             r.pending.push(Upload::Mesh { slot: slot as u32, pos, nrm, col });
             r.pending.push(Upload::Points { slot: slot as u32, cloud: m.cloud.clone() });
         }
-        // bufferul nou de pe GPU are culori implicite -> la urmatorul rebuild_colors trimitem tot
+        // the new buffer on the GPU has default colors -> on the next rebuild_colors we send everything
         self.looks.remove(&slot);
         if slot < self.models.len() {
             self.models[slot] = Some(m);
@@ -65,7 +65,7 @@ impl App {
         }
     }
 
-    /// Scale per-element pe axe (stil SketchUp) - non-distructiv, în jurul centrului AABB.
+    /// Per-element scale along axes (SketchUp style) - non-destructive, around the AABB center.
     pub fn scale_selected(&mut self, s: [f32; 3]) {
         let mut slots = BTreeSet::new();
         for id in self.selected.clone() {
@@ -78,7 +78,7 @@ impl App {
         for sl in slots { self.apply_transform(sl); }
     }
 
-    /// Resetare scale pentru elementele date.
+    /// Scale reset for the given elements.
     pub fn reset_scale(&mut self, ids: &[ElemId]) {
         let mut slots = BTreeSet::new();
         for id in ids {
@@ -111,8 +111,8 @@ impl App {
         }
     }
 
-    /// Fisierul ales intr-un dialog: exporturile / importurile ruleaza protejat - o eroare interna devine mesaj,
-    /// nu inchide aplicatia (proiectul ramane deschis).
+    /// The file chosen in a dialog: exports / imports run protected - an internal error becomes a message,
+    /// it does not close the application (the project stays open).
     pub fn handle_path(&mut self, purpose: Purpose, path: String) {
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.handle_path_inner(purpose, path)));
         if let Err(e) = r {
@@ -288,7 +288,7 @@ impl App {
                     Err(e) => self.error(format!("Cannot write the file: {e}")),
                 }
             }
-            // un pachet PBR (.zip de pe ambientCG, freepbr, Poly Haven...) ales din Import Lib
+            // a PBR pack (.zip from ambientCG, freepbr, Poly Haven...) chosen from Import Lib
             Purpose::ImportMaterials if path.to_lowercase().ends_with(".zip") => self.import_pbr_packs(&[path.clone()]),
             Purpose::ImportMaterials if path.to_lowercase().ends_with(".csv") || path.to_lowercase().ends_with(".xlsx") => match crate::tables::read_rows(&path).and_then(|r| crate::tables::materials_from_rows(&r)) {
                 Ok(mut v) => {
@@ -307,7 +307,7 @@ impl App {
                 Err(e) => self.error(format!("Material table: {e}")),
             },
             Purpose::ExportDashboardPdf | Purpose::ExportDashboardDocx => {
-                // cu clash-uri deschise: intai fisele cu imagini (cateva cadre), apoi fisierul
+                // with open clashes: first the image sheets (a few frames), then the file
                 let pdf = matches!(purpose, Purpose::ExportDashboardPdf);
                 self.dashboard_export(pdf, path.clone());
             }
@@ -387,7 +387,7 @@ impl App {
                             n += 1;
                         }
                     }
-                    // materialul importat e selectat in lista (si vizibil, chiar daca era un filtru)
+                    // the imported material is selected in the list (and visible, even if there was a filter)
                     if let Some(f) = first {
                         if let Some(i) = self.materials.iter().position(|m| m.name == f) {
                             self.mats.sel = i;
@@ -433,7 +433,7 @@ impl App {
                     p.push_str(".png");
                 }
                 self.still_path = Some(p);
-                // ca la video: fara nuanta de selectie; „Render with materials” = stilul Realistic cu materiale
+                // like for video: no selection tint; „Render with materials” = the Realistic style with materials
                 if self.still_restore.is_none() {
                     let prev = (self.settings.visual_style, self.materials_on, std::mem::take(&mut self.selected));
                     if self.render.with_materials {
@@ -447,7 +447,7 @@ impl App {
                     self.still_restore = Some(prev);
                     self.colors_dirty = true;
                 }
-                // doua cadre: culorile noi se trimit la GPU inainte de captura
+                // two frames: the new colors are sent to the GPU before the capture
                 self.still_wait = 2;
                 let ss = if self.render.supersample { 2 } else { 1 };
                 self.pending_capture = Some((self.render.width * ss, self.render.height * ss));
@@ -549,7 +549,7 @@ impl App {
                     Ok(f) => f,
                     Err(e) => return self.error(e),
                 };
-                // modelele: cele alese in panou, altfel cele cu aceleasi nume ca in fisier
+                // the models: the ones chosen in the panel, otherwise the ones with the same names as in the file
                 let by_name = |n: &str| self.loaded_models().find(|(_, m)| m.name == n).map(|(i, _)| i);
                 let a = by_name(&f.a_name).or(self.compare_pick.0);
                 let b = by_name(&f.b_name).or(self.compare_pick.1);
@@ -620,7 +620,7 @@ impl App {
         }
     }
 
-    /// Deschide dialogul de fisiere (Windows) sau un camp text (alte sisteme).
+    /// Opens the file dialog (Windows) or a text field (other systems).
     pub fn request_path(&mut self, purpose: Purpose) {
         #[cfg(any(windows, unix))]
         if crate::formats::native_dialogs() {
@@ -759,7 +759,7 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
             }
             return;
         }
-        // fara dialog nativ (sesiune fara D-Bus / portal): calea se scrie intr-un camp
+        // no native dialog (session without D-Bus / portal): the path is typed into a field
         {
             let text = match purpose {
                 Purpose::SaveProject => self.project_path.clone().unwrap_or_else(|| "project.bimr".into()),
@@ -832,7 +832,7 @@ Purpose::ExportPathTrace => "pathtrace.png".into(),
         self.grid_pick = 0;
     }
 
-    /// Un punct ales in 3D (cu normala fetei); la ultimul punct se aplica transformarea.
+    /// A point picked in 3D (with the face normal); at the last point the transformation is applied.
     pub fn xform_point(&mut self, p: Vec3, n: Vec3, id: ElemId) {
         let Some(mut x) = self.xform.take() else { return };
         x.pts.push((p, n, id));
@@ -849,7 +849,7 @@ Purpose::ExportPathTrace => "pathtrace.png".into(),
 
     pub(super) fn xform_apply(&mut self, x: &XformPick) -> Result<String, String> {
         let p = &x.pts;
-        // (unghi in grade in jurul verticalei prin pivot, translatie)
+        // (angle in degrees around the vertical through the pivot, translation)
         let (angle, pivot, delta) = match x.mode {
             XformMode::Move => (0.0, p[0].0, p[1].0 - p[0].0),
             XformMode::Rotate => {
@@ -859,12 +859,12 @@ Purpose::ExportPathTrace => "pathtrace.png".into(),
             XformMode::Align => {
                 let (pa, na) = (p[0].0, p[0].1.normalize_or_zero());
                 let (pb, nb) = (p[1].0, p[1].1.normalize_or_zero());
-                // fata de mutat ajunge cu spatele pe fata tinta: normala ei = -normala tintei (rotatie doar in plan)
+                // the face to move ends up back to back with the target face: its normal = -the target normal (rotation in plane only)
                 let ang = if na.truncate().length() > 0.3 && nb.truncate().length() > 0.3 { z_angle(na, -nb).unwrap_or(0.0) } else { 0.0 };
                 let rot = Mat4::from_rotation_z(ang.to_radians());
                 let pa_rot = pivot_rotate(pa, pa, &rot);
                 let na_rot = rot.transform_vector3(na);
-                // dupa rotatie (in jurul lui pa), lipim fata: miscam pe normala tintei pana pe planul ei
+                // after the rotation (around pa), we snap the face: we move along the target normal onto its plane
                 let dist = (pb - pa_rot).dot(nb);
                 let d = if na_rot.dot(nb).abs() > 0.5 { nb * dist } else { pb - pa_rot };
                 (ang, pa, d)

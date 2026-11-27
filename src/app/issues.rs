@@ -1,17 +1,17 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
-    /// Issue-urile (viewpoints) pentru add-in-urile Revit / Navisworks ("ManageBIM Issues"), in
-    /// %LOCALAPPDATA%\ManageBIM\Outbox\issues.txt - text simplu, coordonate WORLD in metri:
+    /// The issues (viewpoints) for the Revit / Navisworks add-ins ("ManageBIM Issues"), in
+    /// %LOCALAPPDATA%\ManageBIM\Outbox\issues.txt - plain text, WORLD coordinates in meters:
     ///   MBISSUES 1
-    ///   VIEW <tab> nume <tab> stare <tab> guid <tab> prioritate <tab> responsabil
-    ///   CAM <tab> ex ey ez <tab> fx fy fz <tab> ux uy uz <tab> fov_grade <tab> inaltime_ortho (0 = perspectiva)
-    ///   BOX <tab> minx miny minz <tab> maxx maxy maxz        (daca are section box)
-    ///   SEL <tab> guid <tab> guid ...                        (elementele selectate)
-    ///   TXT <tab> text (\n codat ca \\n)                     (descriere + comentarii)
+    ///   VIEW <tab> name <tab> status <tab> guid <tab> priority <tab> assignee
+    ///   CAM <tab> ex ey ez <tab> fx fy fz <tab> ux uy uz <tab> fov_deg <tab> ortho_height (0 = perspective)
+    ///   BOX <tab> minx miny minz <tab> maxx maxy maxz        (if it has a section box)
+    ///   SEL <tab> guid <tab> guid ...                        (the selected elements)
+    ///   TXT <tab> text (\n encoded as \\n)                   (description + comments)
     ///   END
-    /// Se rescrie doar cand se schimba ceva (scriere atomica).
+    /// It is rewritten only when something changes (atomic write).
     pub fn write_issue_outbox(&mut self) {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -57,8 +57,8 @@ impl App {
             if !text.trim().is_empty() {
                 s.push_str(&format!("TXT\t{}\n", clean(text.trim())));
             }
-            // markup-uri ca polilinii (RED) si texte (RTX): culoare, grosime, puncte fata de centrul vederii /
-            // inaltimea ei (y in jos) - add-in-urile le pun pe un plan in fata camerei
+            // markups as polylines (RED) and texts (RTX): color, thickness, points relative to the view center /
+            // its height (y down) - the add-ins put them on a plane in front of the camera
             for r in &v.redlines {
                 let col = format!("{} {} {}", r.color[0], r.color[1], r.color[2]);
                 if r.kind == crate::markup::RedKind::Text {
@@ -83,10 +83,10 @@ impl App {
         }
     }
 
-    /// "Send to ManageBIM" din Revit / AutoCAD / Plant 3D / Navisworks: add-in-ul scrie modelul in
-    /// %LOCALAPPDATA%\ManageBIM\Inbox\<sursa>.bimc (scriere atomica: .tmp + redenumire).
-    /// Un fisier nou se adauga in scena; unul deja deschis si rescris se reincarca singur (live),
-    /// pastrand selectia, ascunderile si culorile (potrivire pe GUID).
+    /// "Send to ManageBIM" from Revit / AutoCAD / Plant 3D / Navisworks: the add-in writes the model to
+    /// %LOCALAPPDATA%\ManageBIM\Inbox\<source>.bimc (atomic write: .tmp + rename).
+    /// A new file is added to the scene; one already open and rewritten reloads by itself (live),
+    /// keeping the selection, the hidden items and the colors (matching by GUID).
     pub(super) fn scan_inbox(&mut self) {
         let Some(dir) = inbox_dir() else { return };
         let Ok(rd) = std::fs::read_dir(&dir) else { return };
@@ -112,7 +112,7 @@ impl App {
                     self.reload_model(slot, ps);
                 }
             } else if file_mtime(&ps).map(|t| t > started).unwrap_or(false) && !self.inbox_seen.contains(&key) {
-                // doar ce a sosit dupa pornire (nu redeschidem trimiterile vechi la fiecare start)
+                // only what arrived after startup (we do not reopen the old sends at every start)
                 self.inbox_seen.insert(key);
                 new_files.push(ps);
             }

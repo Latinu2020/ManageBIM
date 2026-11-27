@@ -1,7 +1,7 @@
-//! Randare progresiva (CPU) pentru o imagine statica, cu anulare si export PNG.
-//! Lambert + soare cu umbre moi (discul soarelui esantionat) + cer cu ambient occlusion, pe BVH global.
-//! Fiecare esantion e aleator pe pixel (zgomot Monte Carlo); la final Intel Open Image Denoise
-//! curata zgomotul folosind albedo-ul si normala primei intersectii.
+//! Progressive rendering (CPU) for a still image, with cancel and PNG export.
+//! Lambert + sun with soft shadows (sampled sun disk) + sky with ambient occlusion, on a global BVH.
+//! Each sample is random per pixel (Monte Carlo noise); at the end Intel Open Image Denoise
+//! cleans the noise using the albedo and normal of the first hit.
 
 use rayon::prelude::*;
 use crate::model::Bvh;
@@ -10,34 +10,34 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-/// Starea denoise-ului unui job.
+/// The denoise state of a job.
 pub const DN_OFF: u8 = 0;
 pub const DN_RUNNING: u8 = 1;
 pub const DN_DONE: u8 = 2;
 pub const DN_FAILED: u8 = 3;
 
-/// raza unghiulara a discului soarelui (rad): umbre moi, dar inca precise
+/// angular radius of the sun disk (rad): soft shadows, but still precise
 const SUN_RADIUS: f32 = 0.012;
-/// distanta pana la care un obstacol intuneca lumina cerului (ambient occlusion), in metri
+/// distance up to which an obstacle darkens the sky light (ambient occlusion), in meters
 const AO_DIST: f32 = 2.5;
-/// raza becului (m) pentru lampile Point / Spot: umbrele lampilor au margini moi, ca in realitate
+/// bulb radius (m) for Point / Spot lamps: lamp shadows have soft edges, as in reality
 const LAMP_RADIUS: f32 = 0.06;
-/// raza unghiulara (rad) a luminilor Distant: penumbra ca la soare
+/// angular radius (rad) of Distant lights: penumbra like the sun's
 const DISTANT_RADIUS: f32 = 0.02;
 
 pub struct Scene {
-    pub tris: Vec<Vec3>,   // 3 vertexuri per triunghi
-    /// culoarea finala (material / override / profil, ca in vederea 3D), alfa = opacitatea
+    pub tris: Vec<Vec3>,   // 3 vertices per triangle
+    /// final color (material / override / profile, as in the 3D view), alpha = opacity
     pub colors: Vec<[u8; 4]>,
-    /// parametrii materialului per triunghi, ca in shader: [model sau 16 + textura, luciu, metal, scara]
+    /// material parameters per triangle, as in the shader: [model or 16 + texture, gloss, metal, scale]
     pub mats: Vec<[u8; 4]>,
-    /// OpenPBR per triunghi: [coat, coat roughness, sheen, IOR]
+    /// OpenPBR per triangle: [coat, coat roughness, sheen, IOR]
     pub extra: Vec<[f32; 4]>,
-    /// texturile imagine (512 x 512 RGBA), in ordinea straturilor de pe GPU
+    /// image textures (512 x 512 RGBA), in the order of the layers on the GPU
     pub textures: Vec<Vec<u8>>,
-    /// planurile sectiunii active (n, w): se pastreaza punctele cu n·p <= w
+    /// planes of the active section (n, w): points with n·p <= w are kept
     pub planes: Vec<glam::Vec4>,
-    /// lampi punctuale in model
+    /// point lamps in the model
     pub lights: Vec<crate::lights::SceneLight>,
     pub bvh: Bvh,
 }
@@ -45,10 +45,10 @@ pub struct Scene {
 impl Scene {
     /// The visible triangles with their final colours and materials (as in the 3D view), without the BVH.
     pub fn gather(app: &crate::app::App) -> Self {
-        // Camera si geometria trebuie sa fie in ACELASI spatiu de coordonate.
-        // Renderer-ul OpenGL foloseste vertecsi locali (m.pos) si cam.eye() local,
-        // fara origin (origin e doar pentru export / coordonate reale). Daca adaugam
-        // origin aici, razele nu mai lovesc modelul si imaginea ramane doar "cer".
+        // The camera and the geometry must be in the SAME coordinate space.
+        // The OpenGL renderer uses local vertices (m.pos) and local cam.eye(),
+        // without origin (origin is only for export / real coordinates). If we add
+        // origin here, the rays no longer hit the model and the image stays only "sky".
         let mut tris = Vec::new();
         let mut colors = Vec::new();
         let mut mats = Vec::new();
@@ -62,12 +62,12 @@ impl Scene {
             [0.0, 0.05, 0.0, crate::materials::default_ior()]
         };
         for (mi, m) in app.loaded_models() {
-            // aspectul calculat pentru vederea 3D: materiale, override-uri, profil, 4D, ascunse
+            // appearance computed for the 3D view: materials, overrides, profile, 4D, hidden
             let looks = app.looks.get(&mi).filter(|l| l.len() == m.elements.len());
             for (ei, e) in m.elements.iter().enumerate() {
                 let look = looks.map(|l| l[ei]);
                 let id = crate::model::ElemId { m: mi as u32, e: ei as u32 };
-                // elementele ascunse nu se randeaza (inainte apareau in path trace)
+                // hidden elements are not rendered (they used to appear in the path trace)
                 if e.default_hidden || look.map_or(!app.is_visible(id), |l| l.hidden) {
                     continue;
                 }
@@ -99,12 +99,12 @@ impl Scene {
         s
     }
 
-    /// punctul ramane dupa sectiune (ca in shader)
+    /// the point remains after the section (as in the shader)
     fn kept(&self, p: Vec3) -> bool {
         self.planes.iter().all(|pl| pl.truncate().dot(p) <= pl.w + 1e-4)
     }
 
-    /// prima intersectie vizibila (sectiunea respectata)
+    /// the first visible hit (section respected)
     fn hit(&self, o: Vec3, d: Vec3, tmax: f32) -> Option<(f32, u32)> {
         if self.planes.is_empty() {
             self.bvh.raycast(&self.tris, o, d, tmax, &|_| true)
@@ -113,7 +113,7 @@ impl Scene {
         }
     }
 
-    /// lumina care trece spre soare / cer: sticla lasa sa treaca o parte, opacul opreste tot
+    /// light passing toward the sun / sky: glass lets part of it through, opaque blocks it all
     fn transmit(&self, o: Vec3, d: Vec3, tmax: f32) -> f32 {
         let (mut o, mut left, mut k) = (o, tmax, 1.0f32);
         for _ in 0..4 {
@@ -143,7 +143,7 @@ impl Scene {
         1.0 - a * (1.0 - near)
     }
 
-    /// (albedo, rugozitate, metalicitate, normala tangenta) in punctul p, din hartile PBR sau din textura simpla
+    /// (albedo, roughness, metalness, tangent normal) at point p, from the PBR maps or from the plain texture
     fn surface(&self, tri: usize, p: Vec3, n: Vec3) -> ([f32; 3], f32, f32, Option<Vec3>) {
         let c = self.colors[tri];
         let base = [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0];
@@ -168,7 +168,7 @@ impl Scene {
             if let (Some(ca), Some(cs)) = (sample(l), sample(l + 1)) {
                 let f = |b: u8| b as f32 / 255.0;
                 let albedo = [f(ca[0]), f(ca[1]), f(ca[2])];
-                // normala din spatiul tangent: construim baza TBN din normala geometrica
+                // normal from tangent space: we build the TBN basis from the geometric normal
                 let (t, b) = basis(n);
                 let tn = Vec3::new(f(cs[0]) * 2.0 - 1.0, f(cs[1]) * 2.0 - 1.0, (f(cs[2]) * 2.0 - 1.0).max(0.05)).normalize_or_zero();
                 let nm = (t * tn.x + b * tn.y + n * tn.z).normalize_or_zero();
@@ -196,7 +196,7 @@ fn noise2(x: f32, y: f32) -> f32 {
     lerp(lerp(hash2(ix, iy), hash2(ix + 1.0, iy), fx), lerp(hash2(ix, iy + 1.0), hash2(ix + 1.0, iy + 1.0), fx), fy)
 }
 
-/// modelele procedurale ale materialelor (caramida, gresie, lemn, piatra, iarba, panouri) - ca in shader
+/// procedural material patterns (brick, tile, wood, stone, grass, panels) - as in the shader
 fn pattern(code: u8, base: [f32; 3], uv: glam::Vec2) -> [f32; 3] {
     let mul = |k: f32| [base[0] * k, base[1] * k, base[2] * k];
     let mix = |a: [f32; 3], b: [f32; 3], t: f32| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
@@ -250,19 +250,19 @@ pub struct PathTraceJob {
     pub fov_deg: f32,
     pub sun: Vec3,
     pub light: f32,
-    /// mediu: (mod, intensitate, rotatie grade)
+    /// environment: (mode, intensity, rotation in degrees)
     pub env: (u8, f32, f32),
-    /// scena de noapte: cer intunecat
+    /// night scene: dark sky
     pub night: bool,
-    /// HDRI / fotografie folosita ca mediu (None = cer procedural)
+    /// HDRI / photo used as environment (None = procedural sky)
     pub hdri: Option<std::sync::Arc<crate::hdri::Hdri>>,
-    /// albedo (RGB) + normala (XYZ) ale primei intersectii, acumulate ca `buf` (6 valori / pixel)
+    /// albedo (RGB) + normal (XYZ) of the first hit, accumulated like `buf` (6 values / pixel)
     pub aux: Mutex<Vec<f32>>,
-    /// curata zgomotul cu Intel Open Image Denoise la final
+    /// clean the noise with Intel Open Image Denoise at the end
     pub denoise: bool,
     /// DN_OFF / DN_RUNNING / DN_DONE / DN_FAILED
     pub denoise_state: AtomicU8,
-    /// imaginea curatata (RGB liniar, deja impartita la numarul de esantioane)
+    /// the cleaned image (linear RGB, already divided by the number of samples)
     pub denoised: Mutex<Option<Vec<f32>>>,
     pub denoise_msg: Mutex<String>,
 }
@@ -332,7 +332,7 @@ fn finish(job: &PathTraceJob) {
     job.done.store(true, Ordering::Relaxed);
 }
 
-/// Generator pseudo-aleator mic (PCG) - unul per pixel si per esantion, fara stare comuna intre fire.
+/// Small pseudo-random generator (PCG) - one per pixel and per sample, no shared state between threads.
 struct Rng(u64);
 
 impl Rng {
@@ -350,9 +350,9 @@ impl Rng {
     }
 }
 
-/// punct uniform in sfera unitate (respingere): esantionarea suprafetei luminii -> umbre moi
-/// Lumina directa (difuza) a lampilor intr-un punct cu normala `n`, cu umbre: folosita pentru ricoseul
-/// luminii lampilor (punctul vazut de o raza de emisfera). Aceeasi atenuare si con ca lumina directa.
+/// uniform point in the unit sphere (rejection): sampling the light surface -> soft shadows
+/// Direct (diffuse) light of the lamps at a point with normal `n`, with shadows: used for the bounce
+/// of the lamps' light (the point seen by a hemisphere ray). Same attenuation and cone as direct light.
 fn lamp_irradiance(sc: &Scene, p: Vec3, n: Vec3, rng: &mut Rng) -> [f32; 3] {
     use crate::lights::LightKind;
     let mut e = [0.0f32; 3];
@@ -403,7 +403,7 @@ fn in_unit_ball(rng: &mut Rng) -> Vec3 {
     Vec3::ZERO
 }
 
-/// baza ortonormala in jurul lui n
+/// orthonormal basis around n
 fn basis(n: Vec3) -> (Vec3, Vec3) {
     let a = if n.x.abs() > 0.9 { Vec3::Y } else { Vec3::X };
     let t = n.cross(a).normalize();
@@ -425,12 +425,12 @@ fn run(job: Arc<PathTraceJob>) {
         let mut buf = job.buf.lock().unwrap_or_else(|e| e.into_inner());
         let mut aux = job.aux.lock().unwrap_or_else(|e| e.into_inner());
         let width = job.width as usize;
-        // Un sample = toate pixelii, impartiti pe toate nucleele (rayon).
+        // One sample = all pixels, split across all cores (rayon).
         buf.par_chunks_mut(3).zip(aux.par_chunks_mut(6)).enumerate().for_each(|(i, (p, x))| {
             let px = (i % width) as u32;
             let py = (i / width) as u32;
             let mut rng = Rng::new(px, py, s);
-            // anti-aliasing: alt punct din pixel la fiecare esantion
+            // anti-aliasing: a different point in the pixel on each sample
             let u = (px as f32 + rng.next()) / w;
             let v = (py as f32 + rng.next()) / h;
             let ndc_x = u * 2.0 - 1.0;
@@ -451,7 +451,7 @@ fn run(job: Arc<PathTraceJob>) {
     finish(&job);
 }
 
-/// Imaginea medie (buf / count) curatata de OIDN cu albedo + normala.
+/// The mean image (buf / count) cleaned by OIDN with albedo + normal.
 fn denoise_job(job: &PathTraceJob) -> Result<Vec<f32>, String> {
     let n = job.count.load(Ordering::Relaxed).max(1) as f32;
     let color: Vec<f32> = job.buf.lock().unwrap_or_else(|e| e.into_inner()).iter().map(|x| x / n).collect();
@@ -466,11 +466,11 @@ fn denoise_job(job: &PathTraceJob) -> Result<Vec<f32>, String> {
     crate::oidn::denoise(&crate::oidn::Input { width: job.width as usize, height: job.height as usize, color: &color, albedo: Some(&albedo), normal: Some(&normal) })
 }
 
-/// Mediul (IBL) pe directia d: cer, orizont, soare si nori slabi.
-/// E procedural, deci functioneaza offline; inlocuieste gradientul albastru din randarea veche.
+/// The environment (IBL) in direction d: sky, horizon, sun and faint clouds.
+/// It is procedural, so it works offline; it replaces the blue gradient of the old renderer.
 fn env(job: &PathTraceJob, d: Vec3) -> [f32; 3] {
     if job.night {
-        // cer de noapte: foarte putina lumina, lasam lampile sa domine
+        // night sky: very little light, we let the lamps dominate
         let up = (d.z * 0.5 + 0.5).clamp(0.0, 1.0);
         let s = job.sun.normalize_or_zero();
         let moon = 0.35 * d.dot(s).max(0.0).powf(180.0);
@@ -480,7 +480,7 @@ fn env(job: &PathTraceJob, d: Vec3) -> [f32; 3] {
 }
 
 fn env_cols(env: (u8, f32, f32), sun: Vec3, d: Vec3, hdri: Option<&crate::hdri::Hdri>) -> [f32; 3] {
-    // HDRI-ul (fisier .hdr sau fotografie) inlocuieste cerul procedural
+    // the HDRI (.hdr file or photo) replaces the procedural sky
     if let Some(h) = hdri {
         let a = env.2.to_radians();
         let (ca, sa) = (a.cos(), a.sin());
@@ -489,13 +489,13 @@ fn env_cols(env: (u8, f32, f32), sun: Vec3, d: Vec3, hdri: Option<&crate::hdri::
         let k = env.1.max(0.0);
         return [c[0] * k, c[1] * k, c[2] * k];
     }
-    // rotirea mediului in jurul axei Z
+    // rotation of the environment around the Z axis
     let a = env.2.to_radians();
     let (ca, sa) = (a.cos(), a.sin());
     let d = Vec3::new(d.x * ca - d.y * sa, d.x * sa + d.y * ca, d.z);
     let up = (d.z * 0.5 + 0.5).clamp(0.0, 1.0);
     let horizon = (1.0 - d.z.abs()).powi(4);
-    // palete: 0 = exterior, 1 = studio (neutru), 2 = apus (cald)
+    // palettes: 0 = exterior, 1 = studio (neutral), 2 = sunset (warm)
     let (zenith, sky, ground) = match env.0 {
         1 => ([0.62, 0.64, 0.68], [0.78, 0.79, 0.81], [0.26, 0.27, 0.29]),
         2 => ([0.34, 0.26, 0.36], [0.96, 0.52, 0.26], [0.20, 0.16, 0.19]),
@@ -511,7 +511,7 @@ fn env_cols(env: (u8, f32, f32), sun: Vec3, d: Vec3, hdri: Option<&crate::hdri::
     c[0] += glow + horizon * 0.06;
     c[1] += glow * if env.0 == 2 { 0.55 } else { 0.93 } + horizon * 0.05;
     c[2] += glow * if env.0 == 2 { 0.30 } else { 0.80 } + horizon * 0.04;
-    // variatie lenta, determinista (norii) - doar exterior
+    // slow, deterministic variation (the clouds) - exterior only
     if env.0 != 1 {
         let w = ((d.x * 4.3).sin() * (d.y * 5.7).cos() * 0.5 + 0.5) * up.powi(2) * 0.14;
         c[0] += w;
@@ -522,13 +522,13 @@ fn env_cols(env: (u8, f32, f32), sun: Vec3, d: Vec3, hdri: Option<&crate::hdri::
     [c[0] * k, c[1] * k, c[2] * k]
 }
 
-/// F0 (reflexia la incidenta normala) din IOR, amestecat cu culoarea pentru metale.
+/// F0 (reflectance at normal incidence) from IOR, blended with the color for metals.
 fn f0_of(ior: f32, base: [f32; 3], metal: f32) -> [f32; 3] {
     let f = ((ior - 1.0) / (ior + 1.0)).powi(2);
     [f + (base[0] - f) * metal, f + (base[1] - f) * metal, f + (base[2] - f) * metal]
 }
 
-/// BRDF microfacet GGX: D * G * F / (4 * NdotV * NdotL), conserva energia.
+/// GGX microfacet BRDF: D * G * F / (4 * NdotV * NdotL), conserves energy.
 fn ggx(n: Vec3, v: Vec3, l: Vec3, rough: f32, f0: [f32; 3]) -> [f32; 3] {
     let (nh, nv, nl) = (n.dot((v + l).normalize_or_zero()).max(0.0), n.dot(v).max(1e-4), n.dot(l).max(0.0));
     if nl <= 0.0 || nh <= 0.0 {
@@ -546,7 +546,7 @@ fn ggx(n: Vec3, v: Vec3, l: Vec3, rough: f32, f0: [f32; 3]) -> [f32; 3] {
     [m * f(0), m * f(1), m * f(2)]
 }
 
-/// Directia unei reflexii GGX esantionate (importance sampling), pentru bounce-ul 2.
+/// Direction of a sampled GGX reflection (importance sampling), for bounce 2.
 fn ggx_reflect(d: Vec3, n: Vec3, t: Vec3, b: Vec3, rough: f32, rng: &mut Rng) -> Vec3 {
     let a = (rough * rough).max(0.002);
     let r1 = rng.next().max(1e-6);
@@ -558,11 +558,11 @@ fn ggx_reflect(d: Vec3, n: Vec3, t: Vec3, b: Vec3, rough: f32, rng: &mut Rng) ->
     (d - h * (2.0 * d.dot(h))).normalize_or_zero()
 }
 
-/// cate reflexii / treceri prin sticla urmarim (adancimea razei)
+/// how many reflections / passes through glass we trace (ray depth)
 const MAX_DEPTH: u32 = 4;
 const DIFFUSE: f32 = 0.22;
 
-/// (culoare, albedo, normala) pentru raza o + t*d
+/// (color, albedo, normal) for the ray o + t*d
 fn trace(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng) -> ([f32; 3], [f32; 3], [f32; 3]) {
     trace_d(job, o, d, rng, 0)
 }
@@ -578,7 +578,7 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
     let i = ti * 3;
     let (a, b, c) = (tris[i], tris[i + 1], tris[i + 2]);
     let mut n = (b - a).cross(c - a).normalize_or_zero();
-    // fata vazuta din spate: normala spre camera (altfel ar iesi neagra)
+    // face seen from the back: normal toward the camera (otherwise it would come out black)
     if n.dot(d) > 0.0 {
         n = -n;
     }
@@ -588,21 +588,21 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
     let m = sc.mats[ti];
     let ex = sc.extra.get(ti).copied().unwrap_or([0.0, 0.05, 0.0, crate::materials::default_ior()]);
     let (coat, coat_rough, sheen, ior) = (ex[0], ex[1], ex[2], ex[3]);
-    // normala din harta inlocuieste normala geometrica pentru umbrire / reflexii
+    // the normal from the map replaces the geometric normal for shading / reflections
     if let Some(nm) = mapped_n {
         n = nm;
     }
-    // rugozitatea din harta (0 = oglinda) e inversul luciului global
+    // roughness from the map (0 = mirror) is the inverse of the global gloss
     let gloss = if m[0] == crate::materials::PBR_CODE { (1.0 - rough).clamp(0.03, 1.0) } else { m[1] as f32 / 255.0 };
-    // sticla / materiale transparente: raza trece mai departe cu probabilitatea (1 - opacitate)
+    // glass / transparent materials: the ray goes on with probability (1 - opacity)
     if alpha < 0.99 && depth < MAX_DEPTH && rng.next() > alpha {
         let (behind, _, _) = trace_d(job, hit + d * 1e-3, d, rng, depth + 1);
-        // sticla nuanteaza putin lumina care trece
+        // glass slightly tints the light passing through
         let tint = |k: usize| behind[k] * (0.85 + 0.15 * base[k]);
         return ([tint(0), tint(1), tint(2)], base, n.to_array());
     }
     let p = hit + n * 1e-3;
-    // soarele: o directie aleatoare pe disc -> umbre cu margini moi
+    // the sun: a random direction on the disk -> shadows with soft edges
     let sun_dir = job.sun.normalize_or_zero();
     let mut lit_sun = 0.0;
     if sun_dir != Vec3::ZERO {
@@ -611,12 +611,12 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
         let l = (sun_dir + st * (r * phi.cos()) + sb * (r * phi.sin())).normalize();
         let ndotl = n.dot(l).max(0.0);
         if ndotl > 0.0 {
-            // sticla lasa soarele sa treaca; 0.35 = penumbra (nu negru total)
+            // glass lets the sun through; 0.35 = penumbra (not total black)
             let tr = sc.transmit(p, l, 1e6);
             lit_sun = tr;
         }
     }
-    // IBL: o raza pe emisfera, culoarea din mediu (cer + soare), cu ambient occlusion
+    // IBL: a ray on the hemisphere, the color from the environment (sky + sun), with ambient occlusion
     let (nt, nb) = basis(n);
     let (r1, r2) = (rng.next(), rng.next());
     let (r, phi) = (r1.sqrt(), std::f32::consts::TAU * r2);
@@ -627,9 +627,9 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
     let amb = 0.30 + 0.28 * up;
     let k = amb * open;
     let mut col = [base[0] * irradiance[0] * k, base[1] * irradiance[1] * k, base[2] * irradiance[2] * k];
-    // 0.28: lumina reflectata de la lampi (un ricoseu difuz). Raza de emisfera de mai sus loveste o
-    // suprafata apropiata; lumina directa a lampilor in acel punct, colorata de suprafata, se intoarce
-    // aici. Un perete luminat de o lampa lumineaza astfel podeaua si tavanul - interioare realiste.
+    // 0.28: light bounced from the lamps (one diffuse bounce). The hemisphere ray above hits a
+    // nearby surface; the lamps' direct light at that point, tinted by the surface, comes back
+    // here. A wall lit by a lamp thus lights the floor and the ceiling - realistic interiors.
     // indirect light: sun and lamp light bounced once (a sunny floor lights the ceiling, walls tint each other)
     let sun_dir0 = job.sun.normalize_or_zero();
     if (!sc.lights.is_empty() || sun_dir0 != Vec3::ZERO) && depth == 0 {
@@ -649,7 +649,7 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
                     *v += s;
                 }
             }
-            // cos-weighted: pdf si cos se simplifica; 0.55 = albedo mediu al ricoseului (conservare)
+            // cos-weighted: pdf and cos cancel out; 0.55 = mean albedo of the bounce (conservation)
             for (k2, v) in col.iter_mut().enumerate() {
                 *v += base[k2] * b2[k2] * e[k2] * 0.55 * (1.0 - metal);
             }
@@ -659,11 +659,11 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
     let vd = -d;
     let head = n.dot(vd).abs();
     let f0 = f0_of(ior, base, metal);
-    let sp = (1.0 - metal) * (1.0 - gloss) * 0.04 + metal * 0.25; // energie difuza redusa de specular
+    let sp = (1.0 - metal) * (1.0 - gloss) * 0.04 + metal * 0.25; // diffuse energy reduced by specular
     for v in col.iter_mut() {
         *v *= 1.0 - sp;
     }
-    // lumina directa prin BRDF GGX (microfacet) in loc de Blinn-Phong
+    // direct light through a GGX BRDF (microfacet) instead of Blinn-Phong
     if sun_dir != Vec3::ZERO && lit_sun > 0.0 {
         let l = sun_dir;
         let g = ggx(n, vd, l, gloss.max(0.05), f0);
@@ -673,12 +673,12 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
         }
     }
 
-    // lampi punctuale plasate in model: lumina difuza + reflexie GGX, cu umbra
+    // point lamps placed in the model: diffuse light + GGX reflection, with shadow
     for lamp in sc.lights.iter() {
         use crate::lights::LightKind;
         let (l, d, atten_base) = match lamp.kind {
             LightKind::Point | LightKind::Spot => {
-                // un punct aleator pe bec (nu centrul): umbrele moi apar prin acumularea esantioanelor
+                // a random point on the bulb (not the center): soft shadows appear by accumulating samples
                 let lv = Vec3::from(lamp.pos) + in_unit_ball(rng) * LAMP_RADIUS - p;
                 let d = lv.length();
                 if d < 1e-3 {
@@ -693,8 +693,8 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
                 (dir, d, atten)
             }
             LightKind::Distant => {
-                // directia de propagare e pozitie -> tinta; spre lumina (l) e opusul ei.
-                // (inainte se folosea directia de propagare: luminau fetele din spate, umbrele erau inversate)
+                // the propagation direction is position -> target; toward the light (l) is its opposite.
+                // (the propagation direction used to be used: back faces were lit, shadows were inverted)
                 let dir = (Vec3::from(lamp.target) - Vec3::from(lamp.pos)).normalize_or_zero();
                 if dir == Vec3::ZERO {
                     continue;
@@ -710,8 +710,8 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
         if lamp.kind == LightKind::Spot {
             let half = (lamp.angle.clamp(5.0, 120.0) * 0.5).to_radians();
             let axis = (Vec3::from(lamp.target) - Vec3::from(lamp.pos)).normalize_or_zero();
-            // l arata SPRE lampa; conul se masoara dinspre lampa spre punct (-l). Inainte era l: spoturile
-            // nu luminau nimic in randarea finala
+            // l points TOWARD the lamp; the cone is measured from the lamp toward the point (-l). It used to be l: spots
+            // lit nothing in the final render
             let a = (-l).dot(axis).max(0.0);
             let soft = half.cos().max(1e-4);
             atten *= (((a - soft) / (1.0 - soft)).clamp(0.0, 1.0)).powf(1.5);
@@ -731,7 +731,7 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
         }
     }
 
-    // OpenPBR: stratul de luciu (clearcoat) - F0 = 4% pentru orice IOR
+    // OpenPBR: the coat layer (clearcoat) - F0 = 4% for any IOR
     if coat > 0.01 {
         let cg = ggx(n, vd, sun_dir, coat_rough.max(0.03), [0.04; 3]);
         let nl = n.dot(sun_dir).max(0.0) * lit_sun;
@@ -739,7 +739,7 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
             *v += coat * cg[k] * nl * job.light;
         }
     }
-    // OpenPBR: sheen - reflexie moale pe margini, specifica tesaturilor
+    // OpenPBR: sheen - soft reflection on the edges, typical of fabrics
     if sheen > 0.01 {
         let edge = (1.0 - head).powi(4);
         for (k, v) in col.iter_mut().enumerate() {
@@ -747,7 +747,7 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
         }
     }
 
-    // reflexia scenei: importance sampling GGX + Fresnel (2-3 bounces)
+    // scene reflection: GGX importance sampling + Fresnel (2-3 bounces)
     if (gloss > 0.02 || metal > 0.02 || coat > 0.01) && depth < MAX_DEPTH {
         let rough = if coat > 0.01 && rng.next() < coat { coat_rough } else { gloss };
         let rdir = ggx_reflect(d, n, nt, nb, rough.max(0.03), rng);
@@ -762,13 +762,13 @@ fn trace_d(job: &PathTraceJob, o: Vec3, d: Vec3, rng: &mut Rng, depth: u32) -> (
     (col, base, n.to_array())
 }
 
-/// ACES filmic tonemap (curba folosita de blender / filme): pastri detaliile in lumini.
+/// ACES filmic tonemap (the curve used by blender / films): keeps detail in the highlights.
 pub fn aces(x: f32) -> f32 {
     let x = x.max(0.0) * 0.6;
     ((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14)).clamp(0.0, 1.0)
 }
 
-/// RGB liniar -> sRGB 8 bit cu tonemap ACES.
+/// Linear RGB -> 8-bit sRGB with ACES tonemap.
 pub fn to_srgb(rgb: [f32; 3]) -> [u8; 3] {
     let mut out = [0u8; 3];
     for (i, v) in rgb.iter().enumerate() {
@@ -796,7 +796,7 @@ pub fn save_png(path: &str, buf: &[f32], count: u32, w: u32, h: u32) -> Result<(
 mod tests {
     use super::*;
 
-    /// podea 20x20 m la z=0 + un cub de 2 m in mijloc (Z = sus, ca modelele)
+    /// 20x20 m floor at z=0 + a 2 m cube in the middle (Z = up, like the models)
     fn scene() -> Arc<Scene> {
         let mut tris: Vec<Vec3> = Vec::new();
         let q = |t: &mut Vec<Vec3>, a: Vec3, b: Vec3, c: Vec3, d: Vec3| t.extend_from_slice(&[a, b, c, a, c, d]);
@@ -815,7 +815,7 @@ mod tests {
         Arc::new(Scene { tris, colors, mats, extra, textures: Vec::new(), planes: Vec::new(), lights: Vec::new(), bvh })
     }
 
-    /// aceeasi scena cu materiale: podeaua din caramida + cubul de sticla + o sectiune care taie cubul
+    /// the same scene with materials: brick floor + glass cube + a section that cuts the cube
     fn scene_with(cube_alpha: u8, floor_mat: [u8; 4], planes: Vec<glam::Vec4>) -> Arc<Scene> {
         let s = scene();
         let mut colors = s.colors.clone();
@@ -848,21 +848,21 @@ mod tests {
         (b[i] + b[i + 1] + b[i + 2]) / (3.0 * n)
     }
 
-    /// cubul de sticla lasa soarele sa treaca: umbra lui e mult mai slaba decat a cubului opac
+    /// the glass cube lets the sun through: its shadow is much fainter than that of the opaque cube
     #[test]
     fn glass_lets_light_through() {
         let opaque = run_scene(scene_with(255, [0; 4], Vec::new()));
         let glass = run_scene(scene_with(40, [0; 4], Vec::new()));
         let shadow = |j: &PathTraceJob| (12..21).flat_map(|x| (22..32).map(move |y| (x, y))).map(|(x, y)| lum(j, x, y)).fold(f32::INFINITY, f32::min);
         assert!(shadow(&glass) > shadow(&opaque) * 1.3, "glass shadow {} vs opaque {}", shadow(&glass), shadow(&opaque));
-        // si prin sticla se vede podeaua din spatele cubului (centrul imaginii e mai luminos)
+        // and through the glass the floor behind the cube is visible (the image center is brighter)
         assert!(lum(&glass, 24, 22) > lum(&opaque, 24, 22));
     }
 
-    /// modelul procedural al materialului (caramida) apare pe podea: pixelii variaza, nu sunt uniformi
+    /// the procedural material pattern (brick) appears on the floor: the pixels vary, they are not uniform
     #[test]
     fn material_pattern_is_rendered() {
-        // modelul procedural e verificat direct: zgomotul Monte Carlo din imagine ar ascunde diferentele mici
+        // the procedural pattern is checked directly: Monte Carlo noise in the image would hide small differences
         let base = [0.8f32, 0.8, 0.8];
         let plain = super::pattern(0, base, glam::Vec2::new(0.5, 0.5));
         let brick: Vec<f32> = (0..30).map(|i| super::pattern(1, base, glam::Vec2::new(i as f32 * 0.11, i as f32 * 0.07))[0]).collect();
@@ -870,20 +870,20 @@ mod tests {
         let mx = brick.iter().copied().fold(f32::MIN, f32::max);
         assert!(mx - mn > 0.05, "patternul de caramida nu variaza: {mn}..{mx}");
         assert!((plain[0] - base[0]).abs() < 1e-6);
-        // integrare: scena cu materialul de caramida se randeaza fara erori
+        // integration: the scene with the brick material renders without errors
         let brick_job = run_scene(scene_with(255, [1, 0, 0, 10], Vec::new()));
         assert!(brick_job.buf.lock().unwrap().iter().all(|v| v.is_finite()));
     }
 
-    /// sectiunea (z <= 1) taie cubul: partea de sus dispare, ca in vederea 3D
+    /// the section (z <= 1) cuts the cube: the top part disappears, as in the 3D view
     #[test]
     fn section_cuts_the_cube() {
         let full = run_scene(scene_with(255, [0; 4], Vec::new()));
         let cut = run_scene(scene_with(255, [0; 4], vec![glam::Vec4::new(0.0, 0.0, 1.0, 1.0)]));
-        // partea de sus a cubului (z 1..2) e taiata: o parte vizibila din imagine se schimba
+        // the top part of the cube (z 1..2) is cut: a visible part of the image changes
         let changed = (0..48).flat_map(|x| (0..48).map(move |y| (x, y))).filter(|&(x, y)| (lum(&cut, x, y) - lum(&full, x, y)).abs() > 0.05).count();
         assert!(changed > 20, "only {changed} pixels changed");
-        // iar sub plan (podeaua departe de cub) imaginea ramane aceeasi
+        // while below the plane (the floor far from the cube) the image stays the same
         assert!((lum(&cut, 44, 44) - lum(&full, 44, 44)).abs() < 0.03);
     }
 
@@ -892,7 +892,7 @@ mod tests {
     }
 
     fn render_sized(denoise: bool, size: u32, samples: u32) -> Arc<PathTraceJob> {
-        // camera deasupra, privind in jos spre cub; soarele din +X, sus
+        // camera above, looking down at the cube; the sun from +X, high
         let eye = Vec3::new(0.0, -12.0, 9.0);
         let fwd = (Vec3::new(0.0, 0.0, 0.5) - eye).normalize();
         let right = fwd.cross(Vec3::Z).normalize();
@@ -917,17 +917,17 @@ mod tests {
             (buf[i] + buf[i + 1] + buf[i + 2]) / (3.0 * n)
         };
         assert!(buf.iter().all(|x| x.is_finite()));
-        // sus = cer (albastru), jos = podea luminata; umbra cubului (spre -X) e mai intunecata decat podeaua libera din +X
+        // top = sky (blue), bottom = lit floor; the cube's shadow (toward -X) is darker than the free floor at +X
         let i = (2 * 48 + 24) * 3;
         assert!(buf[i + 2] > buf[i], "top of the image should be sky-blue");
         let lit = px(40, 40);
-        // umbra: la stanga cubului (soarele vine din +X), pe randurile bazei lui
+        // shadow: to the left of the cube (the sun comes from +X), on the rows of its base
         let shade = (12..21).flat_map(|x| (22..32).map(move |y| (x, y))).map(|(x, y)| px(x, y)).fold(f32::INFINITY, f32::min);
         assert!(lit > 0.3, "floor in the sun should be bright: {lit}");
         assert!(shade < lit * 0.85, "shadow of the cube should be darker: {shade} vs {lit}");
     }
 
-    /// parametrii OpenPBR ai materialului folosit trebuie sa ajunga in scena de randare
+    /// the OpenPBR parameters of the material used must reach the render scene
     #[test]
     fn openpbr_params_reach_scene() {
         let p = |_: f32, _: &str| {};
@@ -951,7 +951,7 @@ mod tests {
         assert!(sc.extra.iter().all(|e| (e[0] - 0.7).abs() < 1e-3 && (e[2] - 0.4).abs() < 1e-3 && (e[3] - 1.7).abs() < 1e-3), "{:?}", sc.extra[0]);
     }
 
-    /// modurile de mediu (outdoor / studio / sunset) si intensitatea trebuie sa schimbe lumina IBL
+    /// the environment modes (outdoor / studio / sunset) and the intensity must change the IBL light
     #[test]
     fn environment_modes_change_the_ibl() {
         let dir = Vec3::new(0.3, 0.4, 0.8).normalize();
@@ -970,11 +970,11 @@ mod tests {
         assert!((a[0] - b[0]).abs() > 0.01, "rotatia mediului nu are efect");
     }
 
-    /// o lampa punctuala trebuie sa lumineze scena (si sa fie respectata raza / enable-ul)
+    /// a point lamp must light the scene (and the radius / enable must be respected)
     #[test]
     fn point_lights_affect_the_render() {
         let sc = scene_with(255, [0; 4], Vec::new());
-        // camera deasupra, privind spre cub (la origine)
+        // camera above, looking at the cube (at the origin)
         let eye = Vec3::new(0.0, -12.0, 9.0);
         let fwd = (Vec3::new(0.0, 0.0, 1.5) - eye).normalize();
         let right = fwd.cross(Vec3::Z).normalize();
@@ -995,7 +995,7 @@ mod tests {
 
     #[test]
     fn spot_light_lights_inside_its_cone() {
-        // spot deasupra cubului, indreptat in jos: lumineaza; indreptat in sus: nu (inainte nu lumina deloc)
+        // spot above the cube, pointing down: lights it; pointing up: does not (it used to not light at all)
         let sc = scene_with(255, [0; 4], Vec::new());
         let eye = Vec3::new(0.0, -12.0, 9.0);
         let fwd = (Vec3::new(0.0, 0.0, 1.5) - eye).normalize();
@@ -1019,7 +1019,7 @@ mod tests {
 
     #[test]
     fn distant_light_shines_along_its_direction() {
-        // lumina Distant de sus in jos lumineaza fata de sus a cubului; indreptata in sus, nu
+        // a Distant light from top to bottom lights the top face of the cube; pointing up, it does not
         let sc = scene_with(255, [0; 4], Vec::new());
         let eye = Vec3::new(0.0, -12.0, 9.0);
         let fwd = (Vec3::new(0.0, 0.0, 1.5) - eye).normalize();
@@ -1065,7 +1065,7 @@ mod tests {
         let img = job.denoised.lock().unwrap().clone().expect("denoised image");
         assert_eq!(img.len(), 48 * 48 * 3);
         assert!(img.iter().all(|x| x.is_finite() && *x >= 0.0));
-        // MB_PT_DUMP=folder: salveaza imaginea cu zgomot si cea curatata, pentru verificare vizuala
+        // MB_PT_DUMP=folder: saves the noisy image and the cleaned one, for visual checking
         if let Some(dir) = std::env::var_os("MB_PT_DUMP") {
             let dir = std::path::PathBuf::from(dir);
             let big = render_sized(true, 320, 4);

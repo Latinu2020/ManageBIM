@@ -1,6 +1,6 @@
-//! Test de anduranta (manual, release): o scena federata mare generata din proiectul demo
-//! (copii ale cladirii pe o grila), apoi incarcare, clash, verificari rapide, cautare si cache .bimc.
-//! cargo test --release --test large_model -- --ignored --nocapture   (MB_COPIES = copii pe latura, implicit 24)
+//! Endurance test (manual, release): a large federated scene generated from the demo project
+//! (copies of the building on a grid), then loading, clash, quick checks, search and the .bimc cache.
+//! cargo test --release --test large_model -- --ignored --nocapture   (MB_COPIES = copies per side, default 24)
 use bimrust::model::{ElemId, Model, RawModel};
 use glam::DVec3;
 use std::sync::Arc;
@@ -38,7 +38,7 @@ fn large_federated_scene() {
     let arch = bimrust::load_any("samples/Block_A_Architecture_Structure.ifc", &|_, _| {}).expect("arch");
     let mep = bimrust::load_any("samples/Block_A_MEP.ifc", &|_, _| {}).expect("mep");
     println!("demo IFC parsed: {:.2} s", t.elapsed().as_secs_f64());
-    // marimea cladirii -> pasul grilei
+    // the building size -> the grid step
     let mut lo = DVec3::splat(f64::MAX);
     let mut hi = DVec3::splat(f64::MIN);
     for e in &arch.elements {
@@ -62,7 +62,7 @@ fn large_federated_scene() {
     let mb = ((ma.pos.len() + mm.pos.len()) * 12 + (ma.tri_color.len() + mm.tri_color.len()) * 4) as f64 / 1e6;
     println!("models built (BVH, normals): {load:.2} s - {elems} elements, {tris} triangles, geometry ~{mb:.0} MB");
 
-    // clash: arhitectura + structura vs instalatii, toata scena
+    // clash: architecture + structure vs services, the whole scene
     let models = vec![Some(ma.clone()), Some(mm.clone())];
     let a: Vec<ElemId> = (0..ma.elements.len() as u32).map(|e| ElemId { m: 0, e }).collect();
     let b: Vec<ElemId> = (0..mm.elements.len() as u32).map(|e| ElemId { m: 1, e }).collect();
@@ -75,10 +75,10 @@ fn large_federated_scene() {
     let q = bimrust::check::quick_checks(&[(0, &ma), (1, &mm)]);
     let quick_s = t.elapsed().as_secs_f64();
     println!("quick checks: {quick_s:.2} s ({})", q.iter().map(|c| format!("{} {}", c.name, c.result.failed.len())).collect::<Vec<_>>().join(", "));
-    // duplicate: niciunul (fiecare copie e in alt loc), GUID-uri unice
+    // duplicates: none (each copy is in another place), unique GUIDs
     assert_eq!(q.iter().find(|c| c.name == "Duplicate GUID").unwrap().result.failed.len(), 0);
 
-    // cache .bimc: scriere + citire
+    // .bimc cache: write + read
     let p = std::env::temp_dir().join(format!("mb_large_{}.bimc", std::process::id()));
     let t = Instant::now();
     let ps = p.to_string_lossy().to_string();
@@ -92,7 +92,7 @@ fn large_federated_scene() {
     println!(".bimc Arch: write {w:.2} s, read {r:.2} s, {size:.0} MB on disk");
     assert_eq!(back.elements.len(), ma.elements.len());
 
-    // MB_KEEP = folder: pastreaza scena ca .bimc (pentru deschidere in aplicatie)
+    // MB_KEEP = folder: keeps the scene as .bimc (for opening in the application)
     if let Ok(dir) = std::env::var("MB_KEEP") {
         for (m, n) in [(&ma, "Large_Arch.bimc"), (&mm, "Large_MEP.bimc")] {
             let p = std::path::Path::new(&dir).join(n).to_string_lossy().to_string();
@@ -100,7 +100,7 @@ fn large_federated_scene() {
         }
     }
 
-    // pragurile: o scena de ~100 000 elemente trebuie sa ramana utilizabila
+    // the thresholds: a scene of ~100 000 elements must stay usable
     assert!(load < 60.0, "model build {load:.1} s");
     assert!(clash_s < 60.0, "clash {clash_s:.1} s");
     assert!(quick_s < 10.0, "quick checks {quick_s:.1} s");

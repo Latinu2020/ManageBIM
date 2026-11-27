@@ -1,4 +1,4 @@
-//! Export viewpoints + markups in formatul XML Navisworks (nw-exchange-12.0.xsd).
+//! Export of viewpoints + markups in the Navisworks XML format (nw-exchange-12.0.xsd).
 use bimrust::markup::{navis_viewpoints_xml, nw_quaternion, NwView, RedKind, Redline};
 
 // APPDATA is process-global: tests that redirect it must not run in parallel.
@@ -21,7 +21,7 @@ fn close(a: [f64; 3], b: [f64; 3]) -> bool {
 
 #[test]
 fn camera_quaternion_maps_navisworks_axes() {
-    // camera Navisworks: priveste spre -Z local, sus = +Y local
+    // Navisworks camera: looks towards local -Z, up = local +Y
     for (fwd, up) in [([1.0, 0.0, 0.0], [0.0, 0.0, 1.0]), ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]), ([0.6, 0.0, -0.8], [0.8, 0.0, 0.6]), ([0.0, 0.0, -1.0], [0.0, 1.0, 0.0])] {
         let q = nw_quaternion(fwd, up);
         let n = (q.iter().map(|v| v * v).sum::<f64>()).sqrt();
@@ -71,13 +71,13 @@ fn xml_contains_camera_section_comments_and_markups() {
         assert!(x.contains(tag), "{tag}");
     }
     assert!(x.contains("<text>check &lt;here&gt;</text>"));
-    // y in sus in Navisworks: punctul de sus al ecranului (y negativ la noi) are y pozitiv
+    // y up in Navisworks: the top point of the screen (negative y for us) has a positive y
     assert!(x.contains("<pos2f x=\"0.37500\" y=\"0.40000\"/>"), "text position in Navisworks screen coordinates");
-    // fisierul de proba, validat separat cu schema oficiala (tools / verificare manuala)
+    // the sample file, validated separately with the official schema (tools / manual check)
     let _ = std::fs::write(std::env::temp_dir().join("managebim_navis_test.xml"), &x);
 }
 
-// ---- pe aplicatia reala: export -> import (viewpoints), seturi si teste de clash
+// ---- on the real application: export -> import (viewpoints), sets and clash tests
 use bimrust::app::*;
 use std::sync::Arc;
 
@@ -140,7 +140,7 @@ fn viewpoints_roundtrip_and_sets_clash_export() {
     }
     assert_eq!(b.redlines[1].text, "aici");
 
-    // seturi + teste de clash
+    // sets + clash tests
     let doors = app.find(&[SearchRule::new("", "IFC Type", SearchOp::Equals, "IfcDoor", false)]);
     app.sets.push(SelSet { name: "Uși".into(), kind: SetKind::Search(vec![SearchRule::new("", "IFC Type", SearchOp::Equals, "IfcDoor", false), SearchRule::new("", "Level", SearchOp::Equals, "Level 1", true)]) });
     app.sets.push(SelSet { name: "Explicit".into(), kind: SetKind::Explicit(doors.clone()) });
@@ -155,7 +155,7 @@ fn viewpoints_roundtrip_and_sets_clash_export() {
     app.export_navis_clash(&dir.join("clash.xml").to_string_lossy());
     let c = std::fs::read_to_string(dir.join("clash.xml")).unwrap();
     assert!(c.contains("<batchtest") && c.contains("test_type=\"hard\"") && c.contains("tolerance=\"0.010000\"") && c.contains("lcop_selection_set_tree/Uși"));
-    // copii pentru validarea cu schema Navisworks (vezi raportul de verificare)
+    // copies for validation with the Navisworks schema (see the verification report)
     for f in ["vp.xml", "sets.xml", "clash.xml"] {
         let _ = std::fs::copy(dir.join(f), std::env::temp_dir().join(format!("managebim_nw_{f}")));
     }
@@ -182,11 +182,11 @@ fn clashes_to_bcf_and_navisworks_and_bcf_import() {
     let x = std::fs::read_to_string(dir.join("clashes.xml")).unwrap();
     assert_eq!(x.matches("<view ").count(), n);
     assert_eq!(x.matches("mode=\"box\"").count(), n, "section box around every clash");
-    // import inapoi: elementele clash-ului se gasesc dupa GUID
+    // import back: the clash elements are found by GUID
     let before = app.viewpoints.len();
     app.import_bcf(&bcf.to_string_lossy());
     assert_eq!(app.viewpoints.len(), before + n);
-    // ordinea topic-urilor in BCF urmeaza GUID-urile (aleatoare): caut viewpoint-ul clash-ului 0
+    // the order of the topics in BCF follows the GUIDs (random): I look for the viewpoint of clash 0
     assert!(app.viewpoints[before..].iter().all(|v| v.selected.len() == 2), "both clashing elements selected");
     let r = &app.clash.tests[0].results[0];
     let v = app.viewpoints[before..].iter().find(|v| v.selected.contains(&r.a) && v.selected.contains(&r.b)).expect("viewpoint for clash 0");
@@ -207,7 +207,7 @@ fn draw_lists_cull_safely() {
         let l = &lists[&(slot as u32)];
         let total = m.tri_total() as i32 * 3;
         assert!(l.all.iter().all(|&(f, n)| f >= 0 && n > 0 && f + n <= total), "ranges inside the buffer");
-        // vedere completa, nimic ascuns: fiecare element e acoperit
+        // full view, nothing hidden: every element is covered
         for e in &m.elements {
             if e.tri_count == 0 {
                 continue;
@@ -216,7 +216,7 @@ fn draw_lists_cull_safely() {
             assert!(l.all.iter().any(|&(a, n)| f >= a && f < a + n), "element {} drawn", e.name);
         }
     }
-    // camera intoarsa cu spatele: aproape nimic de desenat
+    // camera turned around: almost nothing to draw
     let mut away = app.cam;
     away.yaw += std::f32::consts::PI;
     away.eye = (bb.center() + (bb.center() - app.cam.eye())).into();
@@ -244,7 +244,7 @@ fn ifc_export_roundtrip_keeps_items_guids_and_properties() {
         assert_eq!(b.name, e.name);
         assert_eq!(b.storey, e.storey, "level of {}", e.name);
         assert!(!b.tris.is_empty(), "geometry of {}", e.name);
-        // proprietatile din seturile IFC (nu cele calculate) se regasesc
+        // the properties from the IFC sets (not the computed ones) are found again
         for pr in e.props.iter().filter(|p| p.group.starts_with("Pset_")) {
             assert!(b.props.iter().any(|q| q.group == pr.group && q.name == pr.name && q.value == pr.value), "{} / {} = {} on {}", pr.group, pr.name, pr.value, e.name);
         }
@@ -267,7 +267,7 @@ fn markups_become_polylines_for_revit_and_navisworks() {
     assert_eq!(rect[0], rect[4], "closed rectangle");
     let cloud = &redline_polylines(&r(RedKind::Cloud, vec![a, b]))[0];
     assert!(cloud.len() > 40, "scalloped cloud");
-    // festoanele ies in afara dreptunghiului, dar putin
+    // the cloud scallops go outside the rectangle, but only slightly
     assert!(cloud.iter().all(|p| p[0] > a[0] - 0.05 && p[0] < b[0] + 0.05 && p[1] > a[1] - 0.05 && p[1] < b[1] + 0.05));
     assert!(redline_polylines(&r(RedKind::Text, vec![a])).is_empty());
 }
@@ -275,7 +275,7 @@ fn markups_become_polylines_for_revit_and_navisworks() {
 #[test]
 fn ifc_grids_and_levels_give_clash_locations() {
     let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/samples/Block_A_Architecture_Structure.ifc")).unwrap();
-    // doua axe: A (de-a lungul lui Y, la x=0) si 1 (de-a lungul lui X, la y=0), in unitatile fisierului
+    // two grids: A (along Y, at x=0) and 1 (along X, at y=0), in the file units
     let unit = if src.contains(".MILLI.") { 1000.0 } else { 1.0 };
     let extra = format!(
         "#900001=IFCCARTESIANPOINT((0.,{n}));\n#900002=IFCCARTESIANPOINT((0.,{p}));\n#900003=IFCCARTESIANPOINT(({n},0.));\n#900004=IFCCARTESIANPOINT(({p},0.));\n\
@@ -292,7 +292,7 @@ fn ifc_grids_and_levels_give_clash_locations() {
     assert!(grids.contains("\"A\"") && grids.contains("\"1\""), "{grids}");
     let levels = &raw.info.iter().find(|(k, _)| k == "~levels").expect("levels read").1;
     assert!(levels.contains("Level 1"), "{levels}");
-    // locatia unui punct langa intersectie, deasupra primului nivel
+    // the location of a point near the intersection, above the first level
     let g = bimrust::app::GridData {
         grids: vec![("A".into(), glam::Vec3::new(0.0, -50.0, 0.0), glam::Vec3::new(0.0, 50.0, 0.0)), ("1".into(), glam::Vec3::new(-50.0, 0.0, 0.0), glam::Vec3::new(50.0, 0.0, 0.0)), ("2".into(), glam::Vec3::new(-50.0, 6.0, 0.0), glam::Vec3::new(50.0, 6.0, 0.0))],
         levels: vec![("Ground".into(), 0.0), ("Level 1".into(), 3.0)],
@@ -311,7 +311,7 @@ fn shared_issues_sync_between_two_colleagues() {
     let mut b = app();
     a.shared_dir = Some(d.clone());
     b.shared_dir = Some(d.clone());
-    // A: un issue cu doua elemente selectate si o cota
+    // A: an issue with two selected elements and a dimension
     let ids: Vec<_> = (0..2).map(|e| bimrust::model::ElemId { m: 0, e }).collect();
     a.selected = ids.iter().copied().collect();
     a.save_viewpoint();
@@ -319,7 +319,7 @@ fn shared_issues_sync_between_two_colleagues() {
     a.viewpoints[0].comment = "move the pipe".into();
     a.shared_sync(true);
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "one file per issue");
-    // B preia issue-ul, cu aceleasi elemente (dupa GUID) si aceeasi camera
+    // B takes the issue, with the same elements (by GUID) and the same camera
     b.shared_sync(true);
     assert_eq!(b.viewpoints.len(), 1);
     assert_eq!(b.viewpoints[0].name, "Pipe through beam");
@@ -327,13 +327,13 @@ fn shared_issues_sync_between_two_colleagues() {
     sel.sort();
     assert_eq!(sel, ids);
     assert!((glam::Vec3::from(b.viewpoints[0].cam.eye) - glam::Vec3::from(a.viewpoints[0].cam.eye)).length() < 1e-3);
-    // B schimba starea -> A o vede
+    // B changes the status -> A sees it
     std::thread::sleep(std::time::Duration::from_millis(20));
     b.viewpoints[0].issue.status = "Resolved".into();
     b.shared_sync(true);
     a.shared_sync(true);
     assert_eq!(a.viewpoints[0].issue.status, "Resolved");
-    // A sterge -> dispare si la B
+    // A deletes -> it disappears for B too
     std::thread::sleep(std::time::Duration::from_millis(20));
     a.viewpoints.clear();
     a.shared_sync(true);
@@ -357,20 +357,20 @@ fn tools_grids_levels_sections_and_project_roundtrip() {
     assert!(dxf.ends_with("EOF\n"));
 
     let mut app = app();
-    // axe proprii in jurul modelului -> locatia clash-urilor le foloseste
+    // own grids around the model -> the clash location uses them
     let bb = app.scene_aabb();
     let o = app.origin_f64();
     app.user_grids = generate_grid([bb.min.x as f64 + o.x, bb.min.y as f64 + o.y], 3, 5.0, "1", 3, 5.0, "A", 1.0);
     app.use_user_grids = true;
     let loc = app.grid_location(glam::Vec3::new(bb.min.x + 0.2, bb.min.y + 0.3, bb.min.z + 0.5));
     assert!(loc.starts_with("A-1"), "{loc}");
-    // sectiune pe nivel si taietura de plan
+    // section on a level and plan cut
     let levels = app.scene_grids().levels;
     assert!(levels.len() >= 2, "levels from the models");
     app.section_level_box(0);
     assert!(app.section.enabled && app.section.mode == SectionMode::Box);
     assert!((app.section.bmin[2] - (levels[0].1 - 0.01)).abs() < 1e-4 && app.section.bmax[2] < levels[1].1);
-    // marginile reglabile: placa de sub nivel inclusa
+    // adjustable margins: the slab below the level included
     app.level_below = 0.3;
     app.section_level_box(0);
     assert!((app.section.bmin[2] - (levels[0].1 - 0.31)).abs() < 1e-4);
@@ -379,18 +379,18 @@ fn tools_grids_levels_sections_and_project_roundtrip() {
     app.section_plan_cut(1, 1.2);
     assert_eq!(app.section.mode, SectionMode::Planes);
     assert!((app.section.planes[0].offset - (levels[1].1 + 1.2)).abs() < 1e-4);
-    // niveluri proprii + proiect salvat / redeschis
+    // own levels + project saved / reopened
     app.level.user = vec![bimrust::app::UserLevel { name: "P0".into(), elev: 0.0 }, bimrust::app::UserLevel { name: "P1".into(), elev: 3.5 }];
     app.level.custom = true;
     app.level.zero = 12.0;
     let path = std::env::temp_dir().join(format!("mb_tools_{}.bimr", std::process::id()));
     let p = path.to_string_lossy().to_string();
-    // setarile (lista Recent) intr-un folder de test, nu in cele ale utilizatorului
+    // the settings (Recent list) in a test folder, not in the user's
     std::env::set_var("APPDATA", std::env::temp_dir().join("mb_test_appdata"));
     app.save_project(&p);
     let mut b = App::new(vec![]);
     b.load_project(&p);
-    // starea proiectului se aplica dupa incarcarea modelelor
+    // the project state is applied after the models are loaded
     let t0 = std::time::Instant::now();
     while !b.loads.is_empty() && t0.elapsed().as_secs() < 60 {
         b.poll_jobs();
@@ -402,7 +402,7 @@ fn tools_grids_levels_sections_and_project_roundtrip() {
     assert_eq!(b.level.user[1].elev, 3.5);
     assert_eq!(b.level.zero, 12.0);
     let _ = std::fs::remove_file(&path);
-    // proiect nou: gol, fara pagina de start
+    // new project: empty, no start page
     b.new_project();
     assert!(b.blank_project && b.project_path.is_none() && b.loaded_models().next().is_none());
 }
@@ -415,7 +415,7 @@ fn grid_alignment_by_picking_and_rotation() {
     transform_grids(&mut g, [10.0, 0.0], 90.0, [1.0, 2.0]);
     assert!((g[0].a[0] - 11.0).abs() < 1e-9 && (g[0].a[1] - 2.0).abs() < 1e-9);
     assert!((g[0].b[0] - (-9.0)).abs() < 1e-9 && (g[0].b[1] - 2.0).abs() < 1e-9);
-    // alegere in 3D: originea, apoi directia la 30 de grade -> reteaua rotita
+    // picking in 3D: the origin, then the direction at 30 degrees -> the rotated grid
     let mut app = app();
     let o = app.origin_f64();
     app.grid_gen.nx = 2;
@@ -428,7 +428,7 @@ fn grid_alignment_by_picking_and_rotation() {
     assert_eq!(app.grid_pick, 0);
     assert!((app.grid_gen.angle_deg - 30.0).abs() < 0.02, "{}", app.grid_gen.angle_deg);
     assert_eq!(app.user_grids.len(), 4);
-    // axa "A" (prima cu litera) trece prin origine, la 30 de grade
+    // grid "A" (the first with a letter) passes through the origin, at 30 degrees
     let ga = app.user_grids.iter().find(|g| g.name == "A").unwrap();
     let d = (ga.b[1] - ga.a[1]).atan2(ga.b[0] - ga.a[0]).to_degrees();
     assert!((d - 30.0).abs() < 0.05, "{d}");
@@ -437,7 +437,7 @@ fn grid_alignment_by_picking_and_rotation() {
     assert!(cross.abs() < 1e-3, "axis A through the picked origin");
 }
 
-/// Proiect demo pentru verificarea vizuala (rulat manual): cargo test --release --test navis_xml demo_grid_project -- --ignored
+/// Demo project for visual checking (run manually): cargo test --release --test navis_xml demo_grid_project -- --ignored
 #[test]
 #[ignore]
 fn demo_grid_project() {
@@ -473,7 +473,7 @@ fn bimd_holds_project_and_models_in_one_file() {
     let p = path.to_string_lossy().to_string();
     let msg = a.publish_bimd(&p).unwrap();
     assert!(msg.contains("2 models"), "{msg}");
-    // deschis pe "alt PC": fara fisierele sursa, doar .bimd
+    // opened on "another PC": without the source files, only .bimd
     let mut b = App::new(vec![]);
     b.open_bimd(&p);
     let t0 = std::time::Instant::now();
@@ -504,7 +504,7 @@ fn start_page_actions_ask_before_closing_an_open_project() {
     let pending = a.start_pending.clone().unwrap();
     a.run_start_action(pending);
     assert!(a.blank_project && !a.show_start && a.loaded_models().next().is_none());
-    // fara proiect deschis: actiunea se face direct
+    // no project open: the action is done directly
     let mut b = App::new(vec![]);
     b.start_action(StartAction::New);
     assert!(!b.confirm_start && b.blank_project);
@@ -524,7 +524,7 @@ fn grids_import_back_from_dxf() {
         let close = |p: [f64; 2], q: [f64; 2]| (p[0] - q[0]).hypot(p[1] - q[1]) < 1e-3;
         assert!((close(a.a, b.1) && close(a.b, b.2)) || (close(a.a, b.2) && close(a.b, b.1)), "{} position", a.name);
     }
-    // alt strat ales manual
+    // another layer picked manually
     assert!(bimrust::formats::grids_from_cad(&path.to_string_lossy(), Some("GRID_TAGS")).is_err());
     let _ = std::fs::remove_file(&path);
 }
@@ -533,7 +533,7 @@ fn grids_import_back_from_dxf() {
 fn relocate_model_point_to_point_and_rotate() {
     use bimrust::app::XformMode;
     let mut a = app();
-    // base_models = modelele incarcate (ca dupa incarcare), ca transformarile sa se poata reface
+    // base_models = the loaded models (as after loading), so the transforms can be redone
     a.base_models = a.models.clone();
     while a.model_xf.len() < a.models.len() {
         a.model_xf.push(Default::default());
@@ -546,7 +546,7 @@ fn relocate_model_point_to_point_and_rotate() {
     assert!(a.xform.is_none());
     let after = a.models[0].as_ref().unwrap().aabb;
     assert!((after.min - before.min - glam::Vec3::new(10.0, -5.0, 2.0)).length() < 1e-3, "moved by the picked vector");
-    // rotatie 90 de grade in jurul unui punct: punctul ramane pe loc
+    // 90 degree rotation around a point: the point stays in place
     let p = before.center() + glam::Vec3::new(10.0, -5.0, 2.0);
     a.xform_start(XformMode::Rotate, false);
     a.xform_point(p, glam::Vec3::Z, id);

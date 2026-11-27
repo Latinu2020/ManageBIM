@@ -1,6 +1,6 @@
-//! Panoul Lighting (stil Navisworks / Autodesk Ray Tracer):
-//! Create Light (Point / Spot / Distant), lista luminilor, putere (lux), raza, culoare,
-//! pozitie si tinta, plus unealta de plasare prin click in 3D.
+//! The Lighting panel (Navisworks / Autodesk Ray Tracer style):
+//! Create Light (Point / Spot / Distant), the list of lights, power (lux), radius, color,
+//! position and target, plus the placement tool by clicking in 3D.
 use super::*;
 
 impl App {
@@ -25,8 +25,8 @@ impl App {
                         let mut l = crate::lights::SceneLight::default();
                         l.kind = k;
                         l.name = format!("{} {}", k.label(), self.lights.len() + 1);
-                        // deasupra modelului, indreptata in jos spre acoperis: lumina si pata ei se vad
-                        // imediat din exterior (inainte era in centrul modelului = in interiorul cladirii)
+                        // above the model, pointing down at the roof: the light and its spot are visible
+                        // immediately from outside (it used to be at the model center = inside the building)
                         let bb = self.scene_aabb();
                         let (center, top, size) = if bb.is_valid() { (bb.center(), bb.max.z, bb.size().length()) } else { (Vec3::ZERO, 0.0, 10.0) };
                         let h = (size * 0.15).clamp(3.0, 40.0);
@@ -38,7 +38,7 @@ impl App {
                         }
                         self.light_sel = Some(self.lights.len());
                         self.lights.push(l);
-                        // muta camera astfel incat lumina sa fie vizibila imediat
+                        // moves the camera so the light is visible immediately
                         let mut t = self.cam;
                         t.focus = t.focus.min(30.0);
                         self.fly_to(t);
@@ -58,7 +58,7 @@ impl App {
             }
             if ui.selectable_label(self.light_rotate_mode, "⟳ Rotate").on_hover_text("Drag a circle to aim a Spot / Distant light: blue circle turns around Z (left / right), green around Y, red around X (up / down)").clicked() {
                 self.light_rotate_mode = true;
-                // o lumina punctuala nu are directie: spunem cum se orienteaza
+                // a point light has no direction: we say how it is oriented
                 if let Some(i) = self.light_sel.filter(|&i| i < self.lights.len()) {
                     if self.lights[i].kind == crate::lights::LightKind::Point {
                         self.toast("Drag a circle in the 3D view: the point light becomes a Spot light you can aim");
@@ -66,7 +66,7 @@ impl App {
                 }
             }
             if ui.checkbox(&mut self.render.night, "🌙 Night").on_hover_text("Dark sky and low ambient light - the lamps in the model light the scene").clicked() {
-                // nimic altceva: starea se citeste la pornirea randarii
+                // nothing else: the state is read when the render starts
             }
             let placing = self.tool == Tool::PlaceLight;
             if ui.selectable_label(placing, "🎯 Place in 3D").on_hover_text("Click a surface in the 3D view to place a point light; press Esc to go back to Select").clicked() {
@@ -88,7 +88,7 @@ impl App {
                 }
             }
             if ui.add_enabled(!self.lights.is_empty(), egui::Button::new("🗑 Remove").small()).clicked() {
-                // sterge lumina selectata, sau ultima daca nimic nu e selectat
+                // deletes the selected light, or the last one if nothing is selected
                 let i = self.light_sel.take().unwrap_or_else(|| self.lights.len().saturating_sub(1));
                 if i < self.lights.len() {
                     self.lights.remove(i);
@@ -97,7 +97,7 @@ impl App {
             }
         });
         ui.separator();
-        // pe coloane cand e loc (panoul de jos e lat si scund): Soare & cer | Lampi
+        // in columns when there is room (the bottom panel is wide and short): Sun & sky | Lamps
         let w = ui.available_width();
         if w > 980.0 {
             ui.horizontal_top(|ui| {
@@ -118,7 +118,7 @@ impl App {
         }
     }
 
-    /// Soarele si cerul (inainte erau intr-o fereastra separata): totul in panoul Lighting.
+    /// The sun and the sky (they used to be in a separate window): everything in the Lighting panel.
     fn sun_sky_ui(&mut self, ui: &mut egui::Ui) {
         egui::CollapsingHeader::new(RichText::new("☀ Sun & sky").strong())
             .id_salt("sun_sky_hdr")
@@ -150,7 +150,7 @@ impl App {
             });
     }
 
-    /// Lampile din model: fise una langa alta.
+    /// The lamps in the model: cards side by side.
     fn lamps_ui(&mut self, ui: &mut egui::Ui) {
         ui.label(RichText::new("LAMPS").small().strong().color(accent()));
         if self.lights.is_empty() {
@@ -166,7 +166,7 @@ impl App {
                 .fill(if sel { accent().gamma_multiply(0.14) } else { ui.visuals().faint_bg_color })
                 .rounding(crate::theme::RADIUS_SM)
                 .inner_margin(egui::Margin::symmetric(7.0, 5.0));
-            // fise una langa alta: panoul de jos e lat si scund, nu mai trebuie marit peste vederea 3D
+            // cards side by side: the bottom panel is wide and short, it no longer has to be enlarged over the 3D view
             ui.vertical(|ui| {
             ui.set_width(card_w);
             frame.show(ui, |ui| {
@@ -191,7 +191,7 @@ impl App {
                 });
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Lux (power)").small());
-                    // fara plafon: slider logaritmic 0..10 000, iar in casuta se poate tasta orice valoare mai mare
+                    // no ceiling: logarithmic slider 0..10 000, and any larger value can be typed in the box
                     ui.add(egui::Slider::new(&mut lamp.power, 0.0..=10_000.0).logarithmic(true).smallest_positive(0.1).clamping(egui::SliderClamping::Never).max_decimals(1))
                         .on_hover_text("Light power. Drag for 0 - 10 000, or double-click the number and type any larger value.");
                     lamp.power = lamp.power.max(0.0);
@@ -213,7 +213,7 @@ impl App {
                             ui.add(egui::DragValue::new(&mut lamp.target[axis]).speed(0.05).max_decimals(2).suffix(" m"));
                         }
                     });
-                    // orientare numerica (ca la Rotate din gizmo): azimut in plan + inclinare fata de orizontala
+                    // numeric orientation (as with Rotate in the gizmo): azimuth in plan + tilt from the horizontal
                     ui.horizontal(|ui| {
                         let (mut az, mut tilt) = lamp.aim_angles();
                         ui.label(RichText::new("Aim").small()).on_hover_text("Direction of the light: azimuth (0° = +X, 90° = +Y) and tilt (-90° = straight down)");
@@ -247,8 +247,8 @@ impl App {
 }
 
 impl App {
-    /// Soarele: intensitate, umbre, pozitie manuala sau dupa data / ora / locatie (studii de insorire).
-    /// Folosit in panoul Lighting si in fereastra Lighting; intoarce true daca s-a schimbat ceva.
+    /// The sun: intensity, shadows, manual position or by date / time / location (sun studies).
+    /// Used in the Lighting panel and in the Lighting window; returns true if something changed.
     pub(super) fn sun_settings_ui(&mut self, ui: &mut egui::Ui, id: &str) -> bool {
         let mut changed = false;
         egui::Grid::new(id).num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {

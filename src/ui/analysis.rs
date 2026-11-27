@@ -1,4 +1,4 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! A section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
@@ -18,7 +18,7 @@ impl App {
                 for c in &cats {
                     if ui.selectable_label(*c == self.profile.cat, c).clicked() && *c != self.profile.cat {
                         self.profile.cat = c.clone();
-                        // prima proprietate din categoria noua
+                        // the first property in the new category
                         self.profile.prop = self.prop_index.props(c).and_then(|v| v.first()).map(|p| p.name.clone()).unwrap_or_default();
                     }
                 }
@@ -154,7 +154,7 @@ impl App {
         }
         let cats: Vec<String> = self.prop_index.cats.iter().map(|c| c.0.clone()).collect();
         let props_of = |s: &App, c: &str| -> Vec<String> { s.prop_index.props(c).map(|v| v.iter().map(|p| p.name.clone()).collect()).unwrap_or_default() };
-        // --- rand 1: nume, domeniu, sabloane, export
+        // --- row 1: name, scope, templates, export
         ui.horizontal_wrapped(|ui| {
             ui.add(egui::TextEdit::singleline(&mut self.qto.name).desired_width(150.0).hint_text("Name"));
             egui::ComboBox::from_id_salt("qto_scope").selected_text(self.qto.scope.label()).show_ui(ui, |ui| {
@@ -177,7 +177,7 @@ impl App {
                 self.request_path(Purpose::ExportQtoTemplate);
             }
         });
-        // --- rand 2: grupare
+        // --- row 2: grouping
         let mut del_g: Option<usize> = None;
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("Group by").strong());
@@ -210,7 +210,7 @@ impl App {
         if let Some(i) = del_g {
             self.qto.group_by.remove(i);
         }
-        // --- rand 3: coloane
+        // --- row 3: columns
         let mut del_c: Option<usize> = None;
         let mut add_c: Option<QtyColumn> = None;
         ui.horizontal_wrapped(|ui| {
@@ -232,7 +232,7 @@ impl App {
                     }
                 }
             }
-            // proprietate numerica noua (ex. Qto_WallBaseQuantities / NetVolume)
+            // new numeric property (e.g. Qto_WallBaseQuantities / NetVolume)
             let id = ui.make_persistent_id("qto_newcol");
             let (mut pc, mut pp): (String, String) = ui.data_mut(|d| d.get_temp(id)).unwrap_or_default();
             if pc.is_empty() {
@@ -263,13 +263,13 @@ impl App {
         if let Some(c) = add_c {
             if !self.qto.columns.contains(&c) {
                 self.qto.columns.push(c);
-                // coloanele geometrice in ordinea lor fixa, proprietatile la final (sortare stabila)
+                // the geometric columns in their fixed order, the properties at the end (stable sort)
                 self.qto.columns.sort_by_key(|x| QtyColumn::GEOMETRIC.iter().position(|g| g == x).unwrap_or(100));
             }
         }
         ui.separator();
 
-        // --- tabelul (recalculat automat la orice schimbare)
+        // --- the table (recalculated automatically on any change)
         self.qto_update();
         let Some(r) = &self.qto_result else { return };
         if r.count == 0 {
@@ -331,7 +331,7 @@ impl App {
         }
     }
 
-    /// Model Checker: reguli (proprii sau din IDS) in stanga, detaliile regulii alese + elementele gresite in dreapta.
+    /// Model Checker: rules (own or from IDS) on the left, the details of the chosen rule + the failing elements on the right.
     pub(super) fn check_ui(&mut self, ui: &mut egui::Ui) {
         use crate::check::{Card, Facet, Kind, Rule, Value};
         let mut acts: Vec<Action> = Vec::new();
@@ -376,7 +376,7 @@ impl App {
         if run {
             self.run_check();
         }
-        // ---- verificari rapide, fara reguli
+        // ---- quick checks, without rules
         ui.horizontal(|ui| {
             if ui.button(RichText::new("⚡ Quick checks").strong()).on_hover_text("No IDS needed: elements without level, name, classification, material or geometry, duplicates, duplicate GUIDs").clicked() {
                 self.run_quick_checks();
@@ -417,7 +417,7 @@ impl App {
             ui.label(RichText::new("No rules yet. Import a buildingSMART IDS file, add the ⭐ starter rules or create a ➕ New rule (e.g. \"every IfcDoor has Pset_DoorCommon.FireRating\"), then press ▶ Run check.").weak());
             return;
         }
-        // rezumat
+        // summary
         if let Some(res) = &self.check_results {
             let active: Vec<usize> = (0..self.check_rules.len()).filter(|i| self.check_rules[*i].enabled).collect();
             let fail = active.iter().filter(|i| res.get(**i).map(|r| !r.failed.is_empty()).unwrap_or(false)).count();
@@ -454,7 +454,7 @@ impl App {
         let mut new_sel: Option<usize> = None;
         let mut dirty = false;
         ui.columns(2, |cols| {
-            // ---------------- lista regulilor
+            // ---------------- the list of rules
             egui::ScrollArea::vertical().id_salt("check_rules").auto_shrink([false, false]).show(&mut cols[0], |ui| {
                 for i in 0..self.check_rules.len() {
                     let r = &mut self.check_rules[i];
@@ -489,7 +489,7 @@ impl App {
                     });
                 }
             });
-            // ---------------- regula aleasa
+            // ---------------- the chosen rule
             let ui = &mut cols[1];
             let Some(si) = self.check_sel.filter(|i| *i < self.check_rules.len()) else {
                 ui.label(RichText::new("Click a rule to see its failing elements and edit it.").weak());
@@ -506,7 +506,7 @@ impl App {
                         let mut c = r.clone();
                         c.name.push_str(" (copy)");
                         c.source.clear();
-                        // adaugata dupa bucla
+                        // added after the loop
                         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("check_dup"), serde_json::to_string(&c).unwrap_or_default()));
                     }
                 });
@@ -610,7 +610,7 @@ impl App {
             dirty = true;
         }
         if dirty {
-            // rezultatele vechi nu mai corespund regulilor
+            // the old results no longer match the rules
             self.check_results = None;
         }
         for a in acts {
@@ -625,7 +625,7 @@ impl App {
             ui.label(RichText::new("Load both versions of the model (Open the old one, then ➕ Append the new one) to compare them.").weak());
             return;
         }
-        // implicit: A = primul model, B = ultimul
+        // default: A = the first model, B = the last
         let ok = |s: Option<usize>| s.filter(|i| models.iter().any(|m| m.0 == *i));
         let a = ok(self.compare_pick.0).unwrap_or(models[0].0);
         let b = ok(self.compare_pick.1).unwrap_or(models[models.len() - 1].0);
@@ -683,7 +683,7 @@ impl App {
         let mut dirty = false;
         let ndev = r.dev.len();
         let auto_max = {
-            // scara automata: abaterea cea mai mare (95%) dintre elementele schimbate, minim 10 mm
+            // automatic scale: the largest deviation (95%) among the changed elements, minimum 10 mm
             let mut v: Vec<f32> = r.dev.values().map(|d| d.max).collect();
             v.sort_by(|a, b| a.total_cmp(b));
             v.get(((v.len() as f32 * 0.95) as usize).min(v.len().saturating_sub(1))).copied().unwrap_or(0.1).max(0.01)
@@ -704,7 +704,7 @@ impl App {
                 if !auto {
                     heat_changed |= ui.add(egui::DragValue::new(&mut self.compare_heat_max_mm).range(1.0..=100_000.0).speed(5.0).suffix(" mm")).changed();
                 }
-                // legenda
+                // legend
                 let scale = if auto { auto_max } else { self.compare_heat_max_mm / 1000.0 };
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(140.0, 14.0), egui::Sense::hover());
                 for k in 0..28 {
@@ -721,7 +721,7 @@ impl App {
             }
         });
         if heat_changed {
-            // re-trimite toate culorile (harta se aplica / se scoate)
+            // re-sends all the colours (the map is applied / removed)
             self.looks.clear();
             dirty = true;
         }
@@ -761,7 +761,7 @@ impl App {
                 }
             });
         });
-        // ---- compare pe parametri: ce proprietate s-a schimbat, pe cate elemente, vechi -> nou
+        // ---- compare on parameters: which property changed, on how many elements, old -> new
         if !self.compare_params.is_empty() {
             let summary = crate::compare::param_summary(&self.compare_params);
             ui.add_space(6.0);
@@ -936,7 +936,7 @@ impl App {
         if let Some(i) = del {
             rules.remove(i);
         }
-        // un rand gol inlocuit direct, altfel se adauga ca OR
+        // an empty row is replaced directly, otherwise it is added as OR
         for r in add_or {
             if let Some(last) = rules.last_mut() {
                 if last.group == r.group && last.field == r.field && last.value.trim().is_empty() {

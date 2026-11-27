@@ -1,4 +1,4 @@
-//! Formatele deschise: CityJSON / CityJSONSeq, 3D Tiles (tileset + b3dm cu tabel de lot).
+//! The open formats: CityJSON / CityJSONSeq, 3D Tiles (tileset + b3dm with a batch table).
 use bimrust::*;
 
 fn tmp(name: &str) -> std::path::PathBuf {
@@ -7,7 +7,7 @@ fn tmp(name: &str) -> std::path::PathBuf {
     d
 }
 
-/// cub 1x1x1 ca Solid CityJSON (6 fete), acoperisul cu semantica RoofSurface
+/// 1x1x1 cube as a CityJSON Solid (6 faces), the roof with RoofSurface semantics
 fn cube_solid() -> serde_json::Value {
     serde_json::json!({
         "type": "Solid", "lod": "2",
@@ -82,7 +82,7 @@ fn extent(e: &model::RawElement) -> glam::DVec3 {
     hi - lo
 }
 
-/// ifcJSON (buildingSMART): perete extrudat 4 x 0.2 x 3 m, Pset_WallCommon scris ca relatie inversa (isDefinedBy)
+/// ifcJSON (buildingSMART): extruded wall 4 x 0.2 x 3 m, Pset_WallCommon written as an inverse relationship (isDefinedBy)
 #[test]
 fn ifcjson_wall_geometry_and_pset() {
     let doc = serde_json::json!({
@@ -120,7 +120,7 @@ fn ifcjson_wall_geometry_and_pset() {
     assert!(w.props.iter().any(|p| p.name == "FireRating" && p.value.contains("REI 60")), "{:?}", w.props);
 }
 
-/// ifcXML4: acelasi perete, cu liste in atribute ("0 0 1"), enumerari cu litere mici si IfcLabel-wrapper
+/// ifcXML4: the same wall, with lists in attributes ("0 0 1"), lowercase enumerations and IfcLabel-wrapper
 #[test]
 fn ifcxml_wall_geometry_and_pset() {
     let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -153,14 +153,14 @@ fn ifcxml_wall_geometry_and_pset() {
     assert!(w.props.iter().any(|p| p.name == "FireRating" && p.value.contains("REI 90")), "{:?}", w.props);
 }
 
-/// GLB minimal: un triunghi cu _BATCHID = 0 (pentru b3dm)
+/// minimal GLB: one triangle with _BATCHID = 0 (for b3dm)
 fn glb_triangle() -> Vec<u8> {
     let mut bin = Vec::new();
     for v in [0f32, 0., 0., 1., 0., 0., 0., 1., 0.] {
         bin.extend_from_slice(&v.to_le_bytes());
     }
     for _ in 0..3 {
-        bin.extend_from_slice(&0f32.to_le_bytes()); // _BATCHID ca float
+        bin.extend_from_slice(&0f32.to_le_bytes()); // _BATCHID as float
     }
     let json = serde_json::json!({
         "asset": {"version": "2.0"},
@@ -211,7 +211,7 @@ fn tiles_tileset_with_b3dm_batch_table() {
     b3dm.extend_from_slice(&glb);
     let d = tmp("tiles");
     std::fs::write(d.join("t0.b3dm"), &b3dm).unwrap();
-    // REPLACE: parintele (fara continut propriu folosit) e inlocuit de copil; transformarea copilului = +100 pe X
+    // REPLACE: the parent (with no own content used) is replaced by the child; the child's transform = +100 on X
     let ts = serde_json::json!({
         "asset": {"version": "1.1"}, "geometricError": 100,
         "root": {"geometricError": 10, "refine": "REPLACE", "boundingVolume": {"box": [0,0,0,1,0,0,0,1,0,0,0,1]},

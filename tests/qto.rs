@@ -1,4 +1,4 @@
-//! Quantification: cantitati geometrice exacte, cantitati IFC convertite in SI, grupare, Excel, sabloane.
+//! Quantification: exact geometric quantities, IFC quantities converted to SI, grouping, Excel, templates.
 use bimrust::app::*;
 use bimrust::model::{ElemId, RawElement, RawModel};
 use bimrust::qto::{geo_qty, QtoScope, QtoSetup, QtyColumn};
@@ -8,12 +8,12 @@ use std::sync::Arc;
 
 const ARCH: &str = "samples/Block_A_Architecture_Structure.ifc";
 
-/// cutie (x0..x0+dx, 0..dy, 0..dz) cu fete orientate spre exterior
+/// box (x0..x0+dx, 0..dy, 0..dz) with faces oriented outward
 fn boxx(x0: f64, dx: f64, dy: f64, dz: f64) -> Vec<[DVec3; 3]> {
     let p = |x: f64, y: f64, z: f64| DVec3::new(x0 + x * dx, y * dy, z * dz);
     let quads = [
-        [p(0., 0., 0.), p(0., 1., 0.), p(1., 1., 0.), p(1., 0., 0.)], // jos (normala -z)
-        [p(0., 0., 1.), p(1., 0., 1.), p(1., 1., 1.), p(0., 1., 1.)], // sus (+z)
+        [p(0., 0., 0.), p(0., 1., 0.), p(1., 1., 0.), p(1., 0., 0.)], // bottom (normal -z)
+        [p(0., 0., 1.), p(1., 0., 1.), p(1., 1., 1.), p(0., 1., 1.)], // top (+z)
         [p(0., 0., 0.), p(1., 0., 0.), p(1., 0., 1.), p(0., 0., 1.)], // -y
         [p(0., 1., 0.), p(0., 1., 1.), p(1., 1., 1.), p(1., 1., 0.)], // +y
         [p(0., 0., 0.), p(0., 0., 1.), p(0., 1., 1.), p(0., 1., 0.)], // -x
@@ -42,7 +42,7 @@ fn geometric_quantities_of_a_box_are_exact() {
 
 #[test]
 fn grouping_totals_scope_and_excel() {
-    // 3 cutii: doua pe L1 (IfcWall, IfcSlab), una pe L2 (IfcWall)
+    // 3 boxes: two on L1 (IfcWall, IfcSlab), one on L2 (IfcWall)
     let raw = RawModel {
         elements: vec![
             el("W1", "IfcWall", "L1", boxx(0.0, 1.0, 1.0, 1.0)),
@@ -64,7 +64,7 @@ fn grouping_totals_scope_and_excel() {
     assert_eq!(r.totals[0], Some(3.0));
     assert!((r.totals[1].unwrap() - 6.0).abs() < 1e-3, "{:?}", r.totals);
 
-    // doar selectia
+    // selection only
     app.qto.scope = QtoScope::Selection;
     app.selected.insert(ElemId { m: 0, e: 2 });
     app.qto_update();
@@ -72,7 +72,7 @@ fn grouping_totals_scope_and_excel() {
     assert_eq!(r.count, 1);
     assert!((r.totals[1].unwrap() - 3.0).abs() < 1e-3);
 
-    // Excel: zip valid (PK), CSV cu virgula zecimala
+    // Excel: valid zip (PK), CSV with a decimal comma
     let dir = std::env::temp_dir().join(format!("managebim_qto_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let x = dir.join("q.xlsx").to_string_lossy().to_string();
@@ -86,20 +86,20 @@ fn grouping_totals_scope_and_excel() {
     assert!(csv.contains("\"IfcWall\";\"L2\";1;3,000"), "{csv}");
     assert!(csv.contains("\"TOTAL\""));
 
-    // sablon: salvat si incarcat in alta sesiune
+    // template: saved and loaded in another session
     let t = dir.join("q.bimqto").to_string_lossy().to_string();
     app.handle_path(Purpose::ExportQtoTemplate, t.clone());
     let mut b = App::new(vec![]);
     b.handle_path(Purpose::ImportQtoTemplate, t);
     assert_eq!(b.qto, app.qto);
-    // si in proiect
+    // and in the project
     let pf: ProjectFile = serde_json::from_str(&serde_json::to_string(&app.project_file()).unwrap()).unwrap();
     assert_eq!(pf.qto.unwrap(), app.qto);
 }
 
 #[test]
 fn ifc_quantities_are_converted_to_si_and_summed() {
-    // adaugam un IfcElementQuantity (fisierul e in milimetri) pe primul perete din exemplu
+    // we add an IfcElementQuantity (the file is in millimetres) to the first wall in the example
     let txt = std::fs::read_to_string(ARCH).unwrap();
     let wall = regex_first_wall(&txt);
     let end = txt.rfind("ENDSEC;").unwrap();
@@ -129,7 +129,7 @@ fn ifc_quantities_are_converted_to_si_and_summed() {
     assert_eq!(r.units[1], "m³");
     assert_eq!(r.column_title(1), "NetVolume (m³)");
     assert!((r.totals[1].unwrap() - 3.6).abs() < 1e-9);
-    // celelalte elemente nu au proprietatea -> numarate ca lipsa, nu ca zero
+    // the other elements do not have the property -> counted as missing, not as zero
     assert_eq!(r.missing[1] as usize, r.count - 1);
 }
 

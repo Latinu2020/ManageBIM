@@ -1,18 +1,18 @@
-//! Compare (ca in Navisworks): doua versiuni ale aceluiasi model, potrivite pe GUID.
-//! Rezultat: elemente sterse, adaugate, cu geometrie schimbata, cu proprietati schimbate, identice.
+//! Compare (like in Navisworks): two versions of the same model, matched by GUID.
+//! Result: elements deleted, added, with changed geometry, with changed properties, identical.
 use crate::model::{ElemId, Element, Model};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Diff {
-    /// doar in versiunea veche (A) = sters
+    /// only in the old version (A) = deleted
     Removed,
-    /// doar in versiunea noua (B) = adaugat
+    /// only in the new version (B) = added
     Added,
-    /// acelasi GUID, geometrie diferita (mutat / redimensionat / remodelat)
+    /// same GUID, different geometry (moved / resized / remodeled)
     Geometry,
-    /// acelasi GUID si geometrie, proprietati diferite
+    /// same GUID and geometry, different properties
     Properties,
     Same,
 }
@@ -39,38 +39,38 @@ impl Diff {
     }
 }
 
-/// Proprietati care se schimba la fiecare export fara ca elementul sa se fi schimbat.
+/// Properties that change on every export without the element having changed.
 const VOLATILE: [&str; 1] = ["STEP Id"];
 
 pub struct CompareResult {
     pub a: usize,
     pub b: usize,
-    /// fiecare element din A si din B cu starea lui (elementele potrivite din A apar ca Same/Geometry/Properties)
+    /// each element from A and from B with its state (the matched elements from A appear as Same/Geometry/Properties)
     pub map: HashMap<ElemId, Diff>,
-    /// element din A care are pereche in B (ascuns in vizualizare, ca sa nu se suprapuna)
+    /// element from A that has a pair in B (hidden in the view, so they do not overlap)
     pub matched_a: HashMap<ElemId, ElemId>,
-    /// pentru elementele schimbate din B: ce s-a schimbat, pe scurt
+    /// for the changed elements from B: what changed, briefly
     pub changes: BTreeMap<ElemId, Vec<String>>,
     pub counts: [usize; 5],
     pub tol_mm: f32,
-    /// abaterea geometrica a elementelor schimbate (partea B): cat s-a mutat fiecare suprafata
+    /// the geometric deviation of the changed elements (side B): how far each surface moved
     pub dev: HashMap<ElemId, ElemDev>,
 }
 
-/// Abaterea geometrica a unui element intre versiuni (metri).
+/// The geometric deviation of an element between versions (meters).
 #[derive(Clone, Debug, Default)]
 pub struct ElemDev {
-    /// cea mai mare distanta intre suprafetele A si B (in ambele sensuri)
+    /// the largest distance between the surfaces A and B (in both directions)
     pub max: f32,
-    /// media pe triunghiurile din B
+    /// the average over the triangles of B
     pub mean: f32,
-    /// pe fiecare triunghi din B: cea mai mare distanta a varfurilor lui pana la suprafata din A
+    /// for each triangle of B: the largest distance of its vertices to the surface of A
     pub tri: Vec<f32>,
-    /// deplasarea centrului (B - A)
+    /// the displacement of the center (B - A)
     pub moved: [f32; 3],
 }
 
-/// Culoarea hartii de abateri: 0 = verde (pe loc), 0.5 = galben, 1 = rosu (la sau peste scara).
+/// The deviation map color: 0 = green (in place), 0.5 = yellow, 1 = red (at or above the scale).
 pub fn heat_color(t: f32) -> [u8; 4] {
     let t = t.clamp(0.0, 1.0);
     let (g, y, r) = ([40.0, 175.0, 90.0], [245.0, 210.0, 50.0], [225.0, 45.0, 40.0]);
@@ -79,7 +79,7 @@ pub fn heat_color(t: f32) -> [u8; 4] {
     [c[0] as u8, c[1] as u8, c[2] as u8, 255]
 }
 
-/// Cat de departe e fiecare triunghi din `eb` de suprafata lui `ea` (si invers, pentru partile sterse).
+/// How far each triangle of `eb` is from the surface of `ea` (and vice versa, for the deleted parts).
 pub fn deviation(ma: &Model, ea: &Element, mb: &Model, eb: &Element) -> ElemDev {
     let (ta, tb) = (ma.tris(ea), mb.tris(eb));
     let cap = 1000.0;
@@ -88,7 +88,7 @@ pub fn deviation(ma: &Model, ea: &Element, mb: &Model, eb: &Element) -> ElemDev 
         let d = t.iter().map(|p| ea.bvh.nearest(ta, *p, cap)).fold(0.0f32, f32::max);
         tri.push(d);
     }
-    // sensul invers: varfurile din A care nu mai au suprafata in B (parte taiata / mutata)
+    // the reverse direction: the vertices of A that no longer have a surface in B (part cut / moved)
     let mut back = 0.0f32;
     let step = (ta.len() / 3 / 20_000).max(1);
     for t in ta.chunks_exact(3).step_by(step) {
@@ -103,7 +103,7 @@ pub fn deviation(ma: &Model, ea: &Element, mb: &Model, eb: &Element) -> ElemDev 
 }
 
 impl CompareResult {
-    /// numaram o data pe pereche (partea B) + elementele sterse (partea A)
+    /// we count once per pair (side B) + the deleted elements (side A)
     fn recount(&mut self) {
         self.counts = [0; 5];
         for (id, d) in &self.map {
@@ -161,8 +161,8 @@ fn prop_changes(a: &Element, b: &Element) -> Vec<String> {
     out
 }
 
-/// Compara modelul `ma` (slot a, versiunea veche) cu `mb` (slot b, versiunea noua).
-/// Ambele trebuie sa fie in aceleasi coordonate locale (acelasi origin al scenei).
+/// Compares model `ma` (slot a, the old version) with `mb` (slot b, the new version).
+/// Both must be in the same local coordinates (the same scene origin).
 pub fn compare(ma: &Model, a: usize, mb: &Model, b: usize, tol_mm: f32) -> CompareResult {
     let tol = tol_mm.max(0.0) / 1000.0;
     fn by_guid(m: &Model) -> HashMap<&str, usize> {
@@ -181,7 +181,7 @@ pub fn compare(ma: &Model, a: usize, mb: &Model, b: usize, tol_mm: f32) -> Compa
                 let eb = &mb.elements[ib];
                 let id_b = ElemId { m: b as u32, e: ib as u32 };
                 let mut why = Vec::new();
-                // aceeasi cutie si acelasi numar de triunghiuri: varfurile pot fi totusi mutate (remodelat in interior)
+                // same box and same triangle count: the vertices may still be moved (remodeled inside)
                 let reshaped = || -> Option<String> {
                     if ea.tri_count != eb.tri_count {
                         return None;
@@ -192,7 +192,7 @@ pub fn compare(ma: &Model, a: usize, mb: &Model, b: usize, tol_mm: f32) -> Compa
                 };
                 let d = if let Some(g) = geometry_changed(ea, eb, tol).or_else(reshaped) {
                     why.push(g);
-                    // cat s-a mutat fiecare suprafata (pentru harta de abateri)
+                    // how far each surface moved (for the deviation map)
                     let dv = deviation(ma, ea, mb, eb);
                     why.push(format!("Max deviation {:.0} mm (mean {:.0} mm)", dv.max * 1000.0, dv.mean * 1000.0));
                     r.dev.insert(id_b, dv);
@@ -222,11 +222,11 @@ pub fn compare(ma: &Model, a: usize, mb: &Model, b: usize, tol_mm: f32) -> Compa
 
 // ====================================================================== export / import
 
-/// Un element schimbat, identificat prin GUID (independent de ordinea din fisier).
+/// A changed element, identified by GUID (independent of the order in the file).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CompareItem {
     pub guid: String,
-    /// "A" (versiunea veche: elemente sterse) sau "B" (versiunea noua)
+    /// "A" (the old version: deleted elements) or "B" (the new version)
     pub side: String,
     pub diff: Diff,
     pub name: String,
@@ -236,7 +236,7 @@ pub struct CompareItem {
     pub changes: Vec<String>,
 }
 
-/// Fisier .bimcmp: rezultatul unei comparatii, refolosibil pe aceleasi doua versiuni.
+/// .bimcmp file: the result of a comparison, reusable on the same two versions.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CompareFile {
     pub app: String,
@@ -247,7 +247,7 @@ pub struct CompareFile {
     pub tol_mm: f32,
     pub created: String,
     pub counts: [usize; 5],
-    /// doar elementele schimbate; restul elementelor din B sunt "Unchanged"
+    /// only the changed elements; the rest of the elements from B are "Unchanged"
     pub items: Vec<CompareItem>,
 }
 
@@ -271,7 +271,7 @@ impl CompareResult {
         CompareFile { app: "ManageBIM".into(), kind: FILE_KIND.into(), version: 1, a_name: ma.name.clone(), b_name: mb.name.clone(), tol_mm: self.tol_mm, created, counts: self.counts, items }
     }
 
-    /// Raport CSV pentru Excel (BOM UTF-8, separator ';').
+    /// CSV report for Excel (UTF-8 BOM, separator ';').
     pub fn to_csv(&self, ma: &Model, mb: &Model) -> String {
         let q = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
         let mut s = String::from("\u{feff}Status;GlobalId;Name;IFC Type;Level;Model;Changes\n");
@@ -292,8 +292,8 @@ impl CompareFile {
         Ok(f)
     }
 
-    /// Reface rezultatul pe modelele incarcate (potrivire pe GUID).
-    /// Intoarce rezultatul si cate elemente din fisier nu au fost gasite in modele.
+    /// Rebuilds the result on the loaded models (matching by GUID).
+    /// Returns the result and how many elements from the file were not found in the models.
     pub fn apply(&self, ma: &Model, a: usize, mb: &Model, b: usize) -> (CompareResult, usize) {
         fn by_guid(m: &Model) -> HashMap<&str, u32> {
             m.elements.iter().enumerate().filter(|(_, e)| !e.guid.is_empty()).map(|(i, e)| (e.guid.as_str(), i as u32)).collect()
@@ -313,7 +313,7 @@ impl CompareFile {
                 r.changes.insert(id, it.changes.clone());
             }
         }
-        // perechile A <-> B (ascundem partea veche) si restul elementelor din B = neschimbate
+        // the A <-> B pairs (we hide the old side) and the rest of the elements from B = unchanged
         for (ib, eb) in mb.elements.iter().enumerate() {
             let id_b = ElemId { m: b as u32, e: ib as u32 };
             let d = *r.map.entry(id_b).or_insert(Diff::Same);
@@ -325,7 +325,7 @@ impl CompareFile {
                 }
             }
         }
-        // harta de abateri si pentru o comparatie incarcata din fisier
+        // the deviation map also for a comparison loaded from a file
         let pairs: Vec<(ElemId, ElemId)> = r.matched_a.iter().map(|(a, b)| (*a, *b)).collect();
         for (ia, ib) in pairs {
             if r.map.get(&ib) == Some(&Diff::Geometry) {
@@ -339,19 +339,19 @@ impl CompareFile {
     }
 }
 
-// ====================================================================== pe parametri
+// ====================================================================== by parameters
 
-/// O proprietate schimbata pe un element (partea B); `old` / `new` goale = adaugata / stearsa.
+/// A property changed on an element (side B); empty `old` / `new` = added / deleted.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParamChange {
     pub id: ElemId,
-    /// "Grup / Nume" (sau "Name" pentru numele elementului)
+    /// "Group / Name" (or "Name" for the element name)
     pub param: String,
     pub old: String,
     pub new: String,
 }
 
-/// Toate proprietatile schimbate intre perechile potrivite (A -> B), una pe rand.
+/// All the properties changed between the matched pairs (A -> B), one per row.
 pub fn param_changes(ma: &Model, mb: &Model, r: &CompareResult) -> Vec<ParamChange> {
     let mut out = Vec::new();
     let mut pairs: Vec<(&ElemId, &ElemId)> = r.matched_a.iter().collect();
@@ -379,7 +379,7 @@ pub fn param_changes(ma: &Model, mb: &Model, r: &CompareResult) -> Vec<ParamChan
     out
 }
 
-/// Parametrii schimbati, cu numarul de elemente afectate (cei mai frecventi primii).
+/// The changed parameters, with the number of affected elements (the most frequent first).
 pub fn param_summary(ch: &[ParamChange]) -> Vec<(String, usize)> {
     let mut m: BTreeMap<&str, std::collections::BTreeSet<ElemId>> = BTreeMap::new();
     for c in ch {
@@ -390,7 +390,7 @@ pub fn param_summary(ch: &[ParamChange]) -> Vec<(String, usize)> {
     v
 }
 
-/// Raport CSV pe parametri (Excel): GUID; Element; Tip; Parametru; Valoare veche; Valoare noua.
+/// CSV report by parameters (Excel): GUID; Element; Type; Parameter; Old value; New value.
 pub fn param_csv(ch: &[ParamChange], mb: &Model) -> String {
     let q = |s: &str| if s.contains(';') || s.contains('"') || s.contains('\n') { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() };
     let mut s = String::from("\u{feff}GUID;Element;Type;Parameter;Old value;New value\n");

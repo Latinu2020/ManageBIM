@@ -1,4 +1,4 @@
-//! Uneltele serverului MCP, executate pe firul interfetei (au acces la `App`).
+//! The MCP server tools, run on the interface thread (they have access to `App`).
 
 use super::*;
 use serde_json::{json, Value};
@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 const MAX_PROPS_ELEMS: usize = 50;
 
 impl App {
-    /// Porneste / opreste serverul dupa setari si raspunde cererilor sosite (apelat in fiecare cadru).
+    /// Starts / stops the server according to the settings and answers the incoming requests (called every frame).
     pub fn mcp_step(&mut self, ctx: &eframe::egui::Context) {
         let want = self.settings.mcp.enabled;
         if want && self.mcp.server.is_none() && self.mcp.status.is_empty() {
@@ -22,7 +22,7 @@ impl App {
             }
         }
         for c in calls {
-            // imaginea vederii: raspunsul pleaca din render_step, cand cadrul capturat e gata
+            // the view image: the answer is sent from render_step, when the captured frame is ready
             if c.tool == "capture_view" {
                 match self.mcp_capture_start(&c.args) {
                     Ok(()) => {
@@ -56,7 +56,7 @@ impl App {
                 self.mcp.status.clear();
             }
             Err(e) => {
-                // nu reincercam in fiecare cadru: utilizatorul schimba portul sau apasa Restart
+                // we do not retry every frame: the user changes the port or presses Restart
                 self.mcp.status = e;
             }
         }
@@ -320,7 +320,7 @@ impl App {
                         r.assigned = a.clone();
                     }
                     if let Some(c) = &comment {
-                        // comentariile se adauga (istoric), ca in Navisworks
+                        // comments are appended (history), as in Navisworks
                         if r.comment.is_empty() {
                             r.comment = c.clone();
                         } else {
@@ -339,7 +339,7 @@ impl App {
                 let ti = self.mcp_test_idx(args)?;
                 let idx = self.mcp_result_idx(ti, args)?;
                 self.cur_test = ti;
-                // panoul Clash deschis = modul de afisare clash (cele doua elemente colorate, restul estompat)
+                // Clash panel open = clash display mode (the two elements coloured, the rest dimmed)
                 self.open_panel(Panel::Clash);
                 self.apply(Action::FocusClashes(ti, idx.clone()));
                 Ok(json!(format!("Showing {} clash result(s) - call capture_view to see them.", idx.len())))
@@ -435,13 +435,13 @@ fn parse_id(s: &str) -> Option<ElemId> {
     Some(ElemId { m: a.trim().parse().ok()?, e: b.trim().parse().ok()? })
 }
 
-/// metri cu 3 zecimale (mm) - fara zgomotul f32 in JSON
+/// metres with 3 decimals (mm) - without the f32 noise in JSON
 fn r3(v: f32) -> f64 {
     (v as f64 * 1000.0).round() / 1000.0
 }
 
 impl App {
-    /// capture_view: pregateste camera (optional) si cere o captura la marimea dorita.
+    /// capture_view: prepares the camera (optional) and asks for a capture at the desired size.
     fn mcp_capture_start(&mut self, args: &Value) -> Result<(), String> {
         if self.mcp.capture.is_some() || self.pending_capture.is_some() || self.render_job.is_some() || self.still_path.is_some() {
             return Err("ManageBIM is busy capturing another image - try again in a moment".into());
@@ -451,7 +451,7 @@ impl App {
         }
         let w = args.get("width").and_then(|v| v.as_u64()).unwrap_or(1280).clamp(256, 2048) as u32;
         let h = args.get("height").and_then(|v| v.as_u64()).unwrap_or(w as u64 * 9 / 16).clamp(256, 2048) as u32;
-        // vederea: elementele cerute (zoom), tot modelul, sau ce vede utilizatorul acum
+        // the view: the requested elements (zoom), the whole model, or what the user sees now
         let ids = match args.get("ids").and_then(|v| v.as_array()) {
             Some(a) if !a.is_empty() => self.mcp_ids(args)?,
             _ => Vec::new(),
@@ -482,7 +482,7 @@ impl App {
                 self.cam.set_view(yaw, pitch, &bb);
             }
         }
-        // o animatie de camera in curs (focus_clash, zoom) se termina inainte de captura
+        // a camera animation in progress (focus_clash, zoom) finishes before the capture
         if let Some((_, to, _)) = self.cam_anim.take() {
             self.cam = to;
         }
@@ -499,7 +499,7 @@ impl App {
         Ok(())
     }
 
-    /// Imaginea capturata -> raspunsul MCP (JPEG in base64). Intoarce true daca a fost folosita.
+    /// The captured image -> the MCP answer (JPEG in base64). Returns true if it was used.
     pub fn mcp_capture_done(&mut self, r: &Result<crate::video::Frame, String>) -> bool {
         let Some(tx) = self.mcp.capture.take() else { return false };
         if std::mem::take(&mut self.rt.off_after_capture) && self.rt.on {
@@ -534,7 +534,7 @@ impl App {
 }
 
 impl App {
-    /// testul de clash dupa nume sau index
+    /// the clash test by name or index
     fn mcp_test_idx(&self, args: &Value) -> Result<usize, String> {
         let key = args.get("test").map(|v| v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string())).unwrap_or_default();
         let key = key.trim();
@@ -548,7 +548,7 @@ impl App {
             .ok_or_else(|| format!("no clash test {key:?}; use list_clash_tests"))
     }
 
-    /// rezultatele cerute: "results" = indexi / nume, sau "all", sau filtrul "status"
+    /// the requested results: "results" = indices / names, or "all", or the "status" filter
     fn mcp_result_idx(&self, ti: usize, args: &Value) -> Result<Vec<usize>, String> {
         let t = &self.clash.tests[ti];
         let mut out = Vec::new();

@@ -1,4 +1,4 @@
-//! Randare OpenGL (glow) a modelelor federate, in interiorul unui callback egui.
+//! OpenGL rendering (glow) of the federated models, inside an egui callback.
 use crate::model::Model;
 use crate::video::Frame;
 use eframe::glow::{self, HasContext};
@@ -17,21 +17,21 @@ pub struct GpuMesh {
 pub enum Upload {
     Mesh { slot: u32, pos: Vec<f32>, nrm: Vec<i8>, col: Vec<u8> },
     Colors { slot: u32, col: Vec<u8>, mat: Vec<u8> },
-    /// doar o portiune din culori (elementele care s-au schimbat), incepand de la varful `first`
+    /// only a portion of the colors (the elements that changed), starting at vertex `first`
     ColorRange { slot: u32, first: u32, col: Vec<u8>, mat: Vec<u8> },
     Remove { slot: u32 },
-    /// punctele unui nor (E57); None = slotul nu are nor
+    /// the points of a cloud (E57); None = the slot has no cloud
     Points { slot: u32, cloud: Option<std::sync::Arc<crate::model::PointCloud>> },
     /// all texture layers (TEX_SIZE x TEX_SIZE RGBA each)
     Textures(Vec<Vec<u8>>),
 }
 
-/// Ce se deseneaza dintr-un model in acest cadru (intervale de varfuri): all = elementele vizibile (pasul opac),
-/// transp = doar cele cu ceva transparent (pasul transparent). Fara lista = tot modelul (ca inainte).
+/// What is drawn from a model in this frame (vertex ranges): all = the visible elements (opaque pass),
+/// transp = only those with something transparent (transparent pass). No list = the whole model (as before).
 pub struct DrawList {
     pub all: Vec<(i32, i32)>,
     pub transp: Vec<(i32, i32)>,
-    /// intervale de puncte (nor de puncte): scanarile vizibile, primele N% din fiecare
+    /// point ranges (point cloud): the visible scans, the first N% of each
     pub points: Vec<(i32, i32)>,
 }
 
@@ -43,7 +43,7 @@ struct GpuPoints {
 }
 
 pub struct Renderer {
-    /// listele de desenare pe slot, calculate de aplicatie pentru vederea curenta (None = tot)
+    /// draw lists per slot, computed by the app for the current view (None = everything)
     pub lists: Option<HashMap<u32, DrawList>>,
     prog: Option<glow::Program>,
     meshes: HashMap<u32, GpuMesh>,
@@ -62,27 +62,27 @@ pub struct Renderer {
     pub captured: Option<Result<Frame, String>>,
     fbo: Option<(glow::Framebuffer, glow::Renderbuffer, glow::Renderbuffer, u32, u32)>,
     tex: Option<glow::Texture>,
-    /// umbrire de contact (SSAO): programul, tintele (cache pe marime) si un VAO gol pentru triunghiul pe tot ecranul
+    /// contact shading (SSAO): the program, the targets (cached by size) and an empty VAO for the full-screen triangle
     aoprog: Option<glow::Program>,
     ao_targets: Vec<AoTargets>,
     ao_vao: Option<glow::VertexArray>,
-    /// ceva n-a mers (FBO incomplet etc.): desenare normala pana la repornire
+    /// something failed (incomplete FBO etc.): normal drawing until restart
     pub ao_failed: bool,
-    /// umbre: programul de adancime, FBO + textura de adancime, si matricea / parametrii cadrului curent
+    /// shadows: the depth program, FBO + depth texture, and the matrix / parameters of the current frame
     sprog: Option<glow::Program>,
     shadow_fbo: Option<(glow::Framebuffer, glow::Texture)>,
     shadow_state: Option<(Mat4, f32, f32)>,
     shadow_failed: bool,
 }
 
-/// marimea hartii de umbre (pixeli)
+/// shadow map size (pixels)
 const SHADOW_SIZE: i32 = 2048;
 
 struct AoTargets {
     w: i32,
     h: i32,
     samples: i32,
-    /// FBO multisample (antialiasing) - None cand samples <= 1
+    /// multisample FBO (antialiasing) - None when samples <= 1
     ms: Option<(glow::Framebuffer, glow::Renderbuffer, glow::Renderbuffer)>,
     fbo: glow::Framebuffer,
     col: glow::Texture,
@@ -105,7 +105,7 @@ pub struct CaptureReq {
     pub h: u32,
     pub bg_top: [u8; 3],
     pub bg_bottom: [u8; 3],
-    /// ce se deseneaza (ascunse / estompate ca in viewport); None = tot modelul (randari, video)
+    /// what is drawn (hidden / dimmed as in the viewport); None = the whole model (renders, video)
     pub lists: Option<std::sync::Arc<HashMap<u32, DrawList>>>,
     /// path traced on the GPU instead of rasterised (Ray Trace view on): (frame, samples per pixel)
     pub pt: Option<(crate::gpu_pt::PtFrame, u32)>,
@@ -119,33 +119,33 @@ pub struct FrameParams {
     pub nplanes: i32,
     /// direction towards the sun (world)
     pub sun: Vec3,
-    /// lumina: x = expunere, y = ambient, z = intensitatea soarelui (1 = implicit)
+    /// lighting: x = exposure, y = ambient, z = sun intensity (1 = default)
     pub light: Vec3,
-    /// marimea punctelor norilor (pixeli)
+    /// point size of the clouds (pixels)
     pub point_size: f32,
-    /// norii de puncte: (mod culoare, cota min, cota max, rotunde) si (marime reala m, pixeli pe metru)
+    /// point clouds: (color mode, min elevation, max elevation, round) and (real size m, pixels per meter)
     pub cloud: Vec4,
     pub cloud_world: [f32; 2],
-    /// fetele taiate de sectiune desenate pline (capace)
+    /// faces cut by the section drawn solid (caps)
     pub caps: bool,
-    /// umbrire de contact: 0 = oprita; altfel taria (0..1)
+    /// contact shading: 0 = off; otherwise the strength (0..1)
     pub ao: f32,
-    /// proiectia: (P22, P32, ortografic) pentru adancimea liniara si P11 (scara pe Y)
-    /// margini fine (0 = oprite; altfel taria)
+    /// projection: (P22, P32, orthographic) for linear depth and P11 (Y scale)
+    /// fine edges (0 = off; otherwise the strength)
     pub edges: f32,
     pub depth_k: [f32; 4],
-    /// stilul de afisare
+    /// display style
     pub style: VisualStyle,
-    /// umbre aruncate de soare + sfera care cuprinde scena (centru, raza) pentru harta de umbre
+    /// shadows cast by the sun + the sphere enclosing the scene (center, radius) for the shadow map
     pub shadows: bool,
-    /// lampi in model: xyz = pozitie, w = putere (lux / 20)
+    /// lamps in the model: xyz = position, w = power (lux / 20)
     pub lamps: [Vec4; 8],
-    /// rgb = culoare, w = raza (m)
+    /// rgb = color, w = radius (m)
     pub lamp_data: [Vec4; 8],
-    /// xyz = directia luminii (spre tinta), w = tipul: -2 punct, 2 distanta (soare), altfel cos(jumatate de con) pentru spot
+    /// xyz = light direction (toward the target), w = type: -2 point, 2 distant (sun), otherwise cos(half cone angle) for spot
     pub lamp_dir: [Vec4; 8],
     pub nlamps: i32,
-    /// scena de noapte: cer si lumina ambientala aproape stinse, doar lampile lumineaza
+    /// night scene: sky and ambient light almost off, only the lamps give light
     pub night: bool,
     pub scene: Vec4,
 }
@@ -155,7 +155,7 @@ layout(location=0) in vec3 a_pos;
 layout(location=1) in vec4 a_col;
 uniform mat4 u_vp;
 uniform float u_size;
-// x = marimea reala a punctului (m, 0 = doar pixeli), y = pixeli pe metru la distanta 1
+// x = real point size (m, 0 = pixels only), y = pixels per meter at distance 1
 uniform vec2 u_world;
 out vec3 v_pos;
 out vec4 v_col;
@@ -163,7 +163,7 @@ void main() {
     v_pos = a_pos;
     v_col = a_col;
     gl_Position = u_vp * vec4(a_pos, 1.0);
-    // aproape de nor punctele cresc (umplu golurile, aspect continuu), departe raman la u_size
+    // close to the cloud the points grow (fill the gaps, continuous look), far away they stay at u_size
     float ws = u_world.x * u_world.y / max(gl_Position.w, 1e-3);
     gl_PointSize = clamp(max(u_size, ws), 1.0, 14.0);
 }
@@ -182,11 +182,11 @@ void main() {
         if (i >= u_nplanes) break;
         if (dot(u_planes[i].xyz, v_pos) > u_planes[i].w) discard;
     }
-    // x = mod culoare (0 RGB scanare, 1 cota, 2 gri), y/z = cota min/max, w = puncte rotunde cu relief
+    // x = color mode (0 scan RGB, 1 elevation, 2 gray), y/z = min/max elevation, w = round points with relief
     vec3 c = v_col.rgb;
     if (u_cloud.x > 0.5 && u_cloud.x < 1.5) {
         float t = clamp((v_pos.z - u_cloud.y) / max(u_cloud.z - u_cloud.y, 1e-3), 0.0, 1.0);
-        // albastru - cyan - verde - galben - rosu (ca in Recap / CloudCompare)
+        // blue - cyan - green - yellow - red (as in Recap / CloudCompare)
         c = t < 0.25 ? mix(vec3(0.15, 0.25, 0.85), vec3(0.1, 0.75, 0.9), t / 0.25)
           : t < 0.5 ? mix(vec3(0.1, 0.75, 0.9), vec3(0.2, 0.8, 0.3), (t - 0.25) / 0.25)
           : t < 0.75 ? mix(vec3(0.2, 0.8, 0.3), vec3(0.95, 0.85, 0.2), (t - 0.5) / 0.25)
@@ -199,15 +199,15 @@ void main() {
         vec2 q = gl_PointCoord * 2.0 - 1.0;
         float r2 = dot(q, q);
         if (r2 > 1.0) discard;
-        // fiecare punct ca o mica sfera luminata din stanga-sus: relief, fara „zgomot patrat"
+        // each point as a small sphere lit from the top-left: relief, no „square noise"
         vec3 n = vec3(q.x, -q.y, sqrt(1.0 - r2));
         shade = 0.62 + 0.38 * max(dot(n, normalize(vec3(-0.4, 0.5, 0.75))), 0.0);
-        // adancime pe sfera: punctele se suprapun curat
+        // depth on the sphere: the points overlap cleanly
         gl_FragDepth = gl_FragCoord.z - (1.0 - r2) * 2e-6;
     } else {
         gl_FragDepth = gl_FragCoord.z;
     }
-    // alfa 0.98 = marcaj "nor de puncte": pasul SSAO / margini nu-l atinge (altfel fiecare punct devine o muchie neagra)
+    // alpha 0.98 = "point cloud" marker: the SSAO / edges pass does not touch it (otherwise every point becomes a black edge)
     o_col = vec4(min(c * u_exposure * shade, vec3(1.0)), 0.98);
 }
 "#;
@@ -225,7 +225,7 @@ void main() {
 }
 "#;
 
-// pasul de umbra: doar adancimea; sectiunile si elementele transparente / ascunse nu arunca umbre
+// shadow pass: depth only; sections and transparent / hidden elements do not cast shadows
 const FS_S: &str = r#"
 in vec3 v_pos;
 in float v_a;
@@ -274,18 +274,18 @@ uniform vec3 u_sun;
 uniform vec3 u_light;
 uniform int u_caps;
 uniform sampler2DArray u_tex;
-uniform int u_style;   // 0 realist, 1 umbrit, 2 concept, 3 wireframe, 4 hidden-line
+uniform int u_style;   // 0 realistic, 1 shaded, 2 concept, 3 wireframe, 4 hidden-line
 out vec4 o_col;
 uniform sampler2D u_shadow;
 uniform mat4 u_svp;
-uniform vec4 u_sp;     // x = marimea unui texel in lume, y = adancimea totala (m), z = umbre pornite
-uniform vec4 u_lamps[8];     // xyz = pozitie, w = putere
-uniform vec4 u_lamp_data[8]; // rgb = culoare liniara, w = raza (0 = nelimitata)
-uniform vec4 u_lamp_dir[8];  // xyz = directia (spre tinta), w = -2 punct / 2 distanta / cos(jumatate de con) spot
+uniform vec4 u_sp;     // x = size of a texel in the world, y = total depth (m), z = shadows on
+uniform vec4 u_lamps[8];     // xyz = position, w = power
+uniform vec4 u_lamp_data[8]; // rgb = linear color, w = radius (0 = unlimited)
+uniform vec4 u_lamp_dir[8];  // xyz = direction (toward the target), w = -2 point / 2 distant / cos(half cone angle) spot
 uniform int u_nlamps;
 uniform int u_night;
 
-// 1 = in lumina, 0 = in umbra (3x3 PCF: margini moi)
+// 1 = in light, 0 = in shadow (3x3 PCF: soft edges)
 float shadow_at(vec3 p, vec3 n) {
     if (u_sp.z < 0.5) return 1.0;
     float nl = max(dot(n, u_sun), 0.0);
@@ -376,7 +376,7 @@ void main() {
     vec3 n = normalize(v_nrm);
     vec3 vd = normalize(u_eye - v_pos);
     if (dot(n, vd) < 0.0) {
-        // fata interioara vazuta prin taietura: capac plin, hasurat (doar cu sectiune activa, elemente opace)
+        // inner face seen through the cut: solid cap, hatched (only with an active section, opaque elements)
         if (u_caps == 1 && u_nplanes > 0 && u_pass == 0) {
             float h = mod(gl_FragCoord.x + gl_FragCoord.y, 9.0) < 1.6 ? 0.6 : 1.0;
             vec3 cc = mix(v_col.rgb, vec3(0.55), 0.3) * 0.8 * h * u_light.x;
@@ -387,7 +387,7 @@ void main() {
     }
     vec3 base = v_col.rgb;
     int pt = int(v_mat.x * 255.0 + 0.5);
-    // stilurile fara materiale: culorile din fisier (umbrit) sau aproape alb, mat (concept)
+    // styles without materials: the colors from the file (shaded) or almost white, matte (concept)
     if (u_style == 1 || u_style == 3 || u_style == 4) pt = 0;
     if (u_style == 2) { pt = 0; base = mix(base, vec3(0.94, 0.94, 0.92), 0.78); }
     if (u_style == 4) { base = vec3(0.86, 0.88, 0.91); }
@@ -397,15 +397,15 @@ void main() {
     vec2 uv = an.z >= an.x && an.z >= an.y ? v_pos.xy : (an.x >= an.y ? v_pos.yz : v_pos.xz);
     uv /= (0.05 + v_mat.w * 4.0);
     if (pt == 200) {
-        // PBR: doua straturi impachetate (albedo*AO + roughness / normal + metallic)
-        // stratul e in octetul 1 al v_mat (gloss-ul vine din harta, deci octetul e liber)
+        // PBR: two packed layers (albedo*AO + roughness / normal + metallic)
+        // the layer is in byte 1 of v_mat (the gloss comes from the map, so the byte is free)
         int l = int(v_mat.y * 255.0 + 0.5);
         vec4 ca = texture(u_tex, vec3(uv, float(l)));
         vec4 cs = texture(u_tex, vec3(uv, float(l + 1)));
         base = ca.rgb;
         pbr_rough = ca.a;
         pbr_metal = cs.a;
-        // baza tangenta din derivatele pozitiei si ale UV-ului (normal mapping fara atribute UV)
+        // tangent basis from the derivatives of the position and the UV (normal mapping without UV attributes)
         vec3 dp1 = dFdx(v_pos), dp2 = dFdy(v_pos);
         vec2 du1 = dFdx(uv), du2 = dFdy(uv);
         vec3 T = dp1 * du2.y - dp2 * du1.y;
@@ -426,20 +426,20 @@ void main() {
     if (u_sp.w > 0.5) { o_col = vec4(vec3(shv), 1.0); return; }
     float sun = max(dot(n, u_sun), 0.0) * shv;
     float sky = 0.5 + 0.5 * n.z;
-    // ambient emisferic (cer rece, sol cald) + soare cald + lumina de umplere din partea opusa soarelui
+    // hemispheric ambient (cool sky, warm ground) + warm sun + fill light from the side opposite the sun
     vec3 amb = mix(vec3(0.90, 0.86, 0.80), vec3(0.94, 0.97, 1.04), sky);
     vec3 fdir = normalize(vec3(-u_sun.x, -u_sun.y, 0.45));
     float fill = max(dot(n, fdir), 0.0);
-    // noaptea: cerul, soarele si lumina de umplere aproape stinse - lampile din model dau lumina
+    // at night: the sky, the sun and the fill light almost off - the lamps in the model give the light
     float dayf = u_night == 1 ? 0.0 : 1.0;
     float ambf = u_night == 1 ? 0.07 : 1.0;
     vec3 k = (amb * (0.21 + 0.14 * sky) * u_light.y + vec3(0.31 * head + 0.07 * fill * u_light.y)) * ambf + vec3(1.02, 0.99, 0.94) * (0.30 * sun * u_light.z) * dayf;
-    // umbra aruncata: fetele intoarse spre soare dar acoperite devin vizibil mai inchise (ca afara, unde soarele domina)
+    // cast shadow: faces turned toward the sun but covered become visibly darker (as outdoors, where the sun dominates)
     k *= mix(1.0, mix(0.62, 1.0, shv), smoothstep(0.0, 0.25, dot(n, u_sun)) * step(0.5, u_sp.z) * dayf);
-    // lampi in model ( Interactive Ray Trace ca in Navisworks ): lumina cade pe suprafete in timp real.
-    // Punct = in toate directiile; Spot = con orientat spre tinta (rotirea din gizmo se vede imediat);
-    // Distant = raze paralele pe directia luminii. Raza 0 = fara cadere cu distanta.
-    // Se adauga DUPA umbra soarelui: lampile nu sunt intunecate de umbra soarelui.
+    // lamps in the model ( Interactive Ray Trace as in Navisworks ): light falls on surfaces in real time.
+    // Point = in all directions; Spot = cone aimed at the target (rotating it from the gizmo shows immediately);
+    // Distant = parallel rays along the light direction. Radius 0 = no falloff with distance.
+    // Added AFTER the sun shadow: the lamps are not darkened by the sun shadow.
     vec3 lamp_spec = vec3(0.0);
     vec3 klamp = vec3(0.0);
     for (int li = 0; li < 8; li++) {
@@ -457,7 +457,7 @@ void main() {
             L = lv / max(d, 0.001);
             att = radius <= 0.001 ? u_lamps[li].w * 26.0 : u_lamps[li].w * 26.0 / (1.0 + (d / radius) * (d / radius));
             if (ld.w > -1.5) {
-                // con: centrul cel mai luminos, marginea moale (ca in randarea offline)
+                // cone: the center brightest, the edge soft (as in offline rendering)
                 float ca = dot(-L, ld.xyz);
                 float cone = clamp((ca - ld.w) / max(1.0 - ld.w, 1e-4), 0.0, 1.0);
                 att *= pow(cone, 1.5);
@@ -465,18 +465,18 @@ void main() {
         }
         float nl = max(dot(n, L), 0.0);
         klamp += u_lamp_data[li].rgb * nl * att;
-        // luciu de la lampa: punctul luminos se vede pe suprafetele lucioase
+        // lamp highlight: the bright spot shows on glossy surfaces
         vec3 hl = normalize(L + vd);
         lamp_spec += u_lamp_data[li].rgb * pow(max(dot(n, hl), 0.0), 48.0) * nl * att * 0.25;
     }
     k += klamp;
-    // un luciu mic pentru orice material (suprafetele nu mai par plate / de hartie)
-    // harta de rugozitate (0 = oglinda) e inversul luciului; harta de metalicitate inlocuieste valoarea globala
+    // a small gloss for every material (surfaces no longer look flat / papery)
+    // the roughness map (0 = mirror) is the inverse of gloss; the metalness map replaces the global value
     float gloss = pbr_rough >= 0.0 ? clamp(1.0 - pbr_rough, 0.03, 1.0) : (u_style == 0 ? max(v_mat.y, 0.07) : ((u_style == 2 || u_style == 4) ? 0.0 : 0.07));
     float metal = u_style == 0 ? (pbr_rough >= 0.0 ? pbr_metal : v_mat.z) : 0.0;
     if (u_style == 2 || u_style == 4) {
-        // concept / hidden-line: lumina moale, fara reflexii
-        // lampile se vad si aici (pata de lumina colorata), noaptea fondul e stins
+        // concept / hidden-line: soft light, no reflections
+        // the lamps show here too (colored light spot), at night the background is dark
         vec3 cc = (base * (0.62 + 0.30 * head + 0.10 * sky + 0.08 * sun) * mix(0.12, 1.0, dayf) + base * klamp * 0.6) * u_light.x;
         o_col = vec4(min(cc, vec3(1.0)) * a, a);
         return;
@@ -487,7 +487,7 @@ void main() {
     vec3 sc = mix(vec3(1.0), base, metal);
     vec3 c = base * k * (1.0 - 0.35 * metal) + sc * (spec * 0.85 + rim * ambf) + metal * base * 0.22 * sky * ambf + lamp_spec * max(gloss, 0.15);
     if (u_style == 0) {
-        // realist: reflexia cerului (Fresnel) - sticla, metal, suprafete lucioase prind cerul si solul
+        // realistic: sky reflection (Fresnel) - glass, metal, glossy surfaces catch the sky and the ground
         vec3 rv = reflect(-vd, n);
         vec3 env = mix(vec3(0.34, 0.32, 0.29), mix(vec3(0.78, 0.84, 0.92), vec3(0.42, 0.58, 0.85), clamp(rv.z, 0.0, 1.0)), smoothstep(-0.15, 0.25, rv.z));
         vec3 f0 = mix(vec3(0.04), base, metal);
@@ -495,16 +495,16 @@ void main() {
         bool glass = a < 0.95;
         float refl = glass ? 0.9 : gloss * 0.6;
         c = mix(c, env * u_light.z * 1.1 * mix(0.04, 1.0, dayf), clamp(fres * refl, 0.0, 1.0));
-        // sticla: mai opaca la unghiuri razante (ca in realitate)
+        // glass: more opaque at grazing angles (as in reality)
         if (glass) a = clamp(a + (1.0 - a) * pow(1.0 - head, 3.0) * 0.8, 0.0, 1.0);
-        // tonuri filmice (ACES): contrast si saturatie naturale, luminile nu se ard
-        // ACES ridica tonurile medii: expunerea compensata (un gri mediu ramane aproape neschimbat)
+        // filmic tones (ACES): natural contrast and saturation, highlights do not burn out
+        // ACES lifts the midtones: compensated exposure (a mid gray stays almost unchanged)
         c *= u_light.x * 0.85;
         c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0);
         o_col = vec4(c * a, a);
         return;
     }
-    // umar moale in loc de taiere la alb: luminile puternice nu se ard
+    // soft shoulder instead of clipping to white: strong highlights do not burn out
     c *= u_light.x;
     vec3 e = max(c - 0.8, 0.0);
     c = min(c, vec3(0.8)) + e / (1.0 + e * 5.0);
@@ -521,7 +521,7 @@ impl Renderer {
         if self.prog.is_some() || self.error.is_some() {
             return;
         }
-        // placa video / driverul prea vechi (sau Remote Desktop fara accelerare): explicatie, nu doar eroarea de shader
+        // graphics card / driver too old (or Remote Desktop without acceleration): an explanation, not just the shader error
         let v = gl.version();
         let hint = format!(
             "The 3D view needs OpenGL 3.3; this graphics driver offers OpenGL {}.{} ({}). Update the graphics driver, or run ManageBIM on the dedicated graphics card.",
@@ -563,13 +563,13 @@ impl Renderer {
             gl.delete_shader(s);
         }
         self.prog = Some(prog);
-        // programul pentru norii de puncte; daca nu merge, modelele se vad oricum (doar fara puncte)
+        // the program for point clouds; if it fails, the models still show (just without points)
         self.pprog = compile_program(gl, header, VS_P, FS_P).ok();
-        // SSAO: fara el, desenarea ramane cea obisnuita
+        // SSAO: without it, drawing stays the usual one
         let hdr_ao = if gl.version().is_embedded { "#version 300 es\nprecision highp float;\nprecision highp sampler2D;\n" } else { header };
         self.aoprog = compile_program(gl, hdr_ao, VS_AO, FS_AO).ok();
         self.ao_vao = gl.create_vertex_array().ok();
-        // umbre: fara ele, desenarea ramane cea obisnuita
+        // shadows: without them, drawing stays the usual one
         self.sprog = compile_program(gl, header, VS_S, FS_S).ok();
         let n = crate::materials::tex_size() as usize;
         self.upload_textures(gl, &[vec![200u8; n * n * 4]]);
@@ -649,7 +649,7 @@ impl Renderer {
                 }
                 Upload::ColorRange { slot, first, col, mat } => {
                     if let Some(m) = self.meshes.get(&slot) {
-                        // 4 octeti per varf; ignoram intervale din afara bufferului (mesh inlocuit intre timp)
+                        // 4 bytes per vertex; we ignore ranges outside the buffer (mesh replaced in the meantime)
                         let off = first as usize * 4;
                         if off + col.len() <= m.count as usize * 4 && col.len() == mat.len() {
                             gl.bind_buffer(glow::ARRAY_BUFFER, Some(m.vbo_col));
@@ -730,7 +730,7 @@ impl Renderer {
             self.draw(gl, p, lists);
         }
         if wire {
-            // egui deseneaza cu triunghiuri pline dupa noi
+            // egui draws with filled triangles after us
             gl.polygon_mode(glow::FRONT_AND_BACK, glow::FILL);
         }
         if let Some(req) = self.capture.take() {
@@ -756,7 +756,7 @@ impl Renderer {
         }
         gl.uniform_4_f32_slice(gl.get_uniform_location(prog, "u_planes").as_ref(), &pl);
         gl.uniform_1_i32(gl.get_uniform_location(prog, "u_nplanes").as_ref(), p.nplanes);
-        // lampi (max 8), ca in Navisworks Interactive Ray Trace
+        // lamps (max 8), as in Navisworks Interactive Ray Trace
         let mut lv = [0.0f32; 32];
         let mut lc = [0.0f32; 32];
         for (i, l) in p.lamps.iter().enumerate() {
@@ -778,7 +778,7 @@ impl Renderer {
         gl.active_texture(glow::TEXTURE1);
         gl.bind_texture(glow::TEXTURE_2D_ARRAY, self.tex);
         gl.uniform_1_i32(gl.get_uniform_location(prog, "u_tex").as_ref(), 1);
-        // harta de umbre pe unitatea 4
+        // shadow map on unit 4
         match (self.shadow_state, self.shadow_fbo) {
             (Some((svp, texel, range)), Some((_, stex))) => {
                 gl.active_texture(glow::TEXTURE4);
@@ -793,14 +793,14 @@ impl Renderer {
             }
         }
         gl.active_texture(glow::TEXTURE1);
-        // pasul 1: opac
+        // pass 1: opaque
         gl.disable(glow::BLEND);
         gl.uniform_1_i32(u_pass.as_ref(), 0);
         for (slot, m) in &self.meshes {
             gl.bind_vertex_array(Some(m.vao));
             draw_ranges(gl, m.count, lists.and_then(|l| l.get(slot)).map(|d| &d.all));
         }
-        // norii de puncte (opaci), cu programul lor
+        // the point clouds (opaque), with their own program
         if let (Some(pp), false) = (self.pprog, self.points.is_empty()) {
             gl.use_program(Some(pp));
             if !gl.version().is_embedded {
@@ -829,7 +829,7 @@ impl Renderer {
             }
             gl.use_program(Some(prog));
         }
-        // pasul 2: transparent
+        // pass 2: transparent
         gl.enable(glow::BLEND);
         gl.blend_func(glow::ONE, glow::ONE_MINUS_SRC_ALPHA);
         gl.depth_mask(false);
@@ -980,11 +980,11 @@ impl Renderer {
             gl.depth_mask(true);
             gl.color_mask(true, true, true, true);
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
-            // umbrele pentru tot modelul (captura nu foloseste listele vederii)
+            // shadows for the whole model (the capture does not use the view lists)
             self.shadow_state = if req.params.shadows { self.shadow_pass(gl, &req.params, req.lists.as_deref()) } else { None };
             gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fb));
             gl.viewport(0, 0, w as i32, h as i32);
-            // capturile (randari / video) deseneaza tot modelul, la calitate maxima (si cu SSAO)
+            // captures (renders / video) draw the whole model, at maximum quality (and with SSAO)
             if !(req.params.ao > 0.0 && self.draw_ao(gl, &req.params, req.lists.as_deref())) {
                 gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fb));
                 gl.viewport(0, 0, w as i32, h as i32);
@@ -993,7 +993,7 @@ impl Renderer {
             let mut buf = vec![0u8; (w * h * 4) as usize];
             gl.pixel_store_i32(glow::PACK_ALIGNMENT, 1);
             gl.read_pixels(0, 0, w as i32, h as i32, glow::RGBA, glow::UNSIGNED_BYTE, glow::PixelPackData::Slice(&mut buf));
-            // rasturnare verticala + compunere peste fundal (culori premultiplicate)
+            // vertical flip + compositing over the background (premultiplied colors)
             let mut out = vec![0u8; buf.len()];
             let row = (w * 4) as usize;
             for y in 0..h as usize {
@@ -1023,7 +1023,7 @@ impl Renderer {
 const VS_AO: &str = r#"
 out vec2 v_uv;
 void main() {
-    // un triunghi care acopera tot ecranul
+    // a triangle covering the whole screen
     vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
     v_uv = p;
     gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
@@ -1035,11 +1035,11 @@ in vec2 v_uv;
 uniform sampler2D u_col;
 uniform sampler2D u_dep;
 uniform vec2 u_texel;
-uniform vec4 u_k;      // P22, P32, ortografic (1/0), P11
-uniform float u_h;     // inaltimea in pixeli
-uniform float u_str;   // taria
-uniform float u_edge;  // margini (0 = oprite)
-uniform int u_style;   // 4 = hidden-line (desen tehnic)
+uniform vec4 u_k;      // P22, P32, orthographic (1/0), P11
+uniform float u_h;     // height in pixels
+uniform float u_str;   // strength
+uniform float u_edge;  // edges (0 = off)
+uniform int u_style;   // 4 = hidden-line (technical drawing)
 out vec4 o_col;
 float lin(float d) {
     float z = d * 2.0 - 1.0;
@@ -1050,14 +1050,14 @@ void main() {
     vec4 c = texture(u_col, v_uv);
     float d0 = texture(u_dep, v_uv).r;
     if (d0 >= 0.99999 || c.a <= 0.0) { o_col = c; return; }
-    // punctele norilor (alfa 0.98, amestecat MSAA la margini 0.97..1): fara umbrire de contact si fara margini
+    // cloud points (alpha 0.98, MSAA-blended at edges 0.97..1): no contact shading and no edges
     if (c.a > 0.97 && c.a < 0.9995) { o_col = vec4(c.rgb, 1.0); return; }
     float z0 = lin(d0);
-    // raza ~0.45 m in lume, proiectata pe ecran (limitata 3..48 px)
+    // radius ~0.45 m in the world, projected on screen (limited to 3..48 px)
     float rw = 0.45;
     float pscale = 0.5 * u_h * u_k.w;
     float rpx = clamp(u_k.z > 0.5 ? rw * pscale : rw * pscale / max(z0, 1e-3), 3.0, 48.0);
-    // rotatie per pixel (zgomot fin, fara benzi)
+    // per-pixel rotation (fine noise, no banding)
     float ang = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
     float occ = 0.0;
     const int N = 16;
@@ -1070,10 +1070,10 @@ void main() {
         float diff = z0 - lin(ds);
         occ += smoothstep(0.015, 0.12, diff) * (1.0 - smoothstep(rw, rw * 2.5, diff));
     }
-    // umbre mai moi: atenuare mai blanda
+    // softer shadows: gentler attenuation
     float ao = 1.0 - u_str * 0.5 * occ / float(N);
-    // margini fine: salturi de adancime (contur) si schimbari de panta (muchii). Pe o suprafata plana
-    // 1/z (perspectiva) sau z (ortografic) variaza liniar pe ecran -> derivata a doua ~0.
+    // fine edges: depth jumps (outline) and slope changes (creases). On a flat surface
+    // 1/z (perspective) or z (orthographic) varies linearly on screen -> second derivative ~0.
     float edge = 0.0;
     if (u_edge > 0.0) {
         float zl = lin(texture(u_dep, v_uv - vec2(u_texel.x, 0.0)).r);
@@ -1088,19 +1088,19 @@ void main() {
         float qd = ortho ? zd : 1.0 / zd;
         float qu = ortho ? zu : 1.0 / zu;
         float lapAbs = abs(ql + qr - 2.0 * q0) + abs(qd + qu - 2.0 * q0);
-        // ortografic: raportat la marimea pixelului in lume; perspectiva: relativ la 1/z
+        // orthographic: relative to the pixel size in the world; perspective: relative to 1/z
         float pix = 2.0 / max(u_k.w * u_h, 1e-3);
         float crease = ortho ? smoothstep(0.3, 1.0, lapAbs / pix) : smoothstep(0.0009, 0.004, lapAbs / max(abs(q0), 1e-6));
-        // Hidden line: DOAR conturul general (silueta / salt de adancime) - fara crease.
-        // Hidden line: silueta SI muchiile dintre fete (desen tehnic); celelalte stiluri: muchii mai discrete
+        // Hidden line: ONLY the general outline (silhouette / depth jump) - no creases.
+        // Hidden line: silhouette AND the edges between faces (technical drawing); the other styles: more subtle edges
         edge = u_style == 4 ? max(smoothstep(0.015, 0.05, jump), crease) : max(smoothstep(0.02, 0.06, jump), crease * 0.8);
     }
     if (u_style == 4) {
-        // HIDDEN LINE (desen tehnic, ca Rhino / Inventor): suprafete albe cu o nuanta gri foarte
-        // fina dupa orientare (volumele se citesc), toate muchiile formei cu cerneala neagra.
+        // HIDDEN LINE (technical drawing, like Rhino / Inventor): white surfaces with a very fine gray
+        // tint by orientation (volumes read clearly), all edges of the shape in black ink.
         float ink = clamp(edge * 1.6, 0.0, 1.0);
         vec3 paper = vec3(0.985, 0.988, 0.992);
-        // luminozitatea umbririi Concept (depinde de orientarea fetei), adusa intr-o banda ingusta de gri
+        // brightness of the Concept shading (depends on face orientation), brought into a narrow gray band
         float lum = dot(c.rgb / max(c.a, 1e-3), vec3(0.299, 0.587, 0.114));
         float tone = mix(0.80, 1.0, smoothstep(0.25, 0.85, lum));
         vec3 shade = paper * tone * mix(1.0, 0.86, clamp(1.0 - ao, 0.0, 1.0) * 2.0);
@@ -1113,9 +1113,9 @@ void main() {
 "#;
 
 impl Renderer {
-    /// Scena cu umbrire de contact: desenata intr-un FBO (multisample cand framebuffer-ul curent are MSAA),
-    /// rezolvata in texturi de culoare / adancime, apoi compusa in framebuffer-ul curent cu SSAO.
-    /// Intoarce false daca nu se poate (atunci se deseneaza normal).
+    /// Scene with contact shading: drawn into an FBO (multisample when the current framebuffer has MSAA),
+    /// resolved into color / depth textures, then composited into the current framebuffer with SSAO.
+    /// Returns false if it cannot (then it draws normally).
     unsafe fn draw_ao(&mut self, gl: &glow::Context, p: &FrameParams, lists: Option<&HashMap<u32, DrawList>>) -> bool {
         let (Some(aoprog), Some(vao)) = (self.aoprog, self.ao_vao) else { return false };
         if self.ao_failed {
@@ -1138,7 +1138,7 @@ impl Renderer {
             let t = &self.ao_targets[ti];
             (t.ms.map(|m| m.0), t.fbo, t.col, t.dep)
         };
-        // 1) scena in FBO
+        // 1) scene into the FBO
         gl.bind_framebuffer(glow::FRAMEBUFFER, Some(ms.unwrap_or(fbo)));
         gl.viewport(0, 0, w, h);
         gl.disable(glow::SCISSOR_TEST);
@@ -1148,14 +1148,14 @@ impl Renderer {
         gl.color_mask(true, true, true, true);
         gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
         self.draw(gl, p, lists);
-        // 2) MSAA -> texturi
+        // 2) MSAA -> textures
         if let Some(m) = ms {
             gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(m));
             gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, Some(fbo));
             gl.blit_framebuffer(0, 0, w, h, 0, 0, w, h, glow::COLOR_BUFFER_BIT, glow::NEAREST);
             gl.blit_framebuffer(0, 0, w, h, 0, 0, w, h, glow::DEPTH_BUFFER_BIT, glow::NEAREST);
         }
-        // 3) compunere in framebuffer-ul initial, in aceeasi zona
+        // 3) compositing into the initial framebuffer, in the same area
         gl.bind_framebuffer(glow::FRAMEBUFFER, prev_fb);
         gl.viewport(x, y, w, h);
         if scissor {
@@ -1189,9 +1189,9 @@ impl Renderer {
         true
     }
 
-    /// Harta de umbre a soarelui: adancimea scenei vazuta din directia soarelui (proiectie ortografica
-    /// care cuprinde sfera scenei). Intoarce matricea luminii, marimea unui texel in lume si adancimea totala;
-    /// None daca nu se poate (atunci fara umbre).
+    /// Sun shadow map: the scene depth seen from the sun direction (orthographic projection
+    /// enclosing the scene sphere). Returns the light matrix, the size of a texel in the world and the total depth;
+    /// None if it cannot (then no shadows).
     unsafe fn shadow_pass(&mut self, gl: &glow::Context, p: &FrameParams, lists: Option<&HashMap<u32, DrawList>>) -> Option<(Mat4, f32, f32)> {
         let sprog = self.sprog?;
         if self.shadow_failed || p.scene.w <= 0.0 || p.sun.z <= 0.02 {
@@ -1223,7 +1223,7 @@ impl Renderer {
             self.shadow_fbo = Some((f, t));
         }
         let (fbo, _) = self.shadow_fbo?;
-        // lumina: ortografica pe directia soarelui, cuprinde sfera scenei
+        // light: orthographic along the sun direction, encloses the scene sphere
         let c = Vec3::new(p.scene.x, p.scene.y, p.scene.z);
         let r = p.scene.w;
         let dir = p.sun.normalize();
@@ -1245,7 +1245,7 @@ impl Renderer {
         gl.clear_depth_f32(1.0);
         gl.clear(glow::DEPTH_BUFFER_BIT);
         gl.disable(glow::CULL_FACE);
-        // un mic decalaj de adancime: fara "acnee" pe suprafetele luminate
+        // a small depth offset: no "acne" on lit surfaces
         gl.enable(glow::POLYGON_OFFSET_FILL);
         gl.polygon_offset(1.5, 2.0);
         gl.use_program(Some(sprog));
@@ -1271,7 +1271,7 @@ impl Renderer {
         Some((svp, 2.0 * r / SHADOW_SIZE as f32, r * 2.2))
     }
 
-    /// Tintele SSAO pentru marimea data (cel mult doua: fereastra + randare), create la nevoie.
+    /// SSAO targets for the given size (at most two: window + render), created on demand.
     unsafe fn ao_target(&mut self, gl: &glow::Context, w: i32, h: i32, samples: i32) -> Option<usize> {
         if let Some(i) = self.ao_targets.iter().position(|t| t.w == w && t.h == h && t.samples == samples) {
             return Some(i);
@@ -1369,7 +1369,7 @@ fn bytes_f32(v: &[f32]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) }
 }
 
-/// Date de varf (pozitii + normale) pentru un model.
+/// Vertex data (positions + normals) for a model.
 pub fn mesh_data(m: &Model) -> (Vec<f32>, Vec<i8>) {
     let mut pos = Vec::with_capacity(m.pos.len() * 3);
     let mut nrm = Vec::with_capacity(m.pos.len() * 4);
@@ -1384,7 +1384,7 @@ pub fn mesh_data(m: &Model) -> (Vec<f32>, Vec<i8>) {
     (pos, nrm)
 }
 
-/// Deseneaza intervalele (varf de start, numar de varfuri), limitate la marimea bufferului; None = tot bufferul.
+/// Draws the ranges (start vertex, vertex count), limited to the buffer size; None = the whole buffer.
 unsafe fn draw_ranges(gl: &glow::Context, total: i32, ranges: Option<&Vec<(i32, i32)>>) {
     match ranges {
         None => gl.draw_arrays(glow::TRIANGLES, 0, total),
@@ -1400,19 +1400,19 @@ unsafe fn draw_ranges(gl: &glow::Context, total: i32, ranges: Option<&Vec<(i32, 
     }
 }
 
-/// Stilul de afisare al modelului (ca in Navisworks / Revit).
+/// Model display style (as in Navisworks / Revit).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub enum VisualStyle {
-    /// materiale, texturi, reflexii, umbre de contact
+    /// materials, textures, reflections, contact shadows
     #[default]
     Realistic,
-    /// culorile din fisier, lumina, fara texturi
+    /// the colors from the file, lighting, no textures
     Shaded,
-    /// macheta: aproape alb, mat, margini accentuate
+    /// physical model look: almost white, matte, accentuated edges
     Concept,
-    /// doar muchiile triunghiurilor
+    /// only the triangle edges
     Wireframe,
-    /// hidden-line: suprafete neutre, muchiile ascunse de geometrie nu se vede (ca in AutoCAD / Navisworks)
+    /// hidden-line: neutral surfaces, edges hidden by geometry are not shown (as in AutoCAD / Navisworks)
     Hidden,
 }
 

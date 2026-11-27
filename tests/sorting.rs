@@ -1,7 +1,7 @@
-//! Regresie: sortarea "naturala" a valorilor de proprietati trebuie sa fie o ordine totala.
-//! Varianta veche compara unele perechi ca numere si altele ca text ("10" < "2 m" < "ab" < "10"),
-//! iar Rust opreste programul la o astfel de sortare - ManageBIM se inchidea la deschiderea
-//! exporturilor Plant 3D (valori ca 2", DN50, 100 mm, 1/2", 0.5, Sch 40...).
+//! Regression: the "natural" sorting of property values must be a total order.
+//! The old variant compared some pairs as numbers and others as text ("10" < "2 m" < "ab" < "10"),
+//! and Rust aborts the program on such a sort - ManageBIM closed when opening
+//! Plant 3D exports (values like 2", DN50, 100 mm, 1/2", 0.5, Sch 40...).
 use bimrust::app::natural_cmp;
 use std::cmp::Ordering;
 
@@ -13,7 +13,7 @@ fn values() -> Vec<String> {
     .iter()
     .map(|s| s.to_string())
     .collect();
-    // valori pseudo-aleatoare amestecate (determinist)
+    // shuffled pseudo-random values (deterministic)
     let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
     let parts = ["", "DN", "Sch ", "Level ", "-", ".", "\"", " mm", "x", "0", "1", "2", "10", "a", "B"];
     for _ in 0..400 {
@@ -32,7 +32,7 @@ fn values() -> Vec<String> {
 #[test]
 fn natural_order_is_total_and_sorting_does_not_panic() {
     let v = values();
-    // antisimetrie si tranzitivitate pe toate perechile / un esantion mare de tripleti
+    // antisymmetry and transitivity on all pairs / a large sample of triplets
     for a in &v {
         assert_eq!(natural_cmp(a, a), Ordering::Equal, "{a:?}");
         for b in &v {
@@ -51,8 +51,8 @@ fn natural_order_is_total_and_sorting_does_not_panic() {
         }
     }
     let mut s = v.clone();
-    s.sort_by(|a, b| natural_cmp(a, b)); // nu trebuie sa opreasca programul
-    // ordinea naturala asteptata
+    s.sort_by(|a, b| natural_cmp(a, b)); // it must not abort the program
+    // the expected natural order
     assert_eq!(natural_cmp("Level 2", "Level 10"), Ordering::Less);
     assert_eq!(natural_cmp("2 m", "10"), Ordering::Less);
     assert_eq!(natural_cmp("DN50", "DN100"), Ordering::Less);

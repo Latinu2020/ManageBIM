@@ -8,8 +8,8 @@ using NwApp = Autodesk.Navisworks.Api.Application;
 namespace ManageBIM.Navis
 {
     /// <summary>
-    /// "Send to ManageBIM": exporta modelul deschis direct in ManageBIM (Inbox), fara dialog.
-    /// A doua trimitere actualizeaza live modelul deja deschis in ManageBIM.
+    /// "Send to ManageBIM": exports the open model directly into ManageBIM (Inbox), with no dialog.
+    /// A second send updates the model already open in ManageBIM live.
     /// </summary>
     [Plugin("SendBimc", "MBIM", DisplayName = "Send to ManageBIM", ToolTip = "Send the open model straight into ManageBIM (opens it if needed); send again to update it live")]
     [AddInPlugin(AddInLocation.AddIn)]
@@ -56,8 +56,8 @@ namespace ManageBIM.Navis
     }
 
     /// <summary>
-    /// Butonul "Export to ManageBIM (.bimc)" din tab-ul Tool add-ins.
-    /// Din Automation (nwd2bimc.exe): parameters[0] = calea .bimc, fara dialoguri.
+    /// The "Export to ManageBIM (.bimc)" button in the Tool add-ins tab.
+    /// From Automation (nwd2bimc.exe): parameters[0] = the .bimc path, no dialogs.
     /// </summary>
     [Plugin("ExportBimc", "MBIM", DisplayName = "Export to ManageBIM (.bimc)", ToolTip = "Export the open model (geometry, colours, all properties) to a ManageBIM .bimc file")]
     [AddInPlugin(AddInLocation.None)]
@@ -95,7 +95,7 @@ namespace ManageBIM.Navis
             {
                 var t0 = DateTime.Now;
                 string progFile = path + ".progress";
-                // in Navisworks: bara de progres; din nwd2bimc: un fisier mic citit de nwd2bimc / ManageBIM
+                // in Navisworks: the progress bar; from nwd2bimc: a small file read by nwd2bimc / ManageBIM
                 Func<double, string, bool> report = (f, msg) =>
                 {
                     if (pr != null) return pr.Update(f);

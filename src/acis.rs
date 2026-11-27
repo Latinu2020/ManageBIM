@@ -1,11 +1,11 @@
-//! Solide ACIS din DWG / DXF (3DSOLID, REGION, BODY, suprafete) -> triunghiuri, fara ODA / Navisworks.
+//! ACIS solids from DWG / DXF (3DSOLID, REGION, BODY, surfaces) -> triangles, without ODA / Navisworks.
 //!
-//! acadrust (MPL-2.0) parseaza datele ACIS (SAT text si SAB binar) in inregistrari tipizate. Aici
-//! parcurgem topologia (fata -> bucla -> coedge -> muchie -> varf) si geometria (suprafete plane,
-//! con / cilindru, sfera, tor, B-spline; curbe dreapta, elipsa, B-spline) si o trimitem ca descriere
-//! B-rep neutra shim-ului OpenCascade (`mbo_brep_from_desc` in src/occt/mbocct.cpp), care construieste
-//! fetele, le repara (ShapeFix: pcurve-uri, cusaturi, tolerante, orientare) si le trianguleaza.
-//! Formatul descrierii e documentat in mbocct.cpp.
+//! acadrust (MPL-2.0) parses the ACIS data (text SAT and binary SAB) into typed records. Here
+//! we walk the topology (face -> loop -> coedge -> edge -> vertex) and the geometry (planar surfaces,
+//! cone / cylinder, sphere, torus, B-spline; line, ellipse, B-spline curves) and send it as a neutral
+//! B-rep description to the OpenCascade shim (`mbo_brep_from_desc` in src/occt/mbocct.cpp), which builds
+//! the faces, repairs them (ShapeFix: pcurves, seams, tolerances, orientation) and triangulates them.
+//! The description format is documented in mbocct.cpp.
 use crate::occt::{self, MeshQuality};
 use acadrust::entities::acis::{
     SatConeSurface, SatCoedge, SatDocument, SatEdge, SatEllipseCurve, SatFace, SatIntCurve, SatLoop, SatPlaneSurface, SatPoint, SatPointer, SatRecord, SatSphereSurface,
@@ -16,30 +16,30 @@ use acadrust::{CadDocument, EntityType};
 use glam::{DMat4, DVec3, DVec4};
 use std::collections::{BTreeMap, HashMap};
 
-/// Un solid ACIS triangulat (coordonatele desenului, inainte de scalarea unitatilor).
+/// A triangulated ACIS solid (drawing coordinates, before unit scaling).
 #[derive(Clone, Debug, Default)]
 pub struct SolidMesh {
     pub tris: Vec<[DVec3; 3]>,
-    /// fete ACIS in total / netraduse (geometrie nesuportata sau esec la constructie / triangulare)
+    /// ACIS faces in total / not translated (unsupported geometry or failure in construction / triangulation)
     pub faces: usize,
     pub faces_failed: usize,
-    /// shell-uri inchise devenite solide (volum orientat spre exterior)
+    /// closed shells turned into solids (volume oriented outward)
     pub solids: usize,
-    /// geometrii ACIS netraduse (tip -> numar), pentru raport
+    /// untranslated ACIS geometries (type -> count), for the report
     pub unsupported: BTreeMap<String, usize>,
-    /// geometrii ACIS traduse (tip -> numar), pentru raport
+    /// translated ACIS geometries (type -> count), for the report
     pub translated: BTreeMap<String, usize>,
 }
 
-/// Toate solidele ACIS ale unui desen, indexate dupa handle-ul entitatii (hex, majuscule - ca in DXF).
+/// All ACIS solids of a drawing, indexed by the entity handle (hex, uppercase - as in DXF).
 #[derive(Debug, Default)]
 pub struct AcisMeshes {
     pub meshes: HashMap<String, SolidMesh>,
-    /// entitati ACIS cu date
+    /// ACIS entities with data
     pub total: usize,
-    /// motiv -> numar de entitati netraduse
+    /// reason -> number of untranslated entities
     pub failed: BTreeMap<String, usize>,
-    /// entitati traduse doar partial (unele fete lipsesc)
+    /// entities translated only partially (some faces are missing)
     pub partial: usize,
     pub faces_failed: usize,
     pub unsupported: BTreeMap<String, usize>,
@@ -53,16 +53,16 @@ impl AcisMeshes {
     pub fn failed_count(&self) -> usize {
         self.failed.values().sum()
     }
-    /// "motiv (n), motiv (n)"
+    /// "reason (n), reason (n)"
     pub fn failure_summary(&self) -> String {
         self.failed.iter().map(|(k, v)| format!("{k} ({v})")).collect::<Vec<_>>().join(", ")
     }
 }
 
-/// Numele DXF al entitatilor bazate pe ACIS (le recunoaste incarcatorul DXF).
+/// The DXF name of the ACIS-based entities (the DXF loader recognises them).
 pub const DXF_TYPES: [&str; 10] = ["3DSOLID", "BODY", "REGION", "SURFACE", "PLANESURFACE", "EXTRUDEDSURFACE", "LOFTEDSURFACE", "REVOLVEDSURFACE", "SWEPTSURFACE", "NURBSURFACE"];
 
-/// Handle-ul entitatii, in forma din DXF (cod 5).
+/// The entity handle, in the DXF form (code 5).
 pub fn handle_key(e: &EntityType) -> String {
     format!("{:X}", e.common().handle.value())
 }
@@ -77,7 +77,7 @@ fn acis_of(e: &EntityType) -> Option<&AcisData> {
     }
 }
 
-/// Trianguleaza toate solidele ACIS din document (si cele din blocuri), in paralel.
+/// Triangulates all ACIS solids in the document (including those in blocks), in parallel.
 pub fn mesh_document(doc: &CadDocument, progress: &dyn Fn(f32, &str)) -> AcisMeshes {
     use rayon::prelude::*;
     let jobs: Vec<(String, &AcisData)> = doc.entities().filter_map(|e| acis_of(e).filter(|a| a.has_data()).map(|a| (handle_key(e), a))).collect();
@@ -87,7 +87,7 @@ pub fn mesh_document(doc: &CadDocument, progress: &dyn Fn(f32, &str)) -> AcisMes
     }
     let q = MeshQuality::default();
     let n = jobs.len();
-    // toate solidele odata pe toate nucleele (loturile asteptau dupa cel mai lent solid); progresul din firul curent
+    // all solids at once on all cores (the batches waited for the slowest solid); the progress from the current thread
     let done = std::sync::atomic::AtomicUsize::new(0);
     let all: Vec<(String, Result<SolidMesh, String>)> = std::thread::scope(|s| {
         let h = s.spawn(|| {
@@ -128,13 +128,13 @@ pub fn mesh_document(doc: &CadDocument, progress: &dyn Fn(f32, &str)) -> AcisMes
     out
 }
 
-/// Datele ACIS ale unei entitati (SAT sau SAB) -> triunghiuri.
+/// The ACIS data of an entity (SAT or SAB) -> triangles.
 pub fn mesh_acis(data: &AcisData, q: MeshQuality) -> Result<SolidMesh, String> {
     let doc = data.parse().ok_or_else(|| "ACIS data could not be parsed".to_string())?;
     mesh_sat(&doc, q)
 }
 
-/// Un document SAT -> triunghiuri (prin OpenCascade).
+/// A SAT document -> triangles (through OpenCascade).
 pub fn mesh_sat(doc: &SatDocument, q: MeshQuality) -> Result<SolidMesh, String> {
     let mut d = Describer::new(doc);
     d.run();
@@ -169,7 +169,7 @@ pub fn mesh_sat(doc: &SatDocument, q: MeshQuality) -> Result<SolidMesh, String> 
     Ok(m)
 }
 
-/// Transformarea corpului: lume = scala * (p * M) + T (conventia SAT, vector linie).
+/// The body transform: world = scale * (p * M) + T (the SAT convention, row vector).
 fn placement(doc: &SatDocument) -> DMat4 {
     let (m, t, s) = doc.placement();
     let s = if s.is_finite() && s.abs() > 1e-12 { s } else { 1.0 };
@@ -190,7 +190,7 @@ fn finite(v: &[f64]) -> bool {
     v.iter().all(|x| x.is_finite())
 }
 
-/// Topologia + geometria ACIS -> fluxurile de intregi / reali citite de mbo_brep_from_desc.
+/// The ACIS topology + geometry -> the integer / real streams read by mbo_brep_from_desc.
 struct Describer<'a> {
     doc: &'a SatDocument,
     vr: Vec<f64>,
@@ -289,7 +289,7 @@ impl<'a> Describer<'a> {
         idx
     }
 
-    /// -1 = fara curba (muchie degenerata sau segment intre varfuri)
+    /// -1 = no curve (degenerate edge or segment between vertices)
     fn curve(&mut self, p: SatPointer) -> i32 {
         if p.is_null() {
             return -1;
@@ -354,7 +354,7 @@ impl<'a> Describer<'a> {
         idx
     }
 
-    /// -1 = suprafata lipsa / nesuportata
+    /// -1 = missing / unsupported surface
     fn surface(&mut self, p: SatPointer) -> i32 {
         if let Some(s) = self.smap.get(&p.0) {
             return *s;
@@ -375,7 +375,7 @@ impl<'a> Describer<'a> {
             self.sr.extend_from_slice(&v3(s.axis()));
             self.sr.extend_from_slice(&v3(s.major_axis()));
             self.sr.extend_from_slice(&[ratio, sin, cos]);
-            // eliptic: cilindrul = extrudarea elipsei, conul = con circular scalat afin (B-spline, in shim)
+            // elliptic: the cylinder = the extrusion of the ellipse, the cone = an affinely scaled circular cone (B-spline, in the shim)
             Some(match (sin.abs() < 1e-12, elliptic) {
                 (true, false) => "surface: cylinder",
                 (true, true) => "surface: elliptic cylinder",
@@ -391,7 +391,7 @@ impl<'a> Describer<'a> {
             Some("surface: sphere")
         } else if let Some(s) = SatTorusSurface::from_record(r) {
             if s.major_radius() <= 0.0 {
-                None // tor "lamaie" (raza mare negativa)
+                None // "lemon" torus (negative major radius)
             } else {
                 self.si.extend_from_slice(&[3, 0]);
                 self.sr.extend_from_slice(&v3(s.center()));
@@ -499,7 +499,7 @@ impl<'a> Describer<'a> {
     }
 }
 
-/// Subtipul unei suprafete spline nedecodabile (ex. "rb_blend_spl_sur") - pentru raport.
+/// The subtype of an undecodable spline surface (e.g. "rb_blend_spl_sur") - for the report.
 fn spline_kind(s: &SatSplineSurface, doc: &SatDocument) -> String {
     s.definition_tokens(doc)
         .and_then(|t| t.iter().filter_map(|x| x.as_ident()).find(|x| !matches!(*x, "{" | "}" | "forward" | "reversed" | "forward_v" | "reversed_v" | "ref")))

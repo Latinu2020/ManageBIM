@@ -1,6 +1,6 @@
-//! Formate deschise cu proprietati per obiect: 3MF, CityJSON / CityJSONSeq, ifcJSON / ifcXML,
-//! 3D Tiles 1.1 (tileset.json) si USD ASCII (.usda). Doar citire; geometria e triangulata, proprietatile
-//! fiecarui obiect ajung in Properties (si in exportul IFC).
+//! Open formats with per-object properties: 3MF, CityJSON / CityJSONSeq, ifcJSON / ifcXML,
+//! 3D Tiles 1.1 (tileset.json) and USD ASCII (.usda). Read-only; the geometry is triangulated, the properties
+//! of each object end up in Properties (and in the IFC export).
 use crate::e57::{parse_xml, Node};
 use crate::model::{Prop, RawElement, RawModel};
 use glam::{DMat4, DVec3};
@@ -17,7 +17,7 @@ fn valid(t: &[DVec3; 3]) -> bool {
 }
 
 
-/// numele local al unui tag / atribut XML (fara prefixul de namespace)
+/// the local name of an XML tag / attribute (without the namespace prefix)
 fn local(n: &str) -> &str {
     n.rsplit(':').next().unwrap_or(n)
 }
@@ -34,7 +34,7 @@ fn attr<'a>(n: &'a Node, name: &str) -> Option<&'a str> {
     n.attrs.iter().find(|(k, _)| local(k) == name).map(|(_, v)| v.as_str())
 }
 
-/// "#RRGGBB" sau "#RRGGBBAA"
+/// "#RRGGBB" or "#RRGGBBAA"
 fn hex_color(s: &str) -> Option<[u8; 4]> {
     let h = s.trim().trim_start_matches('#');
     let p = |i: usize| u8::from_str_radix(h.get(i..i + 2)?, 16).ok();
@@ -47,7 +47,7 @@ fn hex_color(s: &str) -> Option<[u8; 4]> {
 
 // ====================================================================== 3MF
 
-/// Matricea 3MF "m00 m01 m02 m10 m11 m12 m20 m21 m22 m30 m31 m32" (vectori-rand) -> DMat4 (coloane)
+/// The 3MF matrix "m00 m01 m02 m10 m11 m12 m20 m21 m22 m30 m31 m32" (row vectors) -> DMat4 (columns)
 fn mf_transform(s: Option<&str>) -> DMat4 {
     let v: Vec<f64> = s.unwrap_or("").split_whitespace().filter_map(|x| x.parse().ok()).collect();
     if v.len() != 12 {
@@ -62,9 +62,9 @@ struct MfObject {
     part: String,
     uuid: String,
     meta: Vec<(String, String)>,
-    /// triunghiuri locale cu culoarea fiecaruia
+    /// local triangles with the colour of each
     tris: Vec<([DVec3; 3], [u8; 4])>,
-    /// (cheia "fisier#id" a componentei, transformare)
+    /// (the "file#id" key of the component, transform)
     comps: Vec<(String, DMat4)>,
     materials: Vec<String>,
 }
@@ -72,7 +72,7 @@ struct MfObject {
 pub fn load_3mf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     progress(0.05, "Reading 3MF");
     let zip = crate::fcstd::Zip::parse(std::fs::read(path).map_err(|e| format!("Cannot read the file: {e}"))?).map_err(|_| "Not a valid 3MF file (ZIP).".to_string())?;
-    // modelul principal: din _rels/.rels (tinta 3dmodel), altfel 3D/3dmodel.model
+    // the main model: from _rels/.rels (3dmodel target), otherwise 3D/3dmodel.model
     let rels = zip.text("_rels/.rels").unwrap_or_default();
     let main = parse_xml(&rels)
         .ok()
@@ -82,7 +82,7 @@ pub fn load_3mf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
     let mut unit = 0.001;
     let mut model_meta: Vec<(String, String)> = Vec::new();
     let mut build: Vec<(String, DMat4, String, String)> = Vec::new();
-    // toate partile .model (Production extension: componentele pot fi in alte fisiere)
+    // all .model parts (Production extension: the components may be in other files)
     let mut parts: Vec<String> = zip.names().filter(|n| n.to_lowercase().ends_with(".model")).cloned().collect();
     parts.sort_by_key(|n| (n.trim_start_matches('/') != main, n.clone()));
     for (pi, part) in parts.iter().enumerate() {
@@ -109,7 +109,7 @@ pub fn load_3mf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
             }
         }
         let Some(res) = kid(&root, "resources") else { continue };
-        // materiale: basematerials (nume + culoare) si colorgroup (culori)
+        // materials: basematerials (name + colour) and colorgroup (colours)
         let mut groups: HashMap<String, Vec<([u8; 4], String)>> = HashMap::new();
         for bm in kids(res, "basematerials") {
             let id = attr(bm, "id").unwrap_or("").to_string();
@@ -180,7 +180,7 @@ pub fn load_3mf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
         }
     }
     progress(0.8, "Building 3MF items");
-    // geometria unui obiect, cu componentele lui (recursiv, max 16 nivele)
+    // the geometry of an object, with its components (recursive, max 16 levels)
     fn collect(objects: &HashMap<String, MfObject>, key: &str, m: DMat4, depth: usize, out: &mut Vec<([DVec3; 3], [u8; 4])>, mats: &mut Vec<String>) {
         let Some(o) = objects.get(key) else { return };
         if depth > 16 {
@@ -236,9 +236,9 @@ pub fn load_3mf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
     Ok(RawModel { elements, info, warnings: Vec::new() })
 }
 
-// ====================================================================== poligoane
+// ====================================================================== polygons
 
-/// Poligon 3D (contur + goluri) -> triunghiuri (earcut in planul lui, normala Newell).
+/// 3D polygon (outline + holes) -> triangles (earcut in its plane, Newell normal).
 pub(crate) fn poly_tris(outer: &[DVec3], holes: &[Vec<DVec3>]) -> Vec<[DVec3; 3]> {
     let mut out = Vec::new();
     if outer.len() < 3 {
@@ -285,7 +285,7 @@ pub(crate) fn poly_tris(outer: &[DVec3], holes: &[Vec<DVec3>]) -> Vec<[DVec3; 3]
     out
 }
 
-/// Valoare JSON -> text (obiectele imbricate se aplatizeaza "a.b").
+/// JSON value -> text (nested objects are flattened as "a.b").
 pub(crate) fn flatten_json(prefix: &str, v: &serde_json::Value, out: &mut Vec<(String, String)>) {
     use serde_json::Value;
     if out.len() > 300 {
@@ -309,7 +309,7 @@ pub(crate) fn flatten_json(prefix: &str, v: &serde_json::Value, out: &mut Vec<(S
 
 // ====================================================================== .json / .jsonl
 
-/// Fisierele .json / .jsonl: CityJSON, CityJSONSeq, ifcJSON sau 3D Tiles (tileset.json), dupa continut.
+/// The .json / .jsonl files: CityJSON, CityJSONSeq, ifcJSON or 3D Tiles (tileset.json), by content.
 pub fn load_json(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("Cannot read the file: {e}"))?;
     let text = String::from_utf8_lossy(&bytes);
@@ -369,7 +369,7 @@ struct CityCtx<'a> {
 
 type ColTri = ([DVec3; 3], [u8; 4]);
 
-/// o suprafata CityJSON: [contur, gol, gol...] -> triunghiuri cu culoarea semanticii / materialului
+/// a CityJSON surface: [outline, hole, hole...] -> triangles with the colour of the semantics / material
 fn city_surface(ctx: &CityCtx, s: &serde_json::Value, stype: Option<&str>, mat: Option<usize>, obj_type: &str, out: &mut Vec<ColTri>) {
     let Some(rings) = s.as_array() else { return };
     let ring = |r: &serde_json::Value| -> Vec<DVec3> { r.as_array().map(|a| a.iter().filter_map(|i| i.as_u64()).filter_map(|i| ctx.verts.get(i as usize).copied()).collect()).unwrap_or_default() };
@@ -384,11 +384,11 @@ fn city_surface(ctx: &CityCtx, s: &serde_json::Value, stype: Option<&str>, mat: 
     }
 }
 
-/// boundaries -> triunghiuri colorate (semantica / materialul suprafetei, daca exista)
+/// boundaries -> coloured triangles (the semantics / material of the surface, if any)
 fn city_geometry(ctx: &CityCtx, g: &serde_json::Value, obj_type: &str, out: &mut Vec<ColTri>, sem_names: &mut Vec<String>) {
     let ty = g.get("type").and_then(|t| t.as_str()).unwrap_or("");
     if ty == "GeometryInstance" {
-        // sablon: varfurile sablonului transformate cu matricea + punctul de referinta
+        // template: the template vertices transformed with the matrix + the reference point
         let Some((tpl, tv)) = &ctx.templates else { return };
         let Some(t) = g.get("template").and_then(|t| t.as_u64()).and_then(|i| tpl.get("templates")?.get(i as usize)) else { return };
         let m: Vec<f64> = g.get("transformationMatrix").and_then(|m| m.as_array()).map(|a| a.iter().filter_map(|x| x.as_f64()).collect()).unwrap_or_default();
@@ -413,7 +413,7 @@ fn city_geometry(ctx: &CityCtx, g: &serde_json::Value, obj_type: &str, out: &mut
     fn at(v: Option<&serde_json::Value>, i: usize) -> Option<&serde_json::Value> {
         v.and_then(|x| x.get(i))
     }
-    // valoarea materialului poate fi un singur numar pentru toata geometria
+    // the material value can be a single number for the whole geometry
     let mat_of = |v: Option<&serde_json::Value>| v.and_then(|x| x.as_u64()).or_else(|| mat_vals.and_then(|m| m.as_u64())).map(|x| x as usize);
     let list = |v: Option<&serde_json::Value>| v.and_then(|x| x.as_array()).cloned().unwrap_or_default();
     match ty {
@@ -468,9 +468,9 @@ fn city_verts(v: &serde_json::Value, tr: Option<&serde_json::Value>) -> Vec<DVec
         .unwrap_or_default()
 }
 
-/// Obiectele unui document (sau feature) CityJSON -> elemente.
+/// The objects of a CityJSON document (or feature) -> elements.
 fn city_objects(objs: &serde_json::Map<String, serde_json::Value>, ctx: &CityCtx, out: &mut Vec<RawElement>) {
-    // radacina fiecarui obiect (Building pentru BuildingPart / BuildingInstallation...) = "nivelul" din arbore
+    // the root of each object (Building for BuildingPart / BuildingInstallation...) = the "level" in the tree
     let root_of = |id: &str| -> String {
         let mut cur = id.to_string();
         for _ in 0..8 {
@@ -485,7 +485,7 @@ fn city_objects(objs: &serde_json::Map<String, serde_json::Value>, ctx: &CityCtx
     for (id, o) in objs {
         let ty = o.get("type").and_then(|t| t.as_str()).unwrap_or("CityObject");
         let geoms = o.get("geometry").and_then(|g| g.as_array()).cloned().unwrap_or_default();
-        // doar cel mai detaliat LOD (altfel acelasi obiect apare de doua ori)
+        // only the most detailed LOD (otherwise the same object appears twice)
         let best = geoms.iter().map(lod).max_by(|a, b| a.parse::<f64>().unwrap_or(0.0).total_cmp(&b.parse::<f64>().unwrap_or(0.0))).unwrap_or_default();
         let mut tris = Vec::new();
         let mut sem = Vec::new();
@@ -513,7 +513,7 @@ fn city_objects(objs: &serde_json::Map<String, serde_json::Value>, ctx: &CityCtx
             props.push(prop("Attributes", &k, v));
         }
         let (t, c): (Vec<[DVec3; 3]>, Vec<[u8; 4]>) = tris.into_iter().unzip();
-        // radacina (cladirea unei parti) ca proprietate, nu ca nivel: altfel fiecare cladire devine un "nivel"
+        // the root (the building of a part) as a property, not as a level: otherwise each building becomes a "level"
         let root = root_of(id);
         if root != *id {
             props.push(prop("CityJSON", "Root object", root));
@@ -566,8 +566,8 @@ pub fn load_cityjson(doc: &serde_json::Value, path: &str, progress: &dyn Fn(f32,
     Ok(RawModel { elements: els, info: city_info(doc, "CityJSON"), warnings: Vec::new() })
 }
 
-/// CityJSONSeq (JSON Lines): prima linie = antetul (transform, metadate), apoi cate un CityJSONFeature pe linie,
-/// fiecare cu varfurile lui.
+/// CityJSONSeq (JSON Lines): the first line = the header (transform, metadata), then one CityJSONFeature per line,
+/// each with its own vertices.
 pub fn load_cityjson_seq(bytes: &[u8], path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     let text = String::from_utf8_lossy(bytes);
     let mut lines = text.lines().filter(|l| !l.trim().is_empty());
@@ -623,7 +623,7 @@ fn json_mat(v: Option<&serde_json::Value>) -> DMat4 {
     }
 }
 
-/// Continutul unei dale: .glb / .gltf (1.1), .b3dm (1.0), .cmpt (compus), tileset extern (.json).
+/// The content of a tile: .glb / .gltf (1.1), .b3dm (1.0), .cmpt (composite), external tileset (.json).
 fn tile_content(ctx: &mut TilesCtx, bytes: &[u8], path: &str, m: DMat4, label: &str, depth: usize) {
     if bytes.len() < 4 || depth > 8 {
         return;
@@ -633,7 +633,7 @@ fn tile_content(ctx: &mut TilesCtx, bytes: &[u8], path: &str, m: DMat4, label: &
     let model = match magic {
         b"glTF" => crate::gltf_load::load_gltf_bytes(bytes, path, &|_, _| {}, None),
         b"b3dm" => {
-            // antet 28 octeti: tabelul de obiecte (JSON + binar), tabelul de lot (JSON + binar), apoi GLB
+            // 28-byte header: the feature table (JSON + binary), the batch table (JSON + binary), then GLB
             let (ftj, ftb, btj, btb) = (u32_at(12), u32_at(16), u32_at(20), u32_at(24));
             let mut o = 28;
             let ft: serde_json::Value = bytes.get(o..o + ftj).and_then(|b| serde_json::from_slice(b).ok()).unwrap_or_default();
@@ -643,7 +643,7 @@ fn tile_content(ctx: &mut TilesCtx, bytes: &[u8], path: &str, m: DMat4, label: &
             o += btj + btb;
             let n = ft.get("BATCH_LENGTH").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
             let rows = (n > 0 && btj > 0).then(|| crate::gltf_meta::batch_table_rows(&bt, bt_bin, n));
-            // RTC_CENTER: deplasarea dalei (dupa conversia Y-sus -> Z-sus a glTF-ului)
+            // RTC_CENTER: the tile offset (after the glTF Y-up -> Z-up conversion)
             let rtc: Vec<f64> = ft.get("RTC_CENTER").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_f64()).collect()).unwrap_or_default();
             let r = crate::gltf_load::load_gltf_bytes(bytes.get(o..).unwrap_or(&[]), path, &|_, _| {}, rows);
             if rtc.len() == 3 {
@@ -680,7 +680,7 @@ fn tile_content(ctx: &mut TilesCtx, bytes: &[u8], path: &str, m: DMat4, label: &
             return;
         }
         _ => {
-            // tileset extern sau .gltf text
+            // external tileset or text .gltf
             match serde_json::from_slice::<serde_json::Value>(bytes) {
                 Ok(v) if v.get("root").is_some() => {
                     let dir = Path::new(path).parent().map(|p| p.to_path_buf()).unwrap_or_default();
@@ -712,7 +712,7 @@ fn tile_content(ctx: &mut TilesCtx, bytes: &[u8], path: &str, m: DMat4, label: &
     }
 }
 
-/// Parcurge arborele de dale: REPLACE = doar frunzele (copiii inlocuiesc parintele), ADD = toate.
+/// Walks the tile tree: REPLACE = only the leaves (the children replace the parent), ADD = all.
 fn tile_walk(ctx: &mut TilesCtx, tile: &serde_json::Value, parent: DMat4, dir: &Path, inherited: &str, depth: usize) {
     if depth > 64 || ctx.contents >= MAX_CONTENTS || ctx.tris >= MAX_TRIS {
         return;
@@ -752,7 +752,7 @@ fn tile_walk(ctx: &mut TilesCtx, tile: &serde_json::Value, parent: DMat4, dir: &
     }
 }
 
-/// WGS84: ECEF -> (latitudine, longitudine, inaltime) geodezice
+/// WGS84: ECEF -> geodetic (latitude, longitude, height)
 fn ecef_to_geodetic(p: DVec3) -> (f64, f64, f64) {
     let a = 6_378_137.0;
     let e2 = 6.694_379_990_14e-3;
@@ -785,7 +785,7 @@ pub fn load_3dtiles(path: &str, ts: &serde_json::Value, progress: &dyn Fn(f32, &
         ("Format".to_string(), format!("3D Tiles {}", ts.get("asset").and_then(|a| a.get("version")).and_then(|v| v.as_str()).unwrap_or(""))),
         ("Tiles read".into(), ctx.contents.to_string()),
     ];
-    // ECEF (coordonate geocentrice): mutat intr-un sistem local Est-Nord-Sus, ca modelul sa stea drept
+    // ECEF (geocentric coordinates): moved into a local East-North-Up system, so the model stands upright
     let (mut lo, mut hi) = (DVec3::splat(f64::INFINITY), DVec3::splat(f64::NEG_INFINITY));
     for e in &ctx.elements {
         for t in &e.tris {
@@ -817,12 +817,12 @@ pub fn load_3dtiles(path: &str, ts: &serde_json::Value, progress: &dyn Fn(f32, &
     Ok(RawModel { elements: ctx.elements, info, warnings: ctx.warnings })
 }
 
-/// ifcJSON (completat mai jos)
+/// ifcJSON (completed below)
 pub fn load_ifcjson(v: &serde_json::Value, _path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     crate::ifc_convert::load_ifcjson(v, progress)
 }
 
-/// O singura dala 3D Tiles 1.0 (.b3dm / .cmpt) deschisa direct.
+/// A single 3D Tiles 1.0 tile (.b3dm / .cmpt) opened directly.
 pub fn load_tile_file(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("Cannot read the file: {e}"))?;
     let mut ctx = TilesCtx { elements: Vec::new(), warnings: Vec::new(), contents: 1, tris: 0, progress };

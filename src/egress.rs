@@ -1,14 +1,14 @@
-//! Verificari de spatiu: **inaltimea libera** (headroom) si **distanta de evacuare** (egress).
+//! Space checks: **headroom** (free height) and **egress distance**.
 //!
-//! Ambele lucreaza pe geometria incarcata (Z in sus, metri) si intorc `clash::Found`, ca rezultatele sa
-//! intre intr-un test din Clash Detective (vedere, status, responsabil, BCF, MCP):
-//! - headroom: puncte pe fata de sus a placilor de pardoseala; raza in sus pana la primul obstacol
-//!   (ignorand ce incepe sub `low_cut` - mobilier, picioarele peretilor). Sub minim = rezultat
-//!   (obstacol x placa, `dist` = inaltime - minim, negativ = cat lipseste).
-//! - egress: pe fiecare nivel, harta 2D a zonelor de mers (pereti / stalpi taiati la `cut` deasupra
-//!   pardoselii; usile trec), iesirile (usi exterioare la nivelul cel mai de jos, scari / rampe la
-//!   celelalte), distanta de parcurs (Dijkstra pe 8 vecini). Peste limita = rezultat
-//!   (spatiul / placa x iesirea cea mai apropiata, `dist` = limita - distanta).
+//! Both work on the loaded geometry (Z up, metres) and return `clash::Found`, so that the results
+//! go into a Clash Detective test (view, status, assignee, BCF, MCP):
+//! - headroom: points on the top face of the floor slabs; a ray upwards to the first obstacle
+//!   (ignoring what starts below `low_cut` - furniture, wall bases). Below the minimum = a result
+//!   (obstacle x slab, `dist` = height - minimum, negative = how much is missing).
+//! - egress: on each level, a 2D map of the walkable areas (walls / columns cut at `cut` above
+//!   the floor; doors are passable), the exits (exterior doors on the lowest level, stairs / ramps on
+//!   the others), the travel distance (Dijkstra on 8 neighbours). Over the limit = a result
+//!   (the space / slab x the nearest exit, `dist` = limit - distance).
 
 use crate::clash::Found;
 use crate::model::{ElemId, Model};
@@ -25,11 +25,11 @@ pub enum Check {
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Params {
-    /// inaltimea libera minima (m)
+    /// minimum free height (m)
     pub min_headroom: f32,
-    /// distanta maxima de evacuare (m)
+    /// maximum egress distance (m)
     pub max_travel: f32,
-    /// pasul gridului (m)
+    /// grid step (m)
     pub step: f32,
 }
 
@@ -39,16 +39,16 @@ impl Default for Params {
     }
 }
 
-/// ce se ignora la headroom: obstacole care pornesc sub aceasta inaltime deasupra pardoselii
+/// what is ignored for headroom: obstacles starting below this height above the floor
 const LOW_CUT: f32 = 1.2;
-/// inaltimea la care se taie peretii pentru harta de mers (egress)
+/// the height at which walls are cut for the walking map (egress)
 const CUT: f32 = 1.0;
 
 fn lower(e: &crate::model::Element) -> String {
     e.ifc_type.to_ascii_lowercase()
 }
 
-/// placa de pardoseala (nu acoperis)
+/// floor slab (not a roof)
 pub fn is_floor(e: &crate::model::Element) -> bool {
     let t = lower(e);
     let roof = t.contains("roof") || e.name.to_ascii_lowercase().contains("roof") || e.props.iter().any(|p| p.name.eq_ignore_ascii_case("PredefinedType") && p.value.eq_ignore_ascii_case("ROOF"));
@@ -67,7 +67,7 @@ fn is_stair(t: &str) -> bool {
     t.contains("stair") || t.contains("ramp")
 }
 
-/// varf al fetei de sus a unui element, in punctul (x, y): raza de sus in jos
+/// top of an element's upper face at point (x, y): a ray from top to bottom
 fn top_at(m: &Model, e: &crate::model::Element, x: f32, y: f32) -> Option<f32> {
     let o = Vec3::new(x, y, e.aabb.max.z + 1.0);
     let d = Vec3::new(1e-6, 1e-6, -1.0);
@@ -79,7 +79,7 @@ struct Sample {
     floor: ElemId,
 }
 
-/// punctele de pe fata de sus a placilor (grid cu pasul `step`)
+/// the points on the top face of the slabs (grid with step `step`)
 fn floor_samples(models: &[Option<Arc<Model>>], items: &[ElemId], step: f32) -> Vec<Sample> {
     let mut out = Vec::new();
     for id in items {
@@ -104,7 +104,7 @@ fn floor_samples(models: &[Option<Arc<Model>>], items: &[ElemId], step: f32) -> 
     out
 }
 
-/// index 2D simplu al cutiilor (celule de 2 m) pentru elementele candidate
+/// simple 2D index of the boxes (2 m cells) for the candidate elements
 struct Grid2 {
     cell: f32,
     map: HashMap<(i32, i32), Vec<ElemId>>,
@@ -131,7 +131,7 @@ impl Grid2 {
     }
 }
 
-/// Inaltimea libera: rezultate obstacol x placa, cu punctul cel mai jos.
+/// Headroom: obstacle x slab results, with the lowest point.
 pub fn headroom(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Vec<Found> {
     let samples = floor_samples(models, items, p.step);
     let obstacles: Vec<ElemId> = items
@@ -145,7 +145,7 @@ pub fn headroom(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> 
         })
         .collect();
     let grid = Grid2::new(models, &obstacles);
-    // (obstacol, placa) -> (inaltimea minima, punctul)
+    // (obstacle, slab) -> (minimum height, the point)
     let mut worst: HashMap<(ElemId, ElemId), (f32, Vec3)> = HashMap::new();
     let d = Vec3::new(1e-6, 1e-6, 1.0);
     for s in &samples {
@@ -162,8 +162,8 @@ pub fn headroom(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> 
             if o.x < bb.min.x || o.x > bb.max.x || o.y < bb.min.y || o.y > bb.max.y || bb.max.z < floor_z + LOW_CUT || bb.min.z > floor_z + p.min_headroom {
                 continue;
             }
-            // un element care incepe de pe pardoseala (perete, stalp, mobilier) nu e un obstacol deasupra capului;
-            // scara da (sub rampa urcatoare se loveste capul), partea ei joasa e ignorata de filtrul razei
+            // an element that starts at the floor (wall, column, furniture) is not an overhead obstacle;
+            // a stair is (you hit your head under the rising flight), its low part is ignored by the ray filter
             if bb.min.z < floor_z + LOW_CUT && !is_stair(&lower(e)) {
                 continue;
             }
@@ -190,7 +190,7 @@ pub fn headroom(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> 
 
 // ---------------------------------------------------------------- egress
 
-/// Distanta de evacuare: pe fiecare nivel (dupa cota pardoselii), punctele mai departe decat limita.
+/// Egress distance: on each level (by floor elevation), the points farther away than the limit.
 pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Vec<Found> {
     let step = p.step.max(0.1);
     let samples = floor_samples(models, items, step);
@@ -198,7 +198,7 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
         return Vec::new();
     }
     let elem = |id: &ElemId| models.get(id.m as usize).and_then(|m| m.as_ref()).and_then(|m| m.elements.get(id.e as usize).map(|e| (m, e)));
-    // niveluri: cote de pardoseala grupate (toleranta 0.6 m)
+    // levels: floor elevations grouped (0.6 m tolerance)
     let mut levels: Vec<f32> = samples.iter().map(|s| s.p.z).collect();
     levels.sort_by(|a, b| a.total_cmp(b));
     let mut lv: Vec<f32> = Vec::new();
@@ -221,7 +221,7 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
             x1 = x1.max(s.p.x);
             y1 = y1.max(s.p.y);
         }
-        // o margine de exterior de ~2 m in jurul planului: usile exterioare il ating, peretii nu il inchid
+        // an exterior margin of ~2 m around the plan: exterior doors reach it, the walls do not close it off
         let margin = (2.0f32).max(2.0 * step);
         x0 -= margin;
         y0 -= margin;
@@ -240,7 +240,7 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
             }
         };
         let center = |k: usize| Vec3::new(x0 + ((k % nx) as f32 + 0.5) * step, y0 + ((k / nx) as f32 + 0.5) * step, lz);
-        // 0 = in afara planului, 1 = pardoseala, 2 = blocat (perete / stalp la 1 m)
+        // 0 = outside the plan, 1 = floor, 2 = blocked (wall / column at 1 m)
         let mut g = vec![0u8; nx * ny];
         let mut floor_of: Vec<Option<ElemId>> = vec![None; nx * ny];
         for s in &pts {
@@ -249,7 +249,7 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
                 floor_of[k] = Some(s.floor);
             }
         }
-        // obstacole: tot ce taie planul la `CUT` deasupra pardoselii (fara usi, spatii, deschideri)
+        // obstacles: everything that cuts the plane at `CUT` above the floor (except doors, spaces, openings)
         let zc = lz + CUT;
         let mut exits: Vec<(usize, ElemId)> = Vec::new();
         let mut spaces: Vec<ElemId> = Vec::new();
@@ -263,11 +263,11 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
             if not_physical(&t) || is_floor(e) {
                 continue;
             }
-            // iesiri: usile de la nivelul cel mai de jos, scarile / rampele de la celelalte niveluri
+            // exits: the doors on the lowest level, the stairs / ramps on the other levels
             let door = is_door(&t) && bb.min.z <= zc && bb.max.z >= zc;
             let stair = is_stair(&t) && bb.max.z > lz + 0.3 && bb.min.z < lz + 3.5 && (lz - lowest).abs() > 0.6;
             if door || stair {
-                // usa: trecerea prin toata grosimea peretelui (0.4 m de fiecare parte, pe directia subtire a usii)
+                // door: passage through the whole wall thickness (0.4 m on each side, along the thin direction of the door)
                 let mut pb = bb;
                 if door {
                     if bb.max.x - bb.min.x < bb.max.y - bb.min.y {
@@ -286,7 +286,7 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
             if bb.min.z > zc || bb.max.z < zc {
                 continue;
             }
-            // celulele in care elementul taie planul orizontal
+            // the cells where the element cuts the horizontal plane
             let tris = m.tris(e);
             for tri in tris.as_chunks::<3>().0 {
                 let (a, b, c) = (tri[0], tri[1], tri[2]);
@@ -313,11 +313,11 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
                 }
             }
         }
-        // usile si scarile sunt mereu de trecut (si cand placa se opreste la fata interioara a peretelui)
+        // doors and stairs are always passable (also when the slab stops at the inner face of the wall)
         for (k, _) in &exits {
             g[*k] = 1;
         }
-        // exteriorul: celulele "in afara planului" legate de margine
+        // the exterior: the "outside the plan" cells connected to the edge
         let mut outside = vec![false; nx * ny];
         let mut q: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
         for k in 0..nx * ny {
@@ -342,8 +342,8 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
             }
         }
         let ground = (lz - lowest).abs() <= 0.6;
-        // celulele de iesire folosite: la parter doar usile care ating exteriorul; altfel scarile
-        // usa exterioara: exteriorul la cel mult ~1.5 m (perete gros, placa ce iese putin din fatada)
+        // the exit cells used: on the ground floor only the doors that reach the exterior; otherwise the stairs
+        // exterior door: the exterior at most ~1.5 m away (thick wall, slab sticking out slightly from the facade)
         let rr = (1.5 / step).ceil() as i64;
         let near_outside = |k: usize| {
             let (i, j) = ((k % nx) as i64, (k / nx) as i64);
@@ -381,7 +381,7 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
             eprintln!("level {lz}: grid {nx}x{ny}, exits {}, sources {}, floor cells {}, blocked {}", exits.len(), sources.len(), g.iter().filter(|v| **v == 1).count(), g.iter().filter(|v| **v == 2).count());
         }
         if sources.is_empty() {
-            // nicio iesire recunoscuta pe acest nivel: un singur rezultat, pe placa cea mai mare
+            // no recognised exit on this level: a single result, on the largest slab
             let (sx, sy) = pts.iter().fold((0.0f32, 0.0f32), |a, s| (a.0 + s.p.x, a.1 + s.p.y));
             let (cx, cy) = (sx / pts.len() as f32, sy / pts.len() as f32);
             if let Some(s) = pts.iter().min_by(|a, b| ((a.p.x - cx).powi(2) + (a.p.y - cy).powi(2)).total_cmp(&((b.p.x - cx).powi(2) + (b.p.y - cy).powi(2)))) {
@@ -389,7 +389,7 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
             }
             continue;
         }
-        // Dijkstra pe 8 vecini din toate iesirile
+        // Dijkstra on 8 neighbours from all exits
         let mut dist = vec![f32::INFINITY; nx * ny];
         let mut via: Vec<Option<ElemId>> = vec![None; nx * ny];
         let mut heap = std::collections::BinaryHeap::new();
@@ -426,7 +426,7 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
                 if g[kk] != 1 {
                     continue;
                 }
-                // pe diagonala nu se trece printre doua celule blocate
+                // diagonally you cannot pass between two blocked cells
                 if di != 0 && dj != 0 && (g[j as usize * nx + a as usize] != 1 || g[b as usize * nx + i as usize] != 1) {
                     continue;
                 }
@@ -438,7 +438,7 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
                 }
             }
         }
-        // rezultat: pe fiecare spatiu (sau placa) punctul cel mai departat, daca trece de limita
+        // result: on each space (or slab) the farthest point, if it exceeds the limit
         let owner_of = |k: usize| -> ElemId {
             let c = center(k);
             spaces
@@ -463,8 +463,8 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
                 out.push(Found { a: owner, b: exit.unwrap_or(owner), point: center(k) + Vec3::new(0.0, 0.0, 0.1), dist: p.max_travel - d });
             }
         }
-        // zone de pardoseala fara niciun drum spre o iesire: doar cele mari (>= 4 m2); bucatile de placa
-        // inchise intre pereti sau sub ei nu conteaza
+        // floor areas with no path to an exit: only the large ones (>= 4 m2); pieces of slab
+        // enclosed between walls or under them do not count
         let min_cells = (4.0 / (step * step)).ceil() as usize;
         let mut seen = vec![false; nx * ny];
         for start in 0..nx * ny {
@@ -491,7 +491,7 @@ pub fn egress(models: &[Option<Arc<Model>>], items: &[ElemId], p: &Params) -> Ve
                 }
             }
             if comp.len() >= min_cells {
-                // punctul reprezentativ: celula zonei cea mai apropiata de centrul ei
+                // the representative point: the zone cell closest to its centre
                 let (sx, sy) = comp.iter().fold((0.0, 0.0), |a, k| (a.0 + center(*k).x, a.1 + center(*k).y));
                 let (cx, cy) = (sx / comp.len() as f32, sy / comp.len() as f32);
                 let k = *comp.iter().min_by(|a, b| {

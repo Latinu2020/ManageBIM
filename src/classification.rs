@@ -1,18 +1,18 @@
-//! Clasificare BIM locală (compatibilă cu bSDD / Uniclass / OmniClass / MasterFormat).
-//! Nu depinde de internet: utilizatorul poate importa un catalog dintr-un fisier JSON/CSV,
-//! cauta coduri si le atribuie elementelor selectate. Clasificarile se salveaza in proiect
-//! ca proprietati "Classification" si se exporta in IFC prin IfcClassificationReference.
+//! Local BIM classification (compatible with bSDD / Uniclass / OmniClass / MasterFormat).
+//! It does not depend on the internet: the user can import a catalog from a JSON/CSV file,
+//! search codes and assign them to the selected elements. The classifications are saved in the project
+//! as "Classification" properties and are exported to IFC through IfcClassificationReference.
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ClassItem {
-    /// sistemul: "Uniclass 2015", "OmniClass", "bSDD", "MasterFormat"...
+    /// the system: "Uniclass 2015", "OmniClass", "bSDD", "MasterFormat"...
     pub system: String,
-    /// codul: "EF_20_10_20", "23-13 31 13", ...
+    /// the code: "EF_20_10_20", "23-13 31 13", ...
     pub code: String,
-    /// denumirea
+    /// the title
     pub name: String,
-    /// descriere (optional)
+    /// description (optional)
     #[serde(default)]
     pub description: String,
 }
@@ -23,10 +23,10 @@ impl ClassItem {
     }
 }
 
-/// Catalog local, salvabil ca JSON.
+/// Local catalog, savable as JSON.
 pub type Catalog = Vec<ClassItem>;
 
-/// Catalog implicit cu clasificari uzuale (Uniclass 2015, OmniClass) - offline, fara licenta.
+/// Default catalog with common classifications (Uniclass 2015, OmniClass) - offline, no license.
 pub fn builtin() -> Catalog {
     let u = |code: &str, name: &str| ClassItem { system: "Uniclass 2015".into(), code: code.into(), name: name.into(), description: String::new() };
     let o = |code: &str, name: &str| ClassItem { system: "OmniClass".into(), code: code.into(), name: name.into(), description: String::new() };
@@ -59,7 +59,7 @@ pub fn from_json(s: &str) -> Result<Catalog, String> {
 
 pub fn to_csv(c: &Catalog) -> String {
     let q = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
-    // BOM: Excel deschide fisierul ca UTF-8 (diacriticele raman corecte)
+    // BOM: Excel opens the file as UTF-8 (the diacritics stay correct)
     let mut out = format!("\u{feff}{};{};{};{}\n", q("System"), q("Code"), q("Name"), q("Description"));
     for i in c {
         out.push_str(&format!("{};{};{};{}\n", q(&i.system), q(&i.code), q(&i.name), q(&i.description)));
@@ -68,7 +68,7 @@ pub fn to_csv(c: &Catalog) -> String {
 }
 
 pub fn from_csv(s: &str) -> Result<Catalog, String> {
-    // BOM-ul pus de Excel; separatorul: ';' (Excel RO / EU) sau ',' (Excel EN), dupa antet
+    // the BOM added by Excel; the separator: ';' (Excel RO / EU) or ',' (Excel EN), by the header
     let s = s.trim_start_matches('\u{feff}');
     let header = s.lines().next().unwrap_or("");
     let sep = if header.matches(';').count() >= header.matches(',').count() { ';' } else { ',' };
@@ -96,8 +96,8 @@ pub fn from_csv(s: &str) -> Result<Catalog, String> {
     Ok(out)
 }
 
-/// O linie CSV (RFC 4180): campuri intre ghilimele, "" = ghilimea literala, text UTF-8
-/// (inainte se citea octet cu octet si diacriticele / „—" ieseau stricate).
+/// A CSV line (RFC 4180): fields in quotes, "" = literal quote, UTF-8 text
+/// (it used to be read byte by byte and the diacritics / „—" came out broken).
 fn parse_csv_line(s: &str, sep: char) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();

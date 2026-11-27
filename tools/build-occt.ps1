@@ -1,13 +1,13 @@
 <#
 .SYNOPSIS
-  Compileaza OpenCascade (OCCT, LGPL-2.1 + exceptie) din sursa, doar toolkit-urile de care are nevoie
-  ManageBIM pentru STEP / IGES / BREP (citire + XCAF + triangulare). Fara drepturi de admin.
+  Builds OpenCascade (OCCT, LGPL-2.1 + exception) from source, only the toolkits ManageBIM needs
+  for STEP / IGES / BREP (reading + XCAF + triangulation). No administrator rights.
 
-  Rezultat: third_party\occt\  (inc\, win64\vc14\lib\, win64\vc14\bin\ - layout-ul "Windows" al OCCT)
-  build.rs il gaseste acolo si compileaza shim-ul C++ (src\occt\mbocct.cpp -> mbocct.dll).
+  Result: third_party\occt\  (inc\, win64\vc14\lib\, win64\vc14\bin\ - the "Windows" layout of OCCT)
+  build.rs finds it there and compiles the C++ shim (src\occt\mbocct.cpp -> mbocct.dll).
 
-  Necesita: Visual Studio 2022 Build Tools cu C++ (contine si CMake + Ninja). Sursa OCCT se descarca
-  de pe GitHub (Open-Cascade-SAS/OCCT, tag V8.0.1) in %LOCALAPPDATA%\ManageBIM-dev, daca nu exista deja.
+  Needs: Visual Studio 2022 Build Tools with C++ (includes CMake + Ninja). The OCCT source is downloaded
+  from GitHub (Open-Cascade-SAS/OCCT, tag V8.0.1) into %LOCALAPPDATA%\ManageBIM-dev, if it is not there yet.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File tools\build-occt.ps1
@@ -31,7 +31,7 @@ $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
 $cmakeDir = Join-Path $vsroot 'Common7\IDE\CommonExtensions\Microsoft\CMake'
 $cmake = Join-Path $cmakeDir 'CMake\bin\cmake.exe'
 $ninja = Join-Path $cmakeDir 'Ninja\ninja.exe'
-# Ninja poate fi instalat si per-utilizator (winget / GitHub), nu doar odata cu VS-ul
+# Ninja can also be installed per user (winget / GitHub), not only together with VS
 if (-not (Test-Path $ninja)) { $ninja = (Get-Command ninja -ErrorAction SilentlyContinue).Source }
 if (-not $ninja -or -not (Test-Path $ninja)) { $ninja = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') -Recurse -Filter ninja.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
 if (-not $ninja -or -not (Test-Path $ninja)) { throw 'Ninja not found (install "Ninja" with winget or the VS C++ CMake tools component).' }
@@ -39,12 +39,12 @@ if (-not (Test-Path $cmake)) { $cmake = (Get-Command cmake -ErrorAction Silently
 if (-not $cmake -or -not (Test-Path $cmake)) { $cmake = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') -Recurse -Filter cmake.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
 if (-not $cmake -or -not (Test-Path $cmake)) { throw 'CMake not found (install the "C++ CMake tools for Windows" component or CMake per-user).' }
 
-# ------------------------------------------------------------ 2. sursa OCCT
+# ------------------------------------------------------------ 2. OCCT source
 New-Item -ItemType Directory -Force $Work | Out-Null
 $src = Join-Path $Work "OCCT-$Version"
 if (-not (Test-Path (Join-Path $src 'CMakeLists.txt'))) {
     $tgz = Join-Path $Work "occt-$Version.tar.gz"
-    # backup-ul ManageBIM contine arhiva sursa in third_party\ (recompilare fara internet)
+    # the ManageBIM backup contains the source archive in third_party\ (rebuild without internet)
     $local = Join-Path (Split-Path -Parent $PSScriptRoot) "third_party\occt-$Version.tar.gz"
     if (-not (Test-Path $tgz) -and (Test-Path $local)) { Copy-Item $local $tgz }
     if (-not (Test-Path $tgz)) {
@@ -57,9 +57,9 @@ if (-not (Test-Path (Join-Path $src 'CMakeLists.txt'))) {
     if (-not (Test-Path (Join-Path $src 'CMakeLists.txt'))) { throw "Unexpected archive layout (no $src)" }
 }
 
-# ------------------------------------------------------------ 3. configurare + compilare
-# Doar ce trebuie: Foundation + ModelingData + ModelingAlgorithms (triangulare) + schimb de date STEP/IGES
-# + XCAF (structura de ansamblu, nume, culori). TKXCAF depinde de TKService/TKV3d (fara OpenGL / FreeType / Tcl).
+# ------------------------------------------------------------ 3. configure + build
+# Only what is needed: Foundation + ModelingData + ModelingAlgorithms (triangulation) + STEP/IGES data exchange
+# + XCAF (assembly structure, names, colours). TKXCAF depends on TKService/TKV3d (no OpenGL / FreeType / Tcl).
 $build = Join-Path $Work "build-$Version"
 $extra = 'TKDESTEP TKDEIGES TKXCAF TKRWMesh TKXSBase TKDE TKCAF TKLCAF TKCDF TKVCAF TKService TKV3d'
 if ($Jobs -le 0) { $Jobs = [Environment]::ProcessorCount }
@@ -96,7 +96,7 @@ call "$vcvars" >nul || exit /b 1
 & cmd.exe /c "`"$bat`""
 if ($LASTEXITCODE -ne 0) { throw "OCCT build failed (step $LASTEXITCODE). Log: $build" }
 
-# licenta langa binare (LGPL-2.1 + exceptia OCCT)
+# licence next to the binaries (LGPL-2.1 + the OCCT exception)
 Copy-Item (Join-Path $src 'LICENSE_LGPL_21.txt'), (Join-Path $src 'OCCT_LGPL_EXCEPTION.txt') $Prefix -Force
 Set-Content -Encoding utf8 (Join-Path $Prefix 'VERSION.txt') "Open CASCADE Technology $Version - https://github.com/Open-Cascade-SAS/OCCT/releases/tag/V$Version"
 $bin = Get-ChildItem $Prefix -Recurse -Filter 'TKernel.dll' | Select-Object -First 1

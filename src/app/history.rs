@@ -1,4 +1,4 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
@@ -45,10 +45,10 @@ impl App {
             issue: Default::default(),
             comments: Vec::new(),
             selected,
-            // legat de un sablon doar daca unul a fost aplicat explicit (inainte: mereu sablonul #1)
+            // linked to a template only if one was applied explicitly (before: always template #1)
             template: if self.vt_applied { self.view_templates.get(self.vt_current).map(|t| t.name.clone()).unwrap_or_default() } else { String::new() },
             measures: self.measures.clone(),
-            // viewpoint-urile noi intra in folderul ales in panou
+            // new viewpoints go into the folder chosen in the panel
             folder: self.vp_folder_cur.clone(),
             look: Some(self.current_look()),
         });
@@ -72,7 +72,7 @@ impl App {
         self.elem(id).map(|(_, e)| e.guid.clone()).filter(|g| g.len() == 22)
     }
 
-    /// None = viewpoint-ul a fost sters intre timp (raportul ruleaza pe mai multe cadre)
+    /// None = the viewpoint was deleted in the meantime (the report runs over several frames)
     pub fn report_item(&self, i: usize, image: Vec<u8>, w: u32, h: u32) -> Option<crate::markup::ReportItem> {
         let v = self.viewpoints.get(i)?;
         let c = v.cam;
@@ -99,7 +99,7 @@ impl App {
         })
     }
 
-    /// viewpoint-ul intra in exportul curent? (toate, sau doar folderul ales si subfolderele lui)
+    /// is the viewpoint in the current export? (all, or only the chosen folder and its subfolders)
     pub fn vp_in_scope(&self, i: usize) -> bool {
         let Some(v) = self.viewpoints.get(i) else { return false };
         match &self.vp_filter {
@@ -108,11 +108,11 @@ impl App {
         }
     }
 
-    /// toate folderele (cele cu viewpoints si cele create goale), sortate
+    /// all folders (the ones with viewpoints and the ones created empty), sorted
     pub fn vp_all_folders(&self) -> Vec<String> {
         let mut f: Vec<String> = self.vp_folders.clone();
         for v in &self.viewpoints {
-            // si folderele parinte ("A/B" -> "A")
+            // and the parent folders ("A/B" -> "A")
             let mut p = String::new();
             for seg in v.folder.split('/').filter(|s| !s.is_empty()) {
                 if !p.is_empty() {
@@ -187,7 +187,7 @@ impl App {
             Ok(()) => self.toast(format!("{} viewpoints exported to {}", job.items.len(), crate::file_name(&path))),
             Err(e) => self.error(format!("Cannot write {path}: {e}")),
         }
-        // continuă exportul în lot: pornește următorul raport din coadă
+        // continues the batch export: starts the next report in the queue
         if !self.batch_queue.is_empty() {
             let (kind, p) = self.batch_queue.remove(0);
             self.start_report(kind, &p);
@@ -201,16 +201,16 @@ impl App {
         if let Some(v) = self.viewpoints.get(i).cloned() {
             self.cam = v.cam;
             self.section = v.section;
-            // si planul de taiere revine cu viewpoint-ul (ca in Navisworks)
+            // and the cut plane comes back with the viewpoint (like in Navisworks)
             self.settings.cad_view = v.cad_view;
             self.settings.cad_view_pos = v.cad_view_pos;
             self.hidden = v.hidden.into_iter().collect();
-            // cotele salvate cu viewpoint-ul (viewpoint-urile vechi, fara cote, pastreaza masuratorile curente)
+            // the dimensions saved with the viewpoint (old viewpoints, without dimensions, keep the current measurements)
             if !v.measures.is_empty() {
                 self.measures = v.measures;
             }
-            // aspectul: viewpoint-urile noi il au salvat (exact cum erau); cele vechi folosesc sablonul
-            // legat, dar doar partile bifate la „Applies" (inainte se forta stilul + culorile sablonului)
+            // the look: new viewpoints have it saved (exactly as they were); old ones use the linked
+            // template, but only the parts ticked under „Applies" (before, the template style + colors were forced)
             let tpl = (!v.template.is_empty()).then(|| self.view_templates.iter().position(|t| t.name == v.template)).flatten();
             if let Some(l) = v.look {
                 self.apply_look(&l);
@@ -227,7 +227,7 @@ impl App {
                     self.overrides = t.overrides.into_iter().collect();
                 }
             }
-            // pastila de sub cub arata sablonul legat (fara sa-l mai aplice)
+            // the pill under the cube shows the linked template (without applying it anymore)
             if let Some(ti) = tpl {
                 self.vt_current = ti;
             }
@@ -237,7 +237,7 @@ impl App {
         }
     }
 
-    /// semnatura ieftina a starii vizualizarii (selectie, ascunse, sectiune, camera oprita)
+    /// cheap signature of the view state (selection, hidden, section, camera stopped)
     pub(super) fn view_sig(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         let mix = |acc: u64, id: &ElemId| acc ^ ((id.m as u64) << 32 | id.e as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
@@ -260,7 +260,7 @@ impl App {
         h.finish()
     }
 
-    /// semnatura datelor de model schimbate de utilizator: proprietati, culori fortate, materiale, asignari
+    /// the signature of the model data changed by the user: properties, forced colors, materials, assignments
     pub(super) fn model_sig(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -268,7 +268,7 @@ impl App {
         for p in &self.user_params {
             (&p.model, &p.key, &p.group, &p.name, &p.value).hash(&mut h);
         }
-        // HashMap: ordinea e oarecare, deci suma (comutativa) a semnaturilor pe intrare
+        // HashMap: the order is arbitrary, so the (commutative) sum of the per-entry signatures
         let ov = self.overrides.iter().fold(0u64, |acc, (id, c)| {
             let mut e = std::collections::hash_map::DefaultHasher::new();
             (id, c).hash(&mut e);
@@ -285,7 +285,7 @@ impl App {
         h.finish()
     }
 
-    /// Apelat la fiecare cadru: cand starea s-a schimbat si camera s-a oprit, o pune in istoric.
+    /// Called on every frame: when the state changed and the camera stopped, it puts it in the history.
     pub fn history_tick(&mut self, pointer_down: bool) {
         if pointer_down || self.cam_anim.is_some() || self.lod_moved.elapsed().as_secs_f32() < 0.35 {
             return;
@@ -296,7 +296,7 @@ impl App {
             return;
         }
         self.hist_sig = sig;
-        // datele de model: refolosite din instantaneul curent daca nu s-au schimbat (fara copii inutile)
+        // the model data: reused from the current snapshot if they did not change (no useless copies)
         let model = match self.hist.get(self.hist_pos) {
             Some(prev) if prev.model.sig == msig => prev.model.clone(),
             _ => Arc::new(ModelSnap { sig: msig, user_params: self.user_params.clone(), overrides: self.overrides.clone(), materials: self.materials.clone(), mat_assign: self.mats.assign.clone() }),
@@ -318,7 +318,7 @@ impl App {
         self.hist_pos + 1 < self.hist.len()
     }
 
-    /// Ctrl+Z: starea anterioara (selectie, vizibilitate, sectiune, camera)
+    /// Ctrl+Z: the previous state (selection, visibility, section, camera)
     pub fn undo_view(&mut self) {
         if self.can_undo() {
             self.hist_pos -= 1;
@@ -326,7 +326,7 @@ impl App {
         }
     }
 
-    /// Ctrl+Y: inainte
+    /// Ctrl+Y: forward
     pub fn redo_view(&mut self) {
         if self.can_redo() {
             self.hist_pos += 1;
@@ -340,7 +340,7 @@ impl App {
         self.primary = self.selected.iter().next().copied();
         self.hidden = (*s.hidden).clone();
         self.section = s.section;
-        // datele de model (proprietati, culori, materiale) revin si ele, daca difera
+        // the model data (properties, colors, materials) come back too, if they differ
         if s.model.sig != self.model_sig() {
             let m = &*s.model;
             let params_changed = self.user_params != m.user_params;
@@ -358,7 +358,7 @@ impl App {
         }
         self.fly_to(s.cam);
         self.colors_dirty = true;
-        // starea refacuta nu se mai inregistreaza o data
+        // the restored state is not recorded once more
         let mut tmp = self.cam;
         std::mem::swap(&mut tmp, &mut self.cam);
         self.cam = s.cam;
@@ -366,8 +366,8 @@ impl App {
         self.cam = tmp;
     }
 
-    /// Shaded / Realistic / Concept / Wireframe (pastrat in setari).
-    /// aspectul curent al vederii (pentru viewpoint-uri)
+    /// Shaded / Realistic / Concept / Wireframe (kept in the settings).
+    /// the current look of the view (for viewpoints)
     pub fn current_look(&self) -> crate::app::VpLook {
         let mut overrides: Vec<(ElemId, [u8; 4])> = self.overrides.iter().map(|(k, v)| (*k, *v)).collect();
         overrides.sort_by_key(|(k, _)| *k);
@@ -383,7 +383,7 @@ impl App {
         self.colors_dirty = true;
     }
 
-    /// stilul vizual fara toast / salvarea setarilor (viewpoint-uri, sabloane); Realistic aprinde materialele
+    /// the visual style without toast / saving the settings (viewpoints, templates); Realistic turns on the materials
     pub fn apply_style_only(&mut self, s: crate::render::VisualStyle) {
         if self.settings.visual_style == s {
             return;
@@ -399,7 +399,7 @@ impl App {
         self.settings.visual_style = s;
         self.settings.save();
         if s == crate::render::VisualStyle::Realistic {
-            // realist = cu materiale / texturi; fara atribuiri inca: automat dupa tipul IFC (pereti, sticla, beton...)
+            // realistic = with materials / textures; no assignments yet: automatic by IFC type (walls, glass, concrete...)
             if self.mats.assign.is_empty() && self.loaded_models().next().is_some() {
                 self.auto_materials();
             } else if !self.materials_on {

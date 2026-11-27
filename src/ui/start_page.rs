@@ -2,14 +2,14 @@
 use super::*;
 
 impl App {
-    /// Nimic deschis si nimic in curs de incarcare: se arata pagina de start.
+    /// Nothing open and nothing loading: the start page is shown.
     pub(super) fn start_screen(&self) -> bool {
         self.loaded_models().next().is_none() && self.loads.is_empty() && self.project_path.is_none() && !self.blank_project && self.bimd_path.is_none() || self.show_start
     }
 
-    // ================================================================== pagina de start
-    /// Ecranul de pornire, cand nu e deschis niciun model: Open / Open Project / New si fisierele recente
-    /// ca niste carduri (tip, nume, data modificarii); click deschide, click dreapta scoate din lista.
+    // ================================================================== start page
+    /// The start screen, when no model is open: Open / Open Project / New and the recent files
+    /// as cards (type, name, modification date); click opens, right click removes from the list.
     pub(super) fn start_page(&mut self, ui: &mut egui::Ui) {
         use crate::app::StartAction;
         let rect = ui.max_rect();
@@ -19,7 +19,7 @@ impl App {
         let dark = self.settings.theme.is_dark();
         let side_fill = if dark { Color32::from_black_alpha(70) } else { Color32::from_white_alpha(150) };
         ui.painter().rect_filled(side, 0.0, side_fill);
-        // ---- brand: logo isometric + titlu + tagline (card subtile, nu text gol)
+        // ---- brand: isometric logo + title + tagline (subtle card, not bare text)
         {
             let p = ui.painter();
             let hero = Rect::from_min_size(side.min + EV::new(18.0, 16.0), EV::new(side_w - 36.0, 82.0));
@@ -43,7 +43,7 @@ impl App {
         let mut forget: Option<String> = None;
         let open_name = self.bimd_path.as_ref().or(self.project_path.as_ref()).map(|p| crate::file_name(p)).or_else(|| self.loaded_models().next().map(|(_, m)| m.name.clone())).or_else(|| self.blank_project.then(|| "New project".to_string()));
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(side.shrink2(EV::new(18.0, 18.0))), |ui| {
-            // ca Navisworks: sageata inapoi la proiectul deschis
+            // like Navisworks: back arrow to the open project
             if self.show_start {
                 if let Some(n) = &open_name {
                     if ui.add(egui::Button::new(RichText::new(format!("⬅  {n}")).size(13.0)).frame(false)).on_hover_text("Back to the open project").clicked() {
@@ -56,12 +56,12 @@ impl App {
             ui.label(RichText::new(format!("v{} · BIM coordination workspace", env!("CARGO_PKG_VERSION"))).small().color(pal.overlay_weak));
             ui.add_space(12.0);
             let bw = side_w - 36.0;
-            // iconita vectoriala + text (emoji-urile nu au glife in fontul interfetei)
+            // vector icon + text (emojis have no glyphs in the UI font)
             let tcol = ui.visuals().text_color();
             let on_accent = match self.settings.theme { Theme::Nord | Theme::TokyoNight => Color32::from_rgb(30, 36, 48), _ => Color32::WHITE };
             let soft = if dark { Color32::from_white_alpha(16) } else { Color32::from_white_alpha(235) };
             let big = |t: &str| egui::Button::new(crate::theme::title_job(t, 14.0, tcol)).min_size(EV::new(bw, 34.0)).fill(soft).rounding(8.0);
-            // Open… cu meniu (model / proiect), ca butonul Open din Navisworks
+            // Open… with a menu (model / project), like the Open button in Navisworks
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 let primary = egui::Button::new(crate::theme::title_job("📂 Open…", 14.0, on_accent)).fill(accent()).rounding(8.0).min_size(EV::new(bw - 34.0, 34.0));
@@ -98,7 +98,7 @@ impl App {
             }
             ui.add_space(16.0);
             ui.label(RichText::new("or drag files into the window  ·  Ctrl+K: commands").small().color(pal.overlay_weak));
-            // recuperare dupa o inchidere neasteptata
+            // recovery after an unexpected shutdown
             if let Some((_, orig, when)) = self.autosave.recover.clone() {
                 ui.add_space(20.0);
                 egui::Frame::none().fill(Color32::from_rgba_unmultiplied(235, 170, 60, 40)).stroke(Stroke::new(1.0_f32, Color32::from_rgb(235, 170, 60))).rounding(6.0).inner_margin(8.0).show(ui, |ui| {
@@ -115,7 +115,7 @@ impl App {
                 });
             }
         });
-        // ---- Recent: lista / grila, sortare, cautare
+        // ---- Recent: list / grid, sorting, search
         let area = Rect::from_min_max(Pos2::new(side.right() + 28.0, rect.top() + 18.0), Pos2::new(rect.right() - 20.0, rect.bottom() - 10.0));
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(area), |ui| {
             let soft = if dark { Color32::from_white_alpha(16) } else { Color32::from_white_alpha(235) };
@@ -165,7 +165,7 @@ impl App {
                     ui.label(RichText::new("Nothing matches the search.").color(pal.overlay_weak));
                     return;
                 }
-                // pagina de pornire pentru un utilizator nou: clar, prietenos, cu actiuni reale
+                // start page for a new user: clear, friendly, with real actions
                 ui.add_space((area.height() - 330.0).max(24.0));
                 ui.vertical_centered(|ui| {
                     ui.label(RichText::new("Welcome to ManageBIM").size(30.0).strong().color(pal.overlay_text));
@@ -207,7 +207,7 @@ impl App {
                     let tc = if exists { pal.overlay_text } else { pal.overlay_weak };
                     let date = if exists { modified.map(fmt_date).unwrap_or_default() } else { "file not found".into() };
                     if self.start_list {
-                        // rand: iconita mica, nume, folder, data
+                        // row: small icon, name, folder, date
                         let icon = Rect::from_min_size(r.min + EV::new(8.0, 5.0), EV::new(26.0, 26.0));
                         painter.rect_filled(icon, 4.0, col);
                         painter.text(icon.center(), Align2::CENTER_CENTER, tag, FontId::proportional(if tag.len() > 3 { 8.0 } else { 10.0 }), Color32::WHITE);
@@ -220,7 +220,7 @@ impl App {
                         painter.rect_filled(icon.translate(EV::new(5.0, 5.0)), 6.0, col.gamma_multiply(0.55));
                         painter.rect_filled(icon, 6.0, col);
                         painter.text(icon.center(), Align2::CENTER_CENTER, tag, FontId::proportional(if tag.len() > 3 { 15.0 } else { 19.0 }), Color32::WHITE);
-                        // iconita mica de tip langa nume, ca in Navisworks
+                        // small type icon next to the name, as in Navisworks
                         let small = Rect::from_min_size(Pos2::new(r.left() + 10.0, r.bottom() - 48.0), EV::new(14.0, 14.0));
                         painter.rect_filled(small, 2.0, col);
                         let short: String = if name.chars().count() > 18 { format!("{}…", name.chars().take(17).collect::<String>()) } else { name.clone() };

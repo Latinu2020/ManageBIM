@@ -1,15 +1,15 @@
-//! Mapare categorie sursa -> clasa IFC (ca in Revit: "Revit Category" / "IFC Class Name" / "IFC Type").
-//! Pentru geometriile care NU vin din IFC (STEP, OBJ, glTF, DWG, blocuri CAD etc.),ManageBIM foloseste
-//! IfcBuildingElementProxy. Aici utilizatorul poate alege clasa corecta inainte de export.
+//! Mapping source category -> IFC class (as in Revit: "Revit Category" / "IFC Class Name" / "IFC Type").
+//! For the geometries that do NOT come from IFC (STEP, OBJ, glTF, DWG, CAD blocks etc.), ManageBIM uses
+//! IfcBuildingElementProxy. Here the user can choose the correct class before export.
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MapRule {
-    /// categoria sursa (ex. "Block", "Mesh", "glTF Mesh", numele stratului DWG)
+    /// the source category (e.g. "Block", "Mesh", "glTF Mesh", the DWG layer name)
     pub source: String,
-    /// clasa IFC (ex. "IfcWall"); gol sau "Not Exported" = elementul se sarteaza
+    /// the IFC class (e.g. "IfcWall"); empty or "Not Exported" = the element is skipped
     pub class: String,
-    /// valoare PredefinedType / ObjectType (optional)
+    /// PredefinedType / ObjectType value (optional)
     pub ifc_type: String,
     #[serde(default = "yes")]
     pub enabled: bool,
@@ -23,7 +23,7 @@ impl Default for MapRule {
     }
 }
 
-/// Clase IFC uzuale acceptate de exportator (cele cu lungimea corecta a listei de argumente).
+/// Common IFC classes accepted by the exporter (the ones with the correct argument list length).
 pub const CLASSES: &[(&str, &str)] = &[
     ("IfcBuildingElementProxy", "Proxy / generic element"),
     ("IfcWall", "Wall"),
@@ -50,7 +50,7 @@ pub const CLASSES: &[(&str, &str)] = &[
     ("Not Exported", "Not Exported"),
 ];
 
-/// reguli implicite pentru geometriile non-IFC intalnite in ManageBIM
+/// default rules for the non-IFC geometries encountered in ManageBIM
 pub fn default_rules() -> Vec<MapRule> {
     [
         ("Block", "IfcBuildingElementProxy"),
@@ -65,7 +65,7 @@ pub fn default_rules() -> Vec<MapRule> {
     .collect()
 }
 
-/// rezolva clasa pentru o categorie sursa: regula exacta, apoi prefix ignorand cazul.
+/// resolves the class for a source category: the exact rule, then a case-insensitive prefix.
 pub fn resolve<'a>(rules: &'a [MapRule], source: &str) -> Option<&'a MapRule> {
     rules.iter().find(|r| r.enabled && r.source.eq_ignore_ascii_case(source))
         .or_else(|| rules.iter().find(|r| {
@@ -81,8 +81,8 @@ pub fn from_json(s: &str) -> Result<Vec<MapRule>, String> {
     serde_json::from_str(s).map_err(|e| e.to_string())
 }
 
-/// CSV ca in Revit: prima coloana = categorie sursa, a doua = clasa IFC, a treia = IFC Type.
-/// Separator ';' (compatibil cu Excel romanesc).
+/// CSV as in Revit: first column = source category, second = IFC class, third = IFC Type.
+/// Separator ';' (compatible with Romanian Excel).
 pub fn to_csv(rules: &[MapRule]) -> String {
     let q = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
     let mut out = format!("{};{};{};{}\n", q("Source Category"), q("IFC Class Name"), q("IFC Type"), q("Enabled"));
@@ -92,7 +92,7 @@ pub fn to_csv(rules: &[MapRule]) -> String {
     out
 }
 
-/// parser CSV simplu, cu ghilimele duble (fara virgule in campuri)
+/// simple CSV parser, with double quotes (no commas inside fields)
 fn parse_csv(s: &str, sep: u8) -> Vec<Vec<String>> {
     let mut rows = Vec::new();
     let mut row = Vec::new();

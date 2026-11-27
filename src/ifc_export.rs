@@ -1,13 +1,13 @@
-//! Export IFC4 (STEP) din elementele din proiect: geometria (IfcTriangulatedFaceSet), culoarea,
-//! nivelul (IfcBuildingStorey), GlobalId-ul original si TOATE proprietatile (un IfcPropertySet pe grup).
-//! Elementele pastreaza tipul IFC cand e o clasa IFC4 cunoscuta, altfel IfcBuildingElementProxy
-//! (cu tipul original in ObjectType). Coordonatele: reale (IfcSite asezat in originea scenei).
+//! IFC4 (STEP) export of the elements in the project: geometry (IfcTriangulatedFaceSet), color,
+//! level (IfcBuildingStorey), the original GlobalId and ALL properties (one IfcPropertySet per group).
+//! Elements keep their IFC type when it is a known IFC4 class, otherwise IfcBuildingElementProxy
+//! (with the original type in ObjectType). Coordinates: real (IfcSite placed at the scene origin).
 use crate::model::{Element, Model};
 use glam::DVec3;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write;
 
-/// Text STEP: apostrof dublat, backslash dublat, caracterele non-ASCII ca \X2\hhhh\X0\.
+/// STEP text: doubled apostrophe, doubled backslash, non-ASCII characters as \X2\hhhh\X0\.
 pub fn step_str(s: &str) -> String {
     let mut o = String::with_capacity(s.len() + 2);
     o.push('\'');
@@ -45,9 +45,9 @@ pub fn step_str(s: &str) -> String {
 
 const B64: &[u8; 64] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$";
 
-/// GlobalId IFC (22 caractere) dintr-un text oarecare (determinist: acelasi text -> acelasi GUID).
+/// IFC GlobalId (22 characters) from arbitrary text (deterministic: same text -> same GUID).
 pub fn guid_from(seed: &str) -> String {
-    // doua hash-uri FNV-1a pe 64 biti -> 128 biti
+    // two 64-bit FNV-1a hashes -> 128 bits
     let h = |salt: u64| {
         let mut x = 0xcbf2_9ce4_8422_2325u64 ^ salt;
         for b in seed.bytes() {
@@ -58,7 +58,7 @@ pub fn guid_from(seed: &str) -> String {
     };
     let n = ((h(0) as u128) << 64) | h(0x9e37_79b9_7f4a_7c15) as u128;
     let mut s = String::with_capacity(22);
-    // primul caracter: 2 biti, restul cate 6 biti
+    // first character: 2 bits, the rest 6 bits each
     s.push(B64[((n >> 126) & 0x3) as usize] as char);
     for k in (0..21).rev() {
         s.push(B64[((n >> (k * 6)) & 0x3f) as usize] as char);
@@ -70,7 +70,7 @@ fn is_ifc_guid(g: &str) -> bool {
     g.len() == 22 && g.bytes().all(|b| B64.contains(&b))
 }
 
-/// Clase IFC4 acceptate direct + cate atribute au dupa `Representation` (le scriem `$`).
+/// IFC4 classes accepted directly + how many attributes they have after `Representation` (we write them as `$`).
 fn ifc_class(t: &str) -> Option<(&'static str, usize)> {
     const NINE: &[&str] = &[
         "IfcWall", "IfcWallStandardCase", "IfcSlab", "IfcBeam", "IfcColumn", "IfcMember", "IfcPlate", "IfcRoof", "IfcStair", "IfcRamp", "IfcRampFlight", "IfcRailing", "IfcCovering",
@@ -108,7 +108,7 @@ impl W {
 }
 
 fn f(v: f64) -> String {
-    // reale STEP: intotdeauna cu punct zecimal
+    // STEP reals: always with a decimal point
     let s = format!("{v:.6}");
     let s = s.trim_end_matches('0');
     if s.ends_with('.') { format!("{s}0") } else { s.to_string() }
@@ -118,22 +118,22 @@ pub struct ExportStats {
     pub elements: usize,
     pub triangles: usize,
     pub properties: usize,
-    /// suprafete inchise (solide etanse) si elemente scrise ca instante ale unei geometrii deja scrise
+    /// closed surfaces (watertight solids) and elements written as instances of an already written geometry
     pub closed: usize,
     pub instances: usize,
 }
 
-/// Scrie fisierul IFC. `items`: (model, element) de exportat; `origin`: coordonatele reale ale originii scenei.
+/// Writes the IFC file. `items`: (model, element) to export; `origin`: the real coordinates of the scene origin.
 pub fn write_ifc(items: &[(&Model, &Element)], origin: DVec3, project: &str, now: &str) -> (String, ExportStats) {
     write_ifc_mvd(items, origin, project, now, crate::ifc_mvd::Mvd::Reference)
 }
 
-/// Scrie fisierul IFC conform unui Model View Definition.
+/// Writes the IFC file according to a Model View Definition.
 pub fn write_ifc_mvd(items: &[(&Model, &Element)], origin: DVec3, project: &str, now: &str, mvd: crate::ifc_mvd::Mvd) -> (String, ExportStats) {
     write_ifc_full(items, origin, project, now, mvd, &[])
 }
 
-/// Export cu mapare categorie -> clasa IFC.
+/// Export with a category -> IFC class mapping.
 pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str, now: &str, mvd: crate::ifc_mvd::Mvd, map: &[crate::ifc_map::MapRule]) -> (String, ExportStats) {
     let mut w = W { s: String::new(), n: 0 };
     let mut st = ExportStats { elements: 0, triangles: 0, properties: 0, closed: 0, instances: 0 };
@@ -156,7 +156,7 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
     let units = w.add(&format!("IFCUNITASSIGNMENT((#{u1},#{u2},#{u3},#{u4}))"));
     let proj = w.add(&format!("IFCPROJECT({},#{oh},{},$,$,$,$,(#{ctx}),#{units})", step_str(&guid_from(&format!("project|{project}|{now}"))), step_str(project)));
 
-    // IfcSite in originea scenei (coordonatele reale mari raman in plasarea site-ului, geometria e locala)
+    // IfcSite at the scene origin (the large real coordinates stay in the site placement, the geometry is local)
     let so = w.add(&format!("IFCCARTESIANPOINT(({},{},{}))", f(origin.x), f(origin.y), f(origin.z)));
     let sax = w.add(&format!("IFCAXIS2PLACEMENT3D(#{so},#{zdir},#{xdir})"));
     let site_pl = w.add(&format!("IFCLOCALPLACEMENT($,#{sax})"));
@@ -166,7 +166,7 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
     w.add(&format!("IFCRELAGGREGATES({},#{oh},$,$,#{proj},(#{site}))", step_str(&guid_from(&format!("agg1|{now}")))));
     w.add(&format!("IFCRELAGGREGATES({},#{oh},$,$,#{site},(#{bld}))", step_str(&guid_from(&format!("agg2|{now}")))));
 
-    // niveluri: dupa numele nivelului, cota = minimul Z al elementelor lui
+    // levels: by level name, elevation = the minimum Z of its elements
     let mut levels: BTreeMap<String, f64> = BTreeMap::new();
     for (m, e) in items {
         let _ = m;
@@ -193,21 +193,21 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
     let mut styles: HashMap<[u8; 4], u64> = HashMap::new();
     let mut rep_maps: HashMap<u64, u64> = HashMap::new();
     let mut used_guids: std::collections::HashSet<String> = std::collections::HashSet::new();
-    // clasificari -> IfcClassificationReference: (sistem, cod, nume, URI) -> elementele
+    // classifications -> IfcClassificationReference: (system, code, name, URI) -> the elements
     let mut class_refs: BTreeMap<(String, String, String, String), Vec<u64>> = BTreeMap::new();
     for (k, (m, e)) in items.iter().enumerate() {
         let tris = m.tris(e);
         if tris.len() < 3 {
             continue;
         }
-        // geometria fata de coltul elementului (coordonate mici = precizie buna), pe culori: o suprafata pe culoare
+        // the geometry relative to the element's corner (small coordinates = good precision), by color: one surface per color
         let base = tris.iter().fold(glam::Vec3::splat(f32::INFINITY), |a, v| a.min(*v));
         let cols = &m.tri_color[e.tri_start as usize..(e.tri_start + e.tri_count) as usize];
         let mut by_col: BTreeMap<[u8; 4], Vec<usize>> = BTreeMap::new();
         for (ti, c) in cols.iter().enumerate().take(tris.len() / 3) {
             by_col.entry(*c).or_default().push(ti);
         }
-        // fiecare grup de culoare: varfuri sudate (toleranta 0.1 mm), triunghiuri degenerate scoase, inchis / deschis
+        // each color group: welded vertices (tolerance 0.1 mm), degenerate triangles removed, closed / open
         let mut parts: Vec<([u8; 4], Vec<[f32; 3]>, Vec<[usize; 3]>, bool)> = Vec::new();
         for (c, list) in &by_col {
             let mut map: HashMap<[i64; 3], usize> = HashMap::new();
@@ -230,7 +230,7 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
             if idx.is_empty() {
                 continue;
             }
-            // inchis = fiecare muchie folosita exact de doua triunghiuri (solid etans)
+            // closed = each edge used by exactly two triangles (watertight solid)
             let mut edges: HashMap<(usize, usize), u32> = HashMap::new();
             for t in &idx {
                 for k in 0..3 {
@@ -244,7 +244,7 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
         if parts.is_empty() {
             continue;
         }
-        // geometrie identica deja scrisa (fitinguri, flanse...): instanta a aceleiasi reprezentari (IfcMappedItem)
+        // identical geometry already written (fittings, flanges...): an instance of the same representation (IfcMappedItem)
         let key = {
             use std::hash::{Hash, Hasher};
             let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -304,7 +304,7 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
                 }
                 let list = items_ids.iter().map(|i| format!("#{i}")).collect::<Vec<_>>().join(",");
                 let shape = w.add(&format!("IFCSHAPEREPRESENTATION(#{body_ctx},'Body','Tessellation',({list}))"));
-                // prima aparitie: reprezentarea devine si harta pentru urmatoarele elemente identice
+                // first occurrence: the representation also becomes the map for the next identical elements
                 let map = w.add(&format!("IFCREPRESENTATIONMAP(#{ax},#{shape})"));
                 rep_maps.insert(key, map);
                 let op = w.add(&format!("IFCCARTESIANTRANSFORMATIONOPERATOR3D($,$,#{o3},1.,$)"));
@@ -321,7 +321,7 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
         let mut mapped: Option<(&str, &str)> = None;
         if let Some(r) = crate::ifc_map::resolve(map, &e.ifc_type).or_else(|| crate::ifc_map::resolve(map, &e.name)) {
             if r.class.eq_ignore_ascii_case("Not Exported") || r.class.trim().is_empty() {
-                st.elements = st.elements.saturating_sub(0); // elementul nu se scrie
+                st.elements = st.elements.saturating_sub(0); // the element is not written
                 continue;
             }
             mapped = Some((r.class.as_str(), r.ifc_type.as_str()));
@@ -355,7 +355,7 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
             class_refs.entry(key).or_default().push(el);
         }
 
-        // proprietati: un IfcPropertySet pe grup (fara cele calculate de ManageBIM pentru arbore)
+        // properties: one IfcPropertySet per group (without those computed by ManageBIM for the tree)
         let mut groups: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
         for p in &e.props {
             if p.name.trim().is_empty() {
@@ -386,7 +386,7 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
                 if !seen.insert(n) {
                     continue;
                 }
-                // seturile standard (Pset_WallCommon...) cu tipul corect; restul text
+                // the standard sets (Pset_WallCommon...) with the correct type; the rest as text
                 let val = crate::ifc_psets::step_value(g, n, v, &step_str).unwrap_or_else(|| if v.chars().count() <= 255 { format!("IFCLABEL({})", step_str(v)) } else { format!("IFCTEXT({})", step_str(v)) });
                 ids.push(w.add(&format!("IFCPROPERTYSINGLEVALUE({},$,{val},$)", step_str(n))));
                 st.properties += 1;
@@ -399,7 +399,7 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
             w.add(&format!("IFCRELDEFINESBYPROPERTIES({},#{oh},$,$,(#{el}),#{ps})", step_str(&guid_from(&format!("rdp|{gid}|{g}")))));
         }
     }
-    // IfcClassification (un sistem) + IfcClassificationReference (un cod) + legatura cu elementele
+    // IfcClassification (a system) + IfcClassificationReference (a code) + the link to the elements
     let mut systems: BTreeMap<String, u64> = BTreeMap::new();
     for ((system, code, name, uri), els) in &class_refs {
         let sys = *systems.entry(system.clone()).or_insert_with(|| {
@@ -430,10 +430,10 @@ pub fn write_ifc_full(items: &[(&Model, &Element)], origin: DVec3, project: &str
     (format!("{header}{}ENDSEC;\nEND-ISO-10303-21;\n", w.s), st)
 }
 
-/// Clasificarile unui element, din cele doua forme de proprietati:
-/// - atribuite in ManageBIM (bSDD / catalog): grup = sistemul, "Classification" = "cod — nume",
+/// The classifications of an element, from the two forms of properties:
+/// - assigned in ManageBIM (bSDD / catalog): group = the system, "Classification" = "cod — nume",
 ///   optional "Classification URI";
-/// - citite din IFC: grup "Classification", nume = sistemul, valoare = codul, "<sistem> name" = denumirea.
+/// - read from IFC: group "Classification", name = the system, value = the code, "<system> name" = the title.
 fn element_classes(props: &[crate::model::Prop]) -> Vec<(String, String, String, String)> {
     let find = |g: &str, n: &str| props.iter().find(|p| p.group == g && p.name.eq_ignore_ascii_case(n)).map(|p| p.value.trim().to_string()).unwrap_or_default();
     let mut out = Vec::new();

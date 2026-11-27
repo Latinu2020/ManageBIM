@@ -1,17 +1,17 @@
-//! Obiecte de coordonare (ca in Navisworks / Solibri / BIMcollab Zoom):
-//! - Clearance zone: zona de mentenanta / acces in jurul unui echipament (usa de vizitare, spatiu de
-//!   demontare, zona de operare). Orice element care intra in ea e un conflict "soft".
-//! - Provision for void: propunere de gol / trecere prin pereti si placi pentru instalatii, exportata ca
-//!   IfcBuildingElementProxy cu PredefinedType PROVISIONFORVOID (fluxul cel mai cerut in coordonarea MEP).
-//! - Placeholder: volum rezervat pentru echipamente inca nemodelate sau coridoare de trasee.
+//! Coordination objects (as in Navisworks / Solibri / BIMcollab Zoom):
+//! - Clearance zone: the maintenance / access zone around a piece of equipment (access door, space for
+//!   dismantling, operating zone). Any element that enters it is a "soft" conflict.
+//! - Provision for void: a proposed opening / penetration through walls and slabs for services, exported as
+//!   IfcBuildingElementProxy with PredefinedType PROVISIONFORVOID (the most requested flow in MEP coordination).
+//! - Placeholder: a volume reserved for equipment not modelled yet or for routing corridors.
 //!
-//! Obiectele sunt cutii orientate pe axe, salvate in proiect si transformate intr-un model virtual
-//! "Coordination objects": apar in Selection Tree, Properties, Find, Clash Detective si exportul IFC.
+//! The objects are axis-aligned boxes, saved in the project and turned into a virtual model
+//! "Coordination objects": they appear in Selection Tree, Properties, Find, Clash Detective and the IFC export.
 use crate::model::{Prop, RawElement, RawModel};
 use glam::{DVec3, Vec3};
 use serde::{Deserialize, Serialize};
 
-/// calea "fisierului" modelului virtual (nu exista pe disc; nu se reincarca)
+/// the "file" path of the virtual model (it does not exist on disk; it is not reloaded)
 pub const COORD_PATH: &str = "<coordination objects>";
 pub const COORD_NAME: &str = "Coordination objects";
 
@@ -46,7 +46,7 @@ impl CoordKind {
             Self::Placeholder => "Space reserved for equipment that is not modelled yet, or a corridor reserved for a route.",
         }
     }
-    /// culoarea implicita (sRGB + alfa): verde transparent / portocaliu / violet
+    /// the default colour (sRGB + alpha): transparent green / orange / violet
     pub fn color(self) -> [u8; 4] {
         match self {
             Self::Clearance => [70, 200, 120, 90],
@@ -54,9 +54,9 @@ impl CoordKind {
             Self::Placeholder => [150, 110, 230, 110],
         }
     }
-    /// valoarea PredefinedType / ObjectType in IFC
-    /// tipul afisat in Selection Tree; la exportul IFC devine IfcBuildingElementProxy cu acest ObjectType
-    /// (PredefinedType e scris ca proprietate)
+    /// the PredefinedType / ObjectType value in IFC
+    /// the type shown in Selection Tree; on IFC export it becomes IfcBuildingElementProxy with this ObjectType
+    /// (PredefinedType is written as a property)
     pub fn ifc_type(self) -> &'static str {
         self.label()
     }
@@ -71,11 +71,11 @@ impl CoordKind {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoordObject {
-    /// identificator stabil (GUID-ul IFC se deriva din el)
+    /// stable identifier (the IFC GUID is derived from it)
     pub id: u64,
     pub name: String,
     pub kind: CoordKind,
-    /// cutia in coordonatele LOCALE ale scenei (ca vertecsii modelelor)
+    /// the box in the LOCAL coordinates of the scene (like the model vertices)
     pub min: [f32; 3],
     pub max: [f32; 3],
     #[serde(default)]
@@ -83,14 +83,14 @@ pub struct CoordObject {
     /// Proposed / Approved / Rejected / Built
     #[serde(default = "proposed")]
     pub status: String,
-    /// pentru goluri: elementul gazda (perete / placa), nume sau GUID
+    /// for voids: the host element (wall / slab), name or GUID
     #[serde(default)]
     pub host: String,
     #[serde(default)]
     pub note: String,
     #[serde(default = "yes")]
     pub visible: bool,
-    /// rotatia in jurul axei verticale prin centru (grade); `min` / `max` sunt cutia NEROTITA
+    /// the rotation around the vertical axis through the centre (degrees); `min` / `max` are the UNROTATED box
     #[serde(default)]
     pub rot_deg: f32,
 }
@@ -127,7 +127,7 @@ impl CoordObject {
     pub fn center(&self) -> Vec3 {
         (Vec3::from(self.max) + Vec3::from(self.min)) * 0.5
     }
-    /// seteaza dimensiunile pastrand centrul (minim 1 cm)
+    /// sets the dimensions keeping the centre (minimum 1 cm)
     pub fn set_size(&mut self, s: Vec3) {
         let c = self.center();
         let h = s.max(Vec3::splat(0.01)) * 0.5;
@@ -144,27 +144,27 @@ impl CoordObject {
     }
 }
 
-/// cutie -> 12 triunghiuri cu fetele orientate spre exterior
+/// box -> 12 triangles with the faces oriented outwards
 fn box_tris(a: DVec3, b: DVec3) -> Vec<[DVec3; 3]> {
     let c = |x: bool, y: bool, z: bool| DVec3::new(if x { b.x } else { a.x }, if y { b.y } else { a.y }, if z { b.z } else { a.z });
     let quads = [
-        [c(false, false, false), c(false, true, false), c(true, true, false), c(true, false, false)], // jos
-        [c(false, false, true), c(true, false, true), c(true, true, true), c(false, true, true)],     // sus
-        [c(false, false, false), c(true, false, false), c(true, false, true), c(false, false, true)], // fata
-        [c(false, true, false), c(false, true, true), c(true, true, true), c(true, true, false)],     // spate
-        [c(false, false, false), c(false, false, true), c(false, true, true), c(false, true, false)], // stanga
-        [c(true, false, false), c(true, true, false), c(true, true, true), c(true, false, true)],     // dreapta
+        [c(false, false, false), c(false, true, false), c(true, true, false), c(true, false, false)], // bottom
+        [c(false, false, true), c(true, false, true), c(true, true, true), c(false, true, true)],     // top
+        [c(false, false, false), c(true, false, false), c(true, false, true), c(false, false, true)], // front
+        [c(false, true, false), c(false, true, true), c(true, true, true), c(true, true, false)],     // back
+        [c(false, false, false), c(false, false, true), c(false, true, true), c(false, true, false)], // left
+        [c(true, false, false), c(true, true, false), c(true, true, true), c(true, false, true)],     // right
     ];
     quads.iter().flat_map(|q| [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]).collect()
 }
 
-/// Modelul virtual cu obiectele vizibile (coordonate LUME = locale + origine).
+/// The virtual model with the visible objects (WORLD coordinates = local + origin).
 pub fn to_raw(objs: &[CoordObject], origin: DVec3) -> RawModel {
     let mut elements = Vec::new();
     for o in objs {
         let a = Vec3::from(o.min).as_dvec3() + origin;
         let b = Vec3::from(o.max).as_dvec3() + origin;
-        // rotatia in jurul verticalei prin centru
+        // the rotation around the vertical through the centre
         let c = (a + b) * 0.5;
         let (s, co) = (o.rot_deg as f64).to_radians().sin_cos();
         let rot = |p: DVec3| {
@@ -209,21 +209,21 @@ pub fn to_raw(objs: &[CoordObject], origin: DVec3) -> RawModel {
     RawModel { elements, info: vec![("Source".into(), "ManageBIM coordination objects".into())], warnings: Vec::new() }
 }
 
-/// Cutia unui gol propus la intersectia unei instalatii (cutia ei) cu un perete / o placa (cutia gazdei),
-/// cu `margin` metri in plus pe fiecare parte, pe directiile perpendiculare pe trecere.
+/// The box of a proposed void at the intersection of a service (its box) with a wall / slab (the host box),
+/// with `margin` extra metres on each side, in the directions perpendicular to the penetration.
 pub fn void_at(service: (Vec3, Vec3), host: (Vec3, Vec3), margin: f32) -> Option<(Vec3, Vec3)> {
     let lo = service.0.max(host.0);
     let hi = service.1.min(host.1);
     if (0..3).any(|d| lo[d] > hi[d] + 1e-4) {
         return None;
     }
-    // axa de trecere = cea mai subtire dimensiune a gazdei (grosimea peretelui / placii)
+    // the penetration axis = the thinnest dimension of the host (the wall / slab thickness)
     let hs = host.1 - host.0;
     let thin = if hs.x <= hs.y && hs.x <= hs.z { 0 } else if hs.y <= hs.z { 1 } else { 2 };
     let (mut a, mut b) = (lo, hi);
     for d in 0..3 {
         if d == thin {
-            // golul traverseaza toata grosimea gazdei
+            // the void crosses the whole thickness of the host
             a[d] = host.0[d];
             b[d] = host.1[d];
         } else {
@@ -247,14 +247,14 @@ mod tests {
         assert_eq!(e.tris.len(), 12);
         assert_eq!(e.ifc_type, "Provision for void");
         assert!(e.props.iter().any(|p| p.value == "PROVISIONFORVOID"));
-        // fetele spre exterior: volumul semnat (teorema divergentei) e pozitiv si egal cu volumul cutiei
+        // faces outwards: the signed volume (divergence theorem) is positive and equal to the box volume
         let vol: f64 = e.tris.iter().map(|t| t[0].dot(t[1].cross(t[2])) / 6.0).sum();
         assert!((vol - 0.4 * 0.2 * 0.3).abs() < 1e-6, "{vol}");
     }
 
     #[test]
     fn void_spans_the_wall_thickness_with_margin() {
-        // conducta de-a lungul lui X prin peretele gros de 0.25 m (perpendicular pe X)
+        // a pipe along X through a 0.25 m thick wall (perpendicular to X)
         let pipe = (Vec3::new(-2.0, -0.05, 1.0), Vec3::new(2.0, 0.05, 1.1));
         let wall = (Vec3::new(0.0, -3.0, 0.0), Vec3::new(0.25, 3.0, 3.0));
         let (a, b) = void_at(pipe, wall, 0.05).unwrap();

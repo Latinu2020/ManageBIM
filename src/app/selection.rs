@@ -1,8 +1,8 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
-    // ------------------------------------------------------------------ acces model
+    // ------------------------------------------------------------------ model access
     pub fn elem(&self, id: ElemId) -> Option<(&Arc<Model>, &Element)> {
         let m = self.models.get(id.m as usize)?.as_ref()?;
         Some((m, m.elements.get(id.e as usize)?))
@@ -46,7 +46,7 @@ impl App {
 
     /// Clash results are only shown while the Clash Detective panel is open.
     pub fn clash_view(&self) -> bool {
-        // doar cat panoul se vede: zona de jos coborata / panouri ascunse = modelul revine la normal
+        // only while the panel is visible: bottom zone lowered / panels hidden = the model returns to normal
         self.settings.layout.visible(Panel::Clash)
     }
 
@@ -151,7 +151,7 @@ impl App {
         self.mats.cache = None;
         self.profile_map = None;
         self.qto_result = None;
-        // modelele s-au schimbat (incarcare / Refresh / eliminare) -> rezultatul Compare nu mai e valabil
+        // the models changed (load / Refresh / removal) -> the Compare result is no longer valid
         if self.compare.take().is_some() {
             self.compare_on = false;
             self.log.push("Compare results cleared because a model changed - run Compare again.".into());
@@ -167,7 +167,7 @@ impl App {
     }
 
     // ------------------------------------------------------------------ Selection Tree
-    /// Reconstruieste arborii tuturor modelelor dupa gruparea curenta si o salveaza in setari.
+    /// Rebuilds the trees of all models by the current grouping and saves it in the settings.
     pub fn set_tree_levels(&mut self, levels: Vec<TreeLevel>) {
         self.settings.tree_levels = levels;
         self.settings.save();
@@ -184,8 +184,8 @@ impl App {
         }
     }
 
-    /// Numele tipului elementului (Revit "Family and Type" / "Type", IFC ObjectType / tipul definit);
-    /// None daca modelul nu are asa ceva (atunci "acelasi tip" = aceeasi categorie + acelasi nume).
+    /// The element's type name (Revit "Family and Type" / "Type", IFC ObjectType / the defined type);
+    /// None if the model has no such thing (then "same type" = same category + same name).
     pub fn type_name_of(e: &crate::model::Element) -> Option<String> {
         const KEYS: [&str; 6] = ["Family and Type", "Type Name", "Type", "ObjectType", "IfcTypeObject", "Family Type"];
         for k in KEYS {
@@ -196,8 +196,8 @@ impl App {
         None
     }
 
-    /// Select Similar: toate elementele (vizibile) din toate modelele cu aceeasi categorie / tip ca selectia.
-    /// `by_type` = acelasi tip (ex. "Basic Wall: 200mm"); altfel aceeasi categorie (IfcWall / Walls).
+    /// Select Similar: all (visible) elements in all models with the same category / type as the selection.
+    /// `by_type` = the same type (e.g. "Basic Wall: 200mm"); otherwise the same category (IfcWall / Walls).
     pub fn select_similar(&mut self, by_type: bool) {
         let sel: Vec<ElemId> = self.selected.iter().copied().collect();
         if sel.is_empty() {

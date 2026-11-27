@@ -5,7 +5,7 @@ impl App {
     pub(super) fn ribbon(&mut self, ctx: &egui::Context) {
         use crate::theme::RibbonMode;
         const TABS: [&str; 14] = ["Home", "Select", "Viewpoint", "Review", "Sections", "Annotation", "BIM", "Coordination", "Analyze", "Render", "Export", "Share", "Script", "View"];
-        // setarile vechi: "ribbon restrans" = treapta Mini
+        // old settings: "collapsed ribbon" = the Mini level
         if self.settings.ribbon_min {
             self.settings.ribbon_min = false;
             self.settings.ribbon_mode = RibbonMode::Mini;
@@ -17,12 +17,12 @@ impl App {
         crate::theme::RIBBON_COMPACT.store(mode == RibbonMode::Compact, std::sync::atomic::Ordering::Relaxed);
         crate::theme::COLOR_ICONS.store(self.settings.color_icons, std::sync::atomic::Ordering::Relaxed);
         let fill = ctx.style().visuals.panel_fill;
-        // bara de sus: cautare / focus / tema / setari / proiect - separata de ribbon
+        // top bar: search / focus / theme / settings / project - separate from the ribbon
         self.app_bar(ctx);
         egui::TopBottomPanel::top("ribbon").show_separator_line(false).frame(egui::Frame::none().fill(fill).inner_margin(egui::Margin { left: 8.0, right: 8.0, top: 5.0, bottom: 5.0 })).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.style_mut().spacing.item_spacing.x = 3.0;
-                // accentul Nord e deschis (cyan): text inchis pentru contrast
+                // the Nord accent is light (cyan): dark text for contrast
                 let ftxt = match self.settings.theme { Theme::Nord => Color32::from_rgb(46, 52, 64), Theme::TokyoNight => Color32::from_rgb(26, 27, 38), _ => Color32::WHITE };
                 let fb = egui::Button::new(crate::theme::icon_job("≡", crate::i18n::tr("File "), 14.0, ftxt)).fill(accent()).rounding(crate::theme::RADIUS_MD).min_size(EV::new(78.0, 26.0));
                 let r = ui.add(fb);
@@ -32,10 +32,10 @@ impl App {
                 }
                 egui::popup_below_widget(ui, popup, &r, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| self.file_menu(ui));
                 ui.add_space(8.0);
-                // Tab-urile au acum toata latimea: bara de sus e separata.
-                // Scroll-ul ramane doar pentru ferestre foarte inguste.
-                // fereastra ingusta: tab-urile se strang (latime minima mai mica, text putin mai mic) ca sa
-                // se vada toate 14, fara derulare
+                // The tabs now have the full width: the top bar is separate.
+                // Scrolling remains only for very narrow windows.
+                // narrow window: the tabs shrink (smaller minimum width, slightly smaller text) so that
+                // all 14 are visible, without scrolling
                 let tabs_w = ui.available_width();
                 let (tab_min, tab_font, tab_pad) = if tabs_w >= 14.0 * 81.0 {
                     (78.0, None, 6.0)
@@ -58,7 +58,7 @@ impl App {
                     let b = egui::Button::new(txt).fill(if on { accent().gamma_multiply(0.16) } else { Color32::TRANSPARENT }).stroke(Stroke::NONE).rounding(crate::theme::RADIUS_LG).min_size(EV::new(tab_min, 24.0));
                     let r = ui.add(b);
                     if on {
-                        // subliniere subtila a tab-ului activ (ca in Office / Navisworks 2024)
+                        // subtle underline of the active tab (as in Office / Navisworks 2024)
                         let rr = r.rect;
                         ui.painter().line_segment(
                             [Pos2::new(rr.min.x + 7.0, rr.max.y + 2.0), Pos2::new(rr.max.x - 7.0, rr.max.y + 2.0)],
@@ -66,7 +66,7 @@ impl App {
                         );
                     }
                     if r.double_clicked() {
-                        // ca in Office: dublu-click pe tab = Mini / inapoi
+                        // as in Office: double-click on a tab = Mini / back
                         self.settings.ribbon_mode = if mode == RibbonMode::Mini { RibbonMode::Full } else { RibbonMode::Mini };
                         self.settings.save();
                     } else if r.clicked() {
@@ -84,16 +84,16 @@ impl App {
                 return;
             }
             ui.add_space(4.0);
-            // inaltime FIXA pe toate tab-urile (nu mai "sare" cand schimbi tab-ul)
+            // FIXED height on all tabs (no longer "jumps" when you change tab)
             let h = mode.height();
-            // ribbon-ul se potriveste in fereastra: latimea butoanelor (62 px) scade automat pe tab-ul
-            // curent cat sa incapa tot (minim 38 px), si creste la loc cand e spatiu - fara bara de scroll
+            // the ribbon fits in the window: the button width (62 px) shrinks automatically on the current
+            // tab just enough for everything to fit (minimum 38 px), and grows back when there is room - no scroll bar
             let avail_w = ui.available_width();
             let wid = egui::Id::new(("ribbon_btn_w", self.ribbon_tab));
             let w_now: f32 = ui.data(|d| d.get_temp(wid)).unwrap_or(62.0);
             crate::theme::set_ribbon_btn_w(w_now);
-            // daca nici cu butoanele cele mai inguste nu incape: tab-ul trece pe iconite (numele in tooltip)
-            // pana cand fereastra e iar destul de lata (latimea necesara e tinuta minte)
+            // if it does not fit even with the narrowest buttons: the tab switches to icons (name in the tooltip)
+            // until the window is wide enough again (the needed width is remembered)
             let cid = egui::Id::new(("ribbon_auto_compact", self.ribbon_tab));
             let auto_compact: Option<f32> = ui.data(|d| d.get_temp(cid));
             if let Some(need) = auto_compact {
@@ -109,11 +109,11 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.set_height(h);
                     ui.set_max_height(h);
-                    // golul dintre carduri separa grupele - nu linii
+                    // the gap between cards separates the groups - not lines
                     ui.spacing_mut().item_spacing = egui::vec2(5.0, 1.0);
                     ui.spacing_mut().interact_size.y = 16.0;
                     ui.spacing_mut().button_padding = egui::vec2(6.0, 1.0);
-                    // tranzitie la schimbarea tab-ului: continutul apare cu fade
+                    // transition when changing tab: the content fades in
                     let now = ui.input(|i| i.time);
                     let fid = egui::Id::new("ribbon_fade");
                     let (ft, fs): (usize, f64) = ui.data(|d| d.get_temp(fid)).unwrap_or((usize::MAX, 0.0));
@@ -123,7 +123,7 @@ impl App {
                         ui.multiply_opacity(0.25 + 0.75 * alpha);
                         ui.ctx().request_repaint();
                     }
-                    // pagina de start: ribbon-ul se vede, dar e inactiv pana se deschide un model / proiect
+                    // start page: the ribbon is visible, but inactive until a model / project is opened
                     if self.start_screen() {
                         ui.disable();
                     }
@@ -187,7 +187,7 @@ impl App {
                     }
                 });
             });
-            // potrivirea latimii pentru cadrul urmator (doar in modul cu etichete)
+            // width fitting for the next frame (only in the mode with labels)
             if mode != RibbonMode::Compact && !forced_compact && w_now <= 38.5 && out.content_size.x > avail_w + 1.0 {
                 ui.data_mut(|d| d.insert_temp(cid, out.content_size.x));
                 ui.ctx().request_repaint();
@@ -195,9 +195,9 @@ impl App {
             crate::theme::RIBBON_COMPACT.store(mode == RibbonMode::Compact, std::sync::atomic::Ordering::Relaxed);
             if mode != RibbonMode::Compact && !forced_compact {
                 let content = out.content_size.x.max(1.0);
-                // latimea ferestrei la care tab-ul a trebuit ingustat: butoanele cresc la loc doar cand
-                // fereastra se mareste. Altfel grupuri care isi schimba forma dupa latime (Interface: slider
-                // lat / "UI 80%") faceau bucla ingusteaza - creste - ingusteaza si tab-ul View tremura.
+                // the window width at which the tab had to be narrowed: the buttons grow back only when
+                // the window gets bigger. Otherwise groups that change shape with width (Interface: wide
+                // slider / "UI 80%") caused a narrow - grow - narrow loop and the View tab flickered.
                 let sid = egui::Id::new(("ribbon_shrunk_at", self.ribbon_tab));
                 let shrunk_at: Option<f32> = ui.data(|d| d.get_temp(sid));
                 let may_grow = shrunk_at.is_none_or(|a| avail_w > a + 8.0);
@@ -244,7 +244,7 @@ impl App {
             if rbtn(ui, "🏠", "Start", "Start page: recent files, Open, New (the project stays open - come back with the arrow)", false, true).clicked() {
                 self.show_start = true;
             }
-            // Refresh: evidentiat cand unul din fisierele incarcate s-a modificat pe disc
+            // Refresh: highlighted when one of the loaded files changed on disk
             let has_models = self.loaded_models().next().is_some();
             let n_changed = self.changed_files.len();
             let label = if n_changed > 0 { format!("Refresh ({n_changed})") } else { "Refresh".to_string() };
@@ -327,7 +327,7 @@ impl App {
             if rbtn(ui, "🚶", "Walk", "Walk: drag up / down, W A S D / arrows", self.nav == NavMode::Walk, true).clicked() {
                 self.nav = NavMode::Walk;
             }
-            // Toate controalele sunt butoane de dimensiune fixa; setarile se schimba in popup.
+            // All controls are fixed-size buttons; the settings change in the popup.
             let spd = rbtn(ui, "⏩", &format!("{:.1}", self.settings.walk_speed), "Walk speed (m/s)", false, true);
             let sid = ui.make_persistent_id("walk_speed_pop");
             if spd.clicked() {
@@ -478,7 +478,7 @@ impl App {
             }
             self.panel_btn(ui, Panel::Measure, "📊", "List", "Measurements panel");
         });
-        // ca in Navisworks (Measure > Transform): relocare cu puncte alese in model
+        // as in Navisworks (Measure > Transform): relocation with points picked in the model
     }
 
     pub(super) fn ribbon_relocate(&mut self, ui: &mut egui::Ui) {
@@ -546,14 +546,14 @@ impl App {
                 self.section_sel_sig = 0;
             }
             self.panel_btn(ui, Panel::Section, "⚙", "Planes", "Section planes & box");
-            // contur cub on/off (inainte era o bifa „Hide section box" care facea invers)
+            // box outline on/off (before, there was a „Hide section box" checkbox that did the opposite)
             if rbtn(ui, "▣", "Box outline", "Show the outline of the section box and its face arrows in 3D. The cut and all exports stay active when it is off.", self.settings.show_section_box, true).clicked() {
                 self.settings.show_section_box = !self.settings.show_section_box;
                 self.settings.save();
             }
-            // exporturile (DWG / PDF / Title Block / Overlay / Preview) sunt DOAR în tab-ul Annotation
+            // the exports (DWG / PDF / Title Block / Overlay / Preview) are ONLY in the Annotation tab
         });
-        // acces rapid: nivelul, sus / jos, box de nivel sau taietura de plan
+        // quick access: the level, up / down, level box or plan cut
         let levels = self.scene_grids().levels;
         if !levels.is_empty() {
             rgroup(ui, "Level", |ui| {
@@ -593,8 +593,8 @@ impl App {
         self.visibility_group(ui);
     }
 
-    /// Tab-ul Annotation: tot ce tine de desenul 2D al sectiunii - export DWG / PDF,
-    /// anotatii (cote, niveluri, grile, hasura) si previewul mic, usor de gasit.
+    /// The Annotation tab: everything about the 2D drawing of the section - DWG / PDF export,
+    /// annotations (dimensions, levels, grids, hatch) and the small preview, easy to find.
     pub(super) fn ribbon_annotation(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Cut & Export", |ui| {
             if rbtn(ui, "📐", "Cut to DWG", "Export the section cut as 2D lines (DWG / DXF), one layer per element type - with hatching, dimension chains, levels and tags", false, self.section.enabled).clicked() {
@@ -628,7 +628,7 @@ impl App {
                     let mut tmp = v;
                     if ui.selectable_value(&mut tmp, cur, label).clicked() {
                         self.settings.cad_view = v;
-                        // highlightul nu se aprinde automat - doar utilizatorul il deschide
+                        // the highlight does not turn on automatically - only the user turns it on
                         if v != crate::app::CadView::Current {
                             self.settings.cad_view_pos = 0.0;
                         }
@@ -641,7 +641,7 @@ impl App {
             if rbtn(ui, "✏", "Title Block", "Edit the title block, sheet format (A3 - A0) and scale", self.title_block_open, true).clicked() {
                 self.title_block_open = !self.title_block_open;
             }
-            // Grids / Levels se comută în grupul „Grids & Levels" (Home / Sections), nu aici.
+            // Grids / Levels are toggled in the „Grids & Levels" group (Home / Sections), not here.
             if rbtn(ui, "▤", "Filled cuts", "Cut faces drawn solid and hatched (closed solids), instead of seeing inside the elements", self.section_caps, true).clicked() {
                 self.section_caps = !self.section_caps;
             }
@@ -663,7 +663,7 @@ impl App {
         });
     }
 
-    /// Toate comenzile BIM (IFC, IDS, clasificare, date, schimb) intr-un singur tab.
+    /// All the BIM commands (IFC, IDS, classification, data, exchange) in a single tab.
     pub(super) fn ribbon_bim(&mut self, ui: &mut egui::Ui) {
         let has = self.loaded_models().next().is_some();
         rgroup(ui, "IFC export", |ui| {
@@ -781,11 +781,11 @@ impl App {
                     self.open_panel(Panel::Animation);
                 }
             }
-            // fereastra proprie, pe toata inaltimea: lista de materiale lunga si lata
+            // its own window, full height: the material list is long and wide
             if rbtn(ui, "🎨", "Materials", "Material library, image textures & assignments", self.mats.window, true).clicked() {
                 self.mats.window = !self.mats.window;
                 if self.mats.window && self.panel_shown(Panel::Render) && self.render_subtab == 1 {
-                    // acelasi editor nu sta deschis in doua locuri
+                    // the same editor does not stay open in two places
                     self.render_subtab = 0;
                 }
             }
@@ -845,7 +845,7 @@ impl App {
                 self.request_path(Purpose::ExportNavisClash);
             }
         });
-        // formatele deschise si aici (nu doar in tab-ul BIM), cu iconite de format de fisier
+        // the open formats here too (not only in the BIM tab), with file format icons
         let has = self.loaded_models().next().is_some();
         rgroup(ui, "Open standards", |ui| {
             if rbtn(ui, "fmt:IFC", "IFC", "Export all visible items to IFC4 (MVD from the BIM tab). With a selection: only the selected items.", false, has).clicked() {
@@ -933,7 +933,7 @@ impl App {
         });
     }
 
-    /// Stilul de afisare: Realistic / Shaded / Concept / Wireframe
+    /// The display style: Realistic / Shaded / Concept / Wireframe
     pub(super) fn style_group(&mut self, ui: &mut egui::Ui) {
         rgroup(ui, "Visual Style", |ui| {
             use crate::render::VisualStyle as V;
@@ -952,7 +952,7 @@ impl App {
         });
     }
 
-    /// Starea curenta de vizualizare ca sablon (numele / nota / flagurile se completeaza de apelant).
+    /// The current view state as a template (the name / note / flags are filled in by the caller).
     pub(super) fn view_template_snapshot(&self, name: String) -> crate::app::ViewTemplate {
         crate::app::ViewTemplate {
             name,
@@ -973,7 +973,7 @@ impl App {
         }
     }
 
-    /// Salvează starea curentă de vizualizare ca şablon în proiect.
+    /// Saves the current view state as a template in the project.
     pub(super) fn save_view_template(&mut self) {
         let t = self.view_template_snapshot(format!("View {}", self.view_templates.len() + 1));
         self.view_templates.push(t);
@@ -982,7 +982,7 @@ impl App {
         self.toast("View template saved (in project)");
     }
 
-    /// Suprascrie sablonul `i` cu vederea curenta, pastrand numele, nota, steaua si ce include.
+    /// Overwrites template `i` with the current view, keeping the name, note, star and what it includes.
     pub(super) fn update_view_template(&mut self, i: usize) {
         let Some(old) = self.view_templates.get(i).cloned() else { return };
         let mut t = self.view_template_snapshot(old.name.clone());
@@ -993,7 +993,7 @@ impl App {
         self.toast(format!("'{}' updated with the current view", old.name));
     }
 
-    /// Aplică un şablon de vizualizare - doar partile bifate la „Include".
+    /// Applies a view template - only the parts ticked under „Include".
     pub(super) fn apply_view_template(&mut self, i: usize) {
         let Some(t) = self.view_templates.get(i).cloned() else { return };
         let [cam, vis, sec, style, col] = t.include;
@@ -1020,7 +1020,7 @@ impl App {
         }
         self.vt_current = i;
         self.vt_applied = true;
-        // vederea nu mai este cea a viewpoint-ului activ: nu-l mai aratam ca activ (si nici redline-urile lui)
+        // the view is no longer that of the active viewpoint: we no longer show it as active (nor its redlines)
         if cam || vis || sec {
             self.active_vp = None;
         }
@@ -1049,7 +1049,7 @@ impl App {
                 self.view_templates_open = !self.view_templates_open;
             }
         });
-        // ferestrele si optiunile in meniuri derulante: ribbon-ul pastreaza aceeasi inaltime pe toate tab-urile
+        // windows and options in drop-down menus: the ribbon keeps the same height on all tabs
         rgroup(ui, "Windows", |ui| {
             let open_n = crate::layout::ALL_PANELS.iter().filter(|p| self.settings.layout.is_open(**p)).count();
             let r = rbtn(ui, "🗔", &format!("Panels ({open_n}) ⏷"), "Show / hide any panel", false, true);
@@ -1084,7 +1084,7 @@ impl App {
             }
         });
         rgroup(ui, "Scene", |ui| {
-            // un singur loc pentru lumina: soare, cer, lampi (Render › Lighting)
+            // a single place for lighting: sun, sky, lamps (Render › Lighting)
             let has_cloud = self.loaded_models().any(|(_, m)| m.cloud.is_some());
             if rbtn(ui, "☁", "Point Cloud", "Point density and size (E57 point clouds)", self.show_cloud, has_cloud).clicked() {
                 self.show_cloud = !self.show_cloud;
@@ -1133,7 +1133,7 @@ impl App {
             }
         });
         rgroup(ui, "Interface", |ui| {
-            // fereastra ingusta: doar valoarea (glisare), fara eticheta si slider lat
+            // narrow window: only the value (drag), no label and no wide slider
             let narrow = crate::theme::ribbon_btn_w() < 55.0 || crate::theme::RIBBON_COMPACT.load(std::sync::atomic::Ordering::Relaxed);
             ui.horizontal(|ui| {
                 let mut pct = (self.settings.ui_scale * 100.0).round() as i32;
@@ -1271,7 +1271,7 @@ impl App {
                 ui.set_min_width(230.0);
                 ui.label(RichText::new("Colour").small().strong());
                 ui.horizontal_wrapped(|ui| {
-                    // paletă standard de desen tehnic (roșu / portocaliu / galben / verde / albastru / negru / alb)
+                    // standard technical drawing palette (red / orange / yellow / green / blue / black / white)
                     for c in [[230u8, 40, 40], [251, 146, 60], [250, 204, 21], [74, 222, 128], [59, 130, 246], [30, 35, 45], [250, 250, 250]] {
                         let (r, resp) = ui.allocate_exact_size(EV::splat(18.0), Sense::click());
                         ui.painter().rect_filled(r, crate::theme::RADIUS_SM, Color32::from_rgb(c[0], c[1], c[2]));

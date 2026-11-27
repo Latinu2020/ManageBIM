@@ -1,23 +1,23 @@
-//! Model Checker: reguli de verificare a datelor (proprietati, atribute, tipuri) si import
+//! Model Checker: data checking rules (properties, attributes, types) and import
 //! buildingSMART IDS 1.0 (Information Delivery Specification).
 //!
-//! O regula = "aplicabilitate" (ce elemente verifica: tip IFC / categorie, proprietati) +
-//! "cerinte" (ce trebuie sa aiba: proprietate prezenta, valoare din lista, model, interval).
+//! A rule = "applicability" (which elements it checks: IFC type / category, properties) +
+//! "requirements" (what they must have: property present, value from a list, pattern, range).
 
 use crate::model::{ElemId, Element, Model};
 use serde::{Deserialize, Serialize};
 
-/// Restrictia unei valori (nume de tip, Pset, proprietate sau valoarea ei).
+/// The restriction of a value (type name, Pset, property or its value).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub enum Value {
-    /// orice (sau "trebuie doar sa existe")
+    /// anything (or "must only exist")
     #[default]
     Any,
-    /// una dintre valori (simpleValue / enumeration)
+    /// one of the values (simpleValue / enumeration)
     OneOf(Vec<String>),
-    /// expresie regulata XSD (ancorata la tot textul)
+    /// XSD regular expression (anchored to the whole text)
     Pattern(String),
-    /// interval numeric (min / max inclusive)
+    /// numeric range (min / max inclusive)
     Range { min: Option<f64>, max: Option<f64> },
 }
 
@@ -28,7 +28,7 @@ impl Value {
     pub fn is_any(&self) -> bool {
         matches!(self, Value::Any)
     }
-    /// textul afisat in rapoarte
+    /// the text shown in reports
     pub fn describe(&self) -> String {
         match self {
             Value::Any => "any".into(),
@@ -43,8 +43,8 @@ impl Value {
             },
         }
     }
-    /// valoarea `s` respecta restrictia? Comparatie toleranta: fara spatii la capete, fara diferente
-    /// de litere mari / mici, numere egale (12 = 12.0), unitatea scrisa dupa numar e ignorata.
+    /// does the value `s` satisfy the restriction? Tolerant comparison: no leading/trailing spaces, no
+    /// upper / lower case differences, equal numbers (12 = 12.0), the unit written after the number is ignored.
     pub fn matches(&self, s: &str) -> bool {
         let s = s.trim();
         match self {
@@ -78,7 +78,7 @@ fn same(a: &str, b: &str) -> bool {
     }
 }
 
-/// primul numar din text ("12,5 m²" -> 12.5); None daca textul nu incepe cu un numar
+/// the first number in the text ("12,5 m²" -> 12.5); None if the text does not start with a number
 pub fn num(s: &str) -> Option<f64> {
     let s = s.trim();
     let end = s.find(|c: char| !(c.is_ascii_digit() || matches!(c, '.' | ',' | '-' | '+' | 'e' | 'E'))).unwrap_or(s.len());
@@ -99,14 +99,14 @@ pub enum Card {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Kind {
-    /// tipul elementului (IfcWall, sau categoria Revit / tipul din alte formate)
+    /// the element type (IfcWall, or the Revit category / the type from other formats)
     #[default]
     Entity,
-    /// atribut: Name, GlobalId, Description, ObjectType, Tag, PredefinedType...
+    /// attribute: Name, GlobalId, Description, ObjectType, Tag, PredefinedType...
     Attribute,
-    /// proprietate dintr-un set (Pset / grup de parametri)
+    /// a property from a set (Pset / parameter group)
     Property,
-    /// clasificare (Uniclass, OmniClass...): `set` = sistemul, `value` = codul
+    /// classification (Uniclass, OmniClass...): `set` = the system, `value` = the code
     Classification,
     /// material
     Material,
@@ -125,22 +125,22 @@ impl Kind {
     }
 }
 
-/// O conditie (IDS "facet").
+/// A condition (IDS "facet").
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct Facet {
     pub kind: Kind,
-    /// Property: setul (Pset_WallCommon / grupul); Classification: sistemul
+    /// Property: the set (Pset_WallCommon / the group); Classification: the system
     #[serde(default)]
     pub set: Value,
-    /// Entity: numele tipului; Attribute / Property: numele
+    /// Entity: the type name; Attribute / Property: the name
     #[serde(default)]
     pub name: Value,
-    /// valoarea ceruta (Any = trebuie doar sa existe); Entity: PredefinedType
+    /// the required value (Any = must only exist); Entity: PredefinedType
     #[serde(default)]
     pub value: Value,
     #[serde(default)]
     pub card: Card,
-    /// valoarea trebuie sa fie unica intre elementele verificate (ex. Mark, GlobalId, numar de usa)
+    /// the value must be unique among the checked elements (e.g. Mark, GlobalId, door number)
     #[serde(default)]
     pub unique: bool,
 }
@@ -155,7 +155,7 @@ impl Facet {
     pub fn attribute(name: &str, value: Value) -> Facet {
         Facet { kind: Kind::Attribute, name: Value::one(name), value, card: Card::Required, ..Default::default() }
     }
-    /// textul condítiei, pentru liste si rapoarte
+    /// the condition text, for lists and reports
     pub fn describe(&self) -> String {
         let nm = match &self.name {
             Value::OneOf(v) => v.join(" / "),
@@ -183,7 +183,7 @@ impl Facet {
         }
     }
 
-    /// valorile gasite pe element pentru aceasta conditie (fara a verifica valoarea)
+    /// the values found on the element for this condition (without checking the value)
     fn found<'a>(&self, e: &'a Element) -> Vec<&'a str> {
         match self.kind {
             Kind::Entity => vec![e.ifc_type.as_str()],
@@ -219,7 +219,7 @@ impl Facet {
         }
     }
 
-    /// elementul indeplineste conditia (pentru aplicabilitate: tipul / proprietatea exista cu valoarea ceruta)
+    /// the element meets the condition (for applicability: the type / property exists with the required value)
     pub fn holds(&self, e: &Element) -> bool {
         if self.kind == Kind::Entity {
             return entity_matches(&self.name, &e.ifc_type) && (self.value.is_any() || e.props.iter().any(|p| matches!(p.name.as_str(), "PredefinedType" | "ObjectType") && self.value.matches(&p.value)));
@@ -227,7 +227,7 @@ impl Facet {
         self.found(e).iter().any(|v| self.value.matches(v))
     }
 
-    /// verifica o cerinta; Some(motiv) daca elementul NU o respecta
+    /// checks a requirement; Some(reason) if the element does NOT satisfy it
     pub fn fails(&self, e: &Element) -> Option<String> {
         if self.kind == Kind::Entity {
             let ok = self.holds(e);
@@ -261,7 +261,7 @@ impl Facet {
     }
 }
 
-/// IFCWALL = IfcWall; numele din IDS sunt cu litere mari, cele din model "frumoase" sau categorii Revit
+/// IFCWALL = IfcWall; the names in IDS are uppercase, the ones in the model "pretty" or Revit categories
 fn entity_matches(v: &Value, ty: &str) -> bool {
     match v {
         Value::Any => true,
@@ -278,13 +278,13 @@ pub struct Rule {
     pub description: String,
     #[serde(default = "yes")]
     pub enabled: bool,
-    /// toate trebuie indeplinite ca elementul sa fie verificat (gol = toate elementele)
+    /// all must be met for the element to be checked (empty = all elements)
     #[serde(default)]
     pub applicability: Vec<Facet>,
-    /// toate trebuie respectate
+    /// all must be satisfied
     #[serde(default)]
     pub requirements: Vec<Facet>,
-    /// de unde vine (fisierul IDS), pentru afisare
+    /// where it comes from (the IDS file), for display
     #[serde(default)]
     pub source: String,
 }
@@ -300,7 +300,7 @@ impl Rule {
     pub fn applies(&self, e: &Element) -> bool {
         self.applicability.iter().all(|f| f.holds(e))
     }
-    /// motivele pentru care elementul nu respecta regula (gol = OK)
+    /// the reasons the element does not satisfy the rule (empty = OK)
     pub fn check(&self, e: &Element) -> Vec<String> {
         self.requirements.iter().filter_map(|f| f.fails(e)).collect()
     }
@@ -321,8 +321,8 @@ impl RuleResult {
     }
 }
 
-/// Ruleaza regulile active pe modelele date. Rezultatul are cate o intrare pentru fiecare regula
-/// (si pentru cele inactive: goala).
+/// Runs the active rules on the given models. The result has one entry for each rule
+/// (and for the inactive ones: empty).
 pub fn run(rules: &[Rule], models: &[(usize, &Model)]) -> Vec<RuleResult> {
     use rayon::prelude::*;
     rules
@@ -332,13 +332,13 @@ pub fn run(rules: &[Rule], models: &[(usize, &Model)]) -> Vec<RuleResult> {
             if !r.enabled {
                 return res;
             }
-            // cerintele "unic": valoare -> elementele care o au (a doua trecere, dupa ce le stim pe toate)
+            // the "unique" requirements: value -> the elements that have it (second pass, after we know them all)
             let uniq: Vec<&Facet> = r.requirements.iter().filter(|f| f.unique && f.kind != Kind::Entity).collect();
             let mut seen: Vec<std::collections::HashMap<String, Vec<ElemId>>> = vec![Default::default(); uniq.len()];
             let mut fails: std::collections::BTreeMap<ElemId, Vec<String>> = Default::default();
             for (mi, m) in models {
                 for (ei, e) in m.elements.iter().enumerate() {
-                    // nori de puncte / elemente fara date nu se verifica
+                    // point clouds / elements without data are not checked
                     if e.tri_count == 0 && e.props.is_empty() {
                         continue;
                     }
@@ -373,7 +373,7 @@ pub fn run(rules: &[Rule], models: &[(usize, &Model)]) -> Vec<RuleResult> {
         .collect()
 }
 
-/// Reguli gata facute, utile pe orice model.
+/// Ready-made rules, useful on any model.
 pub fn starter_rules() -> Vec<Rule> {
     let mut a = Rule::new("Every element has a name");
     a.requirements.push(Facet::attribute("Name", Value::Any));
@@ -396,7 +396,7 @@ fn kid<'a>(n: &'a crate::e57::Node, name: &str) -> Option<&'a crate::e57::Node> 
     n.kids.iter().find(|k| local(&k.name) == name)
 }
 
-/// <ids:simpleValue> sau <xs:restriction> (enumeration / pattern / min / max)
+/// <ids:simpleValue> or <xs:restriction> (enumeration / pattern / min / max)
 fn ids_value(n: Option<&crate::e57::Node>) -> Value {
     let Some(n) = n else { return Value::Any };
     if let Some(s) = kid(n, "simpleValue") {
@@ -409,7 +409,7 @@ fn ids_value(n: Option<&crate::e57::Node>) -> Value {
             return Value::OneOf(enums);
         }
         if let Some(p) = r.kids.iter().find(|k| local(&k.name) == "pattern").and_then(attr) {
-            // ".*" = orice valoare
+            // ".*" = any value
             return if p == ".*" { Value::Any } else { Value::Pattern(p) };
         }
         let get = |names: &[&str]| r.kids.iter().find(|k| names.contains(&local(&k.name))).and_then(attr).and_then(|s| s.trim().parse::<f64>().ok());
@@ -448,7 +448,7 @@ fn ids_facet(n: &crate::e57::Node) -> Option<Facet> {
     })
 }
 
-/// Citeste un fisier IDS. Intoarce regulile si avertismentele (conditii nesuportate, ex. partOf).
+/// Reads an IDS file. Returns the rules and the warnings (unsupported conditions, e.g. partOf).
 pub fn parse_ids(xml: &str, source: &str) -> Result<(Vec<Rule>, Vec<String>), String> {
     let root = crate::e57::parse_xml(xml.trim_start_matches('\u{feff}')).map_err(|_| "This is not a valid IDS (XML) file.".to_string())?;
     if local(&root.name) != "ids" {
@@ -476,7 +476,7 @@ pub fn parse_ids(xml: &str, source: &str) -> Result<(Vec<Rule>, Vec<String>), St
                 }
             }
         }
-        // "orice entitate IFC" (asa scriem regulile fara conditii) = fara conditii
+        // "any IFC entity" (this is how we write the rules without conditions) = no conditions
         if r.applicability.len() == 1 && r.applicability[0].kind == Kind::Entity && r.applicability[0].name == Value::Pattern("IFC.*".into()) && r.applicability[0].value.is_any() {
             r.applicability.clear();
         }
@@ -488,10 +488,10 @@ pub fn parse_ids(xml: &str, source: &str) -> Result<(Vec<Rule>, Vec<String>), St
     Ok((rules, warn))
 }
 
-// ===================================================================== expresii regulate XSD (subset)
+// ===================================================================== XSD regular expressions (subset)
 
-/// Expresie regulata XSD minimala (fara dependinte): litere, `.`, clase `[a-z]` / `[^..]`, `\d \w \s \D \W \S`,
-/// grupuri `( )`, alternative `|`, cuantificatori `* + ? {n} {n,} {n,m}`. Ancorata la tot textul (ca in XSD).
+/// Minimal XSD regular expression (no dependencies): letters, `.`, classes `[a-z]` / `[^..]`, `\d \w \s \D \W \S`,
+/// groups `( )`, alternatives `|`, quantifiers `* + ? {n} {n,} {n,m}`. Anchored to the whole text (as in XSD).
 pub struct Pattern {
     node: Re,
 }
@@ -564,7 +564,7 @@ fn parse_seq(c: &[char], i: &mut usize) -> Result<Re, String> {
                 Re::Char(ch)
             }
         };
-        // cuantificatori
+        // quantifiers
         while *i < c.len() {
             let (lo, hi) = match c[*i] {
                 '*' => (0, usize::MAX),
@@ -649,7 +649,7 @@ fn parse_class(c: &[char], i: &mut usize) -> Result<Re, String> {
     Ok(Re::Class(ranges, neg))
 }
 
-/// potrivire cu revenire (backtracking) in stilul "continuation"; `steps` opreste expresiile patologice
+/// matching with backtracking in the "continuation" style; `steps` stops the pathological expressions
 fn m(re: &Re, s: &[char], i: usize, k: &mut dyn FnMut(usize) -> bool, steps: &std::cell::Cell<usize>) -> bool {
     steps.set(steps.get() + 1);
     if steps.get() > 200_000 {
@@ -673,7 +673,7 @@ fn seq(v: &[Re], s: &[char], i: usize, k: &mut dyn FnMut(usize) -> bool, steps: 
 }
 
 fn rep(a: &Re, lo: usize, hi: usize, s: &[char], i: usize, k: &mut dyn FnMut(usize) -> bool, steps: &std::cell::Cell<usize>) -> bool {
-    // lacom: incercam o repetitie in plus (care consuma ceva), apoi continuarea
+    // greedy: we try one more repetition (that consumes something), then the continuation
     if hi > 0 {
         let nhi = if hi == usize::MAX { hi } else { hi - 1 };
         if m(a, s, i, &mut |j| j != i && rep(a, lo.saturating_sub(1), nhi, s, j, k, steps), steps) {
@@ -689,7 +689,7 @@ fn x(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-/// <ids:simpleValue> sau <xs:restriction> pentru o restrictie; `upper` = nume de entitati IFC (litere mari)
+/// <ids:simpleValue> or <xs:restriction> for a restriction; `upper` = IFC entity names (uppercase)
 fn ids_value_xml(v: &Value, upper: bool) -> String {
     let t = |s: &str| if upper { x(&s.trim().to_ascii_uppercase()) } else { x(s.trim()) };
     match v {
@@ -739,8 +739,8 @@ fn ids_facet_xml(f: &Facet, requirement: bool) -> String {
     }
 }
 
-/// Regulile ca fisier buildingSMART IDS 1.0 (se deschide in Solibri, BIMcollab Zoom, usBIM, ifctester...).
-/// Cerintele "unique" nu exista in IDS: sunt notate in descrierea specificatiei.
+/// The rules as a buildingSMART IDS 1.0 file (opens in Solibri, BIMcollab Zoom, usBIM, ifctester...).
+/// The "unique" requirements do not exist in IDS: they are noted in the specification description.
 pub fn write_ids(rules: &[Rule], title: &str, date: &str) -> String {
     let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ids:ids xmlns:ids=\"http://standards.buildingsmart.org/IDS\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://standards.buildingsmart.org/IDS http://standards.buildingsmart.org/IDS/1.0/ids.xsd\">\n");
     s.push_str(&format!("  <ids:info>\n    <ids:title>{}</ids:title>\n    <ids:date>{}</ids:date>\n    <ids:description>Exported from ManageBIM Model Checker</ids:description>\n  </ids:info>\n  <ids:specifications>\n", x(title), x(date.get(..10).unwrap_or(date))));
@@ -756,7 +756,7 @@ pub fn write_ids(rules: &[Rule], title: &str, date: &str) -> String {
         s.push_str(&format!("    <ids:specification name=\"{}\" ifcVersion=\"IFC2X3 IFC4 IFC4X3_ADD2\"{}>\n", x(&r.name), if desc.is_empty() { String::new() } else { format!(" description=\"{}\"", x(&desc)) }));
         s.push_str("      <ids:applicability minOccurs=\"0\" maxOccurs=\"unbounded\">\n");
         if r.applicability.is_empty() {
-            // IDS cere cel putin o conditie: "orice element" = orice entitate
+            // IDS requires at least one condition: "any element" = any entity
             s.push_str("        <ids:entity><ids:name><xs:restriction base=\"xs:string\"><xs:pattern value=\"IFC.*\"/></xs:restriction></ids:name></ids:entity>\n");
         }
         for f in &r.applicability {
@@ -772,24 +772,24 @@ pub fn write_ids(rules: &[Rule], title: &str, date: &str) -> String {
     s
 }
 
-// ====================================================================== verificari rapide (fara IDS)
+// ====================================================================== quick checks (without IDS)
 
-/// O verificare rapida a calitatii modelului, fara reguli: nume, descriere, rezultat.
+/// A quick check of the model quality, without rules: name, description, result.
 pub struct QuickCheck {
     pub name: &'static str,
     pub about: &'static str,
     pub result: RuleResult,
 }
 
-/// tipurile spatiale / de organizare nu au nevoie de nivel, material, geometrie
+/// the spatial / organizational types do not need a level, material, geometry
 fn is_spatial(t: &str) -> bool {
     let t = t.to_lowercase();
     ["ifcproject", "ifcsite", "ifcbuilding", "ifcbuildingstorey", "ifcspace", "ifczone", "ifcgroup", "ifcsystem", "ifcopening", "ifcannotation", "ifcgrid", "ifcvirtual"].iter().any(|k| t.starts_with(k))
 }
 
-/// Verificari de calitate fara IDS, pe toate modelele (nu se aplica norilor de puncte):
-/// fara nivel, fara nume, fara clasificare, fara material, fara geometrie, geometrie degenerata,
-/// duplicate (acelasi tip si aceeasi geometrie in acelasi loc), GUID dublat.
+/// Quality checks without IDS, on all models (not applied to point clouds):
+/// no level, no name, no classification, no material, no geometry, degenerate geometry,
+/// duplicates (same type and same geometry in the same place), duplicated GUID.
 pub fn quick_checks(models: &[(usize, &Model)]) -> Vec<QuickCheck> {
     use std::collections::HashMap;
     let mut no_level = RuleResult::default();
@@ -805,7 +805,7 @@ pub fn quick_checks(models: &[(usize, &Model)]) -> Vec<QuickCheck> {
             continue;
         }
         let mut by_guid: HashMap<&str, Vec<u32>> = HashMap::new();
-        // cheia de duplicat: tip + nr. triunghiuri + aabb rotunjit la mm
+        // the duplicate key: type + triangle count + aabb rounded to mm
         let mut by_shape: HashMap<(String, u32, [i64; 6]), Vec<u32>> = HashMap::new();
         for (ei, e) in m.elements.iter().enumerate() {
             let id = ElemId { m: *mi as u32, e: ei as u32 };

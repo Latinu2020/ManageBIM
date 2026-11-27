@@ -22,15 +22,15 @@ pub struct Animation {
     /// ease in / out at the start and the end
     #[serde(default = "yes")]
     pub ease: bool,
-    /// animatia obiectelor (ca Animator > Add Animation Set in Navisworks): culoare, transparenta, vizibilitate
+    /// object animation (like Animator > Add Animation Set in Navisworks): color, transparency, visibility
     #[serde(default)]
     pub sets: Vec<AnimSet>,
-    /// de unde vine animatia (iconita si eticheta din lista)
+    /// where the animation comes from (the icon and label in the list)
     #[serde(default)]
     pub kind: AnimKind,
 }
 
-/// Felul animatiei: Record, Orbit 360, din viewpoints, traseu, 4D sau facuta de mana.
+/// The kind of animation: Record, Orbit 360, from viewpoints, path, 4D or hand-made.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AnimKind {
     #[default]
@@ -65,23 +65,23 @@ impl AnimKind {
     }
 }
 
-/// Starea unui set de obiecte intr-un keyframe.
+/// The state of an object set in a keyframe.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ObjKey {
     pub t: f32,
     pub visible: bool,
-    /// None = culoarea originala
+    /// None = the original color
     pub color: Option<[u8; 3]>,
-    /// 0 = opac, 1 = invizibil
+    /// 0 = opaque, 1 = invisible
     pub transparency: f32,
 }
 
-/// Un set de obiecte animat (selectia sau un set de selectie), cu keyframe-urile lui.
+/// An animated object set (the selection or a selection set), with its keyframes.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AnimSet {
     pub name: String,
     pub target: crate::app::Selector,
-    /// elementele capturate din selectie (cand target e "Current selection")
+    /// the elements captured from the selection (when target is "Current selection")
     #[serde(default)]
     pub items: Vec<crate::model::ElemId>,
     pub keys: Vec<ObjKey>,
@@ -90,7 +90,7 @@ pub struct AnimSet {
 }
 
 impl AnimSet {
-    /// Starea la timpul t: culoarea si transparenta se interpoleaza, vizibilitatea sare la keyframe.
+    /// The state at time t: color and transparency are interpolated, visibility jumps at the keyframe.
     pub fn sample(&self, t: f32) -> Option<ObjKey> {
         let k = &self.keys;
         let first = k.first()?;
@@ -122,12 +122,12 @@ impl Animation {
     pub fn new(name: String) -> Animation {
         Animation { name, keys: Vec::new(), sim_4d: false, ease: true, sets: Vec::new(), kind: AnimKind::Custom }
     }
-    /// durata: ultimul keyframe al camerei sau al seturilor de obiecte
+    /// duration: the last keyframe of the camera or of the object sets
     pub fn duration(&self) -> f32 {
         let cam = self.keys.last().map(|k| k.t).unwrap_or(0.0);
         self.sets.iter().filter_map(|s| s.keys.last().map(|k| k.t)).fold(cam, f32::max)
     }
-    /// timpii tuturor keyframe-urilor (camera si obiecte), sortati - pentru pasii inainte / inapoi
+    /// the times of all keyframes (camera and objects), sorted - for the forward / backward steps
     pub fn key_times(&self) -> Vec<f32> {
         let mut v: Vec<f32> = self.keys.iter().map(|k| k.t).chain(self.sets.iter().flat_map(|s| s.keys.iter().map(|k| k.t))).collect();
         v.sort_by(|a, b| a.total_cmp(b));
@@ -160,7 +160,7 @@ impl Animation {
         let u = if t1 > t0 { ((t - t0) / (t1 - t0)).clamp(0.0, 1.0) } else { 1.0 };
         let get = |j: isize| k[j.clamp(0, k.len() as isize - 1) as usize].cam;
         let (c0, c1, c2, c3) = (get(i as isize - 1), get(i as isize), get(i as isize + 1), get(i as isize + 2));
-        // yaw continuu
+        // continuous yaw
         let mut y = [c0.yaw, c1.yaw, c2.yaw, c3.yaw];
         for j in 1..4 {
             let mut d = y[j] - y[j - 1];
@@ -240,64 +240,64 @@ pub struct RenderSettings {
     pub sun_az: f32,
     #[serde(default = "sun_el")]
     pub sun_el: f32,
-    /// luminozitate generala, lumina ambientala, intensitatea soarelui (1 = implicit)
+    /// overall brightness, ambient light, sun intensity (1 = default)
     #[serde(default = "one")]
     pub exposure: f32,
     #[serde(default = "one")]
     pub ambient: f32,
     #[serde(default = "one")]
     pub sun_power: f32,
-    /// mediul pentru IBL: 0 = exterior (cer), 1 = studio, 2 = apus
+    /// the environment for IBL: 0 = exterior (sky), 1 = studio, 2 = sunset
     #[serde(default)]
     pub env_mode: u8,
-    /// intensitatea luminii din mediu (0..3)
+    /// the intensity of the environment light (0..3)
     #[serde(default = "one")]
     pub env_intensity: f32,
-    /// rotirea mediului in grade
+    /// the environment rotation in degrees
     #[serde(default)]
     pub env_rotation: f32,
-    /// fisier HDRI (.hdr) sau imagine (.png/.jpg) folosit ca mediu; gol = cer procedural
+    /// HDRI file (.hdr) or image (.png/.jpg) used as environment; empty = procedural sky
     #[serde(default)]
     pub hdri_path: String,
-    /// scena de noapte: cer intunecat, lumina ambientala redusa
+    /// night scene: dark sky, reduced ambient light
     #[serde(default)]
     pub night: bool,
-    /// umbrire de contact (SSAO), 0 = oprita
+    /// contact shadowing (SSAO), 0 = off
     #[serde(default = "ao_default")]
     pub ao: f32,
-    /// margini fine pe elemente (detectate din adancime), 0 = oprite
+    /// fine edges on the elements (detected from depth), 0 = off
     #[serde(default = "edges_default")]
     pub edges: f32,
-    /// chenarul de incadrare al randarii in vizualizare (implicit oprit)
+    /// the framing border of the render in the view (off by default)
     #[serde(default)]
     pub show_frame: bool,
-    /// pe video / imagini 4D: data simularii si legenda (Construct / Demolish / Temporary)
+    /// on 4D video / images: the simulation date and the legend (Construct / Demolish / Temporary)
     #[serde(default = "yes")]
     pub overlay_4d: bool,
-    /// videoclipul in stilul Realistic (materiale, texturi, umbre), oricare ar fi stilul din vedere
+    /// the video in the Realistic style (materials, textures, shadows), whatever the style of the view
     #[serde(default)]
     pub with_materials: bool,
-    /// pe imagini: legenda Appearance Profiler (colorare dupa parametru)
+    /// on images: the Appearance Profiler legend (coloring by parameter)
     #[serde(default = "yes")]
     pub legend_on_images: bool,
-    /// umbre aruncate de soare (shadow map)
+    /// shadows cast by the sun (shadow map)
     #[serde(default = "yes")]
     pub shadows: bool,
-    /// soarele dupa data, ora si locatie (altfel azimut / elevatie manuale)
+    /// the sun by date, time and location (otherwise manual azimuth / elevation)
     #[serde(default)]
     pub sun_from_time: bool,
     #[serde(default = "lat_default")]
     pub lat: f32,
     #[serde(default = "lon_default")]
     pub lon: f32,
-    /// fusul orar (ore fata de UTC, ex. 3 = Romania vara)
+    /// the time zone (hours from UTC, e.g. 3 = Romania in summer)
     #[serde(default = "tz_default")]
     pub tz: f32,
     #[serde(default = "date_default")]
     pub sun_date: String,
     #[serde(default = "hour_default")]
     pub sun_hour: f32,
-    /// unghiul nordului proiectului fata de +Y (grade, in sens trigonometric)
+    /// the angle of the project north relative to +Y (degrees, counterclockwise)
     #[serde(default)]
     pub north_deg: f32,
 }
@@ -341,7 +341,7 @@ fn sun_el() -> f32 {
 pub const MAX_BRIGHTNESS: f32 = 6.0;
 
 impl RenderSettings {
-    /// (expunere, ambient, soare) pentru shader, in limite sigure
+    /// (exposure, ambient, sun) for the shader, within safe limits
     pub fn light(&self) -> Vec3 {
         Vec3::new(self.exposure.clamp(0.1, MAX_BRIGHTNESS), self.ambient.clamp(0.0, 3.0), self.sun_power.clamp(0.0, 10.0))
     }
@@ -363,12 +363,12 @@ impl Default for RenderSettings {
 
 pub const RESOLUTIONS: [(u32, u32, &str); 5] = [(1280, 720, "HD 720p"), (1920, 1080, "Full HD 1080p"), (2560, 1440, "QHD 1440p"), (3840, 2160, "4K UHD"), (1080, 1080, "Square 1080")];
 
-/// Pozitia soarelui (algoritmul NOAA simplificat, precizie ~0.5 grade) pentru o data (zile de la 1970-01-01),
-/// ora locala, fusul orar si coordonatele geografice. Intoarce (azimut de la Nord in sensul acelor de ceasornic,
-/// elevatie deasupra orizontului), in grade.
+/// The sun position (simplified NOAA algorithm, precision ~0.5 degrees) for a date (days since 1970-01-01),
+/// local time, time zone and geographic coordinates. Returns (azimuth from North clockwise,
+/// elevation above the horizon), in degrees.
 pub fn sun_position(day: i32, hour_local: f32, tz: f32, lat: f32, lon: f32) -> (f32, f32) {
     let (lat, lon) = (lat as f64, lon as f64);
-    // zile juliene de la J2000.0
+    // Julian days since J2000.0
     let jd = day as f64 + 2440587.5 + (hour_local as f64 - tz as f64) / 24.0;
     let n = jd - 2451545.0;
     let g = (357.529 + 0.98560028 * n).to_radians();
@@ -377,7 +377,7 @@ pub fn sun_position(day: i32, hour_local: f32, tz: f32, lat: f32, lon: f32) -> (
     let e = (23.439 - 0.00000036 * n).to_radians();
     let dec = (e.sin() * l.sin()).asin();
     let ra = (e.cos() * l.sin()).atan2(l.cos());
-    // timpul sideral la Greenwich -> unghiul orar local
+    // sidereal time at Greenwich -> local hour angle
     let gmst = (18.697374558 + 24.06570982441908 * n).rem_euclid(24.0);
     let ha = ((gmst * 15.0 + lon).to_radians() - ra).rem_euclid(std::f64::consts::TAU);
     let latr = lat.to_radians();
@@ -387,18 +387,18 @@ pub fn sun_position(day: i32, hour_local: f32, tz: f32, lat: f32, lon: f32) -> (
 }
 
 impl RenderSettings {
-    /// Daca soarele e dupa data / ora / locatie: actualizeaza azimutul si elevatia folosite de randare
-    /// (azimutul din scena = de la +X, in sens trigonometric; nordul proiectului = +Y rotit cu `north_deg`).
+    /// If the sun follows date / time / location: updates the azimuth and elevation used by the renderer
+    /// (the scene azimuth = from +X, counterclockwise; the project north = +Y rotated by `north_deg`).
     pub fn update_sun(&mut self) {
         if !self.sun_from_time {
             return;
         }
         let Some(day) = crate::timeline::parse_date(&self.sun_date) else { return };
         let (az_n, el) = sun_position(day, self.sun_hour, self.tz, self.lat, self.lon);
-        // de la Nord in sens orar -> de la +X in sens trigonometric (Nord = +Y = 90 grade)
+        // from North clockwise -> from +X counterclockwise (North = +Y = 90 degrees)
         let a = (90.0 - az_n + self.north_deg).rem_euclid(360.0);
         self.sun_az = if a > 180.0 { a - 360.0 } else { a };
-        // sub orizont: lumina ramane razanta (fara umbre aberante de jos in sus)
+        // below the horizon: the light stays grazing (no aberrant shadows from below)
         self.sun_el = el.max(2.0);
     }
 }
@@ -407,7 +407,7 @@ impl RenderSettings {
 mod tests {
     use super::*;
 
-    /// proiectele vechi (fara `sets` / `kind`) se deschid ca inainte
+    /// old projects (without `sets` / `kind`) open as before
     #[test]
     fn old_animation_json_still_loads() {
         let a: Animation = serde_json::from_str(r#"{"name":"A","keys":[]}"#).unwrap();

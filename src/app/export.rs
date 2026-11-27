@@ -1,9 +1,9 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
-    /// Unitatea in care scriem XML-ul Navisworks: din setari, sau (auto) unitatea documentului Navisworks din care
-    /// vine modelul ("Source units" in .bimc-ul exportat de add-in), altfel metri.
+    /// The unit in which we write the Navisworks XML: from the settings, or (auto) the unit of the Navisworks document the
+    /// model comes from ("Source units" in the .bimc exported by the add-in), otherwise meters.
     pub fn navis_units(&self) -> String {
         let s = self.settings.navis_units.trim().to_lowercase();
         if s != "auto" && !s.is_empty() && crate::markup::NW_UNITS.iter().any(|u| u.0 == s) {
@@ -19,8 +19,8 @@ impl App {
         "m".into()
     }
 
-    /// Viewpoints + markups + comentarii + section box -> XML Navisworks (Viewpoints > Import Viewpoints).
-    /// Nu are nevoie de capturi de ecran: se scrie direct.
+    /// Viewpoints + markups + comments + section box -> Navisworks XML (Viewpoints > Import Viewpoints).
+    /// It needs no screenshots: it is written directly.
     pub fn export_navis_xml(&mut self, path: &str) {
         if self.viewpoints.is_empty() {
             self.error("No viewpoints to export - save a viewpoint (with markups) first.");
@@ -87,19 +87,19 @@ impl App {
         }
     }
 
-    /// Seturile ca `<selectionsets>` Navisworks: search sets -> conditii findspec (Item / Name, Type, GUID,
-    /// sau categoria / proprietatea din model), seturile explicite -> Item / GUID = ... (SAU intre ele).
-    /// Intoarce (xml, avertismente).
+    /// The sets as Navisworks `<selectionsets>`: search sets -> findspec conditions (Item / Name, Type, GUID,
+    /// or the category / property from the model), explicit sets -> Item / GUID = ... (OR between them).
+    /// Returns (xml, warnings).
     pub fn navis_selectionsets_xml(&self) -> (String, Vec<String>) {
         self.navis_selectionsets_xml_with(&[])
     }
 
-    /// ca `navis_selectionsets_xml`, plus seturile `extra` (ex. cele generate din selectiile testelor de clash)
+    /// like `navis_selectionsets_xml`, plus the `extra` sets (e.g. those generated from the clash test selections)
     pub fn navis_selectionsets_xml_with(&self, extra: &[SelSet]) -> (String, Vec<String>) {
         use crate::markup::esc;
         let mut warn = Vec::new();
         let cond = |cat: &str, prop: &str, test: &str, value: &str, or: bool| -> String {
-            // nume interne Navisworks pentru categoria Item (restul se potrivesc dupa numele afisat)
+            // Navisworks internal names for the Item category (the rest match by display name)
             let (ci, pi) = match (cat, prop) {
                 ("Item", "Name") => (" internal=\"LcOaNode\"", " internal=\"LcOaSceneBaseUserName\""),
                 ("Item", "Type") => (" internal=\"LcOaNode\"", " internal=\"LcOaSceneBaseClassUserName\""),
@@ -131,7 +131,7 @@ impl App {
                                 continue;
                             }
                         };
-                        // campurile ManageBIM -> Navisworks
+                        // ManageBIM fields -> Navisworks
                         let (cat, prop) = match (r.group.as_str(), r.field.as_str()) {
                             ("", "Name") | (ITEM_CAT, "Name") => ("Item", "Name"),
                             ("", "IFC Type") | (ITEM_CAT, "IFC Type") => ("Item", "Type"),
@@ -153,7 +153,7 @@ impl App {
                         warn.push(format!("{}: {} elements - only the first 2000 exported", set.name, guids.len()));
                     }
                     for (i, g) in guids.iter().take(2000).enumerate() {
-                        // GUID-urile din .bimc / NWC (Navisworks) se potrivesc cu Item / GUID
+                        // the GUIDs from .bimc / NWC (Navisworks) match Item / GUID
                         let g = g.rsplit(':').next().unwrap_or(g);
                         conds.push_str(&cond("Item", "GUID", "equals", g, i > 0));
                     }
@@ -169,7 +169,7 @@ impl App {
         (s, warn)
     }
 
-    /// Seturile de selectie -> XML Navisworks (Sets > Import Search Sets).
+    /// Selection sets -> Navisworks XML (Sets > Import Search Sets).
     pub fn export_navis_sets(&mut self, path: &str) {
         if self.sets.is_empty() {
             return self.error("No selection or search sets to export.");
@@ -187,7 +187,7 @@ impl App {
         }
     }
 
-    /// Export IFC4: selectia, sau (fara selectie) toate elementele vizibile din proiect.
+    /// IFC4 export: the selection, or (with no selection) all visible elements in the project.
     pub fn export_ifc(&mut self, path: &str) {
         let path = with_ext(path, "ifc");
         let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
@@ -220,8 +220,8 @@ impl App {
         }
     }
 
-    /// Export glTF binar (.glb) pentru Blender, Rhino, Twinmotion, Unreal, Enscape: ce se vede (culori /
-    /// materiale ca in vederea 3D), cu ierarhia Model › Nivel › Element si proprietatile BIM.
+    /// Binary glTF export (.glb) for Blender, Rhino, Twinmotion, Unreal, Enscape: what is visible (colors /
+    /// materials as in the 3D view), with the Model › Level › Element hierarchy and the BIM properties.
     pub fn export_glb(&mut self, path: &str) {
         let path = with_ext(path, "glb");
         let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
@@ -265,14 +265,14 @@ impl App {
         }
     }
 
-    /// Issue-uri BCF (2.1 / 3.0) din Revit, ACC, Solibri, BIMcollab... -> viewpoints ManageBIM: camera, titlu,
-    /// stare, prioritate, responsabil, descriere, comentarii si elementele selectate (dupa GUID).
+    /// BCF issues (2.1 / 3.0) from Revit, ACC, Solibri, BIMcollab... -> ManageBIM viewpoints: camera, title,
+    /// status, priority, assignee, description, comments and the selected elements (by GUID).
     pub fn import_bcf(&mut self, path: &str) {
         let topics = match std::fs::read(path).map_err(|e| e.to_string()).and_then(crate::markup::parse_bcf) {
             Ok(t) => t,
             Err(e) => return self.error(format!("{}: {e}", crate::file_name(path))),
         };
-        // GUID -> element (GlobalId IFC, Revit UniqueId, GUID Navisworks...; si dupa partea de dupa ':')
+        // GUID -> element (IFC GlobalId, Revit UniqueId, Navisworks GUID...; and by the part after ':')
         let mut by_guid: HashMap<String, ElemId> = HashMap::new();
         for (mi, m) in self.loaded_models() {
             for (ei, e) in m.elements.iter().enumerate() {
@@ -348,8 +348,8 @@ impl App {
         self.toast(format!("{n} BCF issues imported from {}{sel}.", crate::file_name(path)));
     }
 
-    /// Viewpoints dintr-un XML Navisworks (Saved Viewpoints > Export Viewpoints, sau exportul ManageBIM):
-    /// camera, section box, comentarii si markups se adauga la viewpoints-urile existente.
+    /// Viewpoints from a Navisworks XML (Saved Viewpoints > Export Viewpoints, or the ManageBIM export):
+    /// camera, section box, comments and markups are added to the existing viewpoints.
     pub fn import_navis_xml(&mut self, path: &str) {
         let text = match std::fs::read(path) {
             Ok(b) => String::from_utf8_lossy(&b).into_owned(),
@@ -372,7 +372,7 @@ impl App {
             cam.fov_deg = v.fov_deg.clamp(10.0, 120.0);
             cam.ortho = v.ortho_height.is_some();
             cam.focus = match v.ortho_height {
-                // ortho: inaltimea vederii = 2 * focus * tan(fov / 2)
+                // ortho: view height = 2 * focus * tan(fov / 2)
                 Some(h) => (h as f32 * 0.5 / (cam.fov_deg.to_radians() * 0.5).tan()).max(0.05),
                 None => (v.focal as f32).max(0.05),
             };
@@ -389,7 +389,7 @@ impl App {
             let mut comments = Vec::new();
             for (user, body, date, st) in &v.comments {
                 if let Some(rest) = body.strip_prefix("Issue: ") {
-                    // comentariul de stare scris de exportul ManageBIM
+                    // the status comment written by the ManageBIM export
                     for part in rest.split(['|', '·']).map(str::trim) {
                         if let Some(p) = part.strip_prefix("Priority: ") {
                             issue.priority = p.to_string();
@@ -468,7 +468,7 @@ impl App {
         match std::fs::read(path) {
             Ok(b) => {
                 let text = String::from_utf8_lossy(&b).to_string();
-                // MS Project / Primavera P6 (XML) sau CSV
+                // MS Project / Primavera P6 (XML) or CSV
                 let (mut tasks, errs, what) = if text.trim_start_matches('\u{feff}').trim_start().starts_with('<') {
                     match timeline::parse_schedule_xml(&text) {
                         Ok(r) => r,
@@ -506,8 +506,8 @@ impl App {
         s
     }
 
-    /// Viewer web: un singur .html cu modelul (elementele vizibile, sau selectia) - se trimite oricui,
-    /// se deschide in browser fara instalare si fara internet.
+    /// Web viewer: a single .html with the model (the visible elements, or the selection) - can be sent to anyone,
+    /// opens in the browser with no install and no internet.
     pub fn export_web(&mut self, path: &str) {
         let path = with_ext(path, "html");
         let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
@@ -536,7 +536,7 @@ impl App {
         }
     }
 
-    /// Referinta pentru Revit / AutoCAD / Plant 3D: selectia, sau tot ce e vizibil.
+    /// Reference for Revit / AutoCAD / Plant 3D: the selection, or everything visible.
     pub fn export_reference(&mut self, path: &str) {
         let path = with_ext(path, "mbref");
         let use_sel = !self.selected.is_empty();

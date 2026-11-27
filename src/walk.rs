@@ -1,17 +1,17 @@
-//! Mers prin model: miscare lina (accelerare / franare) si mers automat pe un traseu desenat.
+//! Walking through the model: smooth motion (acceleration / braking) and automatic walking along a drawn path.
 //!
-//! Traseul = puncte pe podea (click in model). Se netezeste (Catmull-Rom), apoi camera merge pe el la
-//! inaltimea ochilor, cu viteza de mers, privind inainte (rotire lina in curbe). Se poate salva ca
-//! animatie (Animator) - deci si ca video.
+//! The path = points on the floor (click in the model). It is smoothed (Catmull-Rom), then the camera walks along it at
+//! eye height, at walking speed, looking ahead (smooth turning in curves). It can be saved as
+//! an animation (Animator) - and therefore as a video too.
 use crate::anim::{Animation, Keyframe};
 use crate::camera::Camera;
 use glam::Vec3;
 use std::f32::consts::PI;
 
-/// Constanta de timp pentru accelerare / franare (secunde): ~95% din viteza tinta in 3 * TAU.
+/// Time constant for acceleration / braking (seconds): ~95% of the target speed in 3 * TAU.
 pub const TAU: f32 = 0.16;
 
-/// Apropie `cur` de `target` exponential, independent de FPS.
+/// Brings `cur` towards `target` exponentially, independent of FPS.
 pub fn smooth(cur: Vec3, target: Vec3, dt: f32) -> Vec3 {
     let k = 1.0 - (-dt.max(0.0) / TAU).exp();
     let v = cur + (target - cur) * k;
@@ -26,8 +26,8 @@ pub fn smooth1(cur: f32, target: f32, dt: f32) -> f32 {
     smooth(Vec3::new(cur, 0.0, 0.0), Vec3::new(target, 0.0, 0.0), dt).x
 }
 
-/// Raspunsul joystick-ului (mers cu mouse-ul): zona moarta + curba patratica, plafonat.
-/// `px` = deplasarea mouse-ului fata de punctul de start, `full` = pixeli pentru viteza 1.
+/// The joystick response (walking with the mouse): dead zone + quadratic curve, capped.
+/// `px` = the mouse offset from the start point, `full` = pixels for speed 1.
 pub fn joystick(px: f32, dead: f32, full: f32, max: f32) -> f32 {
     let a = px.abs();
     if a <= dead {
@@ -47,7 +47,7 @@ fn wrap(mut a: f32) -> f32 {
     a
 }
 
-/// Traseu netezit, parcurs la viteza constanta.
+/// Smoothed path, travelled at constant speed.
 #[derive(Clone, Debug)]
 pub struct PathRun {
     pts: Vec<Vec3>,
@@ -58,7 +58,7 @@ pub struct PathRun {
 }
 
 impl PathRun {
-    /// `None` daca traseul are mai putin de 2 puncte distincte.
+    /// `None` if the path has fewer than 2 distinct points.
     pub fn new(ctrl: &[Vec3]) -> Option<PathRun> {
         let pts = densify(ctrl, 0.25);
         if pts.len() < 2 {
@@ -81,7 +81,7 @@ impl PathRun {
         *self.cum.last().unwrap_or(&0.0)
     }
 
-    /// Punctul (pe podea) la distanta `d` de la start.
+    /// The point (on the floor) at distance `d` from the start.
     pub fn pos_at(&self, d: f32) -> Vec3 {
         let d = d.clamp(0.0, self.length());
         let i = self.cum.partition_point(|&c| c <= d).clamp(1, self.pts.len() - 1);
@@ -90,7 +90,7 @@ impl PathRun {
         self.pts[i - 1].lerp(self.pts[i], u)
     }
 
-    /// Directia de privire (yaw) la distanta `d`: spre un punct putin mai in fata.
+    /// The view direction (yaw) at distance `d`: towards a point slightly ahead.
     pub fn yaw_at(&self, d: f32) -> f32 {
         let a = self.pos_at(d);
         let mut b = self.pos_at(d + 1.5);
@@ -101,7 +101,7 @@ impl PathRun {
         v.y.atan2(v.x)
     }
 
-    /// Avanseaza camera pe traseu. Intoarce true la capat.
+    /// Advances the camera along the path. Returns true at the end.
     pub fn step(&mut self, cam: &mut Camera, speed: f32, eye_h: f32, dt: f32) -> bool {
         if !self.paused {
             self.dist = (self.dist + speed.max(0.05) * dt).min(self.length());
@@ -109,7 +109,7 @@ impl PathRun {
         let p = self.pos_at(self.dist);
         cam.eye = (p + Vec3::Z * eye_h).into();
         let target = self.yaw_at(self.dist);
-        // rotire lina in curbe (max ~90 grade / s), fara salt la pornire
+        // smooth turning in curves (max ~90 degrees / s), no jump at the start
         let cur = *self.yaw.get_or_insert(target);
         let d = wrap(target - cur);
         let max = 1.6 * dt;
@@ -122,7 +122,7 @@ impl PathRun {
         self.dist >= self.length()
     }
 
-    /// Animatie (Animator) echivalenta: cadre-cheie la ~1 m, durata = lungime / viteza.
+    /// The equivalent animation (Animator): keyframes every ~1 m, duration = length / speed.
     pub fn to_animation(&self, name: String, speed: f32, eye_h: f32, fov_deg: f32) -> Animation {
         let speed = speed.max(0.05);
         let len = self.length();
@@ -132,7 +132,7 @@ impl PathRun {
         for i in 0..=n {
             let d = len * i as f32 / n as f32;
             let p = self.pos_at(d);
-            // yaw continuu (fara salturi de 2*PI intre cadre)
+            // continuous yaw (no 2*PI jumps between frames)
             let mut y = self.yaw_at(d);
             if let Some(py) = yaw_prev {
                 y = py + wrap(y - py);
@@ -144,7 +144,7 @@ impl PathRun {
     }
 }
 
-/// Catmull-Rom prin punctele de control, esantionat la ~`step` metri.
+/// Catmull-Rom through the control points, sampled every ~`step` metres.
 pub fn densify(ctrl: &[Vec3], step: f32) -> Vec<Vec3> {
     let mut c: Vec<Vec3> = Vec::with_capacity(ctrl.len());
     for p in ctrl {
@@ -165,8 +165,8 @@ pub fn densify(ctrl: &[Vec3], step: f32) -> Vec<Vec3> {
             let u = k as f32 / n as f32;
             let (u2, u3) = (u * u, u * u * u);
             let mut q = 0.5 * ((2.0 * p1) + (-p0 + p2) * u + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * u2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * u3);
-            // inaltimea: liniar intre puncte (curba doar in plan) - altfel traseul "sare" metri peste podea
-            // cand punctele sunt la inaltimi diferite (scari, rampe, alt nivel)
+            // the height: linear between points (curve only in plan) - otherwise the path "jumps" metres above the floor
+            // when the points are at different heights (stairs, ramps, another level)
             q.z = p1.z + (p2.z - p1.z) * u;
             out.push(q);
         }

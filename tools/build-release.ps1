@@ -1,39 +1,39 @@
 <#
 .SYNOPSIS
-  Compileaza ManageBIM (release), semneaza digital exe-urile si face pachetul ManageBIM-Windows-x64.
+  Builds ManageBIM (release), digitally signs the exe files and makes the ManageBIM-Windows-x64 package.
 
 .DESCRIPTION
-  Pasi:
-    1. (optional) semneaza DLL-urile add-in din installers\payload (sunt incluse in installer-e la compilare)
-    2. cargo build --release pentru ManageBIM, bimc-convert si add-in installer-e (daca sursele lor exista)
-    3. semneaza fiecare .exe cu signtool (SHA-256 + timestamp) si verifica semnatura
-    4. copiaza totul in dist\ManageBIM-Windows-x64\ManageBIM si face un .zip
+  Steps:
+    1. (optional) sign the add-in DLLs in installers\payload (they are built into the installers)
+    2. cargo build --release for ManageBIM, bimc-convert and the add-in installers (if their sources exist)
+    3. sign every .exe with signtool (SHA-256 + timestamp) and verify the signature
+    4. copy everything into dist\ManageBIM-Windows-x64\ManageBIM and make a .zip
 
-  Certificatul se alege din variabile de mediu (prima gasita castiga):
+  The certificate is chosen from environment variables (the first one found wins):
 
-    A) Certificat din Windows Certificate Store (inclusiv token USB / EV):
-         $env:MANAGEBIM_SIGN_THUMBPRINT = "AB12...EF"      (amprenta SHA1 a certificatului)
+    A) Certificate from the Windows Certificate Store (USB / EV token included):
+         $env:MANAGEBIM_SIGN_THUMBPRINT = "AB12...EF"      (SHA1 thumbprint of the certificate)
 
-    B) Fisier .pfx:
+    B) .pfx file:
          $env:MANAGEBIM_PFX          = "C:\certs\managebim.pfx"
-         $env:MANAGEBIM_PFX_PASSWORD = "..."                (nu-l scrie in script / git)
+         $env:MANAGEBIM_PFX_PASSWORD = "..."                (never write it in the script / git)
 
     C) Azure Trusted Signing (Artifact Signing):
          $env:MANAGEBIM_TS_DLIB     = "C:\tools\TrustedSigning\bin\x64\Azure.CodeSigning.Dlib.dll"
          $env:MANAGEBIM_TS_METADATA = "C:\tools\TrustedSigning\metadata.json"
-       (autentificarea Azure: `az login` sau variabilele AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_CLIENT_SECRET)
+       (Azure sign-in: `az login` or the variables AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_CLIENT_SECRET)
 
-  ATENTIE: Smart App Control accepta doar semnaturi de la o autoritate de incredere.
-  Un certificat self-signed NU deblocheaza aplicatia pe alte calculatoare.
+  NOTE: Smart App Control accepts only signatures from a trusted authority.
+  A self-signed certificate does NOT unblock the application on other computers.
 
 .PARAMETER RequireSign
-  Opreste build-ul cu eroare daca nu e configurat niciun certificat (recomandat pentru release-uri publice).
+  Stops the build with an error if no certificate is configured (recommended for public releases).
 
 .PARAMETER SkipBuild
-  Nu recompileaza; doar semneaza si impacheteaza ce e deja in target\release.
+  Does not rebuild; only signs and packages what is already in target\release.
 
 .PARAMETER SignPayload
-  Semneaza si DLL-urile add-in-urilor Revit / AutoCAD din installers\payload inainte de compilare.
+  Also signs the Revit / AutoCAD add-in DLLs in installers\payload before the build.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File tools\build-release.ps1 -RequireSign -SignPayload
@@ -46,7 +46,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot          # folderul ManageBIM-source
+$root = Split-Path -Parent $PSScriptRoot          # the ManageBIM-source folder
 $release = Join-Path $root 'target\release'
 $dist = Join-Path $root 'dist\ManageBIM-Windows-x64'
 $pkg = Join-Path $dist 'ManageBIM'
@@ -68,7 +68,7 @@ function Find-SignTool {
     return $null
 }
 
-# argumentele signtool in functie de sursa certificatului; $null = nu e configurat nimic
+# the signtool arguments depending on the certificate source; $null = nothing is configured
 function Get-SignArgs {
     if ($env:MANAGEBIM_SIGN_THUMBPRINT) {
         return @{ Mode = 'Certificate store'; Args = @('/sha1', $env:MANAGEBIM_SIGN_THUMBPRINT, '/fd', 'sha256', '/tr', 'http://timestamp.digicert.com', '/td', 'sha256') }
@@ -95,13 +95,13 @@ function Invoke-Sign([string[]]$files) {
         Write-Host "   signing $(Split-Path -Leaf $f)"
         & $script:signtool sign /v $script:sign.Args $f | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "signtool sign failed for $f (exit $LASTEXITCODE)" }
-        # /pa = politica Authenticode standard (cea pe care o verifica si Windows)
+        # /pa = the standard Authenticode policy (the one Windows checks too)
         & $script:signtool verify /pa /q $f
         if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $f" }
     }
 }
 
-# ------------------------------------------------------------------ 0. configurare semnare
+# ------------------------------------------------------------------ 0. signing setup
 Step 'Code signing setup'
 $script:sign = Get-SignArgs
 $script:signtool = $null
@@ -125,7 +125,7 @@ if ($SignPayload) {
     Invoke-Sign $dlls
 }
 
-# ------------------------------------------------------------------ 2. compilare
+# ------------------------------------------------------------------ 2. build
 $bins = @(
     @{ Name = 'ManageBIM';               Src = 'src\main.rs';              Dest = '' },
     @{ Name = 'bimc-convert';            Src = 'src\bin\bimc_convert.rs';  Dest = '' },
@@ -149,7 +149,7 @@ if (-not $SkipBuild) {
     } finally { Pop-Location }
 }
 
-# ------------------------------------------------------------------ 3. semnare exe
+# ------------------------------------------------------------------ 3. sign the exes
 Step 'Signing executables'
 $exes = @()
 foreach ($b in $present) {
@@ -160,7 +160,7 @@ foreach ($b in $present) {
 Invoke-Sign $exes
 if (-not $script:sign) { Write-Host '   (skipped - unsigned build)' }
 
-# ------------------------------------------------------------------ 3b. add-in Navisworks (daca e instalat Navisworks + compilator C#)
+# ------------------------------------------------------------------ 3b. Navisworks add-in (if Navisworks + a C# compiler are installed)
 $navis = Join-Path $root 'navis-addin'
 $navisBin = $null
 if (Test-Path (Join-Path $navis 'build.ps1')) {
@@ -174,7 +174,7 @@ if (Test-Path (Join-Path $navis 'build.ps1')) {
     }
 }
 
-# ------------------------------------------------------------------ 4. pachet
+# ------------------------------------------------------------------ 4. package
 Step "Packaging to $dist"
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
 New-Item -ItemType Directory -Force (Join-Path $pkg 'AddIns') | Out-Null
@@ -189,8 +189,8 @@ if ($navisBin) {
     Copy-Item (Join-Path $navis 'install.ps1'), (Join-Path $navis 'install.cmd'), (Join-Path $navis 'README.md') $nd -ErrorAction SilentlyContinue
 }
 Copy-Item (Join-Path $root 'BIMC_FORMAT.md') $pkg
-# OpenCascade (STEP / IGES / BREP nativ): occt\ de langa ManageBIM.exe. Semnam DLL-urile compilate de noi
-# (mbocct + TK*); runtime-ul MSVC e deja semnat de Microsoft.
+# OpenCascade (native STEP / IGES / BREP): occt\ next to ManageBIM.exe. We sign the DLLs we built
+# (mbocct + TK*); the MSVC runtime is already signed by Microsoft.
 $occt = Join-Path $release 'occt'
 if (Test-Path (Join-Path $occt 'mbocct.dll')) {
     Copy-Item $occt (Join-Path $pkg 'occt') -Recurse

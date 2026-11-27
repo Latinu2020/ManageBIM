@@ -7,16 +7,16 @@ using System.Text;
 namespace ManageBIM.Navis
 {
     /// <summary>
-    /// Scriere .bimc versiunea 2 "pe bucati": fiecare element e codat si scris imediat, apoi eliberat din memorie.
-    /// Memoria ramane constanta oricat de mare e modelul si nu exista limita de 4 GB a versiunii 1.
+    /// Writing .bimc version 2 "in chunks": each element is encoded and written immediately, then freed from memory.
+    /// Memory stays constant however large the model is and there is no 4 GB limit of version 1.
     ///
-    /// Format v2 (flags = 2):  "BIMC" u16 2  u16 2, apoi bucati:
-    ///   u8 tip | u32 marime necomprimata | u32 marime comprimata | DEFLATE
-    ///   tip 1 STRINGS : n, n x (lungime, octeti UTF-8)  - se adauga la tabela de siruri
-    ///   tip 2 ELEMENTS: n, n x element (exact codarea elementului din v1)
-    ///   tip 3 INFO    : info (k, v) + warnings (indici in tabela de siruri)
-    ///   tip 0 END     : sfarsit
-    /// Trebuie sa ramana compatibil cu src/bimc.rs (read_v2).
+    /// Format v2 (flags = 2):  "BIMC" u16 2  u16 2, then chunks:
+    ///   u8 type | u32 uncompressed size | u32 compressed size | DEFLATE
+    ///   type 1 STRINGS : n, n x (length, UTF-8 bytes)  - appended to the string table
+    ///   type 2 ELEMENTS: n, n x element (exactly the element encoding from v1)
+    ///   type 3 INFO    : info (k, v) + warnings (indices into the string table)
+    ///   type 0 END     : end
+    /// Must stay compatible with src/bimc.rs (read_v2).
     /// </summary>
     public sealed class BimcStream : IDisposable
     {
@@ -30,7 +30,7 @@ namespace ManageBIM.Navis
         private int stringsWritten;
         private readonly Buf body = new Buf();
         private int pending;
-        // tampoane refolosite intre elemente
+        // buffers reused between elements
         private readonly Dictionary<(long, long, long), int> vmap = new Dictionary<(long, long, long), int>();
         private readonly List<(long, long, long)> verts = new List<(long, long, long)>();
         private readonly List<int> idx = new List<int>();
@@ -44,8 +44,8 @@ namespace ManageBIM.Navis
             tmp = path + ".tmp";
             fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
             fs.Write(Encoding.ASCII.GetBytes("BIMC"), 0, 4);
-            fs.Write(BitConverter.GetBytes((ushort)2), 0, 2); // versiune
-            fs.Write(BitConverter.GetBytes((ushort)2), 0, 2); // flags: bucati DEFLATE
+            fs.Write(BitConverter.GetBytes((ushort)2), 0, 2); // version
+            fs.Write(BitConverter.GetBytes((ushort)2), 0, 2); // flags: DEFLATE chunks
         }
 
         private uint Id(string s)
@@ -58,7 +58,7 @@ namespace ManageBIM.Navis
             return i;
         }
 
-        /// <summary>Codeaza elementul in bucata curenta; geometria lui poate fi eliberata dupa apel.</summary>
+        /// <summary>Encodes the element into the current chunk; its geometry can be freed after the call.</summary>
         public void Add(BimcElement e)
         {
             body.U(Id(e.Name)); body.U(Id(e.Type)); body.U(Id(e.Guid)); body.U(Id(e.Level));
@@ -90,7 +90,7 @@ namespace ManageBIM.Navis
                 body.I(a - pa); body.I(idx[t + 1] - a); body.I(idx[t + 2] - a);
                 pa = a;
             }
-            // culori pe secvente
+            // colors by runs
             var runs = new List<(uint, int)>();
             foreach (uint c in e.Colors)
             {
@@ -149,7 +149,7 @@ namespace ManageBIM.Navis
             fs.Write(comp, 0, comp.Length);
         }
 
-        /// <summary>Scrie informatiile modelului, inchide fisierul si il pune la locul final. Intoarce marimea.</summary>
+        /// <summary>Writes the model info, closes the file and moves it to its final place. Returns the size.</summary>
         public long Finish(IList<KeyValuePair<string, string>> info, IList<string> warnings)
         {
             Flush();

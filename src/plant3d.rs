@@ -1,58 +1,58 @@
-//! Obiecte Autodesk Plant 3D (si alte entitati custom) din DWG, fara object enabler.
+//! Autodesk Plant 3D objects (and other custom entities) from DWG, without an object enabler.
 //!
-//! acadrust citeste entitatile custom (ACPPPIPE, ACPPPIPEINLINEASSET, ACPPCONNECTOR, ACPPSUPPORT,
-//! ACPPEQUIPMENT, ACPPSTRUCTURE*...) ca `UNKNOWN`, cu doua lucruri pastrate:
-//! - `graphic_data` = grafica proxy (formatul AcGi: [marime][nr. inregistrari], apoi inregistrari
-//!   [marime u32][tip u32][date]). Plant 3D scrie acolo, pentru fiecare piesa din catalog, o
-//!   transformare (tip 29 PUSH_MODEL_XFORM, matrice 4x4 pe linii) urmata de conturul ei in coordonate
-//!   locale (cercuri, polilinii) si POP (31). Teava dreapta e un MESH (8) 2 x N, grinzile SHELL (9),
-//!   gratarele POLYGON (7).
-//! - `raw_dwg_data` + `dwg_handle_bits` = inregistrarea DWG bruta; fluxul de handle-uri (ultimii
-//!   `dwg_handle_bits` biti, R2010+) contine, dupa reactor / layer, referintele la blocurile cu geometria
-//!   reala (solide ACIS): `Plant3DCatalogItem_*` (fitinguri, flanse, armaturi, stuturi) si `*U*` (corpul
-//!   echipamentului, suporturi), blocuri pe care nu le insereaza niciun INSERT.
+//! acadrust reads the custom entities (ACPPPIPE, ACPPPIPEINLINEASSET, ACPPCONNECTOR, ACPPSUPPORT,
+//! ACPPEQUIPMENT, ACPPSTRUCTURE*...) as `UNKNOWN`, with two things kept:
+//! - `graphic_data` = proxy graphics (the AcGi format: [size][no. of records], then records
+//!   [size u32][type u32][data]). Plant 3D writes there, for each catalog part, a
+//!   transform (type 29 PUSH_MODEL_XFORM, 4x4 row-major matrix) followed by its outline in local
+//!   coordinates (circles, polylines) and POP (31). Straight pipe is a 2 x N MESH (8), beams SHELL (9),
+//!   gratings POLYGON (7).
+//! - `raw_dwg_data` + `dwg_handle_bits` = the raw DWG record; the handle stream (the last
+//!   `dwg_handle_bits` bits, R2010+) contains, after reactor / layer, the references to the blocks with the
+//!   real geometry (ACIS solids): `Plant3DCatalogItem_*` (fittings, flanges, valves, nozzles) and `*U*` (the
+//!   equipment body, supports), blocks that no INSERT inserts.
 //!
-//! Regula de plasare (verificata pe SampleProject: 2-P-001 si 6-B-1000_Equip, bbox-ul local al
-//! conturului proxy == bbox-ul solidelor din bloc): a k-a referinta de bloc din fluxul de handle-uri
-//! se plaseaza cu a k-a transformare de nivel 0 din grafica proxy. Push-urile imbricate (nivel >= 1)
-//! descriu sub-piesele blocului (ex. INSERT-urile din `*U14`) si nu sunt folosite.
+//! Placement rule (verified on SampleProject: 2-P-001 and 6-B-1000_Equip, the local bbox of the
+//! proxy outline == the bbox of the solids in the block): the k-th block reference in the handle stream
+//! is placed with the k-th level-0 transform in the proxy graphics. Nested pushes (level >= 1)
+//! describe the sub-parts of the block (e.g. the INSERTs in `*U14`) and are not used.
 use acadrust::entities::EntityType;
 use acadrust::types::Color;
 use acadrust::CadDocument;
 use glam::{DMat4, DVec3, DVec4};
 use std::collections::HashMap;
 
-/// Un obiect Plant 3D (entitate custom) gata de afisat.
+/// A Plant 3D object (custom entity) ready to display.
 #[derive(Clone, Debug, Default)]
 pub struct PlantObject {
-    /// handle hex (majuscule), ca grupul 5 din DXF
+    /// hex handle (uppercase), like group 5 in DXF
     pub handle: String,
-    /// numele clasei DXF (ex. ACPPPIPE)
+    /// the DXF class name (e.g. ACPPPIPE)
     pub class: String,
     pub layer: String,
     pub color: Color,
-    /// blocurile cu geometrie si transformarea lor in coordonate lume (unitati desen)
+    /// the blocks with geometry and their transform in world coordinates (drawing units)
     pub blocks: Vec<PlacedBlock>,
-    /// triunghiuri din grafica proxy (teava, grinzi, gratare), in coordonate lume
+    /// triangles from the proxy graphics (pipe, beams, gratings), in world coordinates
     pub tris: Vec<[DVec3; 3]>,
-    /// bbox-ul lume al intregii grafici proxy (contur inclus) - pentru verificari
+    /// world bbox of the whole proxy graphics (outline included) - for checks
     pub proxy_bbox: Option<(DVec3, DVec3)>,
-    /// bbox-ul lume al conturului proxy din interiorul transformarilor (piesele plasate)
+    /// world bbox of the proxy outline inside the transforms (the placed parts)
     pub placed_bbox: Option<(DVec3, DVec3)>,
-    /// referinte de bloc fara transformare corespunzatoare (nu pot fi plasate)
+    /// block references without a matching transform (cannot be placed)
     pub unplaced: usize,
 }
 
-/// O piesa din catalog plasata: blocul (nume + handle-ul BLOCK_RECORD, hex) si transformarea lui.
+/// A placed catalog part: the block (name + BLOCK_RECORD handle, hex) and its transform.
 #[derive(Clone, Debug)]
 pub struct PlacedBlock {
     pub name: String,
-    /// handle-ul inregistrarii de bloc (hex); numele blocurilor anonime `*U*` se pot schimba la scrierea DXF
+    /// handle of the block record (hex); the names of anonymous `*U*` blocks can change when writing DXF
     pub record: String,
     pub xf: DMat4,
 }
 
-/// Numele afisat al clasei: ACPPPIPEINLINEASSET -> "Pipe Inline Asset".
+/// Display name of the class: ACPPPIPEINLINEASSET -> "Pipe Inline Asset".
 pub fn class_label(class: &str) -> String {
     let known = [
         ("ACPPPIPE", "Pipe"),
@@ -80,9 +80,9 @@ pub fn class_label(class: &str) -> String {
     }
 }
 
-// ------------------------------------------------------------------ fluxul de handle-uri DWG
-/// Handle-urile referite de o inregistrare DWG R2010+ (fluxul de handle-uri = ultimii `handle_bits`
-/// biti). Referintele relative (coduri 6, 8, A, C) sunt rezolvate fata de `own`.
+// ------------------------------------------------------------------ DWG handle stream
+/// The handles referenced by a DWG R2010+ record (the handle stream = the last `handle_bits`
+/// bits). Relative references (codes 6, 8, A, C) are resolved against `own`.
 pub fn handle_refs(raw: &[u8], handle_bits: i64, own: u64) -> Vec<u64> {
     let total = raw.len() * 8;
     if handle_bits <= 0 || handle_bits as usize > total {
@@ -126,19 +126,19 @@ pub fn handle_refs(raw: &[u8], handle_bits: i64, own: u64) -> Vec<u64> {
     out
 }
 
-// ------------------------------------------------------------------ grafica proxy
-/// Ce extragem din grafica proxy.
+// ------------------------------------------------------------------ proxy graphics
+/// What we extract from the proxy graphics.
 #[derive(Clone, Debug, Default)]
 pub struct ProxyGeometry {
-    /// transformarile de nivel 0 (PUSH_MODEL_XFORM fara alt push activ), in ordine
+    /// level-0 transforms (PUSH_MODEL_XFORM with no other active push), in order
     pub placements: Vec<DMat4>,
-    /// fete (MESH / SHELL / POLYGON) in coordonate lume
+    /// faces (MESH / SHELL / POLYGON) in world coordinates
     pub tris: Vec<[DVec3; 3]>,
-    /// bbox-ul lume al tuturor primitivelor (si contur)
+    /// world bbox of all primitives (outline too)
     pub bbox: Option<(DVec3, DVec3)>,
-    /// bbox-ul lume doar al primitivelor din interiorul transformarilor (= piesele din blocuri)
+    /// world bbox only of the primitives inside the transforms (= the parts in blocks)
     pub placed_bbox: Option<(DVec3, DVec3)>,
-    /// poliliniile (tip 6) in coordonate lume - conturul; scarile / balustradele Plant 3D au doar atat
+    /// the polylines (type 6) in world coordinates - the outline; Plant 3D stairs / railings have only that
     pub polylines: Vec<Vec<DVec3>>,
 }
 
@@ -162,8 +162,8 @@ fn rd_pts(b: &[u8], o: usize, n: usize) -> Option<Vec<DVec3>> {
     (0..n).map(|i| rd_p3(b, o + i * 24)).collect()
 }
 
-/// Tub neted din inelele unui MESH 2 x N care descrie un cilindru (teava Plant 3D vine cu 8 laturi);
-/// None daca reteaua nu e un cilindru circular drept.
+/// Smooth tube from the rings of a 2 x N MESH that describes a cylinder (Plant 3D pipe comes with 8 sides);
+/// None if the mesh is not a straight circular cylinder.
 fn smooth_tube(r0: &[DVec3], r1: &[DVec3]) -> Option<Vec<[DVec3; 3]>> {
     let ring = |r: &[DVec3]| -> Option<(DVec3, f64, Vec<DVec3>)> {
         let mut v: Vec<DVec3> = r.to_vec();
@@ -198,15 +198,15 @@ fn smooth_tube(r0: &[DVec3], r1: &[DVec3]) -> Option<Vec<[DVec3; 3]>> {
     let mut out = Vec::with_capacity(2 * n);
     for i in 0..n {
         let (a0, a1, b0, b1) = (pt(c0, i), pt(c0, i + 1), pt(c1, i), pt(c1, i + 1));
-        // normale spre exterior (x, y, z dreapta: a0 -> a1 -> b1 e anti-orar privit din afara)
+        // outward normals (right-handed x, y, z: a0 -> a1 -> b1 is counter-clockwise seen from outside)
         out.push([a0, a1, b1]);
         out.push([a0, b1, b0]);
     }
     Some(out)
 }
 
-/// SHELL de prisma "turtita": 2 inele cu aceleasi coordonate (prima jumatate a varfurilor == a doua),
-/// intr-un plan. Asa scrie Plant 3D profilul grinzilor in grafica proxy.
+/// "Flattened" prism SHELL: 2 rings with the same coordinates (the first half of the vertices == the second),
+/// in one plane. This is how Plant 3D writes the beam profile in the proxy graphics.
 fn collapsed_prism(w: &[DVec3]) -> bool {
     let n = w.len();
     if n < 6 || !n.is_multiple_of(2) {
@@ -230,8 +230,8 @@ fn newell(p: &[DVec3]) -> DVec3 {
     n
 }
 
-/// Intinde prisma turtita de-a lungul celei mai lungi axe (segment) perpendiculare pe profil:
-/// primul inel in planul capatului de start, al doilea in planul capatului de final.
+/// Stretches the flattened prism along the longest axis (segment) perpendicular to the profile:
+/// the first ring in the plane of the start end, the second in the plane of the end.
 fn extrude_collapsed(w: &[DVec3], lines: &[(DVec3, DVec3)]) -> Option<Vec<DVec3>> {
     let h = w.len() / 2;
     let nrm = newell(&w[..h]).normalize();
@@ -245,7 +245,7 @@ fn extrude_collapsed(w: &[DVec3], lines: &[(DVec3, DVec3)]) -> Option<Vec<DVec3>
     Some(w.iter().enumerate().map(|(i, p)| *p - d * (*p - a).dot(d) + if i < h { DVec3::ZERO } else { d * len }).collect())
 }
 
-/// Citeste grafica proxy (formatul AcGi). Ignora tipurile necunoscute; nu panicheaza pe date corupte.
+/// Reads the proxy graphics (the AcGi format). Ignores unknown types; does not panic on corrupt data.
 pub fn parse_proxy(g: &[u8]) -> ProxyGeometry {
     let mut out = ProxyGeometry::default();
     let Some(n) = rd_u32(g, 4) else { return out };
@@ -268,21 +268,21 @@ pub fn parse_proxy(g: &[u8]) -> ProxyGeometry {
         let mut pts: Vec<DVec3> = Vec::new();
         let mut faces: Vec<[DVec3; 3]> = Vec::new();
         match ty {
-            // CIRCLE: centru, raza, normala
+            // CIRCLE: center, radius, normal
             2 => {
                 if let (Some(c), Some(r)) = (rd_p3(b, 0), rd_f64(b, 24)) {
                     pts.extend([c - DVec3::splat(r.abs()), c + DVec3::splat(r.abs())]);
                 }
             }
-            // CIRCLE3P / CIRCULARARC3P: 3 puncte
+            // CIRCLE3P / CIRCULARARC3P: 3 points
             3 | 5 => pts.extend(rd_pts(b, 0, 3).unwrap_or_default()),
-            // CIRCULARARC: centru, raza, normala, ...
+            // CIRCULARARC: center, radius, normal, ...
             4 => {
                 if let (Some(c), Some(r)) = (rd_p3(b, 0), rd_f64(b, 24)) {
                     pts.extend([c - DVec3::splat(r.abs()), c + DVec3::splat(r.abs())]);
                 }
             }
-            // POLYLINE: contur (segmentele drepte = posibile axe de extrudare pentru profilele din SHELL)
+            // POLYLINE: outline (the straight segments = possible extrusion axes for the SHELL profiles)
             6 => {
                 if let Some(k) = rd_u32(b, 0) {
                     let p = rd_pts(b, 4, k as usize).unwrap_or_default();
@@ -298,8 +298,8 @@ pub fn parse_proxy(g: &[u8]) -> ProxyGeometry {
                     pts.extend(p);
                 }
             }
-            // POLYLINE_WITH_NORMALS (32): Plant 3D deseneaza asa porturile (segmente de lungime 0) - ignorat
-            // POLYGON: fata plana (evantai)
+            // POLYLINE_WITH_NORMALS (32): Plant 3D draws the ports this way (zero-length segments) - ignored
+            // POLYGON: planar face (fan)
             7 => {
                 if let Some(k) = rd_u32(b, 0) {
                     let p = rd_pts(b, 4, k as usize).unwrap_or_default();
@@ -309,7 +309,7 @@ pub fn parse_proxy(g: &[u8]) -> ProxyGeometry {
                     pts.extend(p);
                 }
             }
-            // MESH: rows x cols varfuri
+            // MESH: rows x cols vertices
             8 => {
                 if let (Some(r), Some(c)) = (rd_u32(b, 0), rd_u32(b, 4)) {
                     let (r, c) = (r as usize, c as usize);
@@ -330,7 +330,7 @@ pub fn parse_proxy(g: &[u8]) -> ProxyGeometry {
                     }
                 }
             }
-            // SHELL: varfuri, apoi lista de fete [n, i1..in] (n < 0 = gaura, sarita)
+            // SHELL: vertices, then the face list [n, i1..in] (n < 0 = hole, skipped)
             9 => {
                 if let Some(k) = rd_u32(b, 0) {
                     let k = k as usize;
@@ -353,8 +353,8 @@ pub fn parse_proxy(g: &[u8]) -> ProxyGeometry {
                         }
                         let w: Vec<DVec3> = p.iter().map(|v| cur.transform_point3(*v)).collect();
                         if collapsed_prism(&w) {
-                            // profil de grinda Plant 3D: inelele de jos / sus au aceleasi coordonate,
-                            // lungimea vine din axa (polilinia cu 2 puncte) - rezolvat la final
+                            // Plant 3D beam profile: the bottom / top rings have the same coordinates,
+                            // the length comes from the axis (the 2-point polyline) - resolved at the end
                             flat_shells.push((w, polys));
                         } else {
                             for idx in &polys {
@@ -367,7 +367,7 @@ pub fn parse_proxy(g: &[u8]) -> ProxyGeometry {
                     }
                 }
             }
-            // PUSH_MODEL_XFORM: matrice 4x4 pe linii (translatia in coloana 4)
+            // PUSH_MODEL_XFORM: 4x4 row-major matrix (the translation in column 4)
             29 => {
                 let v: Option<Vec<f64>> = (0..16).map(|k| rd_f64(b, k * 8)).collect();
                 if let Some(v) = v.filter(|v| v.iter().all(|x| x.is_finite())) {
@@ -420,15 +420,15 @@ pub fn parse_proxy(g: &[u8]) -> ProxyGeometry {
     out
 }
 
-// ------------------------------------------------------------------ obiectele din document
-/// Clasele Plant 3D desenate in grafica proxy doar din linii, dar care sunt obiecte fizice din tevi /
-/// profile subtiri: le aratam ca tuburi pe linii (scara, balustrada, scara de trepte).
+// ------------------------------------------------------------------ the objects in the document
+/// Plant 3D classes drawn in the proxy graphics only from lines, but which are physical objects made of pipes /
+/// thin profiles: we show them as tubes along the lines (ladder, railing, stair).
 pub fn is_line_structure(class: &str) -> bool {
     let c = class.to_ascii_uppercase();
     c.starts_with("ACPPSTRUCTURE") && ["LADDER", "RAILING", "STAIR"].iter().any(|k| c.ends_with(k))
 }
 
-/// Unitatea desenului in metri ($INSUNITS); None daca nu e precizata.
+/// The drawing unit in meters ($INSUNITS); None if not specified.
 fn unit_m(insunits: i16) -> Option<f64> {
     match insunits {
         1 => Some(0.0254),
@@ -440,7 +440,7 @@ fn unit_m(insunits: i16) -> Option<f64> {
     }
 }
 
-/// Tuburi hexagonale de raza `r` pe segmentele poliliniilor (segmentele repetate o singura data).
+/// Hexagonal tubes of radius `r` on the polyline segments (repeated segments only once).
 pub fn line_tubes(polylines: &[Vec<DVec3>], r: f64) -> Vec<[DVec3; 3]> {
     let key = |p: DVec3| ((p.x / r * 4.0).round() as i64, (p.y / r * 4.0).round() as i64, (p.z / r * 4.0).round() as i64);
     let mut seen = std::collections::HashSet::new();
@@ -473,11 +473,11 @@ pub fn line_tubes(polylines: &[Vec<DVec3>], r: f64) -> Vec<[DVec3; 3]> {
     out
 }
 
-/// Toate entitatile custom din model space care au geometrie: blocurile referite (plasate cu
-/// transformarile din grafica proxy) si fetele din grafica proxy. Scarile / balustradele (doar linii)
-/// devin tuburi subtiri; restul entitatilor doar cu contur (suduri, simboluri izometrice, grid) sunt omise.
+/// All custom entities in model space that have geometry: the referenced blocks (placed with
+/// the transforms from the proxy graphics) and the faces from the proxy graphics. Stairs / railings (lines only)
+/// become thin tubes; the remaining outline-only entities (welds, isometric symbols, grid) are skipped.
 pub fn collect(doc: &CadDocument) -> Vec<PlantObject> {
-    // raza tuburilor: 20 mm in unitatile desenului (Plant 3D: de obicei inch)
+    // tube radius: 20 mm in drawing units (Plant 3D: usually inches)
     let tube_r = unit_m(doc.header.insertion_units).map(|u| 0.02 / u);
     let blocks: HashMap<u64, &str> = doc
         .block_records
@@ -495,7 +495,7 @@ pub fn collect(doc: &CadDocument) -> Vec<PlantObject> {
         let placed = refs.len().min(px.placements.len());
         let mut tris = px.tris;
         if refs.is_empty() && tris.is_empty() && is_line_structure(&u.dxf_name) {
-            // fara unitati: ~ 1/400 din marimea obiectului
+            // no units: ~ 1/400 of the object size
             let r = tube_r.or_else(|| px.bbox.map(|(lo, hi)| (hi - lo).max_element() / 400.0)).filter(|r| *r > 0.0);
             if let Some(r) = r {
                 tris = line_tubes(&px.polylines, r);
@@ -519,7 +519,7 @@ pub fn collect(doc: &CadDocument) -> Vec<PlantObject> {
     out
 }
 
-/// Grafica proxy sintetica (pentru teste / fixture-uri): inregistrari (tip, date) -> octeti AcGi.
+/// Synthetic proxy graphics (for tests / fixtures): records (type, data) -> AcGi bytes.
 pub fn encode_proxy(records: &[(u32, Vec<u8>)]) -> Vec<u8> {
     let mut body = Vec::new();
     for (ty, d) in records {
@@ -533,13 +533,13 @@ pub fn encode_proxy(records: &[(u32, Vec<u8>)]) -> Vec<u8> {
     g
 }
 
-/// Matrice -> date pentru inregistrarea PUSH_MODEL_XFORM (29), 16 double pe linii.
+/// Matrix -> data for the PUSH_MODEL_XFORM record (29), 16 doubles row-major.
 pub fn encode_xform(m: &DMat4) -> Vec<u8> {
     let t = m.transpose().to_cols_array();
     t.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
-/// Flux de handle-uri DWG (referinte absolute, cod 5 = soft pointer) pentru teste / fixture-uri.
+/// DWG handle stream (absolute references, code 5 = soft pointer) for tests / fixtures.
 pub fn encode_handles(handles: &[u64]) -> Vec<u8> {
     let mut out = Vec::new();
     for &h in handles {
@@ -550,8 +550,8 @@ pub fn encode_handles(handles: &[u64]) -> Vec<u8> {
     out
 }
 
-/// Aria unui desen dintr-un proiect Plant 3D: folderele lui sub radacina proiectului (cea cu Project.xml),
-/// fara "Plant 3D Models" (ex. "Area_2"). None in afara unui proiect sau pentru desenele din radacina modelelor.
+/// The area of a drawing in a Plant 3D project: its folders under the project root (the one with Project.xml),
+/// without "Plant 3D Models" (e.g. "Area_2"). None outside a project or for drawings in the models root.
 pub fn project_area(dwg: &str) -> Option<String> {
     let mut parts: Vec<String> = Vec::new();
     let mut d = std::path::Path::new(dwg).parent();

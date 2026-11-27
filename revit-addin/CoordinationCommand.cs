@@ -18,7 +18,7 @@ using Rectangle = System.Drawing.Rectangle;
 
 namespace ManageBIM.Revit
 {
-    /// <summary>Un obiect de coordonare trimis din ManageBIM (coordonate partajate, metri).</summary>
+    /// <summary>A coordination object sent from ManageBIM (shared coordinates, meters).</summary>
     internal sealed class MbCoord
     {
         public string Kind = "", Name = "", Guid = "", Status = "";
@@ -29,11 +29,11 @@ namespace ManageBIM.Revit
     }
 
     /// <summary>
-    /// "ManageBIM Coordination": arata in Revit zonele de mentenanta (clearance), golurile propuse (voids)
-    /// si volumele rezervate (placeholders) trimise din ManageBIM - DOAR afisare: cutii transparente
-    /// DirectShape (Generic Models) cu culoarea fiecarui tip. Nu taie si nu modifica elementele modelului.
-    /// La o noua trimitere, formele vechi se inlocuiesc. Inainte de creare, o fereastra de previzualizare
-    /// (lista cu bife + vedere de sus) arata ce vine.
+    /// "ManageBIM Coordination": shows in Revit the maintenance zones (clearance), the proposed voids (voids)
+    /// and the reserved volumes (placeholders) sent from ManageBIM - DISPLAY ONLY: transparent DirectShape
+    /// boxes (Generic Models) with the color of each type. It does not cut or modify the model elements.
+    /// On a new send, the old shapes are replaced. Before creation, a preview window
+    /// (list with checkboxes + top view) shows what is coming.
     /// </summary>
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
@@ -112,7 +112,7 @@ namespace ManageBIM.Revit
                 {
                     try
                     {
-                        // cutia in coordonate partajate (metri), rotita in jurul verticalei, apoi in coordonate interne
+                        // the box in shared coordinates (meters), rotated around the vertical, then in internal coordinates
                         double rad = o.RotDeg * Math.PI / 180.0, co = Math.Cos(rad), si = Math.Sin(rad);
                         double hx = o.Size[0] / 2, hy = o.Size[1] / 2;
                         XYZ P(double lx, double ly, double z)
@@ -144,7 +144,7 @@ namespace ManageBIM.Revit
             return Result.Succeeded;
         }
 
-        /// <summary>Materialul "ManageBIM <tip>" cu culoarea si transparenta tipului.</summary>
+        /// <summary>The "ManageBIM <type>" material with the color and transparency of the type.</summary>
         private static ElementId Material(Document doc, Dictionary<string, ElementId> cache, MbCoord o)
         {
             string name = "ManageBIM " + o.Label;
@@ -161,8 +161,8 @@ namespace ManageBIM.Revit
             return m.Id;
         }
 
-        /// <summary>Fereastra de previzualizare: lista cu bife (tip, nume, dimensiuni, stare) si o vedere de sus.
-        /// Intoarce obiectele bifate, sau null la Cancel.</summary>
+        /// <summary>The preview window: list with checkboxes (type, name, dimensions, state) and a top view.
+        /// Returns the checked objects, or null on Cancel.</summary>
         private static List<MbCoord> Preview(List<MbCoord> objs, out bool removeOld)
         {
             removeOld = true;
@@ -210,8 +210,8 @@ namespace ManageBIM.Revit
             }
         }
 
-        /// <summary>Vederea de sus: conturul fiecarei cutii (rotita), colorat dupa tip; cele debifate sunt sterse,
-        /// cea selectata in lista e ingrosata.</summary>
+        /// <summary>The top view: the outline of each box (rotated), colored by type; the unchecked ones are faded,
+        /// the one selected in the list is drawn thicker.</summary>
         private static void DrawPlan(Graphics g, Rectangle r, List<MbCoord> objs, ListView lst)
         {
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;

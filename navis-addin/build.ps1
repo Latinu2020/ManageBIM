@@ -1,16 +1,16 @@
 <#
 .SYNOPSIS
-  Compileaza exportatorul ManageBIM pentru Navisworks 2022 - 2026 si il instaleaza in versiunile gasite
-  pe acest PC (fara drepturi de administrator).
+  Builds the ManageBIM exporter for Navisworks 2022 - 2026 and installs it into the versions found
+  on this PC (no administrator rights).
 
 .DESCRIPTION
-  - bin\<an>\ManageBIM.NwExporter.dll  - cate unul pentru fiecare versiune (API-ul Navisworks are alt numar de
-    versiune in fiecare an). Referintele vin din Navisworks-ul instalat sau, pentru celelalte versiuni, din
-    pachetele NuGet "Chuongmep.Navis.Api.Autodesk.Navisworks.Api" (doar referinte, descarcate o data in refs\).
-  - bin\nwd2bimc.exe (+ o copie in fiecare bin\<an>\) - conversie din linia de comanda / folosit de ManageBIM.
-  - instalare: %APPDATA%\Autodesk\Navisworks <Manage|Simulate> <an>\Plugins\ManageBIM.NwExporter\ (2024+)
-               %APPDATA%\Autodesk Navisworks <Manage|Simulate> <an>\Plugins\ManageBIM.NwExporter\ (2023 si mai vechi)
-  Necesita compilatorul C# (Visual Studio sau Build Tools 2019+). Navisworks nu e necesar pentru compilare.
+  - bin\<year>\ManageBIM.NwExporter.dll  - one per version (the Navisworks API has a different version number
+    every year). The references come from the installed Navisworks or, for the other versions, from the
+    NuGet packages "Chuongmep.Navis.Api.Autodesk.Navisworks.Api" (references only, downloaded once into refs\).
+  - bin\nwd2bimc.exe (+ a copy in every bin\<year>\) - command-line conversion / used by ManageBIM.
+  - install: %APPDATA%\Autodesk\Navisworks <Manage|Simulate> <year>\Plugins\ManageBIM.NwExporter\ (2024+)
+            %APPDATA%\Autodesk Navisworks <Manage|Simulate> <year>\Plugins\ManageBIM.NwExporter\ (2023 and older)
+  Needs the C# compiler (Visual Studio or Build Tools 2019+). Navisworks is not needed to build.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File navis-addin\build.ps1
@@ -23,10 +23,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $pf = $env:ProgramFiles
-# ultima versiune NuGet de referinte pentru fiecare an
+# the latest NuGet reference version for each year
 $nugetVer = @{ 2020 = '2020.0.4'; 2021 = '2021.0.2'; 2022 = '2022.0.6'; 2023 = '2023.0.7'; 2024 = '2024.0.0'; 2025 = '2025.0.0'; 2026 = '2026.0.0' }
 
-# --- compilatorul C# (Roslyn, C# 7+)
+# --- the C# compiler (Roslyn, C# 7+)
 $csc = $null
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 if (Test-Path $vswhere) {
@@ -36,7 +36,7 @@ if (Test-Path $vswhere) {
     }
 }
 if (-not $csc) {
-    # fallback: .NET SDK instalat per-utilizator (Visual Studio fara workload C#)
+    # fallback: a per-user installed .NET SDK (Visual Studio without the C# workload)
     $sdkRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet\sdk'
     $sdk = Get-ChildItem $sdkRoot -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
     if ($sdk) {
@@ -63,7 +63,7 @@ function Get-Installed {
 }
 $installed = @(Get-Installed)
 
-# Autodesk.Navisworks.Api.dll pentru un an: din instalare sau din NuGet (descarcat o data)
+# Autodesk.Navisworks.Api.dll for a year: from the installation or from NuGet (downloaded once)
 function Get-ApiRef([int]$year) {
     $inst = $installed | Where-Object { $_.Year -eq $year } | Select-Object -First 1
     if ($inst) { return (Join-Path $inst.Dir 'Autodesk.Navisworks.Api.dll') }
@@ -89,7 +89,7 @@ $fw = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
 $common = @('/nologo', '/langversion:latest', '/optimize+', '/platform:x64', '/nowarn:1701,1702', "/r:$fw\mscorlib.dll", "/r:$fw\System.dll", "/r:$fw\System.Core.dll")
 $srcs = @('Safe.cs', 'BimcWriter.cs', 'BimcStream.cs', 'NwCom.cs', 'NwExporter.cs', 'ExportPlugin.cs', 'ManageBimLink.cs', 'ManageBimIssues.cs', 'IssuesPlugin.cs', 'SyncPlugin.cs', 'CoordinationPlugin.cs', 'HubPlugin.cs', 'WalkPlugin.cs', 'LevelsPlugin.cs') | ForEach-Object { Join-Path $here $_ }
 
-# --- add-in: cate unul pentru fiecare an
+# --- add-in: one for each year
 $built = @{}
 foreach ($y in $Years) {
     try { $api = Get-ApiRef $y } catch { Write-Warning "Navisworks $y skipped: $_"; continue }
@@ -100,14 +100,14 @@ foreach ($y in $Years) {
     & $csc @common '/target:library' "/out:$dll" "/r:$fw\System.Windows.Forms.dll" "/r:$fw\System.Drawing.dll" "/r:$fw\Microsoft.CSharp.dll" "/r:$api" @srcs
     if ($LASTEXITCODE -ne 0) { throw "Add-in build failed for Navisworks $y." }
     $built[$y] = $dll
-    # copia pentru installerul ManageBIM-Navisworks-AddIn.exe (DLL-urile sunt incluse in el la compilare)
+    # the copy for the ManageBIM-Navisworks-AddIn.exe installer (the DLLs are embedded in it at compile time)
     $pay = Join-Path (Split-Path -Parent $here) "installers\payload\navisworks\$y"
     New-Item -ItemType Directory -Force $pay | Out-Null
     Copy-Item $dll $pay -Force
     Write-Host "Built: Navisworks $y -> $dll"
 }
 
-# --- nwd2bimc.exe (unul singur: Automation se incarca la rulare din versiunea aleasa)
+# --- nwd2bimc.exe (a single one: Automation is loaded at run time from the chosen version)
 $autoRef = $installed | ForEach-Object { Join-Path $_.Dir 'Autodesk.Navisworks.Automation.dll' } | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $autoRef) {
     $dir = Join-Path $here 'refs\automation'
@@ -131,7 +131,7 @@ foreach ($y in $built.Keys) {
 }
 Write-Host "Built: $exe"
 
-# --- instalare pentru utilizatorul curent, in fiecare versiune instalata
+# --- install for the current user, in each installed version
 if (-not $NoInstall) {
     if (Get-Process Roamer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }) {
         Write-Warning 'Navisworks is open - close it and run this script again to install the add-in.'

@@ -1,19 +1,19 @@
-//! Motorul de scripturi Rhai al consolei Script.
+//! The Rhai script engine of the Script console.
 //!
-//! Scriptul nu primeste `&mut App` (Rhai nu poate imprumuta asa ceva); in schimb
-//!primeste o fotografie a modelului (`Input`) si intoarce o lista de `Action`
-//! pe care aplicatia le aplica dupa executie, in ordine.
+//! The script does not receive `&mut App` (Rhai cannot borrow something like that); instead
+//!it receives a snapshot of the model (`Input`) and returns a list of `Action`
+//! that the app applies after execution, in order.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
-    /// select_where("Category", "Walls") -> selectie noua
+    /// select_where("Category", "Walls") -> new selection
     SelectWhere(String, String),
-    /// select_ids([...]) - indexi globali din Input
+    /// select_ids([...]) - global indices from Input
     SelectIds(Vec<i32>),
-    /// set_prop("FireRating", "EI30") pe selectia curenta
+    /// set_prop("FireRating", "EI30") on the current selection
     SetProp(String, String),
     CreateClash(String, f64),
     ZoomToSelection,
@@ -23,10 +23,10 @@ pub enum Action {
 
 #[derive(Clone, Default)]
 pub struct Input {
-    /// (index global, proprietati). Cheile: "Category", "Name", "Level", "GlobalId",
-    /// numele proprietatii si "group|property" (de ex. "Pset_WallCommon|FireRating").
+    /// (global index, properties). The keys: "Category", "Name", "Level", "GlobalId",
+    /// the property name and "group|property" (e.g. "Pset_WallCommon|FireRating").
     pub elements: Vec<(i32, Vec<(String, String)>)>,
-    /// indexii globali selectati in acest moment
+    /// the global indices selected at this moment
     pub selected: Vec<i32>,
 }
 
@@ -36,11 +36,11 @@ pub struct Output {
     pub actions: Vec<Action>,
 }
 
-/// Ruleaza un script si intoarce actiunile de aplicat.
+/// Runs a script and returns the actions to apply.
 pub fn run(source: &str, input: &Input) -> Result<Output, String> {
     let out = Rc::new(RefCell::new(Output::default()));
     let mut engine = rhai::Engine::new();
-    // un `loop {}` scris gresit nu mai blocheaza aplicatia: scriptul se opreste cu eroare
+    // a mistakenly written `loop {}` no longer blocks the app: the script stops with an error
     engine.set_max_operations(50_000_000);
     engine.set_max_call_levels(64);
     engine.set_max_string_size(10_000_000);
@@ -79,11 +79,11 @@ pub fn run(source: &str, input: &Input) -> Result<Output, String> {
     {
         let o = out.clone();
         engine.register_fn("select_ids", move |ids: rhai::Array| {
-            // literalele Rhai sunt i64 ([1, 2, 3]); find_where_empty intoarce i32 - le acceptam pe amandoua
+            // Rhai literals are i64 ([1, 2, 3]); find_where_empty returns i32 - we accept both
             let ids: Vec<i32> = ids.iter().filter_map(|d| d.as_int().ok().and_then(|x| i32::try_from(x).ok()).or_else(|| d.clone().try_cast::<i32>())).collect();
             o.borrow_mut().actions.push(Action::SelectIds(ids));
         });
-        // `len()` pentru array-uri (Rhai cu feature-uri reduse nu il inregistreaza)
+        // `len()` for arrays (Rhai with reduced features does not register it)
         engine.register_fn("len", |a: rhai::Array| -> i64 { a.len() as i64 });
     }
     {

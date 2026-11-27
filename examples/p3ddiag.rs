@@ -1,6 +1,6 @@
-// Verificare plasare Plant 3D: bbox-ul fiecarui element (geometria blocurilor din catalog) vs bbox-ul
-// graficii proxy a obiectului (conturul desenat de Plant 3D in coordonate lume).
-// cargo run --release --example p3ddiag -- <fisier.dwg>...
+// Plant 3D placement check: the bbox of each element (the geometry of the catalog blocks) vs the bbox of
+// the object's proxy graphics (the outline drawn by Plant 3D in world coordinates).
+// cargo run --release --example p3ddiag -- <file.dwg>...
 use std::collections::{BTreeMap, HashMap};
 
 fn main() {
@@ -30,7 +30,7 @@ fn main() {
         for w in &m.warnings {
             println!("  warn {w}");
         }
-        // abatere maxima (unitati desen) intre bbox-ul elementului si bbox-ul proxy, pe clase
+        // maximum deviation (drawing units) between the element bbox and the proxy bbox, per class
         let mut stat: BTreeMap<String, (usize, usize, f64)> = BTreeMap::new();
         let mut worst: Vec<(f64, String)> = Vec::new();
         for e in &m.elements {

@@ -10,8 +10,8 @@ using NwApp = Autodesk.Navisworks.Api.Application;
 namespace ManageBIM.Navis
 {
     /// <summary>
-    /// "ManageBIM Issues": aduce viewpoints / issue-urile din ManageBIM (Outbox\issues.txt) ca Saved Viewpoints:
-    /// camera, section box si comentariile (descriere, stare, comentarii). Fara fisier XML intermediar.
+    /// "ManageBIM Issues": brings the viewpoints / issues from ManageBIM (Outbox\issues.txt) in as Saved Viewpoints:
+    /// camera, section box and the comments (description, status, comments). No intermediate XML file.
     /// </summary>
     [Plugin("ManageBIMIssues", "MBIM", DisplayName = "ManageBIM Issues", ToolTip = "Bring the ManageBIM viewpoints / issues in as Saved Viewpoints (camera, section box, comments)")]
     [AddInPlugin(AddInLocation.None)]
@@ -39,7 +39,7 @@ namespace ManageBIM.Navis
             }
             var pick = quiet ? Enumerable.Range(0, issues.Count).ToList() : ManageBimIssues.Pick(issues, "ManageBIM issues -> Saved Viewpoints", "Add as viewpoints", true);
             if (pick == null || pick.Count == 0) return 0;
-            // metri -> unitatile documentului
+            // meters -> document units
             double s = UnitConversion.ScaleFactor(Units.Meters, doc.Units);
             Viewpoint original = doc.CurrentViewpoint.CreateCopy();
             int ok = 0, boxes = 0, marked = 0, wanted = 0;
@@ -65,13 +65,13 @@ namespace ManageBIM.Navis
                         vp.HeightField = it.FovDeg * Math.PI / 180.0;
                     }
                     doc.CurrentViewpoint.CopyFrom(vp);
-                    // section box (API 2019+: View.SetClippingPlanes, apelat prin reflexie ca sa mearga si fara el)
+                    // section box (API 2019+: View.SetClippingPlanes, called through reflection so it also works without it)
                     bool box = it.BoxMin != null && SetBox(doc, it, s);
                     if (box) boxes++;
                     var sv = new SavedViewpoint(doc.CurrentViewpoint.CreateCopy()) { DisplayName = it.Name };
                     string body = $"Status: {it.Status}" + (string.IsNullOrEmpty(it.Priority) ? "" : $" | Priority: {it.Priority}") + (string.IsNullOrEmpty(it.Assigned) ? "" : $" | Assigned to: {it.Assigned}") + (string.IsNullOrEmpty(it.Text) ? "" : "\n" + it.Text);
                     sv.Comments.Add(new Comment(body, StatusOf(it.Status)));
-                    // folderul din ManageBIM (si subfolderele "A/B") devine folder de Saved Viewpoints
+                    // the folder from ManageBIM (and the "A/B" subfolders) becomes a Saved Viewpoints folder
                     GroupItem folder = EnsureFolder(doc, it.Folder);
                     if (folder != null) doc.SavedViewpoints.InsertCopy(folder, folder.Children.Count, sv);
                     else doc.SavedViewpoints.AddCopy(sv);
@@ -122,13 +122,13 @@ namespace ManageBIM.Navis
         }
 
         /// <summary>
-        /// Markup-urile ca redlines pe viewpoint-ul salvat adineauri: il facem curent si trimitem colectia JSON
-        /// (View.TrySetRedlines, API 2019+). Formatul JSON nu e documentat: incercam cateva variante si o pastram
-        /// pe prima acceptata de Navisworks.
+        /// The markups as redlines on the viewpoint just saved: we make it current and send the JSON collection
+        /// (View.TrySetRedlines, API 2019+). The JSON format is not documented: we try a few variants and keep
+        /// the first one accepted by Navisworks.
         /// </summary>
         private static int jsonVariant = -1;
 
-        /// <summary>Folderul (si subfolderele, separate prin /) din Saved Viewpoints; creat daca lipseste.</summary>
+        /// <summary>The folder (and subfolders, separated by /) in Saved Viewpoints; created if missing.</summary>
         private static GroupItem EnsureFolder(Document doc, string path)
         {
             if (string.IsNullOrWhiteSpace(path)) return null;
@@ -163,7 +163,7 @@ namespace ManageBIM.Navis
                 object view = doc.ActiveView;
                 var trySet = view?.GetType().GetMethod("TrySetRedlines", new[] { typeof(string) });
                 if (trySet == null) return false;
-                // viewpoint-ul adaugat ultimul (in folderul lui) devine cel curent (redline-urile se salveaza in el)
+                // the viewpoint added last (in its folder) becomes the current one (the redlines are saved in it)
                 var items = folder != null ? folder.Children : doc.SavedViewpoints.Value;
                 if (items.Count == 0) return false;
                 var last = items[items.Count - 1];
@@ -192,14 +192,14 @@ namespace ManageBIM.Navis
             return false;
         }
 
-        /// <summary>Colectia de redlines in JSON. variant: 0-2 forma punctelor ([x,y] / {X,Y} / [x,y,0]), +3 fara culoare.</summary>
+        /// <summary>The redlines collection in JSON. variant: 0-2 point shape ([x,y] / {X,Y} / [x,y,0]), +3 without color.</summary>
         private static string RedlineJson(MbIssue it, double aspect, int variant)
         {
             int pf = variant % 3;
             bool colour = variant < 3;
             string P(double x, double y)
             {
-                // ManageBIM: fata de centru / inaltime, y in jos -> Navisworks: -1..1, y in sus
+                // ManageBIM: relative to center / height, y down -> Navisworks: -1..1, y up
                 double nx = Math.Max(-1, Math.Min(1, 2 * x / Math.Max(aspect, 0.01))), ny = Math.Max(-1, Math.Min(1, -2 * y));
                 switch (pf)
                 {

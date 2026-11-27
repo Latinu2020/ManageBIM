@@ -1,9 +1,9 @@
-//! Generează o librărie PBR completă, local, fără internet și fără licențe:
-//! texturi procedurale (albedo, normal, roughness, metallic, AO) pentru materialele BIM uzuale.
+//! Generates a complete PBR library, locally, without internet and without licenses:
+//! procedural textures (albedo, normal, roughness, metallic, AO) for the usual BIM materials.
 //!
-//! Rulează: cargo run --release --bin gen_pbr_library
-//! Instalează în %APPDATA%\ManageBIM\Materials\PBR Library\ și actualizează library.bimmat.
-//! Scrie și o copie portabilă în Downloads (ManageBIM-PBR-Library.bimmat + .zip).
+//! Run: cargo run --release --bin gen_pbr_library
+//! Installs into %APPDATA%\ManageBIM\Materials\PBR Library\ and updates library.bimmat.
+//! Also writes a portable copy to Downloads (ManageBIM-PBR-Library.bimmat + .zip).
 
 use std::io::Cursor;
 
@@ -88,7 +88,7 @@ fn fbm(x: f32, y: f32, s: u32) -> f32 {
     noise(x, y, s) * 0.55 + noise(x * 2.7, y * 2.7, s + 1) * 0.28 + noise(x * 6.3, y * 6.3, s + 2) * 0.17
 }
 
-/// (factor de culoare 0..1, inaltime 0..1, rugozitate 0..1) - texturi bogate, ca in randarile de prezentare
+/// (color factor 0..1, height 0..1, roughness 0..1) - rich textures, like in presentation renders
 fn surface(kind: Kind, u: f32, v: f32, s: u32, base_rough: f32) -> (f32, f32, f32) {
     let big = fbm(u * 2.2, v * 2.2, s + 41);
     let n1 = fbm(u * 6.0, v * 6.0, s);
@@ -98,7 +98,7 @@ fn surface(kind: Kind, u: f32, v: f32, s: u32, base_rough: f32) -> (f32, f32, f3
     let c = |x: f32| x.clamp(0.0, 1.0);
     match kind {
         Kind::Concrete | Kind::Plaster | Kind::Paint => {
-            // pori, pete de umezeala si agregate fine
+            // pores, damp stains and fine aggregates
             let holes = if pore > 0.93 { -0.22 } else if pore < 0.04 { 0.08 } else { 0.0 };
             let stain = (big - 0.5) * 0.22;
             let col = c(0.80 + 0.18 * n1 + 0.10 * n2 + 0.05 * n3 + stain + holes);
@@ -107,7 +107,7 @@ fn surface(kind: Kind, u: f32, v: f32, s: u32, base_rough: f32) -> (f32, f32, f3
             (col, h, rough)
         }
         Kind::Stone => {
-            // vene de marmura + granule de granit
+            // marble veins + granite grains
             let warp = fbm(u * 1.6 + n2 * 0.5, v * 1.6, s + 7);
             let veins = ((warp * 5.0).fract() - 0.5).abs();
             let dark_vein = if veins < 0.07 { -0.28 } else { 0.0 };
@@ -117,7 +117,7 @@ fn surface(kind: Kind, u: f32, v: f32, s: u32, base_rough: f32) -> (f32, f32, f3
             (col, h, c(base_rough + (n2 - 0.5) * 0.25 + dark_vein.abs() * 0.5))
         }
         Kind::Brick => {
-            // caramizi cu margini neregulate, ciment texturat si patina
+            // bricks with irregular edges, textured cement and patina
             let rows = 9.0;
             let row = (v * rows).floor();
             let ox = if row as i32 % 2 == 0 { 0.0 } else { 0.5 };
@@ -132,7 +132,7 @@ fn surface(kind: Kind, u: f32, v: f32, s: u32, base_rough: f32) -> (f32, f32, f3
             (col, h, c(base_rough + mortar * 0.30 + (n2 - 0.5) * 0.18))
         }
         Kind::Wood => {
-            // inele de crestere deformate + noduri + fibre fine
+            // deformed growth rings + knots + fine fibers
             let warp = fbm(u * 2.6, v * 1.4, s + 5) * 3.5;
             let rings = (((v * 14.0 + warp) * std::f32::consts::PI * 2.0).sin() * 0.5 + 0.5).powf(0.6);
             let knot = ((fbm(u * 3.0, v * 3.0, s + 17) - 0.62) * 6.0).clamp(0.0, 1.0);
@@ -142,7 +142,7 @@ fn surface(kind: Kind, u: f32, v: f32, s: u32, base_rough: f32) -> (f32, f32, f3
             (col, h, c(base_rough + (rings - 0.5) * 0.25 + knot * 0.20))
         }
         Kind::Tile | Kind::Roof => {
-            // placi cu chit, luciu variat si mici imperfectiuni
+            // tiles with grout, varied gloss and small imperfections
             let gx = (u * 7.0).fract();
             let gy = (v * 7.0).fract();
             let grout = if gx < 0.035 || gy < 0.045 { 1.0 } else { 0.0 };
@@ -153,7 +153,7 @@ fn surface(kind: Kind, u: f32, v: f32, s: u32, base_rough: f32) -> (f32, f32, f3
             (col, h, c(base_rough + grout * 0.35 + (glaze - 0.5) * 0.22))
         }
         Kind::Metal => {
-            // periat cu zgarieturi fine si variatii de luciu
+            // brushed with fine scratches and gloss variations
             let brush = fbm(u * 3.0, v * 180.0, s + 9);
             let scratch = if pore > 0.985 { -0.30 } else { 0.0 };
             let col = c(0.84 + 0.18 * brush + scratch + 0.05 * big);
@@ -161,13 +161,13 @@ fn surface(kind: Kind, u: f32, v: f32, s: u32, base_rough: f32) -> (f32, f32, f3
             (col, h, c(base_rough + (brush - 0.5) * 0.30 + scratch.abs() * 1.5))
         }
         Kind::Grass => {
-            // fire scurte, cu variatii de verde
+            // short blades, with variations of green
             let blades = (fbm(u * 95.0, v * 22.0, s + 33) * 1.6).fract();
             let col = c(0.55 + 0.45 * n1 + 0.22 * blades + 0.12 * n3);
             (col, c(0.35 + 0.35 * blades + 0.20 * n3), c(base_rough + (n2 - 0.5) * 0.20))
         }
         Kind::Fabric => {
-            // tesatura: fire perpendiculare + scame
+            // fabric: perpendicular threads + lint
             let warp = (u * 110.0).sin() * 0.5 + 0.5;
             let weft = (v * 110.0).sin() * 0.5 + 0.5;
             let weave = warp * weft;
@@ -194,7 +194,7 @@ fn main() {
         .expect("APPDATA nu e setat");
     let root = lib.join("PBR Library");
     std::fs::create_dir_all(&root).expect("nu pot crea folderul librariei");
-    // pornim de la zero: vechile materiale importate se elimina, raman doar cele generate aici
+    // we start from scratch: the old imported materials are removed, only the ones generated here remain
     let mut mats: Vec<bimrust::materials::Material> = Vec::new();
     let all = defs();
 
@@ -216,7 +216,7 @@ fn main() {
                 metal.extend_from_slice(&[mv; 4]);
             }
         }
-        // normala din gradientul inaltimii (spatiu tangent OpenGL: Z pozitiv)
+        // the normal from the height gradient (OpenGL tangent space: positive Z)
         for y in 0..N {
             for x in 0..N {
                 let h = |xx: usize, yy: usize| height[yy * N + xx];
@@ -257,7 +257,7 @@ fn main() {
     }
 
     let f = lib.join("library.bimmat");
-    // backup de siguranta: vechiul fisier ramane ca .old, dar nu mai e folosit de aplicatie
+    // safety backup: the old file stays as .old, but is no longer used by the application
     if f.exists() {
         let _ = std::fs::copy(&f, lib.join("library.bimmat.old"));
     }
@@ -266,7 +266,7 @@ fn main() {
     std::fs::rename(&tmp, &f).unwrap();
     println!("\nInstalat: {} materiale in {}", mats.len(), f.display());
 
-    // copie portabila in Downloads (doar fisierul .bimmat; texturile sunt in folderul de mai sus)
+    // portable copy in Downloads (only the .bimmat file; the textures are in the folder above)
     if let Ok(dl) = std::env::var("USERPROFILE") {
         let p = std::path::PathBuf::from(dl).join("Downloads").join("ManageBIM-PBR-Library.bimmat");
         let _ = std::fs::write(&p, serde_json::to_string_pretty(&all.iter().filter_map(|d| mats.iter().find(|m| m.name == d.name).cloned()).collect::<Vec<_>>()).unwrap());

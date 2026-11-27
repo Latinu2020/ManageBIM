@@ -41,7 +41,7 @@ fn profiler_by_level_colours_every_storey() {
         assert_eq!(looks[i].col, Some(r.color), "element {i} on {}", e.storey);
     }
 
-    // o regula ascunsa -> elementele ei ascunse; un override manual castiga in fata profilului
+    // a hidden rule -> its elements hidden; a manual override wins over the profile
     app.profile.rules[0].visible = false;
     let manual = ElemId { m: 0, e: 0 };
     app.overrides.insert(manual, [1, 2, 3, 255]);
@@ -64,7 +64,7 @@ fn profiler_by_range_and_select() {
     app.profile.cat = ITEM_CAT.into();
     app.profile.prop = "Level".into();
     app.profile.mode = ProfileMode::Ranges;
-    app.profile_generate(); // "Level" nu e numeric
+    app.profile_generate(); // "Level" is not numeric
     assert!(app.profile.rules.is_empty() && !app.profile.active);
 
     // "Level elevation" e numeric ("3.000 m")
@@ -78,7 +78,7 @@ fn profiler_by_range_and_select() {
     app.profile_select(0, false);
     assert_eq!(app.selected.len() as u32, app.profile.rules[0].count);
 
-    // proiectul pastreaza profilul
+    // the project keeps the profile
     let json = serde_json::to_string(&app.project_file()).unwrap();
     let pf: ProjectFile = serde_json::from_str(&json).unwrap();
     assert_eq!(pf.profile.unwrap(), app.profile);
@@ -95,7 +95,7 @@ fn compare_finds_every_kind_of_change() {
     let p = |_: f32, _: &str| {};
     let old = load_any(ARCH, &p).unwrap();
     let mut new = load_any(ARCH, &p).unwrap();
-    // 0: mutat 250 mm pe X; 1: redenumit; 2: GUID nou (= sters + adaugat); 3: sters
+    // 0: moved 250 mm along X; 1: renamed; 2: new GUID (= deleted + added); 3: deleted
     for t in new.elements[0].tris.iter_mut() {
         for v in t.iter_mut() {
             *v += DVec3::new(0.25, 0.0, 0.0);
@@ -130,13 +130,13 @@ fn compare_finds_every_kind_of_change() {
     let prop = r.ids(Diff::Properties)[0];
     assert!(r.changes[&prop].iter().any(|s| s.contains("Renamed wall")), "{:?}", r.changes[&prop]);
 
-    // in 3D: elementul vechi potrivit e ascuns, cel nou colorat; cele sterse raman rosii
+    // in 3D: the old matched element is hidden, the new one colored; the deleted ones stay red
     app.rebuild_colors();
     assert!(app.looks[&0][0].hidden);
     assert_eq!(app.looks[&1][0].col, Some(Diff::Geometry.color()));
     assert_eq!(app.looks[&0][3].col, Some(Diff::Removed.color()));
 
-    // orice schimbare de model invalideaza rezultatul
+    // any model change invalidates the result
     app.refresh_caches();
     assert!(app.compare.is_none() && !app.compare_on);
 }

@@ -7,12 +7,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 pub enum Theme {
     Dark,
     Light,
-    /// paleta Nord (nordtheme.com): albastru-gri arctic, contrast bland
+    /// the Nord palette (nordtheme.com): arctic blue-grey, soft contrast
     Nord,
-    /// Tokyo Night (github.com/folke/tokyonight.nvim): albastru-noapte, accente albastru / mov
+    /// Tokyo Night (github.com/folke/tokyonight.nvim): night blue, blue / purple accents
     #[serde(alias = "Tokyo Night")]
     TokyoNight,
-    /// Studio: aproape negru, accent albastru electric, panouri ca niste carduri (aspect de aplicatie BIM moderna)
+    /// Studio: almost black, electric blue accent, panels like cards (the look of a modern BIM application)
     Studio,
 }
 
@@ -29,7 +29,7 @@ impl Theme {
             Theme::Studio => "Studio",
         }
     }
-    /// urmatoarea tema la click pe butonul din bara de tab-uri
+    /// the next theme on click on the button in the tab bar
     pub fn next(self) -> Theme {
         match self {
             Theme::Dark => Theme::Nord,
@@ -41,12 +41,12 @@ impl Theme {
     }
 }
 
-// Design tokens pentru raza colturilor (stil Mitcad): tab-uri pill, carduri rotunjite.
+// Design tokens for the corner radius (Mitcad style): pill tabs, rounded cards.
 pub const RADIUS_SM: f32 = 6.0;  // badge, chip
-pub const RADIUS_MD: f32 = 9.0;  // butoane, carduri de ribbon
-pub const RADIUS_LG: f32 = 12.0; // panouri, ferestre
+pub const RADIUS_MD: f32 = 9.0;  // buttons, ribbon cards
+pub const RADIUS_LG: f32 = 12.0; // panels, windows
 
-/// Culoarea de accent a temei curente (butoane active, selectie, progres) - setata de `apply`.
+/// The accent colour of the current theme (active buttons, selection, progress) - set by `apply`.
 static ACCENT_RGB: AtomicU32 = AtomicU32::new(0x3b82f6);
 
 pub fn accent() -> Color32 {
@@ -54,8 +54,8 @@ pub fn accent() -> Color32 {
     Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
 }
 
-/// Conturul panourilor si ferestrelor temei curente - setata de `apply`.
-/// Panourile si ferestrele il folosesc ca sa iasa putin in evidenta fata de fundal.
+/// The outline of the panels and windows of the current theme - set by `apply`.
+/// Panels and windows use it to stand out slightly from the background.
 static BORDER_RGB: AtomicU32 = AtomicU32::new(0x404754);
 
 pub fn border() -> Color32 {
@@ -63,14 +63,14 @@ pub fn border() -> Color32 {
     Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
 }
 
-/// Inaltimea de baza a textului (px); 0 = implicitul egui. Setata din `update()`.
+/// The base text height (px); 0 = the egui default. Set from `update()`.
 static FONT_BASE_PX: AtomicU32 = AtomicU32::new(0);
 
 pub fn set_font_base(px: f32) {
     FONT_BASE_PX.store(px.to_bits(), Ordering::Relaxed);
 }
 
-/// Preferintele UI care trebuie sa supravietuiasca unei restartari (Clash + 4D).
+/// The UI preferences that must survive a restart (Clash + 4D).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ClashUiPrefs {
     #[serde(default)]
@@ -89,23 +89,23 @@ pub struct ClashUiPrefs {
     pub group_cell: f32,
     #[serde(default = "yes")]
     pub only_linked: bool,
-    /// coloana dupa care se sorteaza rezultatele (None = ordinea testului, dupa distanta)
+    /// the column the results are sorted by (None = test order, by distance)
     #[serde(default)]
     pub sort_col: Option<u8>,
     #[serde(default = "yes")]
     pub sort_asc: bool,
-    /// camera zboara lin spre clash (Animate transitions din Navisworks)
+    /// the camera flies smoothly to the clash (Animate transitions from Navisworks)
     #[serde(default = "yes")]
     pub animate: bool,
-    /// panoul Item 1 / Item 2 cu proprietatile elementelor de sub tabel
+    /// the Item 1 / Item 2 panel with the element properties below the table
     #[serde(default = "yes")]
     pub items_panel: bool,
-    /// culoarea elementului A / B al clash-ului curent
+    /// the colour of element A / B of the current clash
     #[serde(default = "clash_col_a")]
     pub col_a: [u8; 3],
     #[serde(default = "clash_col_b")]
     pub col_b: [u8; 3],
-    /// opacitatea celorlalte elemente la "Dim other" (0 = invizibile, 255 = opace)
+    /// the opacity of the other elements with "Dim other" (0 = invisible, 255 = opaque)
     #[serde(default = "dim_alpha_default")]
     pub dim_alpha: u8,
 }
@@ -177,112 +177,112 @@ pub struct Settings {
     pub collision: bool,
     #[serde(default = "default_eye")]
     pub eye_height: f32,
-    /// gruparea arborelui de selectie (ex. Level > IFC Type, sau System > Level > Type Name)
+    /// the grouping of the selection tree (e.g. Level > IFC Type, or System > Level > Type Name)
     #[serde(default = "crate::app::default_tree_levels")]
     pub tree_levels: Vec<crate::app::TreeLevel>,
-    /// ribbon restrans: doar randul cu tab-uri (mai mult loc pentru model)
+    /// collapsed ribbon: only the tab row (more room for the model)
     #[serde(default)]
     pub ribbon_min: bool,
-    /// inaltimea ribbon-ului: Full (iconite + etichete), Compact (doar iconite), Mini (doar tab-urile)
+    /// the ribbon height: Full (icons + labels), Compact (icons only), Mini (tabs only)
     #[serde(default)]
     pub ribbon_mode: RibbonMode,
-    /// selectie sincronizata cu Revit / Navisworks (Live Link)
+    /// selection synchronised with Revit / Navisworks (Live Link)
     #[serde(default)]
     pub sync_selection: bool,
-    /// zoom pe selectia venita din Revit / Navisworks
+    /// zoom to the selection coming from Revit / Navisworks
     #[serde(default = "yes")]
     pub sync_follow: bool,
-    /// stilul de afisare al modelului
+    /// the model display style
     #[serde(default)]
     pub visual_style: crate::render::VisualStyle,
-    /// bara de navigare plutitoare din vizualizarea 3D
+    /// the floating navigation bar in the 3D view
     #[serde(default = "yes")]
     pub nav_bar: bool,
-    /// lungimile (masuratori, distante, coordonate) afisate in milimetri in loc de metri
+    /// lengths (measurements, distances, coordinates) shown in millimetres instead of metres
     #[serde(default)]
     pub units_mm: bool,
-    /// OSNAP: raza de prindere in pixeli (6..24)
+    /// OSNAP: snap radius in pixels (6..24)
     #[serde(default = "default_snap_radius")]
     pub snap_radius: f32,
-    /// OSNAP: tipuri active (bit 1=Vertex, 2=Midpoint, 4=Edge, 8=Surface)
+    /// OSNAP: active types (bit 1=Vertex, 2=Midpoint, 4=Edge, 8=Surface)
     #[serde(default = "default_snap_types")]
     pub snap_types: u8,
-    /// sistem de unitati: "m" | "mm" | "in" | "ft" (completeaza units_mm; vechiul proiect ramane valid)
+    /// unit system: "m" | "mm" | "in" | "ft" (complements units_mm; the old project stays valid)
     #[serde(default)]
     pub unit_system: String,
-    /// numar de zecimale la afisarea distantilor (0..6)
+    /// number of decimals when displaying distances (0..6)
     #[serde(default = "default_precision")]
     pub unit_precision: u8,
-    /// keybindings customizabile: "open" -> "Ctrl+O" etc. (doar override-urile fata de default)
+    /// customizable keybindings: "open" -> "Ctrl+O" etc. (only the overrides of the defaults)
     #[serde(default)]
     pub keybinds: std::collections::BTreeMap<String, String>,
-    /// interfata in romana (altfel engleza)
+    /// interface in Romanian (otherwise English)
     #[serde(default)]
     pub romanian: bool,
-    /// marimea intregii interfate: 1.0 = 100% (Setari > Interface size / DPI)
+    /// the size of the whole interface: 1.0 = 100% (Settings > Interface size / DPI)
     #[serde(default = "default_ui_scale")]
     pub ui_scale: f32,
-    /// fontul interfetei: „Inter” (folosit implicit) sau „Default” (al egui)
+    /// the interface font: „Inter” (used by default) or „Default” (egui's own)
     #[serde(default = "default_font_family")]
     pub font_family: String,
-    /// inaltimea de baza a textului in px (0 = 14 px, implicitul)
+    /// the base text height in px (0 = 14 px, the default)
     #[serde(default = "default_font_size")]
     pub font_size: f32,
-    /// directia sectiunii exportate in DWG / DXF (Current = planul de taiere activ)
+    /// the direction of the section exported to DWG / DXF (Current = the active cut plane)
     #[serde(default)]
     pub cad_view: crate::app::CadView,
-    /// pozitia planului de taiere intre 0 (latura minima) si 1 (latura maxima) a modelului
+    /// the position of the cut plane between 0 (minimum side) and 1 (maximum side) of the model
     #[serde(default = "default_cad_view_pos")]
     pub cad_view_pos: f32,
-    /// versiunea BCF la export: 2 sau 3
+    /// the BCF version on export: 2 or 3
     #[serde(default = "default_bcf_version")]
     pub bcf_version: u8,
-    /// inaltimea planului de taiere masurata de la fundul cubului de sectiune
+    /// the height of the cut plane measured from the bottom of the section box
     #[serde(default = "default_cut_offset")]
     pub section_cut_offset: f32,
-    /// aliniaza planul de taiere la axa de grila / nivelul cel mai apropiat
+    /// snaps the cut plane to the nearest grid line / level
     #[serde(default = "yes")]
     pub snap_cut_to_grid: bool,
-    /// folderul cu scripturi .rhai (gol = %APPDATA%\ManageBIM\Scripts)
+    /// the folder with .rhai scripts (empty = %APPDATA%\ManageBIM\Scripts)
     #[serde(default)]
     pub scripts_dir: String,
-    /// valorile parametrilor pentru scripturile din catalogul grafic
+    /// the parameter values for the scripts in the graphic catalogue
     #[serde(default)]
     pub script_params: std::collections::BTreeMap<String, String>,
-    /// afiseaza in 3D planul de taiere ales pentru export (implicit OPRIT)
+    /// shows in 3D the cut plane chosen for export (OFF by default)
     #[serde(default)]
     pub show_cad_plane: bool,
-    /// afiseaza sarmul cubului de sectiune si sagetile fetelor (fara a afecta taietura)
+    /// shows the section box wireframe and the face arrows (without affecting the cut)
     #[serde(default = "yes")]
     pub show_section_box: bool,
-    /// muchiile din spatele planului (pana la peretele opus al cubului), punctate
+    /// the edges behind the plane (up to the opposite wall of the box), dotted
     #[serde(default = "yes")]
     pub show_section_behind: bool,
-    /// eticheta folderului virtual „fară folder” din Viewpoints
+    /// the label of the virtual „no folder” folder in Viewpoints
     #[serde(default = "default_vp_root")]
     pub vp_root_label: String,
-    /// unitatea XML-ului pentru Navisworks: "auto" (din modelul Navisworks) sau m / cm / mm / ft / in
+    /// the unit of the XML for Navisworks: "auto" (from the Navisworks model) or m / cm / mm / ft / in
     #[serde(default = "auto")]
     pub navis_units: String,
-    /// preferinte UI persistente (Clash Detective / 4D)
+    /// persistent UI preferences (Clash Detective / 4D)
     #[serde(default)]
     pub clash_ui: ClashUiPrefs,
-    /// culoarea de evidentiere a elementelor selectate in 3D
+    /// the highlight colour of the selected elements in 3D
     #[serde(default = "default_sel_rgb")]
     pub sel_rgb: [u8; 3],
-    /// cat de puternic acopera culoarea selectiei culoarea elementului (0.2..1.0)
+    /// how strongly the selection colour covers the element colour (0.2..1.0)
     #[serde(default = "default_sel_mix")]
     pub sel_mix: f32,
-    /// ultimele comenzi rulate din paleta (cea mai noua prima)
+    /// the last commands run from the palette (newest first)
     #[serde(default)]
     pub recent_cmds: Vec<String>,
-    /// iconitele din ribbon colorate pe categorii (altfel monocrome)
+    /// ribbon icons coloured by category (otherwise monochrome)
     #[serde(default = "yes")]
     pub color_icons: bool,
-    /// fundalul vederii 3D: "theme" (al temei), "white", "grey", "black", "sky"
+    /// the 3D view background: "theme" (the theme's), "white", "grey", "black", "sky"
     #[serde(default = "default_vp_bg")]
     pub vp_bg: String,
-    /// Render (path trace): curata zgomotul cu Intel Open Image Denoise la final
+    /// Render (path trace): removes the noise with Intel Open Image Denoise at the end
     #[serde(default = "yes")]
     pub render_denoise: bool,
     /// path tracing on the graphics card (much faster); off = on the processor
@@ -291,25 +291,25 @@ pub struct Settings {
     /// interactive Ray Trace view: samples per pixel before it stops refining (and denoises)
     #[serde(default = "default_rt_samples")]
     pub rt_samples: u32,
-    /// rezolutia texturilor PBR pe GPU: 0 = 512, 1 = 1024, 2 = 2048
+    /// the resolution of the PBR textures on the GPU: 0 = 512, 1 = 1024, 2 = 2048
     #[serde(default)]
     pub tex_res: u32,
-    /// dezactiveaza LOD-ul adaptiv in viewport (deseneaza toate elementele, si in miscare)
+    /// disables the adaptive LOD in the viewport (draws all elements, also while moving)
     #[serde(default)]
     pub no_lod: bool,
-    /// Model View Definition folosit la exportul IFC
+    /// Model View Definition used for the IFC export
     #[serde(default)]
     pub ifc_mvd: crate::ifc_mvd::Mvd,
-    /// mapare categorie sursa -> clasa IFC la export
+    /// source category -> IFC class mapping on export
     #[serde(default = "crate::ifc_map::default_rules")]
     pub ifc_map: Vec<crate::ifc_map::MapRule>,
-    /// catalog de clasificare local (bSDD / Uniclass / OmniClass)
+    /// local classification catalogue (bSDD / Uniclass / OmniClass)
     #[serde(default = "crate::classification::builtin")]
     pub classifications: crate::classification::Catalog,
-    /// verifica la pornire daca exista o versiune noua pe GitHub (doar citeste pagina publica)
+    /// checks at startup whether a new version exists on GitHub (only reads the public page)
     #[serde(default = "crate::app::yes_default")]
     pub check_updates: bool,
-    /// serverul MCP local (asistenti AI: Claude, OpenCode, Ollama prin client MCP); oprit implicit
+    /// the local MCP server (AI assistants: Claude, OpenCode, Ollama through an MCP client); off by default
     #[serde(default)]
     pub mcp: crate::mcp::McpSettings,
 }
@@ -367,7 +367,7 @@ fn default_vp_root() -> String {
 }
 
 fn default_cad_view_pos() -> f32 {
-    // 0 = planul EXACT pe fata aleasa a cubului (cubul e format din planuri)
+    // 0 = the plane EXACTLY on the chosen box face (the box is made of planes)
     0.0
 }
 
@@ -383,7 +383,7 @@ fn default_eye() -> f32 {
     1.7
 }
 
-/// viteza de mers a unui om (m/s); vechiul implicit 3.0 era prea rapid in interior
+/// a person's walking speed (m/s); the old default of 3.0 was too fast indoors
 fn default_walk() -> f32 {
     1.4
 }
@@ -399,7 +399,7 @@ fn settings_path() -> Option<std::path::PathBuf> {
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))?;
     let new = base.join("ManageBIM").join("settings.json");
-    // migrare din versiunile vechi (BimRust)
+    // migration from the old versions (BimRust)
     let old = base.join("BimRust").join("settings.json");
     if !new.exists() && old.exists() {
         let _ = std::fs::create_dir_all(base.join("ManageBIM"));
@@ -409,13 +409,13 @@ fn settings_path() -> Option<std::path::PathBuf> {
 }
 
 impl Settings {
-    /// Exportă setările curente într-un fișier .mbprofile (partajabil cu colegii).
+    /// Exports the current settings to a .mbprofile file (shareable with colleagues).
     pub fn export_profile(&self, path: &std::path::Path) -> std::io::Result<()> {
         let json = serde_json::to_string_pretty(self).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         std::fs::write(path, json)
     }
 
-    /// Importă setările dintr-un .mbprofile. `recent` și `tools` (căi locale) nu se preiau.
+    /// Imports the settings from a .mbprofile. `recent` and `tools` (local paths) are not taken over.
     pub fn import_profile(path: &std::path::Path) -> Result<Settings, String> {
         let s = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
         let mut p: Settings = serde_json::from_str(&s).map_err(|e| e.to_string())?;
@@ -425,25 +425,25 @@ impl Settings {
     }
 
     pub fn load() -> Settings {
-        // setarile; daca fisierul e stricat (cadere in timpul scrierii), copia .bak de la salvarea anterioara
+        // the settings; if the file is corrupt (crash during writing), the .bak copy from the previous save
         let read = |p: std::path::PathBuf| std::fs::read_to_string(p).ok().and_then(|s| serde_json::from_str::<Settings>(&s).ok());
         let mut s: Settings = settings_path()
             .and_then(|p| read(p.clone()).or_else(|| read(crate::formats::backup_path(&p))))
             .unwrap_or_default();
-        // 27.11: highlightul planului e intodeauna INCHIS la pornire;
-        // utilizatorul il deschide doar cand are nevoie de manerul de tragere.
+        // 27.11: the plane highlight is always OFF at startup;
+        // the user turns it on only when they need the drag handle.
         s.show_cad_plane = false;
-        // migrare units_mm -> unit_system (proiectele vechi raman valide)
+        // migration units_mm -> unit_system (old projects stay valid)
         if s.unit_system.is_empty() {
             s.unit_system = if s.units_mm { "mm".into() } else { "m".into() };
         }
         crate::app::set_unit(crate::app::Unit::from_code(s.unit_system.as_str()));
         crate::app::set_precision(s.unit_precision);
-        // vechiul implicit (3 m/s) -> viteza de mers normala; o valoare aleasa de utilizator ramane
+        // the old default (3 m/s) -> normal walking speed; a value chosen by the user stays
         if s.walk_speed == 3.0 {
             s.walk_speed = default_walk();
         }
-        // marimea interfetei: doar valori rezonabile, altfel revenim la 100%
+        // the interface size: only reasonable values, otherwise we fall back to 100%
         if !s.ui_scale.is_finite() || !(0.75..=2.0).contains(&s.ui_scale) {
             s.ui_scale = default_ui_scale();
         }
@@ -451,8 +451,8 @@ impl Settings {
             s.sel_mix = default_sel_mix();
         }
         s.recent_cmds.truncate(8);
-        // vechile implicituri ale pozitiei planului (0.5 / 0.25 = in interiorul
-        // cubului) migram pe 0 = planul chiar pe fata aleasa
+        // the old defaults of the plane position (0.5 / 0.25 = inside the
+        // box) are migrated to 0 = the plane right on the chosen face
         if (s.cad_view_pos - 0.5).abs() < 1e-6 || (s.cad_view_pos - 0.25).abs() < 1e-6 {
             s.cad_view_pos = 0.0;
         }
@@ -508,7 +508,7 @@ pub struct Palette {
     pub gantt_grid: Color32,
     pub gantt_text: Color32,
     pub label_bg: Color32,
-    /// conturul vizibil al panourilor si ferestrelor (le face sa iasa usor in evidenta)
+    /// the visible outline of panels and windows (makes them stand out slightly)
     pub border: Color32,
 }
 
@@ -544,7 +544,7 @@ pub fn palette(t: Theme) -> Palette {
             label_bg: Color32::from_rgba_unmultiplied(20, 26, 36, 220),
             border: Color32::from_rgb(201, 209, 221),
         },
-        // Nord: varianta usor mai inchisa (Polar Night adancit), Snow Storm (text), Frost (accent)
+        // Nord: a slightly darker variant (deepened Polar Night), Snow Storm (text), Frost (accent)
         Theme::Nord => Palette {
             accent: Color32::from_rgb(136, 192, 208),
             vp_top: Color32::from_rgb(36, 41, 52),
@@ -576,7 +576,7 @@ pub fn palette(t: Theme) -> Palette {
             label_bg: Color32::from_rgba_unmultiplied(22, 22, 30, 225),
             border: Color32::from_rgb(54, 60, 86),
         },
-        // Studio: aproape negru, albastru electric
+        // Studio: almost black, electric blue
         Theme::Studio => Palette {
             accent: Color32::from_rgb(59, 130, 246),
             vp_top: Color32::from_rgb(28, 34, 46),
@@ -596,7 +596,7 @@ pub fn palette(t: Theme) -> Palette {
 }
 
 fn widget(v: &mut egui::style::WidgetVisuals, bg: Color32, stroke: Color32, fg: Color32, r: f32) {
-    // rotunjimea vine din parametru (inainte era fixata la 3.5)
+    // the rounding comes from the parameter (previously it was fixed at 3.5)
     v.bg_fill = bg;
     v.weak_bg_fill = bg;
     v.bg_stroke = Stroke::new(1.0_f32, stroke);
@@ -713,35 +713,35 @@ pub fn apply(ctx: &egui::Context, t: Theme) {
             v.popup_shadow = Shadow { offset: egui::vec2(0.0, 4.0), blur: 12.0, spread: 0.0, color: Color32::from_black_alpha(30) };
         }
     }
-    // ---- aspect "fara chenare" (redesign): adancimea vine din suprafete, nu din contururi.
-    // Toate temele mostenesc aceleasi reguli; fiecare isi pastreaza culorile.
+    // ---- "borderless" look (redesign): depth comes from surfaces, not from outlines.
+    // All themes inherit the same rules; each keeps its own colours.
     {
         let dark = v.dark_mode;
-        // tonul cu cateva unitati mai deschis (inchis in tema Light) decat panoul
+        // the tone a few units lighter (darker in the Light theme) than the panel
         let tone = |c: Color32, d: i16| {
             let f = |x: u8| (x as i16 + if dark { d } else { -d }).clamp(0, 255) as u8;
             Color32::from_rgb(f(c.r()), f(c.g()), f(c.b()))
         };
         let pf = v.panel_fill;
-        // hover fara contur: doar fundalul se lumineaza
+        // hover without an outline: only the background lights up
         v.widgets.hovered.bg_stroke = Stroke::NONE;
         v.widgets.hovered.weak_bg_fill = tone(pf, 16);
         v.widgets.hovered.bg_fill = tone(pf, 18);
         for w in [&mut v.widgets.inactive, &mut v.widgets.active, &mut v.widgets.open] {
             w.bg_stroke = Stroke::NONE;
         }
-        // separatoarele raman doar ca o nuanta abia vizibila
+        // separators remain only as a barely visible tint
         v.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, tone(pf, 7));
-        // selectia: nuanta de accent, fara contur alb; textul selectat in accent deschis
+        // selection: an accent tint, no white outline; selected text in a light accent
         let a = p.accent;
         v.selection.bg_fill = a.gamma_multiply(0.22);
         let light = |c: u8| ((c as u16 + 255) / 2) as u8;
         v.selection.stroke = Stroke::new(1.0_f32, if dark { Color32::from_rgb(light(a.r()), light(a.g()), light(a.b())) } else { a });
-        // dunga tabelelor: se simte, nu se vede
+        // table stripes: felt, not seen
         v.faint_bg_color = tone(pf, 4);
-        // ferestrele si panourile: contur vizibil, ca sa iasa usor in evidenta fata de fundal
+        // windows and panels: a visible outline, so they stand out slightly from the background
         v.window_stroke = Stroke::new(1.0_f32, p.border);
-        // design system comun tuturor temelor: colturi rotunjite, densitate compacta, umbre
+        // design system shared by all themes: rounded corners, compact density, shadows
         for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
             w.rounding = Rounding::same(8.0);
         }
@@ -755,22 +755,22 @@ pub fn apply(ctx: &egui::Context, t: Theme) {
     v.menu_rounding = Rounding::same(RADIUS_MD);
     v.striped = true;
     style.visuals = v;
-    // compact: mai mult loc pentru model, randuri si butoane tot usor de tintit
+    // compact: more room for the model, rows and buttons still easy to hit
     style.spacing.item_spacing = egui::vec2(6.0, 4.0);
     style.spacing.button_padding = egui::vec2(8.0, 3.0);
     style.spacing.interact_size.y = 20.0;
     style.spacing.indent = 14.0;
     style.spacing.menu_margin = egui::Margin::same(6.0);
-    // ferestrele respira putin mai mult (aspect mai profesional), fara sa piarda densitatea
+    // windows breathe a little more (a more professional look), without losing density
     style.spacing.window_margin = egui::Margin::symmetric(10.0, 8.0);
-    // bare de derulare subtiri, care apar doar la nevoie (ca in aplicatiile moderne)
+    // thin scroll bars that appear only when needed (as in modern applications)
     style.spacing.scroll = egui::style::ScrollStyle { bar_width: 8.0, floating_width: 3.0, ..egui::style::ScrollStyle::floating() };
-    // tooltip-urile: apar mai repede si au latime de citit
+    // tooltips: appear faster and have a readable width
     style.spacing.tooltip_width = 340.0;
     style.interaction.tooltip_delay = 0.35;
     style.animation_time = 0.12;
     style.interaction.selectable_labels = false;
-    // inaltimea textului aleasa de utilizator (0 = implicitul egui: Body 14 px)
+    // the text height chosen by the user (0 = the egui default: Body 14 px)
     let base = f32::from_bits(FONT_BASE_PX.load(Ordering::Relaxed));
     if base > 0.0 && base.is_finite() {
         use egui::TextStyle::*;
@@ -783,15 +783,15 @@ pub fn apply(ctx: &egui::Context, t: Theme) {
     ctx.set_style(style);
 }
 
-/// Treptele ribbon-ului (ca in redesign): se pliaza, nu dispare niciodata complet.
+/// The ribbon steps (as in the redesign): it folds, it never disappears completely.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
 pub enum RibbonMode {
-    /// iconite cu eticheta dedesubt si titlul cardului
+    /// icons with the label below and the card title
     #[default]
     Full,
-    /// doar iconite (numele in tooltip) - mai mult loc pentru model
+    /// icons only (the name in the tooltip) - more room for the model
     Compact,
-    /// doar randul cu tab-uri; clic pe un tab il deschide
+    /// only the tab row; click on a tab to open it
     Mini,
 }
 
@@ -810,7 +810,7 @@ impl RibbonMode {
             RibbonMode::Mini => "Mini",
         }
     }
-    /// inaltimea zonei cu carduri (fara randul de tab-uri)
+    /// the height of the card area (without the tab row)
     pub fn height(self) -> f32 {
         match self {
             RibbonMode::Full => 70.0,
@@ -820,9 +820,9 @@ impl RibbonMode {
     }
 }
 
-/// modul curent al ribbon-ului, citit de butoanele ribbon-ului (functii libere)
+/// the current ribbon mode, read by the ribbon buttons (free functions)
 pub static RIBBON_COMPACT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-/// latimea butoanelor de ribbon (px): 62 normal, mai mica automat cand tab-ul nu incape in fereastra
+/// the width of the ribbon buttons (px): 62 normal, automatically smaller when the tab does not fit in the window
 pub static RIBBON_BTN_W: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x4278_0000); // 62.0f32
 pub fn ribbon_btn_w() -> f32 {
     f32::from_bits(RIBBON_BTN_W.load(std::sync::atomic::Ordering::Relaxed))
@@ -830,13 +830,13 @@ pub fn ribbon_btn_w() -> f32 {
 pub fn set_ribbon_btn_w(w: f32) {
     RIBBON_BTN_W.store(w.to_bits(), std::sync::atomic::Ordering::Relaxed);
 }
-/// iconitele din ribbon colorate pe categorii (Settings › Appearance › Coloured icons)
+/// ribbon icons coloured by category (Settings › Appearance › Coloured icons)
 pub static COLOR_ICONS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
-/// Culoarea unei iconite dupa ce face comanda (fisiere galben, export albastru, stergere rosu ...).
-/// None = culoarea textului (comenzi neutre).
+/// The colour of an icon according to what the command does (files yellow, export blue, delete red ...).
+/// None = the text colour (neutral commands).
 pub fn icon_tint(s: &str, dark: bool) -> Option<Color32> {
-    // nuante potrivite pe fundal inchis; pe tema deschisa le inchidem putin
+    // shades suited to a dark background; on the light theme we darken them a little
     let c = |r: u8, g: u8, b: u8| {
         if dark {
             Color32::from_rgb(r, g, b)
@@ -863,15 +863,15 @@ pub fn icon_tint(s: &str, dark: bool) -> Option<Color32> {
     })
 }
 
-// ===================================================================== font Inter + iconite Phosphor
+// ===================================================================== Inter font + Phosphor icons
 
-/// Fontul Inter (OFL, github.com/rsms/inter) pentru text si iconitele vectoriale Phosphor (MIT)
-/// in locul emoji-urilor; fonturile implicite raman ca rezerva pentru caracterele rare.
+/// The Inter font (OFL, github.com/rsms/inter) for text and the Phosphor vector icons (MIT)
+/// instead of emoji; the default fonts remain as a fallback for rare characters.
 pub fn install_fonts(ctx: &egui::Context) {
     install_fonts_with(ctx, "Inter");
 }
 
-/// Fonturile din sistem (Windows: C:\Windows\Fonts + cele per-utilizator), citite o singura data.
+/// The system fonts (Windows: C:\Windows\Fonts + the per-user ones), read only once.
 pub fn system_fonts() -> &'static Vec<(String, String)> {
     static SYS: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
     SYS.get_or_init(|| {
@@ -900,12 +900,12 @@ pub fn system_fonts() -> &'static Vec<(String, String)> {
     })
 }
 
-/// Fontul proportional al interfetei: „Inter” (implicit), „IBM Plex Sans”,
-/// „Default” (fonturile egui) sau orice font din sistem (vezi `system_fonts`).
+/// The proportional font of the interface: „Inter” (default), „IBM Plex Sans”,
+/// „Default” (the egui fonts) or any system font (see `system_fonts`).
 pub fn install_fonts_with(ctx: &egui::Context, family: &str) {
     let mut f = egui::FontDefinitions::default();
     let name = family.trim();
-    // fonturile incluse in aplicatie (embed in executabil, fara fisiere externe)
+    // the fonts bundled with the application (embedded in the executable, no external files)
     let bundled: Option<(&'static str, Vec<u8>)> = match name.to_ascii_lowercase().as_str() {
         "inter" => Some(("Inter", include_bytes!("../assets/fonts/Inter-Regular.ttf").to_vec())),
         "lato" => Some(("Lato", include_bytes!("../assets/fonts/Lato-Regular.ttf").to_vec())),
@@ -917,7 +917,7 @@ pub fn install_fonts_with(ctx: &egui::Context, family: &str) {
             p.insert(0, key.into());
         }
     } else if !name.eq_ignore_ascii_case("default") {
-        // font din sistem: incarcat din fisierul lui; daca nu exista, revenim la Inter
+        // system font: loaded from its file; if it does not exist, we fall back to Inter
         let hit = system_fonts().iter().find(|(n, _)| n.eq_ignore_ascii_case(name));
         let bytes = hit.and_then(|(_, p)| std::fs::read(p).ok());
         if let Some(bytes) = bytes {
@@ -932,9 +932,9 @@ pub fn install_fonts_with(ctx: &egui::Context, family: &str) {
             }
         }
     }
-    // iconitele au familia lor ("icons"): Phosphor contine si litere goale (pentru ligaturi), iar Inter
-    // are glife proprii in zona privata (U+E000...) - amestecate in aceeasi familie s-ar "fura" reciproc.
-    // Emoji-urile ramase raman vizibile prin fonturile de rezerva.
+    // the icons have their own family ("icons"): Phosphor also contains empty letters (for ligatures), and Inter
+    // has its own glyphs in the private area (U+E000...) - mixed in the same family they would "steal" from each other.
+    // The remaining emoji stay visible through the fallback fonts.
     f.font_data.insert("phosphor".into(), egui_phosphor::Variant::Regular.font_data());
     let mut icons = vec!["phosphor".to_string()];
     if let Some(p) = f.families.get(&egui::FontFamily::Proportional) {
@@ -944,13 +944,13 @@ pub fn install_fonts_with(ctx: &egui::Context, family: &str) {
     ctx.set_fonts(f);
 }
 
-/// fontul iconitelor vectoriale
+/// the vector icon font
 pub fn icon_font(size: f32) -> egui::FontId {
     egui::FontId::new(size, egui::FontFamily::Name("icons".into()))
 }
 
-/// text cu iconita in fata ("🌲 Selection Tree" sau iconita Phosphor + text), ca LayoutJob
-/// (iconita in fontul iconitelor, textul in Inter)
+/// text with an icon in front ("🌲 Selection Tree" or a Phosphor icon + text), as a LayoutJob
+/// (the icon in the icon font, the text in Inter)
 pub fn icon_job(icon: &str, text: &str, size: f32, color: Color32) -> egui::text::LayoutJob {
     let mut j = egui::text::LayoutJob::default();
     let fmt = |font: egui::FontId| egui::TextFormat { font_id: font, color, valign: egui::Align::Center, ..Default::default() };
@@ -962,7 +962,7 @@ pub fn icon_job(icon: &str, text: &str, size: f32, color: Color32) -> egui::text
     j
 }
 
-/// titlul unui panou ("🌲 Selection Tree") cu iconita vectoriala
+/// the title of a panel ("🌲 Selection Tree") with a vector icon
 pub fn title_job(title: &str, size: f32, color: Color32) -> egui::text::LayoutJob {
     match title.split_once(' ') {
         Some((ic, rest)) if !ic.chars().next().map(|c| c.is_alphanumeric()).unwrap_or(true) => icon_job(ic, rest, size, color),
@@ -970,7 +970,7 @@ pub fn title_job(title: &str, size: f32, color: Color32) -> egui::text::LayoutJo
     }
 }
 
-/// emoji folosit in interfata -> iconita Phosphor echivalenta (necunoscut = ramane emoji-ul)
+/// emoji used in the interface -> the equivalent Phosphor icon (unknown = the emoji stays)
 pub fn ph(s: &str) -> &str {
     use egui_phosphor::regular as P;
     match s.trim() {
@@ -1046,7 +1046,7 @@ pub fn ph(s: &str) -> &str {
         "▶" => P::PLAY,
         "⏸" => P::PAUSE,
         "↔" => P::ARROWS_OUT_CARDINAL,
-        // 0.28: toate iconitele din ribbon au varianta vectoriala (fara patrate goale)
+        // 0.28: all ribbon icons have a vector variant (no empty squares)
         "#" => P::HASH,
         "↶" => P::ARROW_U_UP_LEFT,
         "⏩" => P::FAST_FORWARD,
@@ -1066,7 +1066,7 @@ pub fn ph(s: &str) -> &str {
     }
 }
 
-/// "🌲 Selection Tree" -> iconita Phosphor + text
+/// "🌲 Selection Tree" -> Phosphor icon + text
 pub fn ph_label(s: &str) -> String {
     match s.split_once(' ') {
         Some((ic, rest)) if !ic.chars().next().map(|c| c.is_alphanumeric()).unwrap_or(true) => format!("{} {rest}", ph(ic)),

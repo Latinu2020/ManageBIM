@@ -1,5 +1,5 @@
-//! Lumini punctuale plasate in model (lampi), folosite de randarea offline.
-//! Pozitia e in coordonatele locale ale scenei (aceleasi ca vertecii / camera).
+//! Point lights placed in the model (lamps), used by the offline rendering.
+//! The position is in the local scene coordinates (the same as the vertices / camera).
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
@@ -23,17 +23,17 @@ pub struct SceneLight {
     #[serde(default)]
     pub kind: LightKind,
     pub pos: [f32; 3],
-    /// directia / tinta pentru Spot si Distant
+    /// the direction / target for Spot and Distant
     #[serde(default)]
     pub target: [f32; 3],
-    /// unghiul cone-ului pentru Spot (grade, 5..=120)
+    /// the cone angle for Spot (degrees, 5..=120)
     #[serde(default = "default_angle")]
     pub angle: f32,
-    /// culoarea luminii (sRGB 0..255)
+    /// the light color (sRGB 0..255)
     pub color: [u8; 3],
-    /// putere relativa (0..10)
+    /// relative power (0..10)
     pub power: f32,
-    /// raza de actiune in metri (0 = nelimitata, lumina nu scade cu distanta)
+    /// range in meters (0 = unlimited, the light does not fall off with distance)
     pub radius: f32,
     #[serde(default = "yes")]
     pub enabled: bool,
@@ -52,17 +52,17 @@ impl Default for SceneLight {
 }
 
 impl SceneLight {
-    /// directia luminii (de la pozitie spre tinta), normalizata; implicit in jos
+    /// the light direction (from the position toward the target), normalized; down by default
     pub fn direction(&self) -> glam::Vec3 {
         let d = glam::Vec3::from(self.target) - glam::Vec3::from(self.pos);
         let n = d.normalize_or_zero();
         if n == glam::Vec3::ZERO { -glam::Vec3::Z } else { n }
     }
-    /// distanta pozitie -> tinta (minim 1 m, ca tinta sa nu cada peste lumina)
+    /// distance position -> target (minimum 1 m, so the target does not fall on top of the light)
     fn aim_dist(&self) -> f32 {
         (glam::Vec3::from(self.target) - glam::Vec3::from(self.pos)).length().max(1.0)
     }
-    /// seteaza directia pastrand distanta pana la tinta
+    /// sets the direction keeping the distance to the target
     pub fn set_direction(&mut self, dir: glam::Vec3) {
         let d = dir.normalize_or_zero();
         if d == glam::Vec3::ZERO || !d.is_finite() {
@@ -71,7 +71,7 @@ impl SceneLight {
         let p = glam::Vec3::from(self.pos);
         self.target = (p + d * self.aim_dist()).to_array();
     }
-    /// roteste directia in jurul unei axe (lume) cu unghiul dat (radiani)
+    /// rotates the direction around an axis (world) by the given angle (radians)
     pub fn rotate_direction(&mut self, axis: glam::Vec3, angle: f32) {
         if !angle.is_finite() || angle.abs() < 1e-7 {
             return;
@@ -79,7 +79,7 @@ impl SceneLight {
         let d = glam::Quat::from_axis_angle(axis.normalize(), angle).mul_vec3(self.direction());
         self.set_direction(d);
     }
-    /// (azimut de la +X in sens trigonometric, inclinare fata de orizontala; negativ = in jos), grade
+    /// (azimuth from +X counter-clockwise, tilt from the horizontal; negative = down), degrees
     pub fn aim_angles(&self) -> (f32, f32) {
         let d = self.direction();
         (d.y.atan2(d.x).to_degrees(), d.z.clamp(-1.0, 1.0).asin().to_degrees())
@@ -88,7 +88,7 @@ impl SceneLight {
         let (a, t) = (az_deg.to_radians(), tilt_deg.clamp(-90.0, 90.0).to_radians());
         self.set_direction(glam::Vec3::new(t.cos() * a.cos(), t.cos() * a.sin(), t.sin()));
     }
-    /// culoarea liniara (pentru calculul luminii)
+    /// the linear color (for the lighting computation)
     pub fn linear(&self) -> [f32; 3] {
         let f = |c: u8| {
             let x = c as f32 / 255.0;

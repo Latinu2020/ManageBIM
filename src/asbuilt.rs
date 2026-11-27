@@ -1,9 +1,9 @@
-//! As-built check: modelul fata de norul de puncte (scanare E57 / LAS).
+//! As-built check: the model against the point cloud (E57 / LAS scan).
 //!
-//! Norul devine o grila de ocupare (voxeli cu puncte). Fiecare element al modelului e esantionat pe
-//! suprafata; un esantion e "confirmat" daca exista puncte la cel mult ~toleranta de el. Procentul de
-//! esantioane confirmate (acoperirea) da starea: construit / partial / lipsa; elementele din afara
-//! zonei scanate raman "nescanate".
+//! The cloud becomes an occupancy grid (voxels with points). Each model element is sampled on its
+//! surface; a sample is "confirmed" if there are points at most ~tolerance away from it. The percentage of
+//! confirmed samples (the coverage) gives the status: built / partial / missing; the elements outside
+//! the scanned area stay "not scanned".
 
 use crate::model::{Aabb, ElemId, Model, PointCloud};
 use glam::Vec3;
@@ -40,7 +40,7 @@ impl Status {
 #[derive(Clone, Debug)]
 pub struct ElemResult {
     pub id: ElemId,
-    /// 0..1: esantioane confirmate de puncte
+    /// 0..1: samples confirmed by points
     pub coverage: f32,
     pub samples: u32,
     pub status: Status,
@@ -48,16 +48,16 @@ pub struct ElemResult {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Params {
-    /// distanta maxima punct - suprafata (m)
+    /// maximum point - surface distance (m)
     pub tol: f32,
-    /// acoperire minima pentru "construit" / "partial"
+    /// minimum coverage for "built" / "partial"
     pub built: f32,
     pub partial: f32,
 }
 
 impl Default for Params {
     fn default() -> Self {
-        // pe o scanare reala fetele ascunse (spate, interior) nu au puncte: pragurile sunt mici
+        // on a real scan the hidden faces (back, interior) have no points: the thresholds are low
         Params { tol: 0.05, built: 0.30, partial: 0.08 }
     }
 }
@@ -91,7 +91,7 @@ impl Occupancy {
         }
         Occupancy { cells, cell, bounds, points }
     }
-    /// exista puncte in celula punctului sau in vecinatate (raza `r` celule)?
+    /// are there points in the cell of the point or in its neighbourhood (radius `r` cells)?
     fn near(&self, p: Vec3, r: i64) -> bool {
         let c = [(p.x / self.cell).floor() as i64, (p.y / self.cell).floor() as i64, (p.z / self.cell).floor() as i64];
         for dx in -r..=r {
@@ -107,8 +107,8 @@ impl Occupancy {
     }
 }
 
-/// Esantioane pe suprafata unui element: cel mult `max` puncte, distribuite dupa aria triunghiurilor
-/// (secventa R2 - uniforma si determinista).
+/// Samples on the surface of an element: at most `max` points, distributed by triangle area
+/// (R2 sequence - uniform and deterministic).
 fn samples(m: &Model, start: u32, count: u32, spacing: f32, max: usize) -> Vec<Vec3> {
     let tris = start as usize..(start + count) as usize;
     let area: f32 = tris.clone().map(|t| tri_area(m, t)).sum();
@@ -147,10 +147,10 @@ fn tri_area(m: &Model, t: usize) -> f32 {
     }
 }
 
-/// Verifica elementele date (model, element) fata de grila de ocupare.
+/// Checks the given elements (model, element) against the occupancy grid.
 pub fn check(items: &[(usize, &Model, u32)], occ: &Occupancy, p: Params) -> Vec<ElemResult> {
     use rayon::prelude::*;
-    // vecinatatea cautata ~ toleranta (celula = toleranta / 2 -> raza 2 celule)
+    // the searched neighbourhood ~ tolerance (cell = tolerance / 2 -> radius 2 cells)
     let r = ((p.tol / occ.cell).ceil() as i64).clamp(1, 4);
     let scan = {
         let mut b = occ.bounds;
@@ -173,7 +173,7 @@ pub fn check(items: &[(usize, &Model, u32)], occ: &Occupancy, p: Params) -> Vec<
             let size = bb.size().length();
             let spacing = (size / 30.0).clamp(p.tol * 2.0, 0.5);
             let s = samples(m, e.tri_start, e.tri_count, spacing, 1500);
-            // doar esantioanele din zona scanata conteaza
+            // only the samples in the scanned area count
             let s: Vec<Vec3> = s.into_iter().filter(|q| q.cmpge(scan.min).all() && q.cmple(scan.max).all()).collect();
             if s.is_empty() {
                 return ElemResult { id, coverage: 0.0, samples: 0, status: Status::NotScanned };

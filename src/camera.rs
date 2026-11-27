@@ -1,4 +1,4 @@
-//! Camera: orbita, panoramare, zoom spre cursor, mers (walk), vederi standard.
+//! Camera: orbit, pan, zoom toward the cursor, walk, standard views.
 use crate::model::Aabb;
 use glam::{Mat4, Quat, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ pub struct Camera {
     pub eye: [f32; 3],
     pub yaw: f32,
     pub pitch: f32,
-    /// distanta pana la punctul de focus
+    /// the distance to the focus point
     pub focus: f32,
     pub fov_deg: f32,
     /// orthographic (parallel) projection instead of perspective
@@ -49,7 +49,7 @@ impl Camera {
         if self.ortho {
             let h = self.ortho_half();
             let a = aspect.max(0.01);
-            // planul apropiat negativ: nimic nu e taiat cand camera intra in model
+            // negative near plane: nothing is clipped when the camera enters the model
             return Mat4::orthographic_rh_gl(-h * a, h * a, -h, h, -far, far);
         }
         Mat4::perspective_rh_gl(self.fov(), aspect.max(0.01), near, far)
@@ -93,18 +93,18 @@ impl Camera {
         self.pitch = (self.pitch + dpitch).clamp(-1.55, 1.55);
     }
 
-    /// deplasare in pixeli, `h` inaltimea viewportului
+    /// offset in pixels, `h` the viewport height
     pub fn pan(&mut self, d: Vec2, h: f32) {
         let s = 2.0 * self.focus * (self.fov() * 0.5).tan() / h.max(1.0);
         let e = self.eye() + (-self.right() * d.x + self.up() * d.y) * s;
         self.eye = e.into();
     }
 
-    /// zoom spre directia `ray` (de sub cursor)
+    /// zoom toward the direction `ray` (under the cursor)
     pub fn zoom(&mut self, steps: f32, ray: Vec3, min_step: f32) {
         let factor = 0.85f32.powf(steps);
         if self.ortho {
-            // zoom spre cursor: micsoreaza volumul si deplaseaza lateral spre punctul de sub cursor
+            // zoom toward the cursor: shrinks the volume and shifts laterally toward the point under the cursor
             let lateral = ray - self.fwd() * ray.dot(self.fwd());
             let nf = (self.focus * factor).max(0.05);
             let shift = lateral * (self.focus - nf);
@@ -142,13 +142,13 @@ impl Camera {
         self.fit(bb);
     }
 
-    /// raza (origine, directie) prin punctul `p` in [0,1]x[0,1] (sus-stanga = 0,0)
+    /// the ray (origin, direction) through point `p` in [0,1]x[0,1] (top-left = 0,0)
     pub fn ray(&self, uv: Vec2, aspect: f32) -> (Vec3, Vec3) {
         let t = (self.fov() * 0.5).tan();
         let x = (uv.x * 2.0 - 1.0) * t * aspect;
         let y = (1.0 - uv.y * 2.0) * t;
         if self.ortho {
-            // raze paralele; originea mult in spate ca sa prinda si ce e in spatele ochiului
+            // parallel rays; the origin far behind so it also catches what is behind the eye
             let o = self.eye() + (self.right() * x + self.up() * y) * self.focus - self.fwd() * (self.focus * 20.0 + 500.0);
             return (o, self.fwd());
         }

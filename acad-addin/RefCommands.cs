@@ -13,12 +13,12 @@ using AcApp = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 namespace ManageBIM.Acad
 {
     /// <summary>
-    /// Modele din ManageBIM ca referinta in AutoCAD / Plant 3D (fisier .mbref, din ManageBIM: Output › Reference):
-    /// cate o plasa 3D (SubDMesh) pe element, cu culoarea lui, pe stratul "MBREF-nume" (blocat). Calea fisierului
-    /// e in descrierea stratului, ca referinta sa poata fi reincarcata.
-    ///   MBREFERENCE  - Load (alegi fisierul)
-    ///   MBREFRELOAD  - Reload (acelasi fisier, actualizat in ManageBIM)
-    ///   MBREFUNLOAD  - Unload (sterge plasele si stratul)
+    /// Models from ManageBIM as a reference in AutoCAD / Plant 3D (.mbref file, from ManageBIM: Output › Reference):
+    /// one 3D mesh (SubDMesh) per element, with its colour, on the layer "MBREF-nume" (locked). The file path
+    /// is in the layer description, so that the reference can be reloaded.
+    ///   MBREFERENCE  - Load (you pick the file)
+    ///   MBREFRELOAD  - Reload (the same file, updated in ManageBIM)
+    ///   MBREFUNLOAD  - Unload (deletes the meshes and the layer)
     /// </summary>
     public class RefCommands
     {
@@ -69,7 +69,7 @@ namespace ManageBIM.Acad
             doc.Editor.Regen();
         }
 
-        /// <summary>Referintele din desen (straturile MBREF-*) si alegerea uneia: (strat, cale).</summary>
+        /// <summary>The references in the drawing (the MBREF-* layers) and picking one: (layer, path).</summary>
         private static Tuple<string, string> Choose(Document doc, string verb)
         {
             var refs = new List<Tuple<string, string>>();
@@ -97,7 +97,7 @@ namespace ManageBIM.Acad
             return refs[res.Value - 1];
         }
 
-        /// <summary>Sterge plasele de pe strat (si stratul, daca `layerToo`). Intoarce cate s-au sters.</summary>
+        /// <summary>Deletes the meshes on the layer (and the layer, if `layerToo`). Returns how many were deleted.</summary>
         private static int Erase(Database db, string layer, bool layerToo)
         {
             int n = 0;
@@ -139,7 +139,7 @@ namespace ManageBIM.Acad
             string name = Path.GetFileNameWithoutExtension(path);
             foreach (char c in "<>/\\\":;?*|,=`") name = name.Replace(c, '_');
             string layer = Prefix + name;
-            // metri -> unitatile desenului
+            // metres -> drawing units
             double s;
             switch (db.Insunits)
             {
@@ -151,7 +151,7 @@ namespace ManageBIM.Acad
                 case UnitsValue.Meters: s = 1; break;
                 default: s = 1000; break;
             }
-            // reincarcare: plasele vechi ale aceleiasi referinte se sterg, stratul ramane
+            // reload: the old meshes of the same reference are deleted, the layer stays
             int old = Erase(db, layer, false);
             int made = 0;
             using (var tr = db.TransactionManager.StartTransaction())
@@ -171,7 +171,7 @@ namespace ManageBIM.Acad
                 foreach (var e in items)
                 {
                     if (e.Tris.Length < 9) continue;
-                    // varfuri sudate (plasa mai mica), fete triunghiulare
+                    // welded vertices (smaller mesh), triangular faces
                     var map = new Dictionary<(long, long, long), int>();
                     var verts = new Point3dCollection();
                     var faces = new Int32Collection();

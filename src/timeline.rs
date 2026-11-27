@@ -1,4 +1,4 @@
-//! TimeLiner 4D: sarcini, date calendaristice, starea elementelor la o zi data.
+//! TimeLiner 4D: tasks, calendar dates, the state of the elements on a given day.
 use crate::model::ElemId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -47,7 +47,7 @@ pub enum SimState {
     Highlight([u8; 4]),
 }
 
-/// zile de la 1970-01-01 (algoritmul "days from civil")
+/// days since 1970-01-01 (the "days from civil" algorithm)
 pub fn days_from_civil(y: i32, m: u32, d: u32) -> i32 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = if y >= 0 { y } else { y - 399 } / 400;
@@ -108,7 +108,7 @@ pub const COL_CONSTRUCT: [u8; 4] = [60, 200, 90, 200];
 pub const COL_DEMOLISH: [u8; 4] = [230, 60, 50, 200];
 pub const COL_TEMP: [u8; 4] = [240, 200, 40, 200];
 
-/// Starea fiecarui element atasat unei sarcini, la ziua `day`.
+/// The state of each element attached to a task, on day `day`.
 pub fn state_at(tasks: &[Task], day: i32) -> HashMap<ElemId, SimState> {
     let mut order: Vec<&Task> = tasks.iter().collect();
     order.sort_by_key(|t| t.start);
@@ -150,7 +150,7 @@ pub fn state_at(tasks: &[Task], day: i32) -> HashMap<ElemId, SimState> {
     map
 }
 
-/// CSV: nume;start;sfarsit;tip;regula   (separator ; sau ,)
+/// CSV: name;start;end;type;rule   (separator ; or ,)
 pub fn parse_csv(text: &str) -> (Vec<Task>, Vec<String>) {
     let mut tasks = Vec::new();
     let mut errs = Vec::new();
@@ -193,12 +193,12 @@ fn child_text<'a>(n: &'a crate::e57::Node, name: &str) -> Option<&'a str> {
     n.kids.iter().find(|k| local_name(&k.name) == name).map(|k| k.text.trim()).filter(|t| !t.is_empty())
 }
 
-/// Data dintr-un camp XML ("2026-01-05T08:00:00" sau "2026-01-05").
+/// The date from an XML field ("2026-01-05T08:00:00" or "2026-01-05").
 fn xml_date(s: &str) -> Option<i32> {
     parse_date(s.get(..10).unwrap_or(s))
 }
 
-/// Regula de legare la elemente scrisa la sfarsitul numelui, intre paranteze drepte:
+/// The rule for linking to elements, written at the end of the name, in square brackets:
 /// "Turnare placa L1 [Level=Level 1;Type=IfcSlab]" -> ("Turnare placa L1", "Level=Level 1;Type=IfcSlab").
 pub fn split_rule(name: &str) -> (String, String) {
     let t = name.trim();
@@ -210,10 +210,10 @@ pub fn split_rule(name: &str) -> (String, String) {
     (t.to_string(), String::new())
 }
 
-/// Planificare din MS Project (XML, „Save As > XML”) sau Primavera P6 (XML export).
-/// Activitatile sumar (MS Project) se sar. Regula de legare: [regula] la sfarsitul numelui,
-/// sau campul Text1 (MS Project) / Notes; tipul (Construct / Demolish / Temporary): campul Text2 sau numele.
-/// Intoarce sarcinile, avertismentele si formatul recunoscut.
+/// Schedule from MS Project (XML, „Save As > XML”) or Primavera P6 (XML export).
+/// The summary activities (MS Project) are skipped. Linking rule: [rule] at the end of the name,
+/// or the Text1 field (MS Project) / Notes; the type (Construct / Demolish / Temporary): the Text2 field or the name.
+/// Returns the tasks, the warnings and the recognized format.
 pub fn parse_schedule_xml(text: &str) -> Result<(Vec<Task>, Vec<String>, &'static str), String> {
     let root = crate::e57::parse_xml(text.trim_start_matches('\u{feff}')).map_err(|_| "This is not a valid XML file.".to_string())?;
     let root = if root.name.is_empty() { root.kids.into_iter().find(|k| !k.name.starts_with('?')).ok_or("Empty XML file.")? } else { root };
@@ -250,7 +250,7 @@ pub fn parse_schedule_xml(text: &str) -> Result<(Vec<Task>, Vec<String>, &'stati
             Ok((tasks, warn, "MS Project"))
         }
         "APIBusinessObjects" => {
-            // Primavera P6: APIBusinessObjects / Project / Activity (sau Activity direct)
+            // Primavera P6: APIBusinessObjects / Project / Activity (or Activity directly)
             let mut acts: Vec<&crate::e57::Node> = Vec::new();
             fn walk<'a>(n: &'a crate::e57::Node, out: &mut Vec<&'a crate::e57::Node>) {
                 for k in &n.kids {

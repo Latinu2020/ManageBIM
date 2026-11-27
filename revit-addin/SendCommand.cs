@@ -8,8 +8,8 @@ using Autodesk.Revit.UI;
 namespace ManageBIM.Revit
 {
     /// <summary>
-    /// "Send to ManageBIM": exporta vederea 3D activa (sau {3D}) direct in ManageBIM, fara dialog.
-    /// A doua trimitere actualizeaza live modelul deja deschis in ManageBIM (selectia si vederea raman).
+    /// "Send to ManageBIM": exports the active 3D view (or {3D}) directly to ManageBIM, without a dialog.
+    /// A second send updates live the model already open in ManageBIM (the selection and view stay).
     /// </summary>
     [Transaction(TransactionMode.ReadOnly)]
     [Regeneration(RegenerationOption.Manual)]

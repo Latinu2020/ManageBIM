@@ -1,6 +1,6 @@
-//! Unealta pentru documentatie: o secventa de capturi PNG -> GIF animat (README).
-//! `make_gif <folder cu frame_*.png> <iesire.gif> [latime=880] [fps=10]`
-//! Cadrele se micsoreaza (medie pe blocuri), se cuantizeaza (NeuQuant) si se repeta la infinit.
+//! Documentation tool: a sequence of PNG captures -> animated GIF (README).
+//! `make_gif <folder with frame_*.png> <output.gif> [width=880] [fps=10]`
+//! The frames are downscaled (block average), quantized (NeuQuant) and loop forever.
 use std::fs::File;
 
 fn main() {
@@ -11,7 +11,7 @@ fn main() {
     }
     let width: u32 = a.get(3).and_then(|v| v.parse().ok()).unwrap_or(880);
     let fps: u32 = a.get(4).and_then(|v| v.parse().ok()).unwrap_or(10);
-    // al 5-lea argument: se pastreaza un cadru din N (GIF mai mic)
+    // the 5th argument: one frame out of N is kept (smaller GIF)
     let step: usize = a.get(5).and_then(|v| v.parse().ok()).unwrap_or(1).max(1);
     let mut files: Vec<_> = std::fs::read_dir(&a[1]).expect("frames dir").filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "png")).collect();
     files.sort();
@@ -31,7 +31,7 @@ fn main() {
         let s = (w as f32 / width as f32).max(1.0);
         let (ow, oh) = ((w as f32 / s) as u32, (h as f32 / s) as u32);
         let mut rgba = vec![0u8; (ow * oh * 4) as usize];
-        // micsorare: media pixelilor din fiecare bloc
+        // downscaling: the average of the pixels in each block
         for y in 0..oh {
             for x in 0..ow {
                 let (x0, x1) = ((x as f32 * s) as u32, (((x + 1) as f32 * s) as u32).min(w).max((x as f32 * s) as u32 + 1));
@@ -54,7 +54,7 @@ fn main() {
                 rgba[o + 3] = 255;
             }
         }
-        // cadre identice: se prelungeste durata celui anterior (GIF mai mic)
+        // identical frames: the duration of the previous one is extended (smaller GIF)
         if prev.as_ref() == Some(&rgba) {
             hold += delay;
             if let Some(p) = pending.as_mut() {
@@ -78,7 +78,7 @@ fn main() {
         prev = Some(rgba);
     }
     if let (Some(mut p), Some(e)) = (pending.take(), enc.as_mut()) {
-        // ultimul cadru ramane putin mai mult inainte de reluare
+        // the last frame stays a bit longer before looping
         p.delay = p.delay.max(150);
         e.write_frame(&p).expect("write");
     }

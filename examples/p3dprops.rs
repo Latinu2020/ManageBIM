@@ -1,4 +1,4 @@
-// Proprietatile Plant 3D pe tipuri si acoperirea: p3dprops <dwg>... [--dump]
+// The Plant 3D properties by type and their coverage: p3dprops <dwg>... [--dump]
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
     let dump = a.iter().any(|x| x == "--dump");

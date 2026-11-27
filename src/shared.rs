@@ -1,9 +1,9 @@
-//! Issue-uri partajate printr-un folder comun (retea, SharePoint / OneDrive sincronizat): fiecare viewpoint /
-//! issue = un fisier `<guid>.json`. Fiecare ManageBIM trimite ce s-a schimbat la el si preia ce e mai nou in folder.
-//! Camera / sectiunea / cotele se scriu cu originea scenei celui care salveaza si se convertesc la citire; elementele
-//! (ascunse / selectate) se scriu ca GUID-uri. Stergerile lasa un fisier "deleted" (ca sa dispara si la ceilalti).
-//! Conflict (acelasi issue schimbat si aici si in folder de la ultima sincronizare): varianta din folder se preia,
-//! iar cea locala se pastreaza ca viewpoint nou "(my copy)".
+//! Issues shared through a common folder (network, synced SharePoint / OneDrive): each viewpoint /
+//! issue = one `<guid>.json` file. Each ManageBIM sends what changed on its side and takes what is newer in the folder.
+//! The camera / section / dimensions are written with the scene origin of the one who saves and converted on reading; elements
+//! (hidden / selected) are written as GUIDs. Deletions leave a "deleted" file (so they disappear for the others too).
+//! Conflict (the same issue changed both here and in the folder since the last sync): the folder variant is taken,
+//! and the local one is kept as a new viewpoint "(my copy)".
 use crate::app::{App, Viewpoint};
 use crate::model::ElemId;
 use glam::{DVec3, Vec3};
@@ -15,12 +15,12 @@ pub struct SharedIssue {
     pub app: String,
     pub version: u32,
     pub guid: String,
-    /// milisecunde de la 1970 (ultima modificare)
+    /// milliseconds since 1970 (last modification)
     pub modified: u64,
     pub by: String,
     #[serde(default)]
     pub deleted: bool,
-    /// originea scenei celui care a scris (coordonatele locale din viewpoint sunt fata de ea)
+    /// the scene origin of the writer (the local coordinates in the viewpoint are relative to it)
     pub origin: [f64; 3],
     pub vp: Option<Viewpoint>,
     #[serde(default)]
@@ -29,19 +29,19 @@ pub struct SharedIssue {
     pub selected: Vec<String>,
 }
 
-/// Starea sincronizarii (doar in sesiunea curenta).
+/// The sync state (only in the current session).
 #[derive(Default)]
 pub struct SharedState {
-    /// guid -> (modified din folder, hash-ul viewpoint-ului local la ultima sincronizare)
+    /// guid -> (modified in the folder, the hash of the local viewpoint at the last sync)
     pub known: HashMap<String, (u64, u64)>,
-    /// fisier -> data modificarii (nu recitim fisierele neschimbate)
+    /// file -> modification date (we do not re-read unchanged files)
     pub mtimes: HashMap<String, std::time::SystemTime>,
     pub last: Option<std::time::Instant>,
     pub status: String,
 }
 
-/// Un GUID valid ajunge in numele fisierului: acceptam doar hexazecimal si '-'
-/// (un fisier JSON stricat din folderul comun nu poate scrie in afara lui).
+/// A valid GUID ends up in the file name: we accept only hexadecimal and '-'
+/// (a corrupt JSON file in the common folder cannot write outside it).
 fn safe_guid(g: &str) -> String {
     g.chars().filter(|c| c.is_ascii_hexdigit() || *c == '-').collect()
 }
@@ -61,7 +61,7 @@ fn hash_vp(v: &Viewpoint) -> u64 {
     h.finish() | 1
 }
 
-/// GUID nou (fara biblioteci): timp + contor + adresa, in format 8-4-4-4-12.
+/// New GUID (no libraries): time + counter + address, in 8-4-4-4-12 format.
 pub fn new_guid() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static C: AtomicU64 = AtomicU64::new(0);
@@ -78,7 +78,7 @@ pub fn new_guid() -> String {
     format!("{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}", (a >> 32) as u32, (a >> 16) as u16, (a & 0xfff) as u16, (b >> 48) as u16 & 0x3fff | 0x8000, b & 0xffff_ffff_ffff)
 }
 
-/// Muta coordonatele locale ale unui viewpoint cu `d` (alta origine a scenei).
+/// Shifts the local coordinates of a viewpoint by `d` (a different scene origin).
 pub fn shift_vp(v: &mut Viewpoint, d: Vec3) {
     if d.length_squared() == 0.0 {
         return;
@@ -104,7 +104,7 @@ pub fn shift_vp(v: &mut Viewpoint, d: Vec3) {
 }
 
 impl App {
-    /// Sincronizare cu folderul comun (cel mult o data la 4 secunde, sau imediat cu `force`).
+    /// Sync with the common folder (at most once every 4 seconds, or immediately with `force`).
     pub fn shared_sync(&mut self, force: bool) {
         let Some(dir) = self.shared_dir.clone() else { return };
         if self.loaded_models().next().is_none() || !self.loads.is_empty() {
@@ -120,13 +120,13 @@ impl App {
             return;
         }
         let o = self.origin_f64();
-        // guid pentru fiecare issue
+        // guid for each issue
         for v in &mut self.viewpoints {
             if v.issue.guid.is_empty() {
                 v.issue.guid = new_guid();
             }
         }
-        // ---- 1) preluare: fisierele noi / schimbate din folder
+        // ---- 1) fetch: the new / changed files in the folder
         let mut by_guid: HashMap<String, ElemId> = HashMap::new();
         let mut guid_of: HashMap<ElemId, String> = HashMap::new();
         for (mi, m) in self.loaded_models() {
@@ -156,7 +156,7 @@ impl App {
                 let Ok(txt) = std::fs::read_to_string(&p) else { continue };
                 let Ok(si) = serde_json::from_str::<SharedIssue>(&txt) else { continue };
                 if si.guid.is_empty() || safe_guid(&si.guid) != si.guid {
-                    continue; // GUID invalid: ignoram fisierul (nu il folosim ca nume de fisier)
+                    continue; // invalid GUID: we ignore the file (we do not use it as a file name)
                 }
                 if let Some(mt) = mt {
                     self.shared.mtimes.insert(key, mt);
@@ -182,7 +182,7 @@ impl App {
                 vp.issue.guid = si.guid.clone();
                 match local {
                     Some(i) => {
-                        // schimbat si aici de la ultima sincronizare -> pastram si varianta locala
+                        // changed here too since the last sync -> we also keep the local variant
                         let changed_here = known.is_some_and(|k| k.1 != hash_vp(&self.viewpoints[i]));
                         if changed_here {
                             let mut mine = self.viewpoints[i].clone();
@@ -202,11 +202,11 @@ impl App {
                 pulled += 1;
             }
         }
-        // ---- 2) trimitere: ce s-a schimbat aici (sau e nou), plus stergerile
+        // ---- 2) send: what changed here (or is new), plus the deletions
         let mut pushed = 0;
         let by = user();
-        // Fisier temporar unic per proces: doi colegi care salveaza acelasi issue in acelasi
-        // moment nu scriu unul peste altul (rename-ul ramane atomic).
+        // A unique temporary file per process: two colleagues saving the same issue at the same
+        // moment do not overwrite each other (the rename stays atomic).
         let pid = std::process::id();
         let tmp_seq = std::sync::atomic::AtomicU64::new(0);
         let write = |si: &SharedIssue| -> Option<std::time::SystemTime> {
@@ -262,7 +262,7 @@ impl App {
     }
 }
 
-/// Ora locala "HH:MM".
+/// Local time "HH:MM".
 fn clock() -> String {
     let s = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0) + crate::ui::local_offset_secs();
     format!("{:02}:{:02}", s.rem_euclid(86_400) / 3600, s.rem_euclid(3600) / 60)

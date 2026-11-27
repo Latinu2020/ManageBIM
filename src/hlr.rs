@@ -1,29 +1,29 @@
-//! Linii vizibile / ascunse (Hidden Line Removal) pentru desenul 2D din cubul de sectiune,
-//! ca vederile de desen din Inventor: muchiile reale ale formei (nu diagonalele plasei de
-//! triunghiuri), cele vazute cu linie plina, cele acoperite cu linie intrerupta.
+//! Visible / hidden lines (Hidden Line Removal) for the 2D drawing from the section box,
+//! like the drawing views in Inventor: the real edges of the shape (not the diagonals of the triangle
+//! mesh), the visible ones with a solid line, the covered ones with a dashed line.
 //!
-//! Metoda: (1) muchii caracteristice per element - margini libere, muchii unde fetele vecine fac
-//! un unghi > `CREASE_DEG` si siluete (o fata spre privitor, cealalta nu); (2) buffer de adancime
-//! ortografic pe fata cubului, rasterizat din triunghiurile de dupa planul de taiere; (3) fiecare
-//! muchie e esantionata pe buffer si impartita in bucati vizibile / ascunse.
+//! Method: (1) characteristic edges per element - free edges, edges where the neighbouring faces form
+//! an angle > `CREASE_DEG` and silhouettes (one face towards the viewer, the other not); (2) orthographic
+//! depth buffer on the box face, rasterised from the triangles beyond the cut plane; (3) each
+//! edge is sampled on the buffer and split into visible / hidden pieces.
 use glam::Vec3;
 use std::collections::HashMap;
 
-/// unghiul minim intre fetele vecine pentru o muchie desenata (sub el, suprafata e "neteda")
+/// the minimum angle between neighbouring faces for a drawn edge (below it, the surface is "smooth")
 pub const CREASE_DEG: f32 = 28.0;
 
 #[derive(Clone, Copy, Debug)]
 pub struct HlrView {
-    /// axa de privire (0 = X, 1 = Y, 2 = Z)
+    /// view axis (0 = X, 1 = Y, 2 = Z)
     pub axis: usize,
-    /// pozitia planului de taiere pe axa
+    /// the position of the cut plane on the axis
     pub plane: f32,
-    /// +1: ce e "in spatele" planului are coordonata mai mare; -1: mai mica
+    /// +1: what is "behind" the plane has a larger coordinate; -1: smaller
     pub sign: f32,
-    /// zona desenata (cubul de sectiune sau scena)
+    /// the drawn area (the section box or the scene)
     pub bmin: Vec3,
     pub bmax: Vec3,
-    /// rezolutia bufferului de adancime pe latura lunga (pixeli)
+    /// the depth buffer resolution on the long side (pixels)
     pub res: usize,
 }
 
@@ -38,7 +38,7 @@ impl HlrView {
     fn uv_range(&self) -> ((f32, f32), (f32, f32)) {
         (self.uv(self.bmin), self.uv(self.bmax))
     }
-    /// adancimea de la planul de taiere, in directia privirii (>= 0 = dupa plan)
+    /// the depth from the cut plane, in the view direction (>= 0 = beyond the plane)
     fn depth(&self, p: Vec3) -> f32 {
         self.sign * (p[self.axis] - self.plane)
     }
@@ -80,13 +80,13 @@ impl ZBuf {
                 ((u - self.u0) / self.cell, (v - self.v0) / self.cell, view.depth(*q))
             })
             .collect();
-        // complet in fata planului sau dupa zona: nu acopera nimic
+        // fully in front of the plane or beyond the area: covers nothing
         if p.iter().all(|q| q.2 < 0.0) || p.iter().all(|q| q.2 > far) {
             return;
         }
         let area = (p[1].0 - p[0].0) * (p[2].1 - p[0].1) - (p[2].0 - p[0].0) * (p[1].1 - p[0].1);
         if area.abs() < 1e-6 {
-            return; // vazut din profil
+            return; // seen edge-on
         }
         let x0 = p.iter().map(|q| q.0).fold(f32::MAX, f32::min).floor().max(0.0) as usize;
         let x1 = (p.iter().map(|q| q.0).fold(f32::MIN, f32::max).ceil() as isize).min(self.w as isize - 1);
@@ -107,7 +107,7 @@ impl ZBuf {
                     continue;
                 }
                 let d = w0 * p[0].2 + w1 * p[1].2 + w2 * p[2].2;
-                // partea de dinaintea planului e taiata (sectiune); ce e dupa zona nu conteaza
+                // the part in front of the plane is cut away (section); what is beyond the area does not matter
                 if !(0.0..=far).contains(&d) {
                     continue;
                 }
@@ -118,7 +118,7 @@ impl ZBuf {
             }
         }
     }
-    /// adancimea minima in jurul punctului (3x3), ca muchiile de pe marginea fetelor sa nu clipeasca
+    /// the minimum depth around the point (3x3), so that the edges on the face borders do not flicker
     fn at(&self, u: f32, v: f32) -> f32 {
         let x = ((u - self.u0) / self.cell) as isize;
         let y = ((v - self.v0) / self.cell) as isize;
@@ -131,15 +131,15 @@ impl ZBuf {
                 }
             }
         }
-        // maximul vecinilor: o muchie e ascunsa doar daca TOT vecinatatea e mai aproape de privitor
+        // the maximum of the neighbours: an edge is hidden only if the WHOLE neighbourhood is closer to the viewer
         best
     }
 }
 
-/// Muchiile caracteristice ale unei plase (triunghiuri ale unui singur element).
+/// The characteristic edges of a mesh (triangles of a single element).
 pub fn feature_edges(tris: &[[Vec3; 3]], view_dir: Vec3) -> Vec<(Vec3, Vec3)> {
     let key = |p: Vec3| [(p.x * 2000.0).round() as i32, (p.y * 2000.0).round() as i32, (p.z * 2000.0).round() as i32];
-    // muchie -> (capete, normala primei fete, normala celei de-a doua, numar de fete)
+    // edge -> (ends, normal of the first face, normal of the second, number of faces)
     let mut map: HashMap<([i32; 3], [i32; 3]), (Vec3, Vec3, Vec3, Option<Vec3>, u32)> = HashMap::new();
     for t in tris {
         let n = (t[1] - t[0]).cross(t[2] - t[0]);
@@ -167,9 +167,9 @@ pub fn feature_edges(tris: &[[Vec3; 3]], view_dir: Vec3) -> Vec<(Vec3, Vec3)> {
     let mut out = Vec::new();
     for (_, (a, b, n1, n2, count)) in map {
         let keep = match (count, n2) {
-            (1, _) => true, // margine libera
+            (1, _) => true, // free edge
             (_, Some(n2)) => {
-                // muchie (unghi intre fete) sau silueta (o fata spre privitor, cealalta nu)
+                // edge (angle between faces) or silhouette (one face towards the viewer, the other not)
                 n1.dot(n2) < cos_crease || (n1.dot(view_dir) * n2.dot(view_dir)) < -1e-6
             }
             _ => false,
@@ -181,7 +181,7 @@ pub fn feature_edges(tris: &[[Vec3; 3]], view_dir: Vec3) -> Vec<(Vec3, Vec3)> {
     out
 }
 
-/// taie segmentul la cutia [bmin, bmax] si la semispatiul de dupa plan (slab method)
+/// clips the segment to the box [bmin, bmax] and to the half-space beyond the plane (slab method)
 fn clip(view: &HlrView, p: Vec3, q: Vec3) -> Option<(Vec3, Vec3)> {
     let d = q - p;
     let (mut t0, mut t1) = (0.0f32, 1.0f32);
@@ -200,7 +200,7 @@ fn clip(view: &HlrView, p: Vec3, q: Vec3) -> Option<(Vec3, Vec3)> {
             t1 = t1.min(hi);
         }
     }
-    // dupa planul de taiere: depth(p + d t) >= 0
+    // beyond the cut plane: depth(p + d t) >= 0
     let (dp, dd) = (view.depth(p), view.sign * d[view.axis]);
     if dd.abs() < 1e-9 {
         if dp < -1e-4 {
@@ -217,13 +217,13 @@ fn clip(view: &HlrView, p: Vec3, q: Vec3) -> Option<(Vec3, Vec3)> {
     (t0 < t1).then(|| (p + d * t0, p + d * t1))
 }
 
-/// Rezultatul: segmente 3D vizibile si ascunse (coordonatele scenei).
+/// The result: visible and hidden 3D segments (scene coordinates).
 pub struct HlrResult {
     pub visible: Vec<(Vec3, Vec3)>,
     pub hidden: Vec<(Vec3, Vec3)>,
 }
 
-/// `elements`: triunghiurile fiecarui element (o lista per element, ca muchiile sa nu se amestece).
+/// `elements`: the triangles of each element (one list per element, so the edges do not mix).
 pub fn compute(view: &HlrView, elements: &[Vec<[Vec3; 3]>], want_hidden: bool, max_segs: usize) -> HlrResult {
     let mut zb = ZBuf::new(view);
     for tris in elements {
@@ -241,9 +241,9 @@ pub fn compute(view: &HlrView, elements: &[Vec<[Vec3; 3]>], want_hidden: bool, m
             let (qu, qv) = view.uv(q);
             let len_px = ((qu - pu).hypot(qv - pv)) / zb.cell;
             if len_px < 0.5 {
-                continue; // muchie paralela cu privirea: se proiecteaza intr-un punct
+                continue; // edge parallel to the view direction: it projects to a point
             }
-            // panta in adancime: muchiile inclinate au nevoie de toleranta mai mare
+            // slope in depth: slanted edges need a larger tolerance
             let slope = (view.depth(q) - view.depth(p)).abs() / len_px.max(1.0);
             let eps = eps_base + slope * 1.5;
             let steps = (len_px.ceil() as usize).clamp(2, 4000);
@@ -294,7 +294,7 @@ pub fn compute(view: &HlrView, elements: &[Vec<[Vec3; 3]>], want_hidden: bool, m
 mod tests {
     use super::*;
 
-    /// cub unitate [0,1]^3 ca 12 triunghiuri
+    /// unit cube [0,1]^3 as 12 triangles
     fn cube(o: Vec3) -> Vec<[Vec3; 3]> {
         let c = |x: f32, y: f32, z: f32| o + Vec3::new(x, y, z);
         let q = |a: Vec3, b: Vec3, cc: Vec3, d: Vec3| [[a, b, cc], [a, cc, d]];
@@ -316,14 +316,14 @@ mod tests {
 
     #[test]
     fn top_view_hides_the_lower_cube() {
-        // cub mic sub un cub mare, privit de sus: cubul mic e complet ascuns
+        // small cube under a big cube, seen from above: the small cube is fully hidden
         let big = cube(Vec3::new(0.0, 0.0, 2.0)).iter().map(|t| t.map(|p| Vec3::new(p.x * 4.0 - 1.5, p.y * 4.0 - 1.5, p.z))).collect::<Vec<_>>();
         let small = cube(Vec3::ZERO);
         let view = HlrView { axis: 2, plane: 5.0, sign: -1.0, bmin: Vec3::splat(-3.0), bmax: Vec3::splat(5.0), res: 400 };
         let r = compute(&view, &[big, small], true, 100_000);
         let vis_len: f32 = r.visible.iter().map(|(a, b)| (*a - *b).length()).sum();
         let hid_len: f32 = r.hidden.iter().map(|(a, b)| (*a - *b).length()).sum();
-        // conturul cubului mare (4 x 4 m) e vizibil, cubul mic (4 x 1 m de contur) e ascuns
+        // the outline of the big cube (4 x 4 m) is visible, the small cube (4 x 1 m of outline) is hidden
         assert!(vis_len > 14.0 && vis_len < 40.0, "visible {vis_len}");
         assert!(hid_len > 3.0, "hidden {hid_len}");
     }
@@ -332,7 +332,7 @@ mod tests {
     fn cut_plane_removes_geometry_in_front() {
         let view = HlrView { axis: 2, plane: 0.5, sign: -1.0, bmin: Vec3::splat(-1.0), bmax: Vec3::splat(2.0), res: 200 };
         let r = compute(&view, &[cube(Vec3::ZERO)], true, 10_000);
-        // nicio muchie nu e deasupra planului de taiere
+        // no edge is above the cut plane
         assert!(r.visible.iter().chain(r.hidden.iter()).all(|(a, b)| a.z <= 0.5 + 1e-3 && b.z <= 0.5 + 1e-3));
         assert!(!r.visible.is_empty());
     }

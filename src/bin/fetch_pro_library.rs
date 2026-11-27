@@ -1,9 +1,9 @@
-//! Descarca biblioteca profesionala de materiale (ambientCG, CC0) intr-un folder care se include
-//! in installer ca biblioteca implicita a aplicatiei (`<app>\materials\`).
+//! Downloads the professional material library (ambientCG, CC0) into a folder that is included
+//! in the installer as the application's default library (`<app>\materials\`).
 //!
-//! Ruleaza: cargo run --release --bin fetch_pro_library [-- <folder> <1K|2K>]
-//! Implicit: third_party\pbr-library, 1K. Scrie `library.bimmat` cu cai RELATIVE la folder,
-//! ca biblioteca sa functioneze oriunde e instalata aplicatia.
+//! Run: cargo run --release --bin fetch_pro_library [-- <folder> <1K|2K>]
+//! Default: third_party\pbr-library, 1K. Writes `library.bimmat` with paths RELATIVE to the folder,
+//! so that the library works wherever the application is installed.
 use bimrust::pro_materials::{install_one, PRO_LIBRARY};
 
 fn main() {
@@ -18,7 +18,7 @@ fn main() {
         print!("[{}/{}] {name} ({asset}) ... ", i + 1, PRO_LIBRARY.len());
         match install_one(name, asset, *scale, &res, &root) {
             Ok(mut m) => {
-                // cai relative la folderul bibliotecii (separator '/')
+                // paths relative to the library folder (separator '/')
                 let rel = |p: &mut String| {
                     if p.is_empty() {
                         return;
@@ -42,7 +42,7 @@ fn main() {
         }
     }
     let _ = std::fs::remove_dir_all(root.join("_downloads"));
-    // fara hartile DirectX si previzualizari: nu sunt folosite (installer mai mic)
+    // without the DirectX maps and previews: they are not used (smaller installer)
     if let Ok(dirs) = std::fs::read_dir(root.join("Pro Library")) {
         for d in dirs.flatten() {
             if let Ok(files) = std::fs::read_dir(d.path()) {

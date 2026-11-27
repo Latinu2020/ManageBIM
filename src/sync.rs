@@ -1,10 +1,10 @@
-//! Selectie sincronizata ManageBIM <-> Revit / Navisworks, prin fisiere mici in
-//! %LOCALAPPDATA%\ManageBIM\Sync (fara retea, fara drepturi de admin):
-//! - `managebim.sel` - scris de ManageBIM cand se schimba selectia
-//! - `revit.sel`, `navis.sel` - scrise de add-in-uri
+//! Synchronised selection ManageBIM <-> Revit / Navisworks, through small files in
+//! %LOCALAPPDATA%\ManageBIM\Sync (no network, no admin rights):
+//! - `managebim.sel` - written by ManageBIM when the selection changes
+//! - `revit.sel`, `navis.sel` - written by the add-ins
 //!
-//! Format: prima linie `MBSEL1`, apoi cate o linie pe element cu identificatorii lui separati prin `|`
-//! (UniqueId Revit, IfcGUID / GlobalId comprimat, GUID standard). Cititorul potriveste oricare dintre ei.
+//! Format: first line `MBSEL1`, then one line per element with its identifiers separated by `|`
+//! (Revit UniqueId, IfcGUID / compressed GlobalId, standard GUID). The reader matches any of them.
 
 use crate::model::Element;
 use std::path::PathBuf;
@@ -18,7 +18,7 @@ pub fn sync_dir() -> Option<PathBuf> {
 
 const B64: &[u8; 64] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$";
 
-/// GlobalId IFC (22 caractere) -> GUID standard "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" (litere mici)
+/// IFC GlobalId (22 characters) -> standard GUID "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" (lowercase)
 pub fn ifc_to_guid(s: &str) -> Option<String> {
     let s = s.trim().as_bytes();
     if s.len() != 22 {
@@ -36,7 +36,7 @@ pub fn ifc_to_guid(s: &str) -> Option<String> {
     Some(format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32]))
 }
 
-/// GUID standard -> GlobalId IFC comprimat (22 caractere)
+/// standard GUID -> compressed IFC GlobalId (22 characters)
 pub fn guid_to_ifc(g: &str) -> Option<String> {
     let hex: String = g.trim().trim_matches(['{', '}']).chars().filter(|c| *c != '-').collect();
     if hex.len() != 32 {
@@ -51,7 +51,7 @@ pub fn guid_to_ifc(g: &str) -> Option<String> {
     Some(String::from_utf8_lossy(&out).to_string())
 }
 
-/// Toti identificatorii unui element, in forma folosita la potrivire (GUID-urile standard cu litere mici).
+/// All the identifiers of an element, in the form used for matching (the standard GUIDs in lowercase).
 pub fn ids_of(e: &Element) -> Vec<String> {
     let mut v: Vec<String> = Vec::new();
     let mut push = |s: &str| {
@@ -63,7 +63,7 @@ pub fn ids_of(e: &Element) -> Vec<String> {
         if !v.contains(&norm) {
             v.push(norm.clone());
         }
-        // GlobalId IFC <-> GUID standard (Navisworks si Revit ExportUtils folosesc forma standard)
+        // IFC GlobalId <-> standard GUID (Navisworks and Revit ExportUtils use the standard form)
         if let Some(g) = ifc_to_guid(&norm) {
             if !v.contains(&g) {
                 v.push(g);
@@ -75,7 +75,7 @@ pub fn ids_of(e: &Element) -> Vec<String> {
         }
     };
     push(&e.guid);
-    // GUID-ul de dupa ':' (modele cu prefix "model|guid" sau Revit "UniqueId:...")
+    // the GUID after ':' (models with a "model|guid" prefix or Revit "UniqueId:...")
     if let Some(tail) = e.guid.rsplit(':').next() {
         if tail != e.guid {
             push(tail);
@@ -89,7 +89,7 @@ pub fn ids_of(e: &Element) -> Vec<String> {
     v
 }
 
-/// Scrie selectia (atomic: .tmp + redenumire), cate o linie pe element.
+/// Writes the selection (atomically: .tmp + rename), one line per element.
 pub fn write_selection(name: &str, elems: &[Vec<String>]) -> Result<(), String> {
     let dir = sync_dir().ok_or("LOCALAPPDATA not set")?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -103,7 +103,7 @@ pub fn write_selection(name: &str, elems: &[Vec<String>]) -> Result<(), String> 
     std::fs::rename(&tmp, dir.join(name)).map_err(|e| e.to_string())
 }
 
-/// Identificatorii din fisierul unui add-in (toti, de pe toate liniile).
+/// The identifiers in an add-in's file (all of them, from all lines).
 pub fn parse_selection(text: &str) -> Option<Vec<String>> {
     let mut lines = text.lines();
     if lines.next()?.trim() != "MBSEL1" {
@@ -142,15 +142,15 @@ mod tests {
     }
 }
 
-/// Starea legaturii in aplicatie.
+/// The link state in the application.
 pub struct SyncState {
     pub enabled_at: std::time::SystemTime,
     pub last_poll: std::time::Instant,
-    /// hash-ul ultimei selectii trimise / primite
+    /// the hash of the last selection sent / received
     pub sent: u64,
-    /// data fisierelor Revit / Navisworks citite ultima data
+    /// the date of the Revit / Navisworks files read last time
     pub seen: [Option<std::time::SystemTime>; 2],
-    /// cand a scris ultima data fiecare add-in (pentru starea din bara)
+    /// when each add-in last wrote (for the status in the bar)
     pub peer_seen: [Option<std::time::Instant>; 2],
     pub index: std::collections::HashMap<String, crate::model::ElemId>,
     pub index_key: usize,

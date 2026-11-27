@@ -35,8 +35,8 @@ namespace ManageBIM.Revit
                 return Result.Failed;
             }
 
-            // CustomExporter.Export primeste VEDERI, nu elemente: exportam vederea 3D (cea activa, altfel {3D})
-            // si contextul pastreaza doar elementele selectate
+            // CustomExporter.Export takes VIEWS, not elements: we export the 3D view (the active one, otherwise {3D})
+            // and the context keeps only the selected elements
             View3D view = uidoc.ActiveView as View3D;
             if (view == null || view.IsTemplate)
             {

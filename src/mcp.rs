@@ -1,15 +1,15 @@
-//! Server MCP (Model Context Protocol) local: asistentii AI (Claude Code / Claude Desktop, OpenCode,
-//! modele locale Ollama printr-un client MCP) pot citi si comanda modelul deschis in ManageBIM.
+//! Local MCP (Model Context Protocol) server: AI assistants (Claude Code / Claude Desktop, OpenCode,
+//! local Ollama models through an MCP client) can read and command the model open in ManageBIM.
 //!
-//! - Transport "Streamable HTTP" (doar raspunsuri JSON, fara SSE) pe `127.0.0.1:<port>/mcp`,
-//!   protejat de un token (`Authorization: Bearer <token>`). Oprit implicit; pornit din fereastra
-//!   "AI connection". Conexiunile din alte calculatoare nu sunt acceptate (doar loopback).
-//! - `ManageBIM.exe --mcp-stdio`: punte stdio <-> HTTP pentru clientii care pornesc ei serverul
-//!   (Claude Desktop, OpenCode "local"). Citeste portul si tokenul din `%APPDATA%\ManageBIM\mcp.json`,
-//!   scris de aplicatie cand porneste serverul.
+//! - "Streamable HTTP" transport (JSON responses only, no SSE) on `127.0.0.1:<port>/mcp`,
+//!   protected by a token (`Authorization: Bearer <token>`). Off by default; started from the
+//!   "AI connection" window. Connections from other computers are not accepted (loopback only).
+//! - `ManageBIM.exe --mcp-stdio`: stdio <-> HTTP bridge for clients that start the server themselves
+//!   (Claude Desktop, OpenCode "local"). Reads the port and the token from `%APPDATA%\ManageBIM\mcp.json`,
+//!   written by the app when it starts the server.
 //!
-//! Firul serverului nu atinge modelul: fiecare `tools/call` ajunge pe firul interfetei (`Call`),
-//! unde `App::mcp_step` il executa si trimite raspunsul inapoi.
+//! The server thread does not touch the model: each `tools/call` reaches the UI thread (`Call`),
+//! where `App::mcp_step` executes it and sends the response back.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -28,7 +28,7 @@ pub struct McpSettings {
     pub enabled: bool,
     pub port: u16,
     pub token: String,
-    /// uneltele care modifica modelul (proprietati, vizibilitate, scripturi, clash) - permise implicit
+    /// the tools that modify the model (properties, visibility, scripts, clash) - allowed by default
     #[serde(default = "yes")]
     pub allow_edit: bool,
 }
@@ -43,7 +43,7 @@ impl Default for McpSettings {
     }
 }
 
-/// Token aleator (128 biti, hex) - fara dependinte noi: RandomState e initializat de sistem.
+/// Random token (128 bits, hex) - no new dependencies: RandomState is seeded by the system.
 pub fn new_token() -> String {
     use std::hash::{BuildHasher, Hasher};
     let mut s = String::new();
@@ -57,7 +57,7 @@ pub fn new_token() -> String {
     s
 }
 
-/// O cerere `tools/call` trimisa firului interfetei.
+/// A `tools/call` request sent to the UI thread.
 pub struct Call {
     pub tool: String,
     pub args: Value,
@@ -68,7 +68,7 @@ pub struct Server {
     pub port: u16,
     pub rx: Receiver<Call>,
     stop: Arc<AtomicBool>,
-    /// cereri primite (pentru fereastra de conectare)
+    /// requests received (for the connection window)
     pub requests: Arc<AtomicUsize>,
     pub client: Arc<std::sync::Mutex<String>>,
 }
@@ -86,7 +86,7 @@ pub fn info_path() -> Option<std::path::PathBuf> {
     crate::formats::config_root().map(|d| d.join("ManageBIM").join("mcp.json"))
 }
 
-/// Porneste serverul; `wake` trezeste interfata cand soseste o cerere (egui sta in repaus fara input).
+/// Starts the server; `wake` wakes the UI when a request arrives (egui idles without input).
 pub fn start(port: u16, token: &str, wake: impl Fn() + Send + Sync + 'static) -> Result<Server, String> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("Port {port}: {e}"))?;
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
@@ -129,7 +129,7 @@ pub fn start(port: u16, token: &str, wake: impl Fn() + Send + Sync + 'static) ->
     Ok(Server { port, rx, stop, requests, client })
 }
 
-// ---------------------------------------------------------------- HTTP minimal
+// ---------------------------------------------------------------- minimal HTTP
 
 struct HttpReq {
     method: String,
@@ -199,7 +199,7 @@ fn handle_conn(s: TcpStream, token: &str, tx: &Sender<Call>, wake: &dyn Fn(), rq
     let mut r = BufReader::new(s);
     while let Some(req) = read_req(&mut r) {
         let keep = !req.header("connection").map(|c| c.eq_ignore_ascii_case("close")).unwrap_or(false);
-        // protectie DNS rebinding: o pagina web nu poate vorbi cu serverul
+        // DNS rebinding protection: a web page cannot talk to the server
         if let Some(o) = req.header("origin") {
             let ok = o.starts_with("http://127.0.0.1") || o.starts_with("http://localhost") || o.starts_with("http://[::1]");
             if !ok {
@@ -224,7 +224,7 @@ fn handle_conn(s: TcpStream, token: &str, tx: &Sender<Call>, wake: &dyn Fn(), rq
                 continue;
             }
             _ => {
-                // fara flux SSE de la server
+                // no SSE stream from the server
                 let _ = respond(&mut w, 405, "Method Not Allowed", "text/plain", b"", keep);
                 continue;
             }
@@ -271,11 +271,11 @@ fn ct_eq(a: &str, b: &str) -> bool {
 
 // ---------------------------------------------------------------- JSON-RPC / MCP
 
-/// Raspunsul la un mesaj JSON-RPC (`None` pentru notificari).
+/// The response to a JSON-RPC message (`None` for notifications).
 pub fn dispatch(m: &Value, call: &dyn Fn(String, Value) -> Result<Value, String>, client: &std::sync::Mutex<String>) -> Option<Value> {
     let id = m.get("id").cloned();
     let method = m.get("method").and_then(|v| v.as_str()).unwrap_or("");
-    let id = id?; // notificare (notifications/initialized etc.) sau raspuns al clientului
+    let id = id?; // notification (notifications/initialized etc.) or a response from the client
     let params = m.get("params").cloned().unwrap_or(Value::Null);
     let res: Result<Value, (i64, String)> = match method {
         "initialize" => {
@@ -305,9 +305,9 @@ pub fn dispatch(m: &Value, call: &dyn Fn(String, Value) -> Result<Value, String>
                 Err((-32602, format!("unknown tool: {name}")))
             } else {
                 Ok(match call(name, args) {
-                    // continut gata facut (puntea stdio il primeste asa de la aplicatie)
+                    // ready-made content (the stdio bridge receives it like this from the app)
                     Ok(v) if v.get("__content").is_some() => json!({ "content": v["__content"].clone(), "isError": false }),
-                    // imagine (capture_view): bloc image + descriere
+                    // image (capture_view): image block + description
                     Ok(v) if v.get("__image").is_some() => json!({
                         "content": [
                             { "type": "image", "data": v["__image"].clone(), "mimeType": v["mime"].as_str().unwrap_or("image/jpeg") },
@@ -475,16 +475,16 @@ pub fn tools() -> Vec<Value> {
     ]
 }
 
-/// Uneltele care schimba ceva (blocate cand "Allow changes" e oprit)
+/// The tools that change something (blocked when "Allow changes" is off)
 pub fn is_edit(tool: &str) -> bool {
     matches!(tool, "set_property" | "run_script" | "open_model" | "run_clash_test" | "update_clash_results" | "export_clash_bcf")
 }
 
-// ---------------------------------------------------------------- puntea stdio
+// ---------------------------------------------------------------- the stdio bridge
 
-/// `ManageBIM.exe --mcp-stdio`: citeste mesaje JSON-RPC (unul pe linie) de la client si le trimite
-/// serverului din aplicatie. Daca aplicatia nu ruleaza, raspunde singura la initialize / tools/list,
-/// iar uneltele intorc o eroare care explica ce trebuie facut.
+/// `ManageBIM.exe --mcp-stdio`: reads JSON-RPC messages (one per line) from the client and sends them
+/// to the server in the app. If the app is not running, it answers initialize / tools/list itself,
+/// and the tools return an error explaining what needs to be done.
 pub fn stdio_bridge() -> i32 {
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
@@ -540,12 +540,12 @@ fn forward_tool(tool: &str, args: &Value) -> Result<Value, String> {
     if r["isError"].as_bool().unwrap_or(false) {
         Err(r["content"][0]["text"].as_str().unwrap_or("").to_string())
     } else {
-        // tot continutul (text si imagini) trece neschimbat
+        // all content (text and images) passes through unchanged
         Ok(json!({ "__content": r["content"].clone() }))
     }
 }
 
-// ---------------------------------------------------------------- configuratii pentru clienti
+// ---------------------------------------------------------------- configurations for clients
 
 pub fn url(port: u16) -> String {
     format!("http://127.0.0.1:{port}/mcp")
@@ -583,13 +583,13 @@ mod tests {
         let token = new_token();
         assert_eq!(token.len(), 32);
         let srv = start(0, &token, || {}).err();
-        // portul 0 e refuzat doar de unele sisteme; folosim un port liber cunoscut
+        // port 0 is refused only by some systems; we use a known free port
         drop(srv);
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();
         drop(l);
         let srv = start(port, &token, || {}).expect("start");
-        // firul interfetei simulat
+        // simulated UI thread
         std::thread::spawn(move || {
             while let Ok(c) = srv.rx.recv() {
                 let _ = c.reply.send(Ok(json!({ "tool": c.tool, "args": c.args })));

@@ -14,11 +14,11 @@ using AcApp = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 namespace ManageBIM.Acad
 {
     /// <summary>
-    /// MBLEVELS: nivelurile trimise din ManageBIM (View › Grids &amp; Levels › Send Levels, fisierul
-    /// %LOCALAPPDATA%\ManageBIM\Outbox\levels.txt) aduse in desen - Plant 3D si AutoCAD nu au niveluri:
-    ///  - o linie de nivel (dreptunghi in jurul modelului) si o eticheta la fiecare cota, pe stratul MB-Levels;
-    ///  - un UCS cu nume "Level - &lt;nume&gt;" la fiecare cota (UCS › Named: lucrul direct pe nivel);
-    ///  - nivelul pe fiecare obiect (XData MANAGEBIM_LEVEL), dupa cota lui de jos - ManageBIM il citeste ca proprietate.
+    /// MBLEVELS: the levels sent from ManageBIM (View › Grids &amp; Levels › Send Levels, the file
+    /// %LOCALAPPDATA%\ManageBIM\Outbox\levels.txt) brought into the drawing - Plant 3D and AutoCAD have no levels:
+    ///  - a level line (rectangle around the model) and a label at each elevation, on the MB-Levels layer;
+    ///  - a named UCS "Level - &lt;name&gt;" at each elevation (UCS › Named: working directly on the level);
+    ///  - the level on each object (XData MANAGEBIM_LEVEL), by its bottom elevation - ManageBIM reads it as a property.
     /// </summary>
     public class LevelCommands
     {
@@ -44,7 +44,7 @@ namespace ManageBIM.Acad
                 ed.WriteMessage("\nManageBIM: no levels yet - in ManageBIM: View › Grids & Levels › Send Levels. (" + ex.Message + ")\n");
                 return;
             }
-            // metri -> unitatile desenului
+            // meters -> drawing units
             double s = 1.0 / UnitScale(db);
             Extents3d ext;
             try { ext = new Extents3d(db.Extmin, db.Extmax); if (ext.MinPoint.X > ext.MaxPoint.X) throw new InvalidOperationException(); }
@@ -60,7 +60,7 @@ namespace ManageBIM.Acad
                 ObjectId layer = EnsureLayer(tr, db);
                 EnsureRegApp(tr, db);
                 var ms = (BlockTableRecord)tr.GetObject(SymbolUtilityServices.GetBlockModelSpaceId(db), OpenMode.ForWrite);
-                // nivelurile trimise data trecuta se inlocuiesc (nu se dubleaza)
+                // the levels sent last time are replaced (not duplicated)
                 foreach (ObjectId id in ms)
                 {
                     var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
@@ -91,7 +91,7 @@ namespace ManageBIM.Acad
                     ms.AppendEntity(txt);
                     tr.AddNewlyCreatedDBObject(txt, true);
                     lines++;
-                    // UCS cu nume la cota nivelului
+                    // named UCS at the level elevation
                     string un = SafeName("Level - " + name);
                     UcsTableRecord rec;
                     if (ucsTable.Has(un)) rec = (UcsTableRecord)tr.GetObject(ucsTable[un], OpenMode.ForWrite);
@@ -106,7 +106,7 @@ namespace ManageBIM.Acad
                     rec.YAxis = Vector3d.YAxis;
                     ucs++;
                 }
-                // nivelul fiecarui obiect: cel mai inalt nivel la sau sub baza obiectului (+30 cm toleranta)
+                // the level of each object: the highest level at or below the object base (+30 cm tolerance)
                 double tol = 0.3 * s;
                 foreach (ObjectId id in ms)
                 {
@@ -144,7 +144,7 @@ namespace ManageBIM.Acad
             return outl.OrderBy(x => x.Item2).ToList();
         }
 
-        /// <summary>metri pe unitate de desen (ca la export)</summary>
+        /// <summary>meters per drawing unit (as in the export)</summary>
         internal static double UnitScale(Database db)
         {
             switch (db.Insunits)

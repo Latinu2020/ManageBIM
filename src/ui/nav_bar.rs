@@ -2,9 +2,9 @@
 use super::*;
 
 impl App {
-    /// Bara de navigare plutitoare (jos, pe centru): ce se foloseste des, fara drum prin ribbon.
-    /// Bara de unelte de jos (aspect "studio"): butoane mari cu iconita si eticheta, pe grupe
-    /// (selectie, vizibilitate, navigare, unelte). Culorile vin din tema curenta.
+    /// Floating navigation bar (bottom, centred): what is used often, without a trip through the ribbon.
+    /// The bottom toolbar ("studio" look): big buttons with icon and label, in groups
+    /// (selection, visibility, navigation, tools). The colours come from the current theme.
     pub(super) fn nav_bar(&mut self, ctx: &egui::Context, rect: Rect) {
         let pal = self.pal();
         let pos = rect.center_bottom() - EV::new(0.0, 14.0);
@@ -19,9 +19,9 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
                         let text_col = pal.overlay_text;
-                        // buton mare: iconita + eticheta; activ = fond in culoarea de accent
+                        // big button: icon + label; active = background in the accent colour
                         let big = |ui: &mut egui::Ui, icon: &str, label: &str, tip: &str, on: bool, enabled: bool| -> bool {
-                            // compact: ~24 px, doar iconita (numele apare in tooltip)
+                            // compact: ~24 px, icon only (the name appears in the tooltip)
                             let _ = label;
                             let (r, resp) = ui.allocate_exact_size(EV::new(30.0, 28.0), if enabled { Sense::click() } else { Sense::hover() });
                             let p = ui.painter();
@@ -39,7 +39,7 @@ impl App {
                             let (r, _) = ui.allocate_exact_size(EV::new(8.0, 28.0), Sense::hover());
                             ui.painter().line_segment([r.center_top() + EV::new(0.0, 5.0), r.center_bottom() - EV::new(0.0, 5.0)], Stroke::new(1.0_f32, Color32::from_white_alpha(28)));
                         };
-                        // ---- inapoi / inainte (selectie, vizibilitate, sectiune, camera)
+                        // ---- back / forward (selection, visibility, section, camera)
                         if big(ui, "⟲", "Undo", "Undo: selection, hidden items, section, camera, properties, colours and materials (Ctrl+Z)", false, self.can_undo()) {
                             self.undo_view();
                         }
@@ -47,7 +47,7 @@ impl App {
                             self.redo_view();
                         }
                         sep(ui);
-                        // ---- selectie
+                        // ---- selection
                         if big(ui, "👆", "Select", "Select (click an item · Ctrl+click adds)", self.tool == Tool::Select && self.nav == NavMode::Orbit, true) {
                             self.cur_measure.clear();
                             self.tool = Tool::Select;
@@ -58,7 +58,7 @@ impl App {
                             self.tool = if self.tool == Tool::Window { Tool::Select } else { Tool::Window };
                         }
                         sep(ui);
-                        // ---- vizibilitate
+                        // ---- visibility
                         let sel: Vec<ElemId> = self.selected.iter().copied().collect();
                         if big(ui, "🚫", "Hide", "Hide the selected items (H)", false, !sel.is_empty()) {
                             self.apply(Action::Hide(sel.clone()));
@@ -74,7 +74,7 @@ impl App {
                             self.apply(Action::Focus(sel.clone()));
                         }
                         sep(ui);
-                        // ---- navigare
+                        // ---- navigation
                         let orbit = self.nav == NavMode::Orbit && matches!(self.tool, Tool::Select);
                         if big(ui, "🔄", "Orbit", "Orbit: drag to rotate around the point under the cursor", orbit, true) {
                             self.nav = NavMode::Orbit;
@@ -100,7 +100,7 @@ impl App {
                             self.go_home();
                         }
                         sep(ui);
-                        // ---- unelte
+                        // ---- tools
                         let meas = matches!(self.tool, Tool::Measure(_));
                         if big(ui, "📏", "Measure", "Measure point to point (snaps to corners, midpoints, edges) - more kinds in Review › Measure", meas, true) {
                             self.cur_measure.clear();
@@ -137,8 +137,8 @@ impl App {
                         if big(ui, "✨", "Ray Trace", "Path-traced view on the graphics card: refines while the camera stands still (like Navisworks)", self.rt.on, self.loaded_models().next().is_some()) {
                             self.toggle_raytrace();
                         }
-                        // mers: traseu, redare, viteza - mereu pe bara (latime fixa: butoanele nu se muta sub mouse
-                        // cand schimbi modul de navigare)
+                        // walking: path, playback, speed - always on the bar (fixed width: the buttons do not move under the mouse
+                        // when you change the navigation mode)
                         sep(ui);
                         if big(ui, "🛤", "Path", "Draw a walk path: click points on the floor, double-click / Enter to finish (switches to Walk)", self.tool == Tool::WalkPath, true) {
                             self.path_run = None;

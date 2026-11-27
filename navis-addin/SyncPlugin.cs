@@ -11,8 +11,8 @@ using NwApp = Autodesk.Navisworks.Api.Application;
 namespace ManageBIM.Navis
 {
     /// <summary>
-    /// Live Link: selectia sincronizata Navisworks &lt;-&gt; ManageBIM (si Revit), prin fisiere mici in
-    /// %LOCALAPPDATA%\ManageBIM\Sync. Butonul porneste / opreste legatura pentru sesiunea curenta.
+    /// Live Link: the selection synchronised Navisworks &lt;-&gt; ManageBIM (and Revit), through small files in
+    /// %LOCALAPPDATA%\ManageBIM\Sync. The button starts / stops the link for the current session.
     /// </summary>
     [Plugin("ManageBIMSync", "MBIM", DisplayName = "Sync Selection", ToolTip = "Live Link: the selection follows ManageBIM and Revit, both ways (click again to stop)")]
     [AddInPlugin(AddInLocation.None)]
@@ -54,9 +54,9 @@ namespace ManageBIM.Navis
             {
                 _seen = File.Exists(Incoming) ? File.GetLastWriteTimeUtc(Incoming) : DateTime.MinValue;
                 _lastKey = "";
-                // timer pe firul interfetei: API-ul Navisworks se poate folosi direct
+                // timer on the UI thread: the Navisworks API can be used directly
                 _timer = new Timer { Interval = 500 };
-                _timer.Tick += (s, e) => { try { Poll(); } catch { /* nu deranjeaza lucrul in Navisworks */ } };
+                _timer.Tick += (s, e) => { try { Poll(); } catch { /* never disturbs the work in Navisworks */ } };
                 _timer.Start();
             }
             else
@@ -73,7 +73,7 @@ namespace ManageBIM.Navis
             Document doc = NwApp.ActiveDocument;
             if (doc == null || doc.Models.Count == 0) return;
 
-            // ---- primit din ManageBIM
+            // ---- received from ManageBIM
             if (File.Exists(Incoming))
             {
                 DateTime t = File.GetLastWriteTimeUtc(Incoming);
@@ -95,7 +95,7 @@ namespace ManageBIM.Navis
                 }
             }
 
-            // ---- trimis catre ManageBIM
+            // ---- sent to ManageBIM
             ModelItemCollection sel = doc.CurrentSelection.SelectedItems;
             string key = Key(sel);
             if (key == _lastKey) return;
@@ -115,7 +115,7 @@ namespace ManageBIM.Navis
             File.Move(tmp, Outgoing);
         }
 
-        /// <summary>GUID-ul Navisworks + IfcGUID / GlobalId / UniqueId din proprietati.</summary>
+        /// <summary>The Navisworks GUID + IfcGUID / GlobalId / UniqueId from the properties.</summary>
         static List<string> Ids(ModelItem it)
         {
             var parts = new List<string>();
@@ -162,7 +162,7 @@ namespace ManageBIM.Navis
             return list;
         }
 
-        /// <summary>identificator -> obiect (doar obiectele cu geometrie si parintii lor directi), refacut la nevoie.</summary>
+        /// <summary>identifier -> object (only the objects with geometry and their direct parents), rebuilt when needed.</summary>
         static Dictionary<string, ModelItem> Index(Document doc, bool rebuild)
         {
             if (!rebuild && _index != null && ReferenceEquals(_indexDoc, doc) && _indexModels == doc.Models.Count) return _index;

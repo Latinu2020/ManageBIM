@@ -1,7 +1,7 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
-/// Schimbarea statusului facuta de utilizator: pastram cine si cand a aprobat / rezolvat (ca Navisworks).
+/// A status change made by the user: we keep who approved / resolved it and when (like Navisworks).
 pub(crate) fn apply_status(r: &mut ClashResult, st: ClashStatus) {
     if r.status == st {
         return;
@@ -24,8 +24,8 @@ pub(crate) fn apply_status(r: &mut ClashResult, st: ClashStatus) {
 
 impl App {
     // ------------------------------------------------------------------ clash
-    /// Trimite clash-ul curent catre Revit / Navisworks prin Outbox\issues.txt:
-    /// add-in-urile pot deschide apoi viewpoint-ul cu camera si elementele selectate.
+    /// Sends the current clash to Revit / Navisworks through Outbox\issues.txt:
+    /// the add-ins can then open the viewpoint with the camera and the selected elements.
     pub fn switchback(&mut self) {
         let picked = self.cur_result.or_else(|| self.sel_results.iter().next().copied());
         let Some(i) = picked else {
@@ -38,7 +38,7 @@ impl App {
             (format!("SwitchBack — {}", r.name), r.a, r.b, r.dist)
         };
         let comment = format!("SwitchBack from clash {} · {} mm", name, (dist * 1000.0) as i32);
-        // daca camera inca zboara spre clash, luam pozitia finala
+        // if the camera is still flying toward the clash, we take the final position
         let cam = self.cam_anim.map(|(_, to, _)| to).unwrap_or(self.cam);
         self.viewpoints.push(Viewpoint {
             name,
@@ -65,7 +65,7 @@ impl App {
     }
 
     /// Runs a test on the calling thread (batch use / tests).
-    /// elementele pe care lucreaza headroom / egress: tot ce e vizibil (fara cele excluse de reguli)
+    /// the elements headroom / egress work on: everything visible (without the ones excluded by rules)
     fn special_items(&self, test: &ClashTest) -> Vec<ElemId> {
         let excluded = self.excluded_items(&test.rules);
         self.all_ids().into_iter().filter(|i| self.is_visible(*i) && !excluded.contains(i)).collect()
@@ -124,7 +124,7 @@ impl App {
         let p2 = prog.clone();
         let (tx, rx) = channel();
         std::thread::spawn(move || {
-            // la o eroare interna tx se inchide fara mesaj -> poll_jobs opreste testul curat
+            // on an internal error tx closes without a message -> poll_jobs stops the test cleanly
             if let Ok(r) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| clash::run(&models, &a, &b, ty, tol, ign, &p2))) {
                 let _ = tx.send(r);
             }
@@ -182,8 +182,8 @@ impl App {
 
     pub fn merge_clash(&mut self, t: usize, found: Vec<clash::Found>, secs: f32) {
         let now = now_string();
-        // reguli: perechi ignorate + elemente excluse
-        // testul poate fi sters / proiectul inchis cat timp rula: rezultatul se ignora, nu crapa aplicatia
+        // rules: ignored pairs + excluded elements
+        // the test may be deleted / the project closed while it ran: the result is ignored, the application does not crash
         let Some(test_cfg) = self.clash.tests.get(t).cloned() else { return };
         let excluded = self.excluded_items(&test_cfg.rules);
         let set_members = self.same_set_members(&test_cfg.rules);
@@ -236,7 +236,7 @@ impl App {
             }
             out.push(r);
         }
-        // rezultatele vechi excluse acum de reguli dispar; restul devin Resolved
+        // the old results now excluded by rules disappear; the rest become Resolved
         old.retain(|k, _| !stale.contains(k));
         let n_res = old.len();
         let mut res_old: Vec<ClashResult> = old.into_values().collect();
@@ -259,7 +259,7 @@ impl App {
         }
     }
 
-    /// conexiune normala (perete-placa, grinda-stalp, teava-suport...) cu patrundere sub prag: nu e clash real
+    /// a normal connection (wall-slab, beam-column, pipe-support...) with penetration below the threshold: not a real clash
     pub fn normal_joint_ignored(&self, rules: &ClashRules, a: ElemId, b: ElemId, dist: f32) -> bool {
         if !rules.normal_joints || dist > 0.0 {
             return false;
@@ -268,7 +268,7 @@ impl App {
         crate::clash_smart::normal_joint(crate::clash_smart::kind_of(ea), crate::clash_smart::kind_of(eb)) && dist.abs() * 1000.0 <= rules.joint_mm.max(0.0)
     }
 
-    /// Responsabilul clash-urilor fara responsabil: disciplina care se muta (structura > arhitectura > instalatii).
+    /// The assignee of clashes without an assignee: the discipline that moves (structure > architecture > MEP).
     pub fn auto_assign_clashes(&mut self, t: usize) {
         let Some(test) = self.clash.tests.get(t) else { return };
         let who: Vec<Option<String>> = test
@@ -365,7 +365,7 @@ impl App {
         let mut n = 0;
         let mut groups = HashSet::new();
         for (r, k) in self.clash.tests[t].results.iter_mut().zip(keys.iter()) {
-            // un singur clash nu formeaza grup
+            // a single clash does not form a group
             if count[k] > 1 {
                 r.group = k.clone();
                 groups.insert(k.clone());
@@ -439,7 +439,7 @@ impl App {
         h
     }
 
-    /// Randurile tabelului pentru raportul PDF: (status, severitate, elemente, distanta).
+    /// The table rows for the PDF report: (status, severity, elements, distance).
     pub fn clash_report_pdf_rows(&self, t: usize) -> Vec<(String, String, String, String, String)> {
         let test = &self.clash.tests[t];
         test.results.iter().map(|r| {
@@ -486,7 +486,7 @@ impl App {
         s
     }
 
-    /// distanta minima intre primele doua elemente selectate
+    /// the minimum distance between the first two selected elements
     pub fn min_distance_selected(&mut self) {
         let ids: Vec<ElemId> = self.selected.iter().copied().take(2).collect();
         if ids.len() != 2 {
@@ -502,13 +502,13 @@ impl App {
         }
     }
 
-    /// Testele de clash (+ seturile folosite) -> XML Navisworks (Clash Detective > Import Clash Tests).
+    /// The clash tests (+ the sets used) -> Navisworks XML (Clash Detective > Import Clash Tests).
     pub fn export_navis_clash(&mut self, path: &str) {
         self.export_clash_tests_xml(path);
     }
 
-    /// Rezultatele unui test de clash ca "vederi": camera izometrica pe clash, cutia celor doua elemente
-    /// (pentru section box), GUID-urile lor si descrierea. Coordonate WORLD, metri.
+    /// The results of a clash test as "views": an isometric camera on the clash, the box of the two elements
+    /// (for the section box), their GUIDs and the description. WORLD coordinates, metres.
     pub fn clash_views(&self, ti: usize) -> Vec<(String, String, [f64; 3], [f64; 3], [f64; 3], ([f64; 3], [f64; 3]), Vec<String>, String)> {
         let Some(t) = self.clash.tests.get(ti) else { return Vec::new() };
         t.results
@@ -524,7 +524,7 @@ impl App {
                 c.ortho = false;
                 let dist = (size * 0.9).clamp(1.5, 60.0) / (c.fov().max(0.3) * 0.5).tan();
                 let mut eye = p - c.fwd() * dist;
-                // viewpoint-ul salvat de utilizator pe rezultat are prioritate
+                // the viewpoint saved by the user on the result takes priority
                 if let Some(v) = r.view {
                     c = v;
                     eye = v.eye();
@@ -537,7 +537,7 @@ impl App {
                 if !r.comment.is_empty() {
                     desc.push_str(&format!(" | {}", r.comment));
                 }
-                // GUID-ul real al elementului (r.ga / r.gb sunt "model|guid", interne testului de clash)
+                // the real GUID of the element (r.ga / r.gb are "model|guid", internal to the clash test)
                 let guids = [r.a, r.b].iter().filter_map(|id| self.elem(*id).map(|(_, e)| e.guid.clone())).filter(|g| !g.is_empty()).collect();
                 (
                     r.name.clone(),
@@ -553,8 +553,8 @@ impl App {
             .collect()
     }
 
-    /// Clash-urile testului curent -> viewpoints Navisworks (camera + section box + comentariu), importabile
-    /// cu Saved Viewpoints > Import Viewpoints in orice model Navisworks cu aceleasi coordonate.
+    /// The clashes of the current test -> Navisworks viewpoints (camera + section box + comment), importable
+    /// with Saved Viewpoints > Import Viewpoints into any Navisworks model with the same coordinates.
     pub fn export_clash_navis(&mut self, path: &str) {
         let views = self.clash_views(self.cur_test);
         if views.is_empty() {
@@ -595,8 +595,8 @@ impl App {
         }
     }
 
-    /// Clash-urile testului curent -> BCF 2.1 (Revit, ACC, Solibri, BIMcollab, Navisworks cu BCF): un topic pe clash,
-    /// cu camera si cele doua elemente selectate.
+    /// The clashes of the current test -> BCF 2.1 (Revit, ACC, Solibri, BIMcollab, Navisworks with BCF): one topic per clash,
+    /// with the camera and the two selected elements.
     pub fn export_clash_bcf(&mut self, path: &str) {
         let views = self.clash_views(self.cur_test);
         if views.is_empty() {
@@ -660,7 +660,7 @@ impl App {
         ClashMatrix { models, cells }
     }
 
-    /// Matricea in Excel: foaia "Open" (deschise) si foaia "All" (toate), modele pe randuri si coloane.
+    /// The matrix in Excel: the "Open" sheet (open) and the "All" sheet (all), models in rows and columns.
     pub fn export_clash_matrix(&mut self, path: &str) {
         use crate::qto::{Cell, Sheet};
         let m = self.clash_matrix();

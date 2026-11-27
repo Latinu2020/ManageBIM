@@ -48,7 +48,7 @@ impl Panel {
     pub fn title(self) -> &'static str {
         crate::i18n::tr(self.title_en())
     }
-    /// titlul in engleza (cheia traducerii)
+    /// the title in English (the translation key)
     pub fn title_en(self) -> &'static str {
         match self {
             Panel::Tree => "🌲 Selection Tree",
@@ -71,7 +71,7 @@ impl Panel {
             Panel::Check => "✔ Model Checker",
         }
     }
-    /// nume scurt pentru filele din panourile laterale (controlul segmentat)
+    /// short name for the tabs in the side panels (the segmented control)
     pub fn short(self) -> &'static str {
         crate::i18n::tr(self.short_en())
     }
@@ -146,19 +146,19 @@ pub struct UiLayout {
     pub panels: Vec<PanelState>,
     /// active tab of the left, right and bottom areas
     pub active: [Option<Panel>; 3],
-    /// auto-hide (ca in Navisworks): zona e o banda subtire cu filele; panoul apare peste model la hover / clic
+    /// auto-hide (as in Navisworks): the zone is a thin strip with the tabs; the panel appears over the model on hover / click
     #[serde(default)]
     pub autohide: [bool; 3],
-    /// toate panourile ascunse (F11): tot ecranul pentru model
+    /// all panels hidden (F11): the whole screen for the model
     #[serde(default)]
     pub hide_all: bool,
-    /// zona de jos ridicata (filele ei stau in bara de stare; clic pe fila activa o coboara)
+    /// the bottom zone raised (its tabs sit in the status bar; click on the active tab lowers it)
     #[serde(default = "crate::layout::yes")]
     pub bottom_open: bool,
-    /// panoul de jos maximizat (inaltime mare pentru clashuri / teste multe)
+    /// the bottom panel maximized (large height for many clashes / tests)
     #[serde(default)]
     pub bottom_tall: bool,
-    /// versiunea aranjamentului (migrari o singura data; 1 = zona de jos pornita coborata)
+    /// the layout version (one-time migrations; 1 = the bottom zone starts lowered)
     #[serde(default)]
     pub version: u32,
 }
@@ -166,12 +166,12 @@ pub struct UiLayout {
 impl Default for UiLayout {
     fn default() -> Self {
         UiLayout {
-            // panourile noi pornesc inchise (se deschid din ribbon), ca sa nu aglomereze zona de jos
+            // new panels start closed (they open from the ribbon), so they do not crowd the bottom zone
             panels: ALL_PANELS.iter().map(|&p| PanelState { panel: p, dock: p.default_dock(), open: !matches!(p, Panel::Profiler | Panel::Compare | Panel::Quantities | Panel::Check | Panel::Animation) }).collect(),
             active: [Some(Panel::Tree), Some(Panel::Properties), Some(Panel::Find)],
             autohide: [false; 3],
             hide_all: false,
-            // zona de jos porneste coborata (filele in bara de stare): vederea 3D are tot spatiul
+            // the bottom zone starts lowered (the tabs in the status bar): the 3D view has all the space
             bottom_open: false,
             bottom_tall: false,
             version: 1,
@@ -182,7 +182,7 @@ impl Default for UiLayout {
 impl UiLayout {
     /// repairs layouts saved by older versions (missing / duplicate panels)
     pub fn fixup(&mut self) {
-        // 0.28.5: Find Items nu mai ocupa un sfert din ecran la pornire; alegerea utilizatorului se pastreaza apoi
+        // 0.28.5: Find Items no longer takes a quarter of the screen at startup; the user's choice is kept afterwards
         if self.version < 1 {
             self.version = 1;
             self.bottom_open = false;
@@ -234,7 +234,7 @@ impl UiLayout {
         self.fixup();
     }
     pub fn toggle(&mut self, p: Panel) {
-        // panou de jos coborat: butonul il ridica (nu il inchide)
+        // bottom panel lowered: the button raises it (it does not close it)
         let lowered = !self.bottom_open && self.get(p).map(|s| s.dock == Dock::Bottom && s.open).unwrap_or(false);
         if lowered {
             self.open(p);
@@ -254,7 +254,7 @@ impl UiLayout {
         self.fixup();
     }
     /// visible on screen right now (active tab of its area, or a floating window)
-    /// panoul se vede efectiv pe ecran: afisat, nu ascuns (F11), iar zona de jos ridicata (cand e jos)
+    /// the panel is actually visible on screen: shown, not hidden (F11), and the bottom zone raised (when it is at the bottom)
     pub fn visible(&self, p: Panel) -> bool {
         if !self.shown(p) || self.hide_all {
             return false;

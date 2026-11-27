@@ -1,13 +1,13 @@
-//! Biblioteca profesionala de materiale PBR: texturi scanate / fotogrammetrice de pe ambientCG
-//! (licenta CC0 - domeniu public, fara atribuire obligatorie, utilizabile comercial).
-//! Fiecare material inlocuieste materialul inclus cu acelasi nume (ex. "Brick red"), deci regulile
-//! "Auto by IFC type" folosesc automat varianta profesionala. Descarcarea se face cu `curl`
-//! (inclus in Windows 10 / 11) pe un fir separat; hartile (culoare, normala OpenGL, rugozitate,
-//! metalicitate, AO, inaltime) sunt importate de `materials::import_pbr`.
+//! Professional PBR material library: scanned / photogrammetry textures from ambientCG
+//! (CC0 license - public domain, no attribution required, usable commercially).
+//! Each material replaces the bundled material with the same name (e.g. "Brick red"), so the rules
+//! "Auto by IFC type" automatically use the professional variant. The download is done with `curl`
+//! (included in Windows 10 / 11) on a separate thread; the maps (color, OpenGL normal, roughness,
+//! metalness, AO, height) are imported by `materials::import_pbr`.
 use crate::materials::Material;
 use std::sync::{Arc, Mutex};
 
-/// (numele din biblioteca ManageBIM, id-ul ambientCG, marimea texturii in metri pe suprafata)
+/// (the name in the ManageBIM library, the ambientCG id, the texture size in meters on the surface)
 pub const PRO_LIBRARY: &[(&str, &str, f32)] = &[
     ("Concrete", "Concrete042A", 2.0),
     ("Exposed concrete", "Concrete031", 2.4),
@@ -33,14 +33,14 @@ pub const PRO_LIBRARY: &[(&str, &str, f32)] = &[
     ("Sandstone", "Travertine009", 1.5),
     ("Terracotta", "Clay005", 1.2),
     ("Carpet grey", "Carpet016", 1.0),
-    // materiale noi (nu exista in biblioteca inclusa)
+    // new materials (they do not exist in the bundled library)
     ("Parquet oak", "WoodFloor051", 1.5),
     ("Paving stones", "PavingStones153", 1.5),
     ("Porcelain white", "Porcelain001", 1.0),
     ("Corrugated steel", "CorrugatedSteel009", 1.5),
 ];
 
-/// Rezolutia pachetelor: 1K (~5 MB / material) sau 2K (~15-20 MB / material).
+/// Package resolution: 1K (~5 MB / material) or 2K (~15-20 MB / material).
 pub fn download_url(asset: &str, res: &str) -> String {
     format!("https://ambientcg.com/get?file={asset}_{res}-JPG.zip")
 }
@@ -72,7 +72,7 @@ fn curl_download(url: &str, dest: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Descarca si instaleaza un material; intoarce materialul gata de folosit (cu numele din biblioteca).
+/// Downloads and installs a material; returns the material ready to use (with the name from the library).
 pub fn install_one(name: &str, asset: &str, scale: f32, res: &str, root: &std::path::Path) -> Result<Material, String> {
     let dl = root.join("_downloads");
     std::fs::create_dir_all(&dl).map_err(|e| e.to_string())?;
@@ -86,7 +86,7 @@ pub fn install_one(name: &str, asset: &str, scale: f32, res: &str, root: &std::p
     Ok(m)
 }
 
-/// Porneste instalarea intregii biblioteci pe un fir separat.
+/// Starts installing the whole library on a separate thread.
 pub fn spawn_install(res: &'static str) -> Result<Arc<Mutex<Progress>>, String> {
     let root = crate::materials::user_library_dir().ok_or("APPDATA is not set")?;
     let p = Arc::new(Mutex::new(Progress { total: PRO_LIBRARY.len(), ..Default::default() }));
@@ -130,7 +130,7 @@ mod tests {
         assert_eq!(download_url("Bricks104", "1K"), "https://ambientcg.com/get?file=Bricks104_1K-JPG.zip");
     }
 
-    /// Test de retea (nu ruleaza implicit): `MB_PRO_TEST_DIR=<folder> cargo test download_one -- --ignored`
+    /// Network test (does not run by default): `MB_PRO_TEST_DIR=<folder> cargo test download_one -- --ignored`
     #[test]
     #[ignore]
     fn download_one() {
@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn pro_materials_replace_auto_rule_targets() {
-        // fiecare material folosit de "Auto by IFC type" care are textura are o varianta profesionala
+        // each material used by "Auto by IFC type" that has a texture has a professional variant
         for (_, m) in crate::materials::AUTO_RULES {
             if m.starts_with("Glass") {
                 continue;

@@ -1,8 +1,8 @@
-//! USD ASCII (.usda): Pixar Universal Scene Description in forma text (Omniverse, Houdini, Blender, Revit
-//! prin Omniverse Connector). Citim ierarhia de prim-uri, transformarile (xformOpOrder), plasele (Mesh) si
-//! primitivele Cube / Sphere / Cylinder, culoarea (primvars:displayColor / displayOpacity), unitatile
-//! (metersPerUnit, upAxis) si datele utilizatorului: customData, assetInfo, kind si atributele custom.
-//! Referintele @fisier.usda@ se incarca si ele. Fara variante, fara .usdc / .usdz binare.
+//! USD ASCII (.usda): Pixar Universal Scene Description in text form (Omniverse, Houdini, Blender, Revit
+//! via Omniverse Connector). We read the prim hierarchy, the transforms (xformOpOrder), the meshes (Mesh) and
+//! the Cube / Sphere / Cylinder primitives, the color (primvars:displayColor / displayOpacity), the units
+//! (metersPerUnit, upAxis) and the user data: customData, assetInfo, kind and the custom attributes.
+//! The @file.usda@ references are loaded too. No variants, no binary .usdc / .usdz.
 use crate::model::{Prop, RawElement, RawModel};
 use glam::{DMat4, DQuat, DVec3};
 use std::path::{Path, PathBuf};
@@ -21,7 +21,7 @@ fn tokenize(s: &str) -> Vec<Tok> {
     let c: Vec<char> = s.chars().collect();
     let mut out = Vec::new();
     let mut i = 0;
-    // prima linie "#usda 1.0" e antetul
+    // the first line "#usda 1.0" is the header
     while i < c.len() {
         let ch = c[i];
         if ch.is_whitespace() {
@@ -169,7 +169,7 @@ impl Parser {
             false
         }
     }
-    /// sare un grup echilibrat ( ) / [ ] / { } incepand cu deschiderea curenta
+    /// skips a balanced group ( ) / [ ] / { } starting at the current opening
     fn skip_group(&mut self) {
         let mut depth = 0i32;
         while let Some(t) = self.next() {
@@ -214,7 +214,7 @@ impl Parser {
                 Val::Tuple(v)
             }
             Some(Tok::P('{')) => {
-                // dictionar: [tip] nume = valoare
+                // dictionary: [type] name = value
                 self.i -= 1;
                 Val::Dict(self.dict())
             }
@@ -260,7 +260,7 @@ impl Parser {
         }
         out
     }
-    /// metadatele ( ... ) ale unui prim / atribut: "kind = ..", "customData = {..}", "references = @..@"
+    /// the metadata ( ... ) of a prim / attribute: "kind = ..", "customData = {..}", "references = @..@"
     fn metadata(&mut self) -> Vec<(String, Val)> {
         let mut out = Vec::new();
         if !self.eat('(') {
@@ -305,7 +305,7 @@ impl Parser {
                     p.kids.push(k);
                 }
                 Some(Tok::Ident(w)) if w == "variantSet" || w == "variants" => {
-                    // variantele: sarite (se foloseste ce e in afara lor)
+                    // variants: skipped (what is outside them is used)
                     while self.peek().is_some() && !self.is('{') {
                         self.i += 1;
                     }
@@ -318,7 +318,7 @@ impl Parser {
         }
         p
     }
-    /// [custom] [uniform] [prepend] tip nume [.timeSamples / .connect] [= valoare] [( meta )]  sau  rel nume = <..>
+    /// [custom] [uniform] [prepend] type name [.timeSamples / .connect] [= value] [( meta )]  or  rel name = <..>
     fn attribute(&mut self, p: &mut Prim) {
         let mut words: Vec<String> = Vec::new();
         while let Some(Tok::Ident(w)) = self.peek().cloned() {
@@ -338,7 +338,7 @@ impl Parser {
         let mut val = Val::None;
         if self.eat('=') {
             if name.ends_with(".timeSamples") {
-                // prima proba de timp
+                // the first time sample
                 let d = self.dict();
                 val = d.into_iter().next().map(|x| x.1).unwrap_or(Val::None);
             } else {
@@ -373,7 +373,7 @@ fn get<'a>(p: &'a Prim, name: &str) -> Option<&'a Val> {
     p.attrs.iter().find(|a| a.1 == name).map(|a| &a.2)
 }
 
-/// transformarea locala a prim-ului din xformOpOrder (primul op = cel exterior)
+/// the local transform of the prim from xformOpOrder (the first op = the outer one)
 fn local_xf(p: &Prim) -> DMat4 {
     let order: Vec<String> = match get(p, "xformOpOrder") {
         Some(Val::List(a)) => a.iter().map(|x| x.text()).collect(),
@@ -398,7 +398,7 @@ fn local_xf(p: &Prim) -> DMat4 {
             "rotateX" => DMat4::from_rotation_x(r(v.first().copied().unwrap_or(0.0))),
             "rotateY" => DMat4::from_rotation_y(r(v.first().copied().unwrap_or(0.0))),
             "rotateZ" => DMat4::from_rotation_z(r(v.first().copied().unwrap_or(0.0))),
-            // rotateXYZ: intai X, apoi Y, apoi Z (pe puncte) => Rz * Ry * Rx
+            // rotateXYZ: first X, then Y, then Z (on points) => Rz * Ry * Rx
             "rotateXYZ" => {
                 let a = v3(0.0);
                 DMat4::from_rotation_z(r(a.z)) * DMat4::from_rotation_y(r(a.y)) * DMat4::from_rotation_x(r(a.x))
@@ -425,7 +425,7 @@ fn local_xf(p: &Prim) -> DMat4 {
             }
             // quatf / quatd: (w, x, y, z)
             "orient" if v.len() == 4 => DMat4::from_quat(DQuat::from_xyzw(v[1], v[2], v[3], v[0]).normalize()),
-            // matrix4d e pe randuri, cu translatia pe ultimul rand (vectori-rand) => transpusa in glam
+            // matrix4d is row-major, with the translation on the last row (row vectors) => transposed in glam
             "transform" if v.len() == 16 => DMat4::from_cols_array(&v[..16].try_into().unwrap()),
             _ => DMat4::IDENTITY,
         };
@@ -550,7 +550,7 @@ fn walk(w: &mut Walk, p: &Prim, parent: DMat4, path: &str, group: &str, col: [u8
     let mut m = parent * local_xf(p);
     let col = color_of(p, col);
     let group = if top || group.is_empty() { p.name.clone() } else { group.to_string() };
-    // referintele externe (@fisier.usda@</prim>): continutul lor, sub acest prim
+    // the external references (@file.usda@</prim>): their content, under this prim
     for (k, v) in &p.meta {
         if k != "references" && k != "payload" {
             continue;
@@ -578,7 +578,7 @@ fn walk(w: &mut Walk, p: &Prim, parent: DMat4, path: &str, group: &str, col: [u8
                     let old = std::mem::replace(&mut w.dir, sub_dir);
                     w.depth += 1;
                     for sp in prims.iter().filter(|sp| def.as_ref().is_none_or(|d| *d == sp.name)) {
-                        // prim-ul referit inlocuieste numele, dar pastreaza transformarea locala
+                        // the referenced prim replaces the name, but keeps the local transform
                         for k in &sp.kids {
                             walk(w, k, m * local_xf(sp), &path, &group, color_of(sp, col), false);
                         }
@@ -642,7 +642,7 @@ fn emit(w: &mut Walk, p: &Prim, m: DMat4, path: &str, group: &str, col: [u8; 4],
     if let Some(r) = referrer {
         push_meta(&r.meta, &mut props);
     }
-    // atributele care nu sunt geometrie: proprietati (namespace-ul = grupul, ex. "userProperties:FireRating")
+    // the attributes that are not geometry: properties (the namespace = the group, e.g. "userProperties:FireRating")
     for (ty, n, v) in p.attrs.iter().chain(referrer.map(|r| r.attrs.as_slice()).unwrap_or(&[]).iter()) {
         if GEOM_ATTRS.contains(&n.as_str()) || n.starts_with("xformOp") || n.starts_with("primvars:st") || n.starts_with("material:") || matches!(v, Val::None) || ty.ends_with("[]") && v.nums().len() > 16 {
             continue;
@@ -681,7 +681,7 @@ pub fn load_usda(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, S
     progress(0.2, "Parsing USD");
     let (layer, prims) = parse(&text);
     let meta = |k: &str| layer.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
-    // unitatile: implicit centimetri (metersPerUnit = 0.01), axa sus implicit Y
+    // the units: centimeters by default (metersPerUnit = 0.01), the up axis Y by default
     let mpu = meta("metersPerUnit").and_then(|v| v.num()).unwrap_or(0.01);
     let up = meta("upAxis").map(|v| v.text()).unwrap_or_else(|| "Y".into());
     let to_z = if up == "Y" { DMat4::from_rotation_x(std::f64::consts::FRAC_PI_2) } else { DMat4::IDENTITY };
@@ -690,7 +690,7 @@ pub fn load_usda(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, S
     let mut w = Walk { out: Vec::new(), warnings: Vec::new(), dir, depth: 0, progress };
     for p in &prims {
         if p.spec == "def" {
-            // copiii prim-ului radacina dau grupurile din arbore
+            // the children of the root prim give the groups in the tree
             let m = root * local_xf(p);
             let col = color_of(p, [200, 200, 200, 255]);
             emit(&mut w, p, m, "", &p.name, col, None);
@@ -788,7 +788,7 @@ def Xform "Building" (
 
     #[test]
     fn usda_default_units_and_y_up() {
-        // implicit: centimetri, Y sus -> 100 unitati pe Y = 1 m pe Z
+        // default: centimeters, Y up -> 100 units on Y = 1 m on Z
         let src = "#usda 1.0\ndef Mesh \"M\" {\n int[] faceVertexCounts = [3]\n int[] faceVertexIndices = [0,1,2]\n point3f[] points = [(0,0,0),(100,0,0),(0,100,0)]\n}\n";
         let dir = std::env::temp_dir().join(format!("mb_usda2_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();

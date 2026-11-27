@@ -1,8 +1,8 @@
-//! Editor vizual de scripturi (fără cod): utilizatorul adaugă „pași" dintr-o listă,
-//! completează parametri în GUI, iar aplicația generează cod Rhai și îl rulează.
-//! Fiecare pas corespunde unei funcții înregistrate în `scripting.rs`.
+//! Visual script editor (no code): the user adds „steps" from a list,
+//! fills in parameters in the GUI, and the app generates Rhai code and runs it.
+//! Each step corresponds to a function registered in `scripting.rs`.
 
-/// Tipul unui pas din scenariu.
+/// The type of a step in the scenario.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum StepKind {
     Log,
@@ -16,20 +16,20 @@ pub enum StepKind {
     ExportExcel,
 }
 
-/// Ce fel de valoare cere un câmp (decide editorul din GUI și verificarea).
+/// What kind of value a field asks for (decides the GUI editor and the validation).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FieldKind {
-    /// numele unei proprietăți din model (listă derulantă)
+    /// the name of a property in the model (drop-down list)
     Prop,
-    /// o valoare a proprietății din câmpul anterior (listă derulantă)
+    /// a value of the property from the previous field (drop-down list)
     Value,
-    /// text liber
+    /// free text
     Text,
-    /// număr zecimal
+    /// decimal number
     Number,
-    /// listă de ID-uri întregi separate prin virgulă
+    /// list of integer IDs separated by commas
     Ids,
-    /// cale de fișier de salvat, cu extensia dată
+    /// path of a file to save, with the given extension
     Path(&'static str),
 }
 
@@ -51,7 +51,7 @@ impl StepKind {
         StepKind::Log, StepKind::ExportBcf, StepKind::ExportExcel,
     ];
 
-    /// Numele afișat în editor.
+    /// The name shown in the editor.
     pub fn label(self) -> &'static str {
         match self {
             StepKind::SelectWhere => "Select by property",
@@ -80,7 +80,7 @@ impl StepKind {
         }
     }
 
-    /// Explicația pasului, pe înțelesul tuturor.
+    /// Explanation of the step, in plain words.
     pub fn explain(self) -> &'static str {
         match self {
             StepKind::SelectWhere => "Selectează toate elementele care au proprietatea aleasă egală cu valoarea aleasă (înlocuiește selecția).",
@@ -95,7 +95,7 @@ impl StepKind {
         }
     }
 
-    /// Câmpurile editabile ale pasului.
+    /// The editable fields of the step.
     pub fn fields(self) -> &'static [Field] {
         use FieldKind::*;
         const SELECT_WHERE: &[Field] = &[f("Property", "Category", Prop, "ex. Category, Level, Name"), f("Value", "", Value, "alege din listă")];
@@ -120,14 +120,14 @@ impl StepKind {
     }
 }
 
-/// Un pas concret cu valorile completate de utilizator.
+/// A concrete step with the values filled in by the user.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Step {
     pub kind: StepKind,
     pub values: Vec<String>,
 }
 
-/// Rhai: număr zecimal cu punct (10 -> 10.0), altfel funcțiile cu f64 nu se potrivesc.
+/// Rhai: decimal number with a point (10 -> 10.0), otherwise the f64 functions do not match.
 fn rhai_float(s: &str) -> String {
     let x = s.trim().replace(',', ".").parse::<f64>().unwrap_or(10.0);
     format!("{x:?}")
@@ -142,7 +142,7 @@ impl Step {
         self.values.get(i).cloned().unwrap_or_default()
     }
 
-    /// Problema unui câmp (None = în regulă). Afișată cu roșu în editor.
+    /// The problem of a field (None = fine). Shown in red in the editor.
     pub fn field_error(&self, i: usize) -> Option<&'static str> {
         let fl = self.kind.fields().get(i)?;
         let v = self.v(i);
@@ -161,7 +161,7 @@ impl Step {
         (0..self.kind.fields().len()).all(|i| self.field_error(i).is_none())
     }
 
-    /// Generează linia de cod Rhai pentru acest pas.
+    /// Generates the Rhai code line for this step.
     pub fn to_rhai(&self) -> String {
         let v = |i: usize| self.v(i);
         let q = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
@@ -182,28 +182,28 @@ impl Step {
     }
 }
 
-/// Proprietățile din modelele încărcate: pentru listele derulante și previzualizare.
+/// The properties in the loaded models: for the drop-down lists and the preview.
 #[derive(Clone, Debug, Default)]
 pub struct PropIndex {
-    /// numărul total de elemente
+    /// total number of elements
     pub total: usize,
     pub keys: std::collections::BTreeMap<String, KeyInfo>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct KeyInfo {
-    /// câte elemente au proprietatea completată
+    /// how many elements have the property filled in
     pub filled: usize,
-    /// valoare -> câte elemente o au (cel mult `MAX_VALUES` valori distincte)
+    /// value -> how many elements have it (at most `MAX_VALUES` distinct values)
     pub values: std::collections::BTreeMap<String, usize>,
-    /// au fost mai multe valori decât păstrăm (numărătorile pe valori pot lipsi)
+    /// there were more values than we keep (the per-value counts may be missing)
     pub truncated: bool,
 }
 
 pub const MAX_VALUES: usize = 300;
 
 impl PropIndex {
-    /// `elements` = pentru fiecare element, perechile (proprietate, valoare).
+    /// `elements` = for each element, the (property, value) pairs.
     pub fn build<'a>(elements: impl Iterator<Item = Vec<(&'a str, &'a str)>>) -> Self {
         let mut ix = PropIndex::default();
         let mut seen: std::collections::HashSet<(&str, &str)> = std::collections::HashSet::new();
@@ -219,7 +219,7 @@ impl PropIndex {
                 if v.is_empty() {
                     continue;
                 }
-                // „filled” o singură dată pe element, chiar dacă proprietatea apare în mai multe grupuri
+                // „filled” only once per element, even if the property appears in several groups
                 if !seen.contains(&(k, "\u{0}")) {
                     seen.insert((k, "\u{0}"));
                     info.filled += 1;
@@ -240,7 +240,7 @@ impl PropIndex {
         self.keys.get(key).or_else(|| self.keys.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)).map(|(_, v)| v))
     }
 
-    /// Câte elemente ar selecta `select_where(key, value)` (None = nu știm sigur).
+    /// How many elements `select_where(key, value)` would select (None = we do not know for sure).
     pub fn count_where(&self, key: &str, value: &str) -> Option<usize> {
         let info = self.key(key)?;
         let n: usize = info.values.iter().filter(|(v, _)| v.eq_ignore_ascii_case(value.trim())).map(|(_, n)| *n).sum();
@@ -251,12 +251,12 @@ impl PropIndex {
         }
     }
 
-    /// Câte elemente ar găsi `find_where_empty(key)`.
+    /// How many elements `find_where_empty(key)` would find.
     pub fn count_empty(&self, key: &str) -> usize {
         self.total - self.key(key).map_or(0, |i| i.filled).min(self.total)
     }
 
-    /// Valorile unei proprietăți, cele mai frecvente primele.
+    /// The values of a property, the most frequent first.
     pub fn values_of(&self, key: &str) -> Vec<(String, usize)> {
         let mut v: Vec<(String, usize)> = self.key(key).map(|i| i.values.iter().map(|(k, n)| (k.clone(), *n)).collect()).unwrap_or_default();
         v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
@@ -264,14 +264,14 @@ impl PropIndex {
     }
 }
 
-/// Scenariul complet (lista de pași) cu nume.
+/// The complete scenario (list of steps) with a name.
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Scenario {
     pub name: String,
     pub steps: Vec<Step>,
 }
 
-/// Primul rând al unui .rhai salvat din editor: pașii în JSON, ca să poată fi redeschiși.
+/// First line of a .rhai saved from the editor: the steps in JSON, so they can be reopened.
 pub const HEADER: &str = "// @managebim-scenario ";
 
 impl Scenario {
@@ -285,18 +285,18 @@ impl Scenario {
         s
     }
 
-    /// Codul de salvat: antetul cu pașii + codul generat.
+    /// The code to save: the header with the steps + the generated code.
     pub fn to_file(&self) -> String {
         let json = serde_json::to_string(self).unwrap_or_default();
         format!("{HEADER}{json}\n{}", self.to_rhai())
     }
 
-    /// Pașii dintr-un fișier salvat de editor (None = script scris de mână).
+    /// The steps from a file saved by the editor (None = hand-written script).
     pub fn from_file(src: &str) -> Option<Scenario> {
         let first = src.lines().next()?;
         let json = first.strip_prefix(HEADER)?;
         let mut s: Scenario = serde_json::from_str(json).ok()?;
-        // pași dintr-o versiune mai veche: completăm câmpurile lipsă cu valorile implicite
+        // steps from an older version: we fill the missing fields with the default values
         for st in &mut s.steps {
             let n = st.kind.fields().len();
             while st.values.len() < n {
@@ -310,7 +310,7 @@ impl Scenario {
         !self.steps.is_empty() && self.steps.iter().all(Step::is_valid)
     }
 
-    /// Scenarii gata făcute (nume, descriere, pași).
+    /// Ready-made scenarios (name, description, steps).
     pub fn templates() -> Vec<(&'static str, &'static str, Scenario)> {
         let st = |k: StepKind, vals: &[&str]| Step { kind: k, values: vals.iter().map(|s| s.to_string()).collect() };
         vec![
@@ -367,7 +367,7 @@ mod tests {
         assert!(Scenario::from_file("// handwritten\nlog(\"x\");").is_none());
     }
 
-    /// Toate scenariile gata făcute rulează în motorul Rhai fără erori.
+    /// All ready-made scenarios run in the Rhai engine without errors.
     #[test]
     fn templates_run() {
         let input = crate::scripting::Input {
@@ -395,7 +395,7 @@ mod tests {
         assert_eq!(ix.values_of("Category")[0], ("IfcWall".to_string(), 2));
     }
 
-    /// select_ids cu numere scrise de utilizator (i64 in Rhai) chiar selecteaza.
+    /// select_ids with numbers typed by the user (i64 in Rhai) does select.
     #[test]
     fn select_ids_literals() {
         let input = crate::scripting::Input { elements: vec![(0, vec![]), (1, vec![]), (2, vec![])], selected: vec![] };
@@ -404,7 +404,7 @@ mod tests {
         assert!(matches!(out.actions.first(), Some(crate::scripting::Action::SelectIds(v)) if v == &vec![0, 2]), "{:?}", out.actions);
     }
 
-    /// Find missing data: selecteaza toate elementele gasite, nu doar ultimul.
+    /// Find missing data: selects all the elements found, not just the last one.
     #[test]
     fn find_empty_selects_all() {
         let input = crate::scripting::Input {

@@ -1,4 +1,4 @@
-//! Parser minimal pentru fisiere STEP (ISO 10303-21), folosit de incarcatorul IFC.
+//! Minimal parser for STEP files (ISO 10303-21), used by the IFC loader.
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -59,7 +59,7 @@ impl V {
     pub fn is_null(&self) -> bool {
         matches!(self, V::Null | V::Star)
     }
-    /// Text afisabil pentru panoul de proprietati.
+    /// Displayable text for the properties panel.
     pub fn display(&self) -> String {
         match self {
             V::Null | V::Star => String::new(),
@@ -125,7 +125,7 @@ impl StepFile {
         let mut type_names: Vec<String> = Vec::new();
         let mut type_ids: HashMap<String, u32> = HashMap::new();
         while i < n {
-            // sari peste spatii / comentarii
+            // skip whitespace / comments
             let c = d[i];
             if c.is_ascii_whitespace() {
                 i += 1;
@@ -140,7 +140,7 @@ impl StepFile {
                 continue;
             }
             if c != b'#' {
-                // ENDSEC; etc. -> pana la ';'
+                // ENDSEC; etc. -> up to ';'
                 while i < n && d[i] != b';' {
                     i += 1;
                 }
@@ -166,7 +166,7 @@ impl StepFile {
                 i += 1;
             }
             let args_start = i;
-            // gaseste ';' in afara sirurilor
+            // finds ';' outside strings
             let mut in_str = false;
             while i < n {
                 let c = d[i];
@@ -224,7 +224,7 @@ impl StepFile {
         }
     }
 
-    /// Argumentele entitatii, parsate.
+    /// The entity arguments, parsed.
     pub fn args(&self, id: u32) -> Vec<V> {
         let Some(e) = self.ents.get(&id) else { return Vec::new() };
         let s = &self.data[e.start as usize..e.end as usize];
@@ -339,7 +339,7 @@ impl<'a> Parser<'a> {
                             let before = self.i;
                             l.push(self.value());
                             if self.i == before {
-                                self.i += 1; // evita bucla infinita pe caractere necunoscute
+                                self.i += 1; // avoids an infinite loop on unknown characters
                             }
                         }
                     }
@@ -393,7 +393,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// Decodeaza un sir STEP: '' , \X2\..\X0\ , \X\hh , \S\c
+/// Decodes a STEP string: '' , \X2\..\X0\ , \X\hh , \S\c
 pub fn decode_string(raw: &[u8]) -> String {
     let mut out = String::with_capacity(raw.len());
     let mut i = 0;

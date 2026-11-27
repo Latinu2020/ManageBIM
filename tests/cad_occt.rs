@@ -1,9 +1,9 @@
-//! Cititorul nativ OpenCascade: STEP / IGES / BREP (tests/fixtures/cad, generate cu tools/occt-fixtures.cpp).
+//! The native OpenCascade reader: STEP / IGES / BREP (tests/fixtures/cad, generated with tools/occt-fixtures.cpp).
 use bimrust::model::{RawElement, RawModel};
 use bimrust::*;
 use glam::DVec3;
 
-/// None daca ManageBIM a fost compilat fara OCCT (third_party\occt lipsa) - testele se sar atunci.
+/// None if ManageBIM was compiled without OCCT (third_party\occt missing) - the tests are then skipped.
 fn load(f: &str) -> Option<RawModel> {
     if !occt::BUILT_WITH_OCCT {
         eprintln!("OpenCascade not built - skipping {f}");
@@ -34,12 +34,12 @@ fn prop<'a>(e: &'a RawElement, n: &str) -> &'a str {
     e.props.iter().find(|p| p.name == n).map(|p| p.value.as_str()).unwrap_or("")
 }
 
-/// volum cu semn (pozitiv = normale spre exterior)
+/// signed volume (positive = outward normals)
 fn volume(e: &RawElement) -> f64 {
     e.tris.iter().map(|t| t[0].dot(t[1].cross(t[2])) / 6.0).sum()
 }
 
-/// culoare sRGB cu toleranta de rotunjire (+-2)
+/// sRGB color with a rounding tolerance (+-2)
 fn col(c: &[u8; 4], want: [u8; 3]) -> bool {
     (0..3).all(|i| (c[i] as i32 - want[i] as i32).abs() <= 2)
 }
@@ -60,14 +60,14 @@ fn step_assembly_names_paths_colours() {
     assert!(near(volume(plate), 0.2 * 0.1 * 0.01, 1e-9), "closed, outward oriented: {}", volume(plate));
     assert_eq!(plate.storey, "Bracket assembly");
     assert_eq!(plate.ifc_type, "Part");
-    // placa rosie, fata de sus galbena (culoare pe fata, XCAF)
+    // red plate, top face yellow (per-face color, XCAF)
     let yellow = plate.colors.iter().filter(|c| col(c, [255, 217, 0])).count();
     let red = plate.colors.iter().filter(|c| col(c, [204, 26, 26])).count();
     assert_eq!(yellow, 2, "top face colour: {:?}", plate.colors);
     assert_eq!(red, plate.colors.len() - 2);
     assert_eq!(plate.colors.len(), plate.tris.len());
 
-    // doua instante ale aceleiasi piese, la pozitii diferite
+    // two instances of the same part, at different positions
     let (p1, p2) = (&m.elements[1], &m.elements[2]);
     assert_eq!(prop(p1, "Part name"), "Pin");
     assert!(p1.colors.iter().all(|c| col(c, [26, 77, 230])), "pin colour");
@@ -102,7 +102,7 @@ fn iges_geometry_and_colours() {
     let s = b - a;
     assert!(near(s.x, 0.2, 1e-5) && near(s.y, 0.1, 1e-5) && near(s.z, 0.06, 1e-5), "IGES mm -> m: {s:?}");
     let cols: std::collections::BTreeSet<[u8; 3]> = m.elements.iter().flat_map(|e| e.colors.iter().map(|c| [c[0], c[1], c[2]])).collect();
-    // (culoarea conului din sub-ansamblu nu e scrisa de IGESCAFControl_Writer - IGES nu are ansambluri)
+    // (the color of the cone in the sub-assembly is not written by IGESCAFControl_Writer - IGES has no assemblies)
     for want in [[204, 26, 26], [26, 77, 230], [255, 217, 0]] {
         assert!(cols.iter().any(|c| col(&[c[0], c[1], c[2], 255], want)), "IGES colour {want:?} in {cols:?}");
     }
@@ -120,7 +120,7 @@ fn brep_compound_splits_into_parts() {
 #[test]
 fn freecad_fcstd_without_freecad() {
     let Some(m) = load("PartDesignExample.FCStd") else { return };
-    // doar Body (forma finala); schitele, axele si operatiile Pad / Pocket nu dubleaza geometria
+    // only Body (the final shape); the sketches, axes and the Pad / Pocket features do not duplicate the geometry
     let names: Vec<&str> = m.elements.iter().map(|e| e.name.as_str()).collect();
     assert_eq!(names, ["Body"], "{names:?}");
     let b = &m.elements[0];
@@ -130,7 +130,7 @@ fn freecad_fcstd_without_freecad() {
     let s = size(b);
     assert!(s.x > 0.01 && s.x < 1.0, "mm -> m: {s:?}");
     assert!(volume(b) > 0.0, "closed, outward oriented");
-    // culoarea din GuiDocument.xml (ShapeAppearance): gri FreeCAD implicit 204
+    // the color from GuiDocument.xml (ShapeAppearance): FreeCAD default gray 204
     assert!(b.colors.iter().all(|c| col(c, [204, 204, 204]) && c[3] == 255), "{:?}", &b.colors[..1]);
     assert!(m.info.iter().any(|(k, v)| k == "Document" && v == "PartDesignExample"));
 }

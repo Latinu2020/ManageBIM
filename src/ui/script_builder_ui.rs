@@ -1,8 +1,8 @@
-//! Interfata editorului vizual de scripturi (Script Library › Visual script builder).
+//! The interface of the visual script editor (Script Library › Visual script builder).
 use super::*;
 use crate::script_builder::{FieldKind, PropIndex, Scenario, Step, StepKind};
 
-/// Ce a cerut utilizatorul in timpul desenarii listei (aplicat dupa, ca sa nu tinem imprumuturi).
+/// What the user asked for while drawing the list (applied afterwards, so we do not hold borrows).
 enum Pending {
     Browse(usize, usize, &'static str),
     Delete(usize),
@@ -11,7 +11,7 @@ enum Pending {
 }
 
 impl App {
-    /// Indexul proprietatilor modelelor incarcate (refacut doar cand se schimba modelele).
+    /// The property index of the loaded models (rebuilt only when the models change).
     fn scenario_props(&mut self) -> std::sync::Arc<PropIndex> {
         let sig: u64 = self.loaded_models().map(|(mi, m)| (mi as u64 + 1) * 1_000_003 + m.elements.len() as u64).sum();
         if let Some((s, ix)) = &self.scenario_index {
@@ -40,7 +40,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.label("Name");
                 ui.add(egui::TextEdit::singleline(&mut self.scenario.name).desired_width(180.0));
-                // scenarii gata facute
+                // ready-made scenarios
                 let tid = ui.make_persistent_id("vb_templates");
                 let tr = ui.button("📋 Templates").on_hover_text("Start from a ready-made scenario");
                 if tr.clicked() {
@@ -76,7 +76,7 @@ impl App {
             if ix.total == 0 {
                 ui.label(RichText::new(crate::i18n::tr("ℹ Load a model to see the property lists and the preview.")).small().color(Color32::from_rgb(230, 170, 60)));
             }
-            // meniu de adaugare pas
+            // add-step menu
             let add_id = ui.make_persistent_id("vb_add_menu");
             let add_r = ui.button("➕ Add step");
             if add_r.clicked() {
@@ -139,7 +139,7 @@ impl App {
                                                     } else {
                                                         ix.values_of(&prev).into_iter().map(|(v, n)| (v.clone(), format!("{v}   ({n})"))).collect()
                                                     };
-                                                    // daca textul scris filtreaza tot, aratam lista completa
+                                                    // if the typed text filters out everything, we show the full list
                                                     let any = items.iter().any(|(k, _)| k.to_lowercase().contains(&filter));
                                                     egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                                                         if items.is_empty() {
@@ -170,7 +170,7 @@ impl App {
                             }
                         });
                     }
-                    // previzualizare: ce va face pasul pe modelul curent
+                    // preview: what the step will do on the current model
                     if ix.total > 0 && st.is_valid() {
                         let v = |k: usize| st.values.get(k).cloned().unwrap_or_default();
                         let msg = match st.kind {
@@ -221,7 +221,7 @@ impl App {
                 if run.clicked() {
                     let (name, src) = (self.scenario.name.clone(), self.scenario.to_rhai());
                     self.run_source(&name, &src);
-                    // set_prop poate adauga proprietati noi: listele se refac la urmatoarea deschidere
+                    // set_prop may add new properties: the lists are rebuilt on the next opening
                     self.scenario_index = None;
                 }
                 if ui.add_enabled(!self.scenario.steps.is_empty(), egui::Button::new("💾 Save")).on_hover_text("Save to the scripts folder; you can reopen it here with 📂 Open").clicked() {

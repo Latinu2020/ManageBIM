@@ -1,4 +1,4 @@
-//! Incarcator glTF 2.0 (.gltf / .glb) - doar geometrie + culori de material.
+//! glTF 2.0 loader (.gltf / .glb) - geometry + material colors only.
 use crate::model::{Prop, RawElement, RawModel};
 use base64::Engine;
 use glam::{DMat4, DVec3};
@@ -10,8 +10,8 @@ pub fn load_gltf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, S
     load_gltf_bytes(&bytes, path, progress, None)
 }
 
-/// Ca load_gltf, din memorie (GLB-ul din .b3dm / .i3dm); path da folderul resurselor externe.
-/// atch: tabelul de lot 3D Tiles 1.0 (randurile pe _BATCHID), daca exista.
+/// Like load_gltf, from memory (the GLB from .b3dm / .i3dm); path gives the folder of external resources.
+/// atch: the 3D Tiles 1.0 batch table (the rows by _BATCHID), if there is one.
 pub fn load_gltf_bytes(bytes: &[u8], path: &str, progress: &dyn Fn(f32, &str), batch: Option<Vec<Vec<(String, String)>>>) -> Result<RawModel, String> {
     // the gltf crate can panic while validating a damaged file (an index into an empty list): a clear error instead
     let g = std::panic::catch_unwind(|| gltf::Gltf::from_slice(bytes))
@@ -35,17 +35,17 @@ pub fn load_gltf_bytes(bytes: &[u8], path: &str, progress: &dyn Fn(f32, &str), b
         buffers.push(data);
     }
     progress(0.3, "Generating geometry");
-    // EXT_structural_metadata / EXT_mesh_features (Cesium, 3D Tiles 1.1): un obiect = un rand din tabel
+    // EXT_structural_metadata / EXT_mesh_features (Cesium, 3D Tiles 1.1): one object = one row in the table
     let raw_json = crate::gltf_meta::json_of(bytes);
     let mut meta = raw_json.as_ref().map(|j| crate::gltf_meta::read_meta(j, &buffers)).unwrap_or_default();
-    // 3D Tiles 1.0: tabelul de lot devine ultimul tabel; _BATCHID il refera
+    // 3D Tiles 1.0: the batch table becomes the last table; _BATCHID references it
     let batch_table = batch.map(|rows| {
         meta.tables.push(("Batch table".to_string(), rows));
         meta.tables.len() - 1
     });
     let mut elements = Vec::new();
     let mut warnings = Vec::new();
-    // Y-sus (glTF) -> Z-sus (BIM)
+    // Y-up (glTF) -> Z-up (BIM)
     let yup = DMat4::from_cols_array(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]);
     let scenes: Vec<gltf::Scene> = match g.default_scene() {
         Some(s) => vec![s],
@@ -68,7 +68,7 @@ pub fn load_gltf_bytes(bytes: &[u8], path: &str, progress: &dyn Fn(f32, &str), b
         let mut tris = Vec::new();
         let mut colors = Vec::new();
         let mut mats: Vec<String> = Vec::new();
-        // obiectul (tabel, id) al fiecarui triunghi, cand plasa are EXT_mesh_features
+        // the object (table, id) of each triangle, when the mesh has EXT_mesh_features
         let mut feats: Vec<Option<(usize, u32)>> = Vec::new();
         for prim in mesh.primitives() {
             if prim.mode() != gltf::mesh::Mode::Triangles {
@@ -119,7 +119,7 @@ pub fn load_gltf_bytes(bytes: &[u8], path: &str, progress: &dyn Fn(f32, &str), b
         if !mats.is_empty() {
             props.push(Prop { group: "Material".into(), name: "Material".into(), value: mats.join(", ") });
         }
-        // proprietatile utilizatorului: Blender (Custom Properties), Rhino, sau un GLB exportat din ManageBIM
+        // the user properties: Blender (Custom Properties), Rhino, or a GLB exported from ManageBIM
         let mut ifc_type = "glTF Mesh".to_string();
         let mut guid = format!("node-{}", node.index());
         let mut storey = group;
@@ -139,7 +139,7 @@ pub fn load_gltf_bytes(bytes: &[u8], path: &str, progress: &dyn Fn(f32, &str), b
             }
         }
         if feats.iter().any(|f| f.is_some()) {
-            // un element pe obiect (feature), cu randul lui din tabelul de proprietati
+            // one element per object (feature), with its row from the property table
             let mut groups: std::collections::BTreeMap<Option<(usize, u32)>, (Vec<[DVec3; 3]>, Vec<[u8; 4]>)> = std::collections::BTreeMap::new();
             for ((t, c), f) in tris.into_iter().zip(colors).zip(feats) {
                 let g = groups.entry(f).or_default();
@@ -158,7 +158,7 @@ pub fn load_gltf_bytes(bytes: &[u8], path: &str, progress: &dyn Fn(f32, &str), b
                             for (k, v) in row {
                                 p.push(Prop { group: title.clone(), name: k.clone(), value: v.clone() });
                             }
-                            // numele obiectului: prima proprietate de tip nume / id din rand
+                            // the object name: the first name / id property in the row
                             if let Some((_, v)) = row.iter().find(|(k, _)| ["name", "Name", "NAME", "id", "ID", "gml_id", "objectid", "OBJECTID"].contains(&k.as_str())) {
                                 ename = format!("{name} · {v}");
                             } else {
@@ -190,7 +190,7 @@ pub fn load_gltf_bytes(bytes: &[u8], path: &str, progress: &dyn Fn(f32, &str), b
     Ok(RawModel { elements, info, warnings })
 }
 
-/// `extras` (obiect JSON) -> perechi (cheie, valoare text). Obiectele imbricate devin "grup|cheie".
+/// `extras` (JSON object) -> (key, text value) pairs. Nested objects become "group|key".
 fn extras_props(x: &Option<Box<serde_json::value::RawValue>>) -> Vec<(String, String)> {
     let Some(raw) = x else { return Vec::new() };
     let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(raw.get()) else { return Vec::new() };
@@ -213,7 +213,7 @@ fn extras_props(x: &Option<Box<serde_json::value::RawValue>>) -> Vec<(String, St
     out
 }
 
-/// "My%20Folder/%C8%99.bin" -> "My Folder/ș.bin" (URI-urile din glTF sunt codate procentual, UTF-8)
+/// "My%20Folder/%C8%99.bin" -> "My Folder/ș.bin" (glTF URIs are percent-encoded, UTF-8)
 pub fn percent_decode(s: &str) -> String {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());

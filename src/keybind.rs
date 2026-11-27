@@ -1,10 +1,10 @@
-// Keybindings customizabile (0.27.12). Un șir de forma "Ctrl+Shift+O" se
-// potrivește cu starea tastaturii egui. Doar override-urile se salvează în
-// Settings::keybinds; restul rămân la valorile din COMMANDS.
+// Customizable keybindings (0.27.12). A string of the form "Ctrl+Shift+O" is
+// matched against the egui keyboard state. Only the overrides are saved in
+// Settings::keybinds; the rest stay at the values in COMMANDS.
 
 use eframe::egui::Key;
 
-/// Comenzile care au keybinding.
+/// The commands that have a keybinding.
 pub const COMMANDS: [(&str, &str); 8] = [
     ("open", "Ctrl+O"),
     ("save", "Ctrl+S"),
@@ -16,14 +16,14 @@ pub const COMMANDS: [(&str, &str); 8] = [
     ("section_up", "PgUp"),
 ];
 
-/// Rezolvă combinația pentru o comandă: override-ul din setări, altfel defaultul.
+/// Resolves the combination for a command: the override from the settings, otherwise the default.
 pub fn binding(keybinds: &std::collections::BTreeMap<String, String>, cmd: &str) -> String {
     keybinds.get(cmd).cloned().unwrap_or_else(|| {
         COMMANDS.iter().find(|(c, _)| *c == cmd).map(|(_, k)| k.to_string()).unwrap_or_default()
     })
 }
 
-/// Parsează "Ctrl+Shift+O" → (ctrl/cmd, shift, alt, Key).
+/// Parses "Ctrl+Shift+O" → (ctrl/cmd, shift, alt, Key).
 fn parse(s: &str) -> Option<(bool, bool, bool, Key)> {
     let mut ctrl = false;
     let mut shift = false;
@@ -52,7 +52,7 @@ fn parse(s: &str) -> Option<(bool, bool, bool, Key)> {
     key.map(|k| (ctrl, shift, alt, k))
 }
 
-/// Adevărat dacă utilizatorul a apăsat combinația dată în acest frame.
+/// True if the user pressed the given combination in this frame.
 pub fn pressed(ctx: &eframe::egui::Context, spec: &str) -> bool {
     let Some((ctrl, shift, alt, key)) = parse(spec) else { return false };
     ctx.input(|i| {
@@ -63,7 +63,7 @@ pub fn pressed(ctx: &eframe::egui::Context, spec: &str) -> bool {
     })
 }
 
-/// Verifică dacă o combinație e deja folosită de altă comandă.
+/// Checks whether a combination is already used by another command.
 pub fn conflicts(keybinds: &std::collections::BTreeMap<String, String>, cmd: &str, spec: &str) -> Option<String> {
     let norm = |s: &str| s.split('+').map(|x| x.trim().to_ascii_lowercase()).collect::<Vec<_>>().join("+");
     let target = norm(spec);

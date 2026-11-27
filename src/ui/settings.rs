@@ -1,10 +1,10 @@
-//! Fereastra de setări a aplicației: aspect (inclusiv font / DPI), navigare,
-//! export DWG / DXF, fișiere și sincronizare. Toate modificările se salvează
-//! imediat în `settings.json`, ca să nu se piardă la închidere.
+//! The app settings window: appearance (including font / DPI), navigation,
+//! DWG / DXF export, files and sync. All changes are saved
+//! immediately to `settings.json`, so they are not lost on close.
 
 use super::*;
 
-/// Titlul unei sectiuni din Settings: majuscule mici in culoarea de accent + linie fina (stil Revit / VS Code).
+/// The title of a Settings section: small caps in the accent color + a thin line (Revit / VS Code style).
 fn section_title(ui: &mut egui::Ui, title: &str) {
     ui.add_space(10.0);
     ui.label(RichText::new(crate::i18n::tr(title).to_uppercase()).size(11.5).strong().color(accent()));
@@ -26,7 +26,7 @@ impl App {
             .resizable(true)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    // ------------------------------------------------ aspect
+                    // ------------------------------------------------ appearance
                     section_title(ui, "Appearance");
                     ui.horizontal(|ui| {
                         ui.label("Theme");
@@ -146,7 +146,7 @@ impl App {
                         self.looks.clear();
                         self.colors_dirty = true;
                     }
-                    // fontul interfetei: cele incluse + toate fonturile din sistem
+                    // the UI font: the bundled ones + all fonts in the system
                     let mut pick: Option<String> = None;
                     ui.horizontal(|ui| {
                         ui.label("Font");
@@ -198,7 +198,7 @@ impl App {
                     if let Some(f) = pick {
                         self.settings.font_family = f;
                         self.settings.save();
-                        // forteaza reinstalarea fontului la urmatorul cadru
+                        // forces reinstalling the font on the next frame
                         self.font_family_cur.clear();
                     }
                     ui.horizontal(|ui| {
@@ -243,7 +243,7 @@ impl App {
                     .on_hover_text("BCF 3.0 places comments inside the Topic (newer BIMcollab / Solibri).");
                     ui.label(RichText::new("The cut options (view, hatch, dimensions, levels, title block) are in the Annotation tab; the IFC class mapping in BIM › Map classes.").small().weak());
 
-                    // ------------------------------------------------ navigare
+                    // ------------------------------------------------ navigation
                     ui.separator();
                     section_title(ui, "Navigation & units");
                     ui.horizontal(|ui| {
@@ -345,7 +345,7 @@ impl App {
                     if ui.small_button("Reset all shortcuts").clicked() { reset = true; }
                     if reset { self.settings.keybinds.clear(); self.settings.save(); }
 
-                    // ------------------------------------------------ profil partajabil
+                    // ------------------------------------------------ shareable profile
                     ui.separator();
                     section_title(ui, "Settings profile");
                     ui.horizontal(|ui| {
@@ -356,7 +356,7 @@ impl App {
                             self.request_path(Purpose::ImportSettingsProfile);
                         }
                     });
-                    // ------------------------------------------------ fisiere / sync
+                    // ------------------------------------------------ files / sync
                     ui.separator();
                     section_title(ui, "Scripts");
                     ui.horizontal(|ui| {

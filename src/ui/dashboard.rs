@@ -1,5 +1,5 @@
-//! Fereastra Dashboard: sumarul proiectului (modele, clash-uri, issues, verificari, niveluri) si exportul
-//! ca raport PDF / Word (crate::dashboard).
+//! The Dashboard window: the project summary (models, clashes, issues, checks, levels) and the export
+//! as a PDF / Word report (crate::dashboard).
 use super::*;
 use crate::dashboard::{ClashRow, Jpeg, ModelRow, Summary, SEVERITY, SEVERITY_RGB, STATUS, STATUS_RGB};
 use egui_phosphor::regular as P;
@@ -14,7 +14,7 @@ fn count_list<'a>(it: impl Iterator<Item = &'a str>) -> Vec<(String, usize)> {
     v
 }
 
-/// bara orizontala impartita in segmente colorate
+/// horizontal bar split into coloured segments
 fn stacked_bar(ui: &mut egui::Ui, parts: &[(String, usize, [u8; 3])], w: f32) {
     let total: usize = parts.iter().map(|p| p.1).sum();
     let (r, resp) = ui.allocate_exact_size(egui::vec2(w.max(1.0), 12.0), egui::Sense::hover());
@@ -37,7 +37,7 @@ fn stacked_bar(ui: &mut egui::Ui, parts: &[(String, usize, [u8; 3])], w: f32) {
 }
 
 impl App {
-    /// Sumarul proiectului, din starea curenta.
+    /// The project summary, from the current state.
     pub(crate) fn dashboard_summary(&self) -> Summary {
         let fallback = self.project_path.as_deref().map(crate::file_name).unwrap_or_else(|| self.loaded_models().next().map(|(_, m)| m.name.clone()).unwrap_or_else(|| "Project".into()));
         let mut s = Summary {
@@ -77,7 +77,7 @@ impl App {
                 Some((crate::egress::Check::Egress, p)) => format!("Egress {:.0} m", p.max_travel),
                 None => t.ty.label().to_string(),
             };
-            // fiecare rezultat, cu elementele, locatia (axe / nivel), responsabilul si comentariul
+            // each result, with the elements, the location (grids / level), the assignee and the comment
             let item = |id: ElemId| self.elem(id).map(|(m, e)| format!("{} [{}]", if e.name.is_empty() { &e.ifc_type } else { &e.name }, m.name)).unwrap_or_default();
             let level = |id: ElemId| self.elem(id).map(|(_, e)| e.storey.clone()).unwrap_or_default();
             let results: Vec<crate::dashboard::ResultRow> = t
@@ -101,7 +101,7 @@ impl App {
                     }
                 })
                 .collect();
-            // grupurile: numar, deschise, statusul cel mai frecvent, responsabilii
+            // the groups: number, open, the most frequent status, the assignees
             let mut gmap: std::collections::BTreeMap<String, Vec<&ClashResult>> = Default::default();
             for r in t.results.iter().filter(|r| !r.group.is_empty()) {
                 gmap.entry(r.group.clone()).or_default().push(r);
@@ -125,7 +125,7 @@ impl App {
             s.clash.push(ClashRow { name: t.name.clone(), kind, total: t.results.len(), by_status, by_severity: by_sev, last_run: t.last_run.clone(), tolerance, groups, results });
         }
         s.viewpoints = self.viewpoints.len();
-        // fiecare viewpoint (issue) cu markup-urile lui; imaginile se ataseaza la export
+        // each viewpoint (issue) with its markups; the images are attached on export
         s.views = self
             .viewpoints
             .iter()
@@ -198,7 +198,7 @@ impl App {
                 });
                 ui.add_space(8.0);
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                    // ---- indicatori
+                    // ---- indicators
                     let kpis = s.kpis();
                     let cols = if ui.available_width() > 900.0 { 6 } else { 3 };
                     egui::Grid::new("dash_kpi").num_columns(cols).spacing([10.0, 10.0]).show(ui, |ui| {
@@ -225,7 +225,7 @@ impl App {
                         });
                         ui.add_space(10.0);
                     };
-                    // ---- clash-uri
+                    // ---- clashes
                     card(ui, "Clash Detective", &mut |ui| {
                         if s.clash.is_empty() {
                             ui.label(RichText::new(crate::i18n::tr("No clash tests yet.")).weak());
@@ -279,7 +279,7 @@ impl App {
                             goto = Some(Panel::Viewpoints);
                         }
                     });
-                    // ---- verificari + modele
+                    // ---- checks + models
                     card(ui, "Model Checker", &mut |ui| match s.check {
                         Some((r, c, f)) => {
                             let ok = c.saturating_sub(f);
@@ -344,7 +344,7 @@ impl App {
 }
 
 impl App {
-    /// Exportul Dashboard: intai capturile (fisele de clash si viewpoint-urile cu markup-uri), apoi fisierul.
+    /// The Dashboard export: first the captures (the clash sheets and the viewpoints with markups), then the file.
     pub(crate) fn dashboard_export(&mut self, pdf: bool, path: String) {
         let tests: Vec<(Vec<String>, Vec<bool>)> = self
             .clash.tests
@@ -358,7 +358,7 @@ impl App {
         }
         let saved_bottom = self.settings.layout.bottom_open;
         if !queue.is_empty() {
-            // modul Clash Detective vizibil pe durata capturilor de clash (elementele colorate, restul estompat)
+            // Clash Detective mode visible during the clash captures (the elements coloured, the rest dimmed)
             self.open_panel(Panel::Clash);
         }
         self.dash_job = Some(crate::dashboard::CaptureJob {
@@ -382,7 +382,7 @@ impl App {
         self.toast("Dashboard: capturing the clash and viewpoint images…");
     }
 
-    /// Un pas pe cadru: arata clash-ul / viewpoint-ul urmator, asteapta 3 cadre (culorile), cere captura.
+    /// One step per frame: shows the next clash / viewpoint, waits 3 frames (the colours), asks for the capture.
     pub(super) fn dashboard_step(&mut self, ctx: &egui::Context) {
         let Some(j) = self.dash_job.as_mut() else { return };
         ctx.request_repaint();
@@ -413,7 +413,7 @@ impl App {
                 self.apply(Action::FocusClashes(ti, vec![ri]));
             } else {
                 let vi = j.views[j.idx - j.queue.len()];
-                // viewpoint-urile fara modul clash (zona de jos coborata), cu camera / sectiunea / ascunsele lor
+                // the viewpoints without clash mode (bottom area lowered), with their camera / section / hidden items
                 self.settings.layout.bottom_open = false;
                 self.clash.focus = None;
                 self.restore_viewpoint(vi);
@@ -430,7 +430,7 @@ impl App {
         }
     }
 
-    /// Captura ceruta de export (apelat din render_step); intoarce true daca a fost a lui.
+    /// The capture requested by the export (called from render_step); returns true if it was its own.
     pub(crate) fn dashboard_capture_done(&mut self, r: &Result<crate::video::Frame, String>) -> bool {
         let Some(j) = self.dash_job.as_ref() else { return false };
         if !j.waiting {
@@ -438,7 +438,7 @@ impl App {
         }
         let view = j.idx.checked_sub(j.queue.len()).and_then(|k| j.views.get(k).copied());
         let reds = view.and_then(|vi| self.viewpoints.get(vi)).map(|v| v.redlines.clone()).unwrap_or_default();
-        // punctul clash-ului, proiectat in imagine (cerc rosu + cruce), ca sa se vada exact unde e
+        // the clash point, projected into the image (red circle + cross), so you can see exactly where it is
         let mark = match (view, r) {
             (None, Ok(f)) => {
                 let (ti, ri) = j.queue[j.idx];

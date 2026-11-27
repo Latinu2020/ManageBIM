@@ -34,8 +34,8 @@ namespace ManageBIM.Acad
             if (!string.IsNullOrEmpty(value)) Props.Add(new BimcProp(group, name, value));
         }
 
-        /// <summary>Ca Add, dar pastreaza si valorile goale (campurile Plant 3D necompletate: Tag, Spec...),
-        /// ca in ManageBIM sa se vada toate proprietatile si Model Checker sa gaseasca datele lipsa.</summary>
+        /// <summary>Like Add, but also keeps the empty values (unfilled Plant 3D fields: Tag, Spec...),
+        /// so that ManageBIM shows all properties and Model Checker finds the missing data.</summary>
         public void AddKeepEmpty(string group, string name, string value)
         {
             if (!string.IsNullOrEmpty(name)) Props.Add(new BimcProp(group, name, value ?? ""));

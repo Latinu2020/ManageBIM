@@ -1,9 +1,9 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
     // ------------------------------------------------------------------ Quantification
-    /// Semnatura starii de care depinde rezultatul (configuratie + selectie / elemente ascunse).
+    /// The signature of the state the result depends on (configuration + selection / hidden elements).
     pub fn qto_signature(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -21,7 +21,7 @@ impl App {
         h.finish()
     }
 
-    /// Recalculeaza cantitatile daca s-a schimbat ceva (configuratie, modele, selectie...).
+    /// Recomputes the quantities if something changed (configuration, models, selection...).
     pub fn qto_update(&mut self) {
         let sig = self.qto_signature();
         if self.qto_result.is_none() || sig != self.qto_sig {
@@ -33,14 +33,14 @@ impl App {
     pub fn qto_compute(&self, setup: &crate::qto::QtoSetup) -> crate::qto::QtoResult {
         use crate::qto::{geo_qty, GeoQty, QtoResult, QtoRow, QtoScope, QtyColumn};
         use rayon::prelude::*;
-        // elementele luate in calcul
+        // the elements taken into account
         let ids: Vec<ElemId> = match setup.scope {
             QtoScope::All => self.all_ids(),
             QtoScope::Visible => self.all_ids().into_iter().filter(|i| self.is_visible(*i)).collect(),
             QtoScope::Selection => self.selected.iter().copied().collect(),
         };
         let ids: Vec<ElemId> = ids.into_iter().filter(|i| self.elem(*i).is_some()).collect();
-        // geometria doar daca o cere vreo coloana; in paralel
+        // the geometry only if some column asks for it; in parallel
         let need_geo = setup.columns.iter().any(|c| matches!(c, QtyColumn::Volume | QtyColumn::Surface | QtyColumn::PlanArea | QtyColumn::Length | QtyColumn::Height));
         let models = &self.models;
         let geo: Vec<GeoQty> = if need_geo {
@@ -118,7 +118,7 @@ impl App {
         QtoResult { setup: setup.clone(), rows, totals, missing, count: ids.len(), units }
     }
 
-    /// (model, nume, tip IFC, nivel, GlobalId) pentru foaia detaliata din Excel
+    /// (model, name, IFC type, level, GlobalId) for the detailed sheet in Excel
     pub fn qto_item_info(&self, id: ElemId) -> [String; 5] {
         match self.elem(id) {
             Some((m, e)) => [m.name.clone(), e.name.clone(), e.ifc_type.clone(), e.storey.clone(), e.guid.clone()],
@@ -127,7 +127,7 @@ impl App {
     }
 
     // ------------------------------------------------------------------ Appearance Profiler
-    /// Valorile proprietatii profilului in toate modelele: (valoare -> nr. elemente, valori numerice, unitate).
+    /// The values of the profile property in all models: (value -> element count, numeric values, unit).
     pub(super) fn profile_values(&self) -> (HashMap<String, u32>, Vec<f64>, String) {
         let (cat, prop) = (&self.profile.cat, &self.profile.prop);
         let mut counts: HashMap<String, u32> = HashMap::new();
@@ -150,7 +150,7 @@ impl App {
         (counts, nums, unit)
     }
 
-    /// Reface harta element -> regula si numaratorile (dupa import sau editarea regulilor).
+    /// Rebuilds the element -> rule map and the counts (after import or editing the rules).
     pub fn profile_recount(&mut self) {
         self.profile_map = None;
         let mut counts = vec![0u32; self.profile.rules.len()];
@@ -165,7 +165,7 @@ impl App {
         self.colors_dirty = true;
     }
 
-    /// Dupa import: adauga culori pentru valorile din modelele curente care nu sunt in profil.
+    /// After import: adds colors for the values from the current models that are not in the profile.
     pub fn profile_add_missing(&mut self) {
         let (counts, _, _) = self.profile_values();
         let n = self.profile.add_missing(counts.into_iter().collect());
@@ -173,7 +173,7 @@ impl App {
         self.toast(if n == 0 { "Profiler: every value already has a colour.".to_string() } else { format!("Profiler: {n} new values added.") });
     }
 
-    /// Valori din modele fara regula (doar modul By value) - pentru avertizarea dupa import.
+    /// Values from models without a rule (only the By value mode) - for the warning after import.
     pub fn profile_uncovered(&self) -> usize {
         if self.profile.mode != crate::profiler::ProfileMode::Values {
             return 0;
@@ -182,7 +182,7 @@ impl App {
         counts.keys().filter(|v| !self.profile.rules.iter().any(|r| r.label.eq_ignore_ascii_case(v))).count()
     }
 
-    /// Genereaza regulile profilului din valorile proprietatii alese, pe toate modelele.
+    /// Generates the profile rules from the values of the chosen property, on all models.
     pub fn profile_generate(&mut self) {
         use crate::profiler::ProfileMode;
         let prop = self.profile.prop.clone();
@@ -209,7 +209,7 @@ impl App {
         self.colors_dirty = true;
     }
 
-    /// element -> indexul regulii (doar elementele care intra intr-o regula)
+    /// element -> the rule index (only the elements that fall into a rule)
     pub fn profile_map(&mut self) -> &HashMap<ElemId, u16> {
         if self.profile_map.is_none() {
             let mut map = HashMap::new();
@@ -226,7 +226,7 @@ impl App {
         self.profile_map.as_ref().unwrap()
     }
 
-    /// Selecteaza elementele unei reguli (click pe o linie din legenda).
+    /// Selects the elements of a rule (click on a line in the legend).
     pub fn profile_select(&mut self, rule: usize, add: bool) {
         let ids: Vec<ElemId> = self.profile_map().iter().filter(|(_, r)| **r as usize == rule).map(|(id, _)| *id).collect();
         self.apply(Action::Select(ids, add));
@@ -256,7 +256,7 @@ impl App {
         self.colors_dirty = true;
     }
 
-    /// Verificarile rapide de calitate (fara reguli IDS) pe toate modelele incarcate.
+    /// The quick quality checks (without IDS rules) on all loaded models.
     pub fn run_quick_checks(&mut self) {
         let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
         if models.is_empty() {
@@ -269,7 +269,7 @@ impl App {
         self.toast(format!("Quick checks: {bad} of {} found problems ({:.0} ms)", self.quick_checks.len(), t.elapsed().as_secs_f64() * 1e3));
     }
 
-    /// Raport CSV al verificarilor rapide: verificare; GUID; element; tip; nivel; motiv.
+    /// CSV report of the quick checks: check; GUID; element; type; level; reason.
     pub fn quick_checks_csv(&self) -> String {
         let q = |s: &str| if s.contains(';') || s.contains('"') { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() };
         let mut s = String::from("{feff}Check;GUID;Element;Type;Level;Reason
@@ -285,7 +285,7 @@ impl App {
         s
     }
 
-    /// Recalculeaza lista proprietatilor schimbate dupa un Compare.
+    /// Recomputes the list of changed properties after a Compare.
     pub fn refresh_compare_params(&mut self) {
         self.compare_param_pick = None;
         self.compare_params = match &self.compare {
@@ -311,7 +311,7 @@ impl App {
         self.colors_dirty = true;
     }
 
-    /// Compara modelele (fara nori) cu toti norii de puncte incarcati.
+    /// Compares the models (without clouds) with all loaded point clouds.
     pub fn run_asbuilt(&mut self) {
         let t = std::time::Instant::now();
         let models: Vec<(usize, Arc<Model>)> = self.loaded_models().map(|(i, m)| (i, m.clone())).collect();
@@ -352,8 +352,8 @@ impl App {
         self.asbuilt_colors(true);
     }
 
-    /// Coloreaza elementele dupa stare (verde / galben / rosu / gri) sau scoate culorile.
-    /// Transforma diferentele as-built (Missing / Partial) in rezultate de clash „Scan vs Model”.
+    /// Colors the elements by state (green / yellow / red / gray) or removes the colors.
+    /// Turns the as-built differences (Missing / Partial) into „Scan vs Model” clash results.
     pub fn add_scan_clashes(&mut self) {
         let Some(res) = self.asbuilt.clone() else {
             self.error("Run Scan vs Model first (Analysis › As-built).");
@@ -448,7 +448,7 @@ impl App {
         }
     }
 
-    /// Ruleaza toate regulile active pe modelele incarcate.
+    /// Runs all active rules on the loaded models.
     pub fn run_check(&mut self) {
         if self.check_rules.is_empty() {
             return self.error("No rules yet - add a rule, load the starter rules or import an IDS file.");
@@ -466,7 +466,7 @@ impl App {
         self.toast(format!("Model check: {checked} checks, {failed} failed ({:.1} s)", t.elapsed().as_secs_f32()));
     }
 
-    /// Importa specificatiile unui fisier IDS ca reguli (se adauga la cele existente).
+    /// Imports the specifications of an IDS file as rules (they are added to the existing ones).
     pub fn import_ids(&mut self, path: &str) {
         let txt = match std::fs::read(path) {
             Ok(b) => String::from_utf8_lossy(&b).to_string(),
@@ -475,7 +475,7 @@ impl App {
         match crate::check::parse_ids(&txt, &crate::file_name(path)) {
             Ok((rules, warn)) => {
                 let n = rules.len();
-                // aceeasi specificatie importata din nou: o inlocuim
+                // the same specification imported again: we replace it
                 let src = crate::file_name(path);
                 self.check_rules.retain(|r| !(r.source == src && rules.iter().any(|x| x.name == r.name)));
                 self.check_rules.extend(rules);
@@ -488,7 +488,7 @@ impl App {
         }
     }
 
-    /// Regulile Model Checker ca fisier buildingSMART IDS 1.0.
+    /// The Model Checker rules as a buildingSMART IDS 1.0 file.
     pub fn export_ids(&mut self, path: &str) {
         if self.check_rules.is_empty() {
             return self.error("No rules to export.");
@@ -526,7 +526,7 @@ impl App {
         }
     }
 
-    /// Raport Excel: foaia "Summary" (o linie pe regula) + "Failures" (fiecare element care nu respecta).
+    /// Excel report: the "Summary" sheet (one line per rule) + "Failures" (each element that does not comply).
     pub fn export_check_xlsx(&mut self, path: &str) {
         use crate::qto::{Cell, Sheet};
         let Some(res) = &self.check_results else { return self.error("Run the model check first.") };
@@ -553,7 +553,7 @@ impl App {
         }
     }
 
-    /// BCF: un topic pentru fiecare regula care nu trece, cu elementele gresite selectate si o camera pe ele.
+    /// BCF: one topic for each rule that does not pass, with the failing elements selected and a camera on them.
     pub fn export_check_bcf(&mut self, path: &str) {
         let Some(res) = self.check_results.clone() else { return self.error("Run the model check first.") };
         let user = crate::markup::user_name();
@@ -611,7 +611,7 @@ impl App {
         }
     }
 
-    /// Elementele care nu respecta regula `ri` (sau toate regulile, daca None).
+    /// The elements that do not satisfy rule `ri` (or all rules, if None).
     pub fn check_failed_ids(&self, ri: Option<usize>) -> Vec<ElemId> {
         let Some(res) = &self.check_results else { return Vec::new() };
         let mut v: Vec<ElemId> = res.iter().enumerate().filter(|(i, _)| ri.map(|r| r == *i).unwrap_or(true)).flat_map(|(_, r)| r.failed.iter().map(|f| f.0)).collect();

@@ -12,11 +12,11 @@ using NwApp = Autodesk.Navisworks.Api.Application;
 namespace ManageBIM.Navis
 {
     /// <summary>
-    /// "ManageBIM Walk path": traseul de mers desenat in ManageBIM (Walk Path › To Navisworks, fisierul
-    /// %LOCALAPPDATA%\ManageBIM\Outbox\walkpath.txt) devine o animatie de viewpoint-uri in Saved Viewpoints:
-    /// cadre cheie la distante egale (viteza constanta), la inaltimea ochilor, privind inainte pe traseu.
-    /// Animatia se face prin COM API (InwOpAnimView); daca nu merge, viewpoint-urile raman intr-un folder.
-    /// Parametrul "quiet" (Automation / teste): fara ferestre; codul intors: 0 animatie, 4 folder, 1 eroare.
+    /// "ManageBIM Walk path": the walk path drawn in ManageBIM (Walk Path › To Navisworks, the file
+    /// %LOCALAPPDATA%\ManageBIM\Outbox\walkpath.txt) becomes a viewpoint animation in Saved Viewpoints:
+    /// key frames at equal distances (constant speed), at eye height, looking forward along the path.
+    /// The animation is made through the COM API (InwOpAnimView); if that fails, the viewpoints stay in a folder.
+    /// The "quiet" parameter (Automation / tests): no windows; return code: 0 animation, 4 folder, 1 error.
     /// </summary>
     [Plugin("ManageBIMWalk", "MBIM", DisplayName = "ManageBIM Walk path", ToolTip = "Turn the walk path drawn in ManageBIM (Walk Path › To Navisworks) into a viewpoint animation")]
     [AddInPlugin(AddInLocation.None)]
@@ -35,7 +35,7 @@ namespace ManageBIM.Navis
                 Say("Open the model first (the same model as in ManageBIM).");
                 return 1;
             }
-            // implicit fisierul scris de ManageBIM; din Automation se poate da altul ("file=<cale>")
+            // by default the file written by ManageBIM; from Automation another one can be given ("file=<path>")
             string file = parameters?.FirstOrDefault(p => p.StartsWith("file="))?.Substring(5)
                           ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManageBIM", "Outbox", "walkpath.txt");
             WalkPath w;
@@ -48,7 +48,7 @@ namespace ManageBIM.Navis
                 Say("No walk path from ManageBIM yet.\nIn ManageBIM: Viewpoint › Walk Path › Draw, then To Navisworks.\n\n" + ex.GetType().Name + ": " + ex.Message + "\nIn the folder: " + seen);
                 return 1;
             }
-            // metri -> unitatile documentului
+            // metres -> document units
             double s = UnitConversion.ScaleFactor(Units.Meters, doc.Units);
             List<double[]> keys = Resample(w.Points, Math.Max(0.3, w.Speed * 0.5));
             Viewpoint original = doc.CurrentViewpoint.CreateCopy();
@@ -58,7 +58,7 @@ namespace ManageBIM.Navis
                 double[] p = keys[i];
                 double[] q = keys[Math.Min(i + 1, keys.Count - 1)];
                 double[] r = keys[Math.Max(i - 1, 0)];
-                // privirea: orizontal, spre urmatorul cadru (la ultimul: in continuarea directiei)
+                // the view direction: horizontal, toward the next frame (at the last one: continuing the direction)
                 double[] fwd = i + 1 < keys.Count ? new[] { q[0] - p[0], q[1] - p[1], 0.0 } : new[] { p[0] - r[0], p[1] - r[1], 0.0 };
                 if (Math.Abs(fwd[0]) + Math.Abs(fwd[1]) < 1e-9) fwd = new[] { 1.0, 0.0, 0.0 };
                 Viewpoint vp = doc.CurrentViewpoint.CreateCopy();
@@ -131,7 +131,7 @@ namespace ManageBIM.Navis
             return l;
         }
 
-        /// <summary>Puncte la distante egale pe traseu (colturile incluse): cadre egale = viteza constanta.</summary>
+        /// <summary>Points at equal distances along the path (corners included): equal frames = constant speed.</summary>
         internal static List<double[]> Resample(List<double[]> pts, double step)
         {
             var outp = new List<double[]> { pts[0] };
@@ -149,7 +149,7 @@ namespace ManageBIM.Navis
             return outp;
         }
 
-        /// <summary>InwOpAnimView prin COM (legare tarzie: aceeasi cod pentru Navisworks 2022 - 2026).</summary>
+        /// <summary>InwOpAnimView through COM (late binding: the same code for Navisworks 2022 - 2026).</summary>
         private static void AddAnimation(Document doc, string name, List<Viewpoint> views)
         {
             object state = ComState();
@@ -171,7 +171,7 @@ namespace ManageBIM.Navis
             Call(Call(state, "SavedViews"), "Add", anim);
         }
 
-        /// <summary>Varianta de rezerva: viewpoint-urile intr-un folder (API .NET).</summary>
+        /// <summary>The fallback variant: the viewpoints in a folder (.NET API).</summary>
         private static void AddFolder(Document doc, string name, List<Viewpoint> views)
         {
             var folder = new FolderItem { DisplayName = name };
@@ -193,7 +193,7 @@ namespace ManageBIM.Navis
             return bridge.GetProperty("State").GetValue(null);
         }
 
-        /// <summary>valoarea enum-ului COM din interop-ul versiunii care ruleaza (altfel valoarea cunoscuta)</summary>
+        /// <summary>the COM enum value from the interop of the running version (otherwise the known value)</summary>
         private static int EnumValue(string name, int fallback)
         {
             try

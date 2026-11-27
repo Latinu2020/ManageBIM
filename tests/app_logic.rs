@@ -76,29 +76,29 @@ fn clash_status_follows_navisworks_lifecycle() {
     app.clash.tests[0].a = Selector { kind: SelKind::Model, value: arch.into() };
     app.clash.tests[0].b = Selector { kind: SelKind::Model, value: mep.into() };
 
-    // prima rulare: totul e New
+    // first run: everything is New
     app.run_clash_blocking(0);
     let n = app.clash.tests[0].results.len();
     assert!(n > 0);
     assert_eq!(app.clash.tests[0].count(ClashStatus::New), n);
 
-    // a doua rulare, configuratie identica: aceleasi clash-uri devin Active
+    // second run, identical configuration: the same clashes become Active
     app.run_clash_blocking(0);
     assert_eq!(app.clash.tests[0].results.len(), n);
     assert_eq!(app.clash.tests[0].count(ClashStatus::Active), n);
     assert_eq!(app.clash.tests[0].count(ClashStatus::New), 0);
 
-    // Approved isi pastreaza statusul la re-rulare (ca in Navisworks)
+    // Approved keeps its status on re-run (as in Navisworks)
     app.clash.tests[0].results[0].status = ClashStatus::Approved;
     app.run_clash_blocking(0);
     assert_eq!(app.clash.tests[0].results[0].status, ClashStatus::Approved);
 
-    // daca nimic nu mai e gasit, vechiul clash devine Resolved
+    // if nothing is found anymore, the old clash becomes Resolved
     app.clash.tests[0].b = Selector { kind: SelKind::Model, value: "no-such-model.ifc".into() };
     app.run_clash_blocking(0);
     assert_eq!(app.clash.tests[0].count(ClashStatus::Resolved), n);
 
-    // daca geometria reapare, Resolved revine la New
+    // if the geometry reappears, Resolved goes back to New
     app.clash.tests[0].b = Selector { kind: SelKind::Model, value: mep.into() };
     app.run_clash_blocking(0);
     assert!(app.clash.tests[0].count(ClashStatus::New) > 0);
@@ -255,7 +255,7 @@ fn walk_gravity_and_collision() {
     assert!(a.cam.eye().x > start.x, "walked forward");
 }
 
-/// Undo / Redo reface si schimbarile de model: o proprietate scrisa si o culoare fortata
+/// Undo / Redo also redoes the model changes: a written property and a forced colour
 #[test]
 fn undo_covers_model_changes() {
     let mut app = app();

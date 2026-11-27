@@ -1,21 +1,21 @@
-//! Obiectele de coordonare (clearance zones, provision for void, placeholder volumes): creare din
-//! selectie, goluri automate MEP x pereti / placi, modelul virtual si testul de clash dedicat.
+//! Coordination objects (clearance zones, provision for void, placeholder volumes): creation from
+//! the selection, automatic MEP x wall / slab voids, the virtual model and the dedicated clash test.
 use super::*;
 use crate::coord_objects::{void_at, CoordKind, CoordObject, COORD_NAME, COORD_PATH};
 
-/// tipurile IFC ale instalatiilor care cer goluri (conducte, tubulatura, jgheaburi de cabluri)
+/// the IFC types of the services that need voids (pipes, ducts, cable trays)
 fn is_service(t: &str) -> bool {
     let t = t.to_lowercase();
     ["pipe", "duct", "cablecarrier", "cable carrier", "flowsegment", "conduit", "tray"].iter().any(|k| t.contains(k)) && !t.contains("fitting") && !t.contains("terminal")
 }
-/// elementele care primesc goluri (pereti si placi)
+/// the elements that receive voids (walls and slabs)
 fn is_host(t: &str) -> bool {
     let t = t.to_lowercase();
     (t.contains("wall") || t.contains("slab") || t.contains("floor") || t.contains("roof")) && !t.contains("opening") && !t.contains("covering")
 }
 
 impl App {
-    /// Reface modelul virtual "Coordination objects" din lista de obiecte (slot dedicat).
+    /// Rebuilds the "Coordination objects" virtual model from the list of objects (dedicated slot).
     pub fn rebuild_coord_model(&mut self) {
         if self.coord_objects.is_empty() && self.coord_slot.is_none() {
             return;
@@ -35,7 +35,7 @@ impl App {
         };
         let raw = crate::coord_objects::to_raw(&self.coord_objects, origin);
         let m = Arc::new(Model::from_raw(raw, COORD_NAME.into(), COORD_PATH.into(), origin));
-        // obiectele ascunse din panou raman ascunse; restul se vad
+        // the objects hidden in the panel stay hidden; the rest are visible
         self.hidden.retain(|id| id.m as usize != slot);
         for (k, o) in self.coord_objects.iter().enumerate() {
             if !o.visible {
@@ -55,7 +55,7 @@ impl App {
         t.max(max + 1)
     }
 
-    /// cutia selectiei (fara obiectele de coordonare), in coordonate locale
+    /// the box of the selection (without the coordination objects), in local coordinates
     fn selection_box(&self) -> Option<(Vec3, Vec3)> {
         let mut bb = Aabb::EMPTY;
         for id in &self.selected {
@@ -71,7 +71,7 @@ impl App {
         bb.is_valid().then_some((bb.min, bb.max))
     }
 
-    /// Obiect nou: in jurul selectiei (+ marja) sau, fara selectie, in centrul vederii.
+    /// New object: around the selection (+ margin) or, with no selection, in the centre of the view.
     pub fn add_coord_object(&mut self, kind: CoordKind) {
         let margin = match kind {
             CoordKind::Clearance => self.coord_margin.max(0.0),
@@ -103,8 +103,8 @@ impl App {
         self.toast(format!("{} added - edit its size in the Coordination objects window; it takes part in Clash Detective.", kind.label()));
     }
 
-    /// Goluri propuse automat: fiecare instalatie (conducta / tubulatura / jgheab) care traverseaza un
-    /// perete sau o placa primeste un gol cu marja `void_margin` (doar in selectie, daca exista una).
+    /// Automatically proposed voids: each service (pipe / duct / tray) that crosses a
+    /// wall or a slab gets a void with margin `void_margin` (only within the selection, if there is one).
     pub fn auto_voids(&mut self) {
         let restrict: Option<BTreeSet<ElemId>> = (!self.selected.is_empty()).then(|| self.selected.clone());
         let mut services = Vec::new();
@@ -128,7 +128,7 @@ impl App {
         if services.is_empty() {
             return self.error("No pipes, ducts or cable trays found (select some, or load an MEP model). Voids are made where they cross walls and slabs.");
         }
-        // golurile deja existente (acelasi loc) nu se dubleaza
+        // voids that already exist (same place) are not duplicated
         let existing: Vec<(Vec3, Vec3)> = self.coord_objects.iter().filter(|o| o.kind == CoordKind::ProvisionForVoid).map(|o| (Vec3::from(o.min), Vec3::from(o.max))).collect();
         let mut added = 0;
         let margin = self.void_margin.max(0.0);
@@ -137,14 +137,14 @@ impl App {
                 if !sb.overlaps(hb, 0.0) {
                     continue;
                 }
-                // trecere reala: instalatia traverseaza TOATA grosimea gazdei (nu merge in lungul ei, in perete)
+                // a real penetration: the service crosses the WHOLE thickness of the host (it does not run along it, in the wall)
                 let hs = hb.size();
                 let thin = if hs.x <= hs.y && hs.x <= hs.z { 0 } else if hs.y <= hs.z { 1 } else { 2 };
                 if sb.min[thin] > hb.min[thin] + 1e-3 || sb.max[thin] < hb.max[thin] - 1e-3 {
                     continue;
                 }
-                // ...si directia ei principala e perpendiculara pe gazda (o tubulatura in lungul unui
-                // perete subtire il "acopera" in grosime, dar nu trece prin el)
+                // ...and its main direction is perpendicular to the host (a duct running along a
+                // thin wall "covers" it in thickness, but does not pass through it)
                 let ss = sb.size();
                 if ss[thin] < ss.max_element() * 0.8 {
                     continue;
@@ -173,7 +173,7 @@ impl App {
         self.toast(format!("{added} provision(s) for void proposed where services cross walls / slabs - review them in the Coordination objects window."));
     }
 
-    /// Test de clash: obiectele de coordonare contra restului modelului (ex. ce intra in zonele de mentenanta).
+    /// Clash test: the coordination objects against the rest of the model (e.g. what enters the maintenance zones).
     pub fn coord_clash_test(&mut self) {
         if self.coord_objects.is_empty() {
             return self.error("Add a clearance zone, void or placeholder first.");
@@ -183,7 +183,7 @@ impl App {
         t.b = Selector { kind: SelKind::All, value: String::new() };
         t.ty = ClashType::Hard;
         t.tol_mm = 0.0;
-        // obiectele de coordonare nu se verifica intre ele
+        // the coordination objects are not checked against each other
         t.ignore_same_file = true;
         self.clash.tests.push(t);
         self.cur_test = self.clash.tests.len() - 1;
@@ -191,10 +191,10 @@ impl App {
         self.toast("Clash test created: Coordination objects vs all models - press Run Test.");
     }
 
-    /// Trimite obiectele de coordonare VIZIBILE (clearance, voids, placeholders) catre add-in-ul Revit,
-    /// doar pentru afisare: %LOCALAPPDATA%\ManageBIM\Outbox\coordination.txt, coordonate WORLD in metri.
-    /// In Revit, comanda "ManageBIM Coordination" le arata ca forme transparente (Generic Models),
-    /// fara sa taie sau sa modifice elementele modelului.
+    /// Sends the VISIBLE coordination objects (clearance, voids, placeholders) to the Revit add-in,
+    /// for display only: %LOCALAPPDATA%\ManageBIM\Outbox\coordination.txt, WORLD coordinates in metres.
+    /// In Revit, the "ManageBIM Coordination" command shows them as transparent shapes (Generic Models),
+    /// without cutting or modifying the model elements.
     pub fn send_coord_to_revit(&mut self) {
         let o = self.origin_f64();
         let objs: Vec<&CoordObject> = self.coord_objects.iter().filter(|c| c.visible).collect();
@@ -235,7 +235,7 @@ impl App {
         if i < self.coord_objects.len() {
             self.coord_objects.remove(i);
             self.coord_sel = None;
-            // indexii elementelor de dupa cel sters se schimba
+            // the indices of the elements after the deleted one change
             if let Some(s) = self.coord_slot {
                 self.selected.retain(|id| id.m as usize != s);
             }

@@ -1,9 +1,9 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 use crate::compare::heat_color as heat;
 
 impl App {
-    // ------------------------------------------------------------------ culori
+    // ------------------------------------------------------------------ colours
     // ------------------------------------------------------------------ materials
     /// element -> material index, resolved from the assignment rules (later rules win)
     pub fn material_map(&mut self) -> &HashMap<ElemId, u16> {
@@ -28,7 +28,7 @@ impl App {
         self.mats.cache.as_ref().unwrap()
     }
 
-    /// Calea reala a unei texturi (daca fisierul a fost mutat, o cauta langa proiect).
+    /// The real path of a texture (if the file was moved, it looks for it next to the project).
     pub(crate) fn texture_path(&self, path: &str) -> String {
         if std::path::Path::new(path).exists() {
             return path.to_string();
@@ -82,8 +82,8 @@ impl App {
         self.renderer.lock().unwrap_or_else(|e| e.into_inner()).pending.push(Upload::Textures(all));
     }
 
-    /// Material PBR: doua straturi impachetate (albedo+A0+roughness in A / normal+metallic in A).
-    /// intoarce primul strat; shader-ul il stie pe al doilea ca layer+1 (cod 128+layer).
+    /// PBR material: two packed layers (albedo+A0+roughness in A / normal+metallic in A).
+    /// returns the first layer; the shader knows the second one as layer+1 (code 128+layer).
     pub fn pbr_layer(&mut self, m: &crate::materials::Material) -> Option<u8> {
         if !m.is_pbr() || m.texture.is_empty() {
             return self.texture_layer(&m.texture);
@@ -136,7 +136,7 @@ impl App {
                 continue;
             }
             let name = std::path::Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Texture".into());
-            // copia imaginii in biblioteca (originalul poate fi mutat / sters mai tarziu)
+            // copy of the image into the library (the original may be moved / deleted later)
             let tex = lib
                 .as_ref()
                 .and_then(|d| {
@@ -166,12 +166,12 @@ impl App {
         }
     }
 
-    /// Materialele importate raman in biblioteca ta (disponibile in orice proiect, dupa repornire).
+    /// Imported materials stay in your library (available in any project, after a restart).
     pub fn keep_in_library(&mut self, mats: &mut [crate::materials::Material]) {
         if mats.is_empty() {
             return;
         }
-        // hartile vin in biblioteca (materialul nu mai depinde de folderul descarcat)
+        // the maps go into the library (the material no longer depends on the downloaded folder)
         for m in mats.iter_mut() {
             crate::materials::adopt_maps(m);
         }
@@ -181,7 +181,7 @@ impl App {
         self.user_lib_cache = None;
     }
 
-    /// Numele materialelor din biblioteca ta (marcate cu ★ in lista).
+    /// The names of the materials in your library (marked with ★ in the list).
     pub fn user_library_names(&mut self) -> std::collections::HashSet<String> {
         if self.user_lib_cache.is_none() {
             self.user_lib_cache = Some(crate::materials::user_library().into_iter().map(|m| m.name).collect());
@@ -189,8 +189,8 @@ impl App {
         self.user_lib_cache.clone().unwrap_or_default()
     }
 
-    /// Pachete PBR (.zip descarcate de pe freepbr.com, ambientCG, Poly Haven... sau foldere dezarhivate) ->
-    /// materiale noi, salvate permanent in biblioteca ta (%APPDATA%\ManageBIM\Materials).
+    /// PBR packs (.zip downloaded from freepbr.com, ambientCG, Poly Haven... or unzipped folders) ->
+    /// new materials, saved permanently in your library (%APPDATA%\ManageBIM\Materials).
     pub fn import_pbr_packs(&mut self, paths: &[String]) {
         let Some(root) = crate::materials::user_library_dir() else { return self.error("APPDATA is not set - cannot create the material library.") };
         let mut added: Vec<crate::materials::Material> = Vec::new();
@@ -221,7 +221,7 @@ impl App {
         self.toast(format!("{} PBR material(s) added: {} - choose where to apply them in the Materials panel.", added.len(), added.iter().map(|m| m.name.clone()).collect::<Vec<_>>().join(", ")));
     }
 
-    /// Salveaza materialul ales in biblioteca ta (disponibil in orice proiect).
+    /// Saves the chosen material to your library (available in any project).
     pub fn save_material_to_library(&mut self, i: usize) {
         let Some(m) = self.materials.get(i).cloned() else { return };
         self.user_lib_cache = None;
@@ -237,7 +237,7 @@ impl App {
     }
 
     pub fn assign_material(&mut self, target: MatTarget, material: &str) {
-        // aceeasi tinta: inlocuieste materialul
+        // the same target: replaces the material
         if let Some(a) = self.mats.assign.iter_mut().find(|a| a.target == target) {
             a.material = material.to_string();
         } else {
@@ -268,14 +268,14 @@ impl App {
         self.colors_dirty = false;
         self.rt.looks_gen = self.rt.looks_gen.wrapping_add(1);
         if self.materials_on {
-            self.material_map(); // umple mat_cache daca e nevoie; mai jos doar il imprumutam
+            self.material_map(); // fills mat_cache if needed; below we only borrow it
         }
         let profile_on = self.profile.active && !self.profile.rules.is_empty();
         if profile_on {
             self.profile_map();
         }
-        // DOAR materialele folosite in reguli ocupa straturi GPU: o biblioteca mare altfel epuizeaza
-        // array-ul de texturi, desi majoritatea materialelor nu sunt atribuite nimanui.
+        // ONLY the materials used in rules take GPU layers: otherwise a large library exhausts
+        // the texture array, although most materials are not assigned to anything.
         let used: std::collections::HashSet<String> = self.mats.assign.iter().filter(|a| a.enabled).map(|a| a.material.clone()).collect();
         let mat_gpu: Vec<[u8; 4]> = (0..self.materials.len())
             .map(|i| {
@@ -291,7 +291,7 @@ impl App {
         let roles = self.clash_roles();
         let ghost = !roles.is_empty();
         let others = self.clash.others;
-        // culorile clash-ului (Settings in fila Results): A, B si cele „palide” ale celorlalte clash-uri deschise
+        // the clash colours (Settings in the Results tab): A, B and the „pale” ones of the other open clashes
         let (ca, cb, dim_a) = (self.settings.clash_ui.col_a, self.settings.clash_ui.col_b, self.settings.clash_ui.dim_alpha);
         let pale = |c: [u8; 3]| [((c[0] as u16 + 255) / 2) as u8, ((c[1] as u16 + 255) / 2) as u8, ((c[2] as u16 + 255) / 2) as u8, 235];
         let (role_a, role_b, role_pa, role_pb) = ([ca[0], ca[1], ca[2], 255], [cb[0], cb[1], cb[2], 255], pale(ca), pale(cb));
@@ -304,7 +304,7 @@ impl App {
         let anim_obj = &self.anim_obj;
         let (pmap, prules, punmatched) = (self.profile_map.as_ref().unwrap_or(&empty_p), &self.profile.rules, self.profile.unmatched);
         let cmp = self.compare.as_ref().filter(|_| self.compare_on);
-        // aspectul unui element: override manual > profil > material; simularea 4D si clash-ul au prioritate
+        // the look of an element: manual override > profile > material; the 4D simulation and the clash take priority
         let look_of = |id: ElemId| -> Look {
             let mut hidden = hidden_set.contains(&id);
             let mut ovr: Option<[u8; 4]> = overrides.get(&id).copied();
@@ -319,7 +319,7 @@ impl App {
                     },
                 }
             }
-            // Compare: culoarea dupa tipul schimbarii; perechea veche (A) a unui element potrivit se ascunde
+            // Compare: the colour by change type; the old pair (A) of a matched element is hidden
             if let Some(c) = cmp {
                 if c.matched_a.contains_key(&id) {
                     hidden = true;
@@ -335,7 +335,7 @@ impl App {
                     _ => {}
                 }
             }
-            // Animator: culoarea / transparenta / vizibilitatea seturilor animate
+            // Animator: colour / transparency / visibility of the animated sets
             if let Some((c, vis)) = anim_obj.get(&id) {
                 if !*vis {
                     hidden = true;
@@ -373,7 +373,7 @@ impl App {
         let mut new_looks: HashMap<usize, Vec<Look>> = HashMap::new();
         for (mi, m) in self.loaded_models() {
             let looks: Vec<Look> = (0..m.elements.len() as u32).map(|e| look_of(ElemId { m: mi as u32, e })).collect();
-            // culorile de pe GPU corespund ultimelor "looks" trimise; None = trebuie trimis tot
+            // the colours on the GPU match the last "looks" sent; None = everything must be sent
             let prev = self.looks.get(&mi).filter(|p| p.len() == looks.len());
             let changed: Vec<usize> = match prev {
                 Some(p) => (0..looks.len()).filter(|&i| p[i] != looks[i]).collect(),
@@ -382,10 +382,10 @@ impl App {
             let total_tris = m.tri_color.len();
             let changed_tris: usize = changed.iter().map(|&i| m.elements[i].tri_count as usize).sum();
             if prev.is_none() || changed_tris * 3 > total_tris {
-                // multe schimbari (sau prima data): tot bufferul, umplut pe toate nucleele
+                // many changes (or the first time): the whole buffer, filled on all cores
                 ups.push(full_colors(mi as u32, m, &looks, tint));
             } else {
-                // putine schimbari (ex. un click de selectie): doar elementele afectate, grupate in intervale continue
+                // few changes (e.g. a selection click): only the affected elements, grouped in contiguous ranges
                 let mut k = 0;
                 while k < changed.len() {
                     let mut j = k;
@@ -407,7 +407,7 @@ impl App {
             }
             new_looks.insert(mi, looks);
         }
-        // Compare: harta de abateri pe triunghi peste culorile de mai sus (elementele schimbate din B)
+        // Compare: per-triangle deviation map over the colours above (the changed elements from B)
         if let Some(c) = self.compare.as_ref().filter(|_| self.compare_on && self.compare_heat) {
             let mut maxes: Vec<f32> = c.dev.values().map(|d| d.max).collect();
             maxes.sort_by(|a, b| a.total_cmp(b));
@@ -470,15 +470,15 @@ impl App {
                 }
             }
         }
-        // norii de puncte: cel mai apropiat punct (in fata) dintr-un con ingust in jurul razei -
-        // masuratorile se agata exact de punctele scanate (triunghiul intors e degenerat: [p, p, p])
+        // point clouds: the nearest point (in front) within a narrow cone around the ray -
+        // measurements snap exactly to the scanned points (the returned triangle is degenerate: [p, p, p])
         if let Some(hit) = self.pick_cloud(o, d, best.as_ref().map_or(f32::INFINITY, |b| b.1), &accept) {
             best = Some(hit);
         }
         best
     }
 
-    /// (mod culoare, cota min, cota max, rotunde) pentru shaderul norilor de puncte
+    /// (colour mode, min elevation, max elevation, round) for the point cloud shader
     pub fn cloud_uniform(&self) -> Vec4 {
         let (mut z0, mut z1) = (f32::MAX, f32::MIN);
         for (_, m) in self.loaded_models() {
@@ -493,7 +493,7 @@ impl App {
         Vec4::new(self.cloud_mode as f32, z0, z1, if self.cloud_round { 1.0 } else { 0.0 })
     }
 
-    /// Punctul de nor nimerit de raza (doar punctele afisate - densitatea curenta - si scanarile vizibile).
+    /// The cloud point hit by the ray (only the displayed points - the current density - and the visible scans).
     fn pick_cloud(&self, o: Vec3, d: Vec3, tmax: f32, accept: &(dyn Fn(Vec3) -> bool + Sync)) -> Option<(ElemId, f32, Vec3, [Vec3; 3])> {
         use rayon::prelude::*;
         let len = d.length();
@@ -502,7 +502,7 @@ impl App {
         }
         let dn = d / len;
         let tmax_w = if tmax.is_finite() { tmax * len } else { f32::INFINITY };
-        // toleranta: ~5 px pe ecran (unghiulara in perspectiva, constanta in ortografic)
+        // tolerance: ~5 px on screen (angular in perspective, constant in orthographic)
         let vp_h = self.vp_rect[3].max(100.0);
         let px = (self.cam.fov() * 0.5).tan() * 2.0 / vp_h;
         let tol = 5.0 * px;
@@ -548,12 +548,12 @@ impl App {
         best.map(|(id, t, p)| (id, t / len, p, [p, p, p]))
     }
 
-    /// Ce se deseneaza in cadrul curent, pe model: elementele din campul vizual, neascunse, in section box;
-    /// in timpul miscarii camerei se sar elementele mai mici de ~2 pixeli (cand camera sta, se deseneaza tot).
-    /// Pasul transparent primeste doar elementele cu ceva transparent. Intervalele apropiate se unesc
-    /// (varfurile in plus sunt oricum taiate / ascunse de shader), deci rezultatul vizual nu se schimba.
+    /// What is drawn in the current frame, per model: the elements in the field of view, not hidden, inside the section box;
+    /// while the camera moves, elements smaller than ~2 pixels are skipped (when the camera is still, everything is drawn).
+    /// The transparent pass gets only the elements with something transparent. Nearby ranges are merged
+    /// (the extra vertices are cut / hidden by the shader anyway), so the visual result does not change.
     pub fn draw_lists(&mut self, p: &FrameParams, vp_h: f32) -> HashMap<u32, crate::render::DrawList> {
-        // miscarea camerei (pentru simplificarea temporara)
+        // camera movement (for the temporary simplification)
         let c = self.cam;
         let moved = c.eye != self.lod_cam.eye || c.yaw != self.lod_cam.yaw || c.pitch != self.lod_cam.pitch || c.focus != self.lod_cam.focus || c.fov_deg != self.lod_cam.fov_deg;
         if moved {
@@ -561,7 +561,7 @@ impl App {
             self.lod_moved = Instant::now();
         }
         let moving = self.lod_moved.elapsed().as_secs_f32() < 0.3;
-        // planurile frustumului (Gribb-Hartmann) din matricea vedere-proiectie
+        // the frustum planes (Gribb-Hartmann) from the view-projection matrix
         let m = p.view_proj;
         let (r0, r1, r2, r3) = (m.row(0), m.row(1), m.row(2), m.row(3));
         let planes = [r3 + r0, r3 - r0, r3 + r1, r3 - r1, r3 + r2, r3 - r2];
@@ -574,8 +574,8 @@ impl App {
         };
         let section_box = (self.section.enabled && self.section.mode == SectionMode::Box).then(|| Aabb { min: Vec3::from(self.section.bmin), max: Vec3::from(self.section.bmax) });
         let tanh = (c.fov() * 0.5).tan().max(1e-3);
-        // LOD adaptiv: in miscare pragul (pixeli) creste cand FPS scade si revine cand FPS e bun;
-        // camera oprita = tot modelul, mai putin obiectele sub un pixel (oricum invizibile)
+        // adaptive LOD: while moving, the threshold (pixels) grows when FPS drops and comes back when FPS is good;
+        // camera stopped = the whole model, except objects under one pixel (invisible anyway)
         if moving {
             if self.fps > 0.0 && self.fps < 28.0 {
                 self.lod_px = (self.lod_px * 1.25).min(24.0);
@@ -583,14 +583,14 @@ impl App {
                 self.lod_px = (self.lod_px / 1.15).max(2.0);
             }
         }
-        // randarea / exportul folosesc oricum tot modelul; aici putem forta si viewport-ul la detaliu complet
+        // rendering / export use the whole model anyway; here we can also force the viewport to full detail
         let min_px = if self.settings.no_lod { 0.0 } else if moving { self.lod_px } else { 0.6 };
         let eye = c.eye();
         let mut out = HashMap::new();
         let slots: Vec<usize> = self.loaded_models().map(|(i, _)| i).collect();
         for slot in slots {
             let Some(model) = self.models[slot].clone() else { continue };
-            // elementele cu triunghiuri transparente in culorile din fisier (calculat o data per model)
+            // the elements with transparent triangles in the file colours (computed once per model)
             let key = Arc::as_ptr(&model) as usize;
             let need = self.alpha_cache.get(&slot).map(|(k, _)| *k != key).unwrap_or(true);
             if need {
@@ -639,7 +639,7 @@ impl App {
                     push(&mut transp, first, count);
                 }
             }
-            // prea multe intervale -> le unim mai larg (apelurile de desenare costa mai mult decat varfurile in plus)
+            // too many ranges -> we merge them more loosely (draw calls cost more than the extra vertices)
             for v in [&mut all, &mut transp] {
                 let mut gap = 4000;
                 while v.len() > 3000 {
@@ -654,16 +654,16 @@ impl App {
                     gap *= 4;
                 }
             }
-            // nor de puncte: scanarile vizibile, primele N% puncte (amestecate la citire); in miscare mai putine
+            // point cloud: the visible scans, the first N% of the points (shuffled on reading); fewer while moving
             let mut points = Vec::new();
             if let Some(cl) = &model.cloud {
-                // in miscare se reduce doar cand norul e foarte mare (peste ~8 milioane de puncte afisate) si
-                // proportional - inainte scadea mereu la 35%, iar la fiecare zoom punctele dispareau si
-                // reveneau (ecranul "clipea")
+                // while moving it is reduced only when the cloud is very large (over ~8 million points displayed) and
+                // proportionally - previously it always dropped to 35%, and on every zoom the points disappeared and
+                // came back (the screen "flickered")
                 let base = self.cloud_density.clamp(0.01, 1.0);
                 let shown = cl.pos.len() as f32 * base;
                 let budget = 8_000_000.0f32;
-                // ...si doar cand placa video chiar nu face fata (sub ~30 FPS); altfel norul ramane la fel in miscare
+                // ...and only when the graphics card really cannot keep up (under ~30 FPS); otherwise the cloud stays the same while moving
                 let slow = self.fps > 0.0 && self.fps < 30.0;
                 let dens = if moving && slow && shown > budget { base * (budget / shown).max(0.35) } else { base };
                 for &(ei, start, n) in &cl.scans {
@@ -686,17 +686,17 @@ impl App {
         out
     }
 
-    /// camera se misca acum (desenarea simplificata e activa) - pentru redesenarea completa dupa oprire
+    /// the camera is moving now (simplified drawing is active) - for the full redraw after it stops
     pub fn lod_moving(&self) -> bool {
         self.lod_moved.elapsed().as_secs_f32() < 0.35
     }
 
-    /// triunghiurile tuturor modelelor incarcate (scenele foarte mari sar umbrele cat timp camera se misca)
+    /// the triangles of all loaded models (very large scenes skip the shadows while the camera moves)
     pub fn scene_tris(&self) -> usize {
         self.loaded_models().map(|(_, m)| m.pos.len() / 3).sum()
     }
 
-    /// Sfera care cuprinde modelele vizibile (fara nori de puncte), pentru harta de umbre.
+    /// The sphere enclosing the visible models (without point clouds), for the shadow map.
     pub fn shadow_sphere(&self) -> glam::Vec4 {
         let mut bb = crate::model::Aabb::EMPTY;
         for (_, m) in self.loaded_models() {
@@ -720,14 +720,14 @@ impl App {
         for (i, p) in pl.iter().take(6).enumerate() {
             planes[i] = *p;
         }
-        // lampile din model ajung in shader-ul GPU: lumina se vede in timp real in 3D
+        // the lamps from the model reach the GPU shader: the light is visible in real time in 3D
         let mut lamps = [Vec4::ZERO; 8];
         let mut lamp_data = [Vec4::ZERO; 8];
         let mut lamp_dir = [Vec4::ZERO; 8];
         for (k, l) in self.lights.iter().filter(|l| l.enabled).take(8).enumerate() {
             let col = l.linear();
             lamps[k] = Vec4::new(l.pos[0], l.pos[1], l.pos[2], l.power.max(0.0) / 20.0);
-            // raza 0 = nelimitata: trimisa ca 0 (inainte devenea 0.1 m si lumina disparea complet)
+            // radius 0 = unlimited: sent as 0 (previously it became 0.1 m and the light disappeared completely)
             lamp_data[k] = Vec4::new(col[0], col[1], col[2], l.radius.max(0.0));
             let d = l.direction();
             let w = match l.kind {

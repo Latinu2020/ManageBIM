@@ -1,5 +1,5 @@
-//! Installer per utilizator pentru add-in-ul ManageBIM din Navisworks (2022 - 2026).
-//! Fisierele sunt incluse in .exe la compilare, din installers\payload\navisworks.
+//! Per-user installer for the ManageBIM add-in in Navisworks (2022 - 2026).
+//! The files are embedded in the .exe at compile time, from installers\payload\navisworks.
 
 #[path = "common.rs"]
 mod common;

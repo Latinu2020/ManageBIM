@@ -1,13 +1,13 @@
-//! buildingSMART Data Dictionary (bSDD) - cautare online de clase (IFC, Uniclass, ETIM, NL-SfB...).
-//! API public, fara cont: https://api.bsdd.buildingsmart.org (TextSearch v1, Dictionary v1).
-//! Cererea HTTPS se face cu `curl` (inclus in Windows 10 / 11, Linux, macOS) pe un fir separat,
-//! ca interfata sa nu se blocheze; fara dependinte noi (TLS) in aplicatie.
+//! buildingSMART Data Dictionary (bSDD) - online search for classes (IFC, Uniclass, ETIM, NL-SfB...).
+//! Public API, no account: https://api.bsdd.buildingsmart.org (TextSearch v1, Dictionary v1).
+//! The HTTPS request is made with `curl` (included in Windows 10 / 11, Linux, macOS) on a separate thread,
+//! so the interface does not freeze; no new dependencies (TLS) in the application.
 use serde::Deserialize;
 use std::sync::mpsc::{channel, Receiver};
 
 pub const API: &str = "https://api.bsdd.buildingsmart.org";
 
-/// O clasa gasita in bSDD.
+/// A class found in bSDD.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct BsddClass {
@@ -21,7 +21,7 @@ pub struct BsddClass {
 }
 
 impl BsddClass {
-    /// codul afisat / scris in proprietate: referenceCode, altfel ultimul segment din URI
+    /// the code displayed / written into the property: referenceCode, otherwise the last segment of the URI
     pub fn code(&self) -> String {
         if !self.reference_code.trim().is_empty() {
             return self.reference_code.trim().to_string();
@@ -38,7 +38,7 @@ impl BsddClass {
     }
 }
 
-/// Un dictionar publicat in bSDD (pentru filtrul cautarii).
+/// A dictionary published in bSDD (for the search filter).
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct BsddDictionary {
@@ -67,7 +67,7 @@ struct DictResp {
     dictionaries: Vec<BsddDictionary>,
 }
 
-/// Codificare procent pentru parametrii din URL (RFC 3986, caractere nerezervate pastrate).
+/// Percent-encoding for URL parameters (RFC 3986, unreserved characters kept).
 pub fn url_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len() * 3);
     for b in s.bytes() {
@@ -87,7 +87,7 @@ pub fn search_url(text: &str, dictionary_uri: Option<&str>, limit: usize) -> Str
     u
 }
 
-/// (clase, numarul total de rezultate din bSDD)
+/// (classes, the total number of results from bSDD)
 pub fn parse_search(json: &str) -> Result<(Vec<BsddClass>, usize), String> {
     let r: SearchResp = serde_json::from_str(json).map_err(|e| format!("bSDD answer not understood: {e}"))?;
     let total = r.total_count.max(r.classes.len());
@@ -101,14 +101,14 @@ pub fn parse_dictionaries(json: &str) -> Result<Vec<BsddDictionary>, String> {
     Ok(d)
 }
 
-/// GET prin curl; intoarce corpul raspunsului.
+/// GET through curl; returns the response body.
 fn http_get(url: &str) -> Result<String, String> {
     let mut cmd = std::process::Command::new("curl");
     cmd.args(["-s", "-S", "-f", "-L", "-m", "25", "-H", "Accept: application/json", url]);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // fara fereastra de consola care clipeste
+        // no console window that flashes
         cmd.creation_flags(0x0800_0000);
     }
     let out = cmd.output().map_err(|e| format!("curl is not available ({e}). bSDD search needs curl (included in Windows 10 / 11)."))?;
@@ -121,7 +121,7 @@ fn http_get(url: &str) -> Result<String, String> {
 
 pub type SearchResult = Result<(Vec<BsddClass>, usize), String>;
 
-/// Porneste cautarea pe un fir separat; rezultatul vine pe canal.
+/// Starts the search on a separate thread; the result comes on the channel.
 pub fn spawn_search(text: String, dictionary_uri: Option<String>, limit: usize) -> Receiver<SearchResult> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {

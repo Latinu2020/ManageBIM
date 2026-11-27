@@ -1,12 +1,12 @@
-//! Refresh (F5): modelul se reincarca din fisierul modificat, iar selectia / ascunderile /
-//! culorile se pastreaza pe GUID.
+//! Refresh (F5): the model is reloaded from the modified file, and the selection / hidden items /
+//! colors are kept by GUID.
 use bimrust::app::*;
 use bimrust::model::ElemId;
 use bimrust::*;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-/// copie a unui IFC demo intr-un folder temporar propriu testului
+/// copy of a demo IFC into a temporary folder of the test's own
 fn temp_ifc(tag: &str) -> String {
     let dir = std::env::temp_dir().join(format!("managebim_refresh_{tag}_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -15,7 +15,7 @@ fn temp_ifc(tag: &str) -> String {
     p.to_string_lossy().to_string()
 }
 
-/// incarca fisierul direct in slotul 0 (fara open_path, ca sa nu atingem lista Recent a utilizatorului)
+/// loads the file directly into slot 0 (without open_path, so we do not touch the user's Recent list)
 fn app_with(path: &str) -> App {
     let p = |_: f32, _: &str| {};
     let raw = load_any(path, &p).unwrap();
@@ -43,7 +43,7 @@ fn wait_loads(app: &mut App) {
 
 fn bump_mtime(path: &str, content: &str) {
     std::fs::write(path, content).unwrap();
-    // garantam o data diferita chiar pe sisteme de fisiere cu rezolutie mica
+    // we guarantee a different date even on file systems with low resolution
     let f = std::fs::File::options().write(true).open(path).unwrap();
     f.set_modified(SystemTime::now() + Duration::from_secs(5)).unwrap();
 }
@@ -55,12 +55,12 @@ fn refresh_detects_change_and_keeps_state() {
     let n = app.models[0].as_ref().unwrap().elements.len();
     assert!(n > 5);
 
-    // nimic modificat -> nimic de reincarcat
+    // nothing modified -> nothing to reload
     app.refresh_models(false);
     assert!(app.loads.is_empty());
     assert!(app.changed_files.is_empty());
 
-    // stare utilizator
+    // user state
     let sel = ElemId { m: 0, e: 1 };
     let hid = ElemId { m: 0, e: 2 };
     let col = ElemId { m: 0, e: 3 };
@@ -72,7 +72,7 @@ fn refresh_detects_change_and_keeps_state() {
     app.hidden.insert(hid);
     app.overrides.insert(col, [255, 0, 0, 255]);
 
-    // fisierul e rescris (acelasi continut) -> detectat ca modificat
+    // the file is rewritten (same content) -> detected as modified
     let txt = std::fs::read_to_string(&path).unwrap();
     bump_mtime(&path, &txt);
     app.last_file_check = Instant::now() - Duration::from_secs(5);
@@ -81,7 +81,7 @@ fn refresh_detects_change_and_keeps_state() {
 
     app.refresh_models(false);
     assert_eq!(app.loads.len(), 1);
-    // in timpul reincarcarii modelul vechi ramane pe ecran
+    // during the reload the old model stays on screen
     assert!(app.models[0].is_some());
     wait_loads(&mut app);
 
@@ -109,7 +109,7 @@ fn refresh_drops_elements_whose_guid_disappeared() {
     app.selected.insert(gone);
     app.hidden.insert(gone);
 
-    // elementul 4 primeste alt GUID in fisier = "sters" + "element nou"
+    // element 4 gets another GUID in the file = "deleted" + "new element"
     let txt = std::fs::read_to_string(&path).unwrap();
     assert_eq!(txt.matches(&guid_gone).count(), 1, "GUID must appear exactly once in the sample");
     let new_guid: String = guid_gone.chars().rev().collect();

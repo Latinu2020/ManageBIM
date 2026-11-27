@@ -1,5 +1,5 @@
-//! Fereastra Path trace: setarile in stanga, previewul mare al randarii in dreapta.
-//! Mutata din ui.rs in 0.28 (fisierul depasea 6 000 de linii).
+//! The Path trace window: the settings on the left, the large render preview on the right.
+//! Moved out of ui.rs in 0.28 (the file exceeded 6 000 lines).
 use super::*;
 
 impl App {
@@ -8,7 +8,7 @@ impl App {
         let running = self.pt.job.as_ref().map(|j| !j.done.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(false);
         egui::Window::new("Path trace (progressive CPU)")
             .open(&mut open)
-            // fereastra mare: setarile in stanga, previewul randarii in dreapta (0.28)
+            // large window: the settings on the left, the render preview on the right (0.28)
             .default_size([(ctx.screen_rect().width() * 0.72).clamp(760.0, 1400.0), (ctx.screen_rect().height() * 0.75).clamp(520.0, 900.0)])
             .min_width(640.0)
             .min_height(400.0)
@@ -21,7 +21,7 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.label("Resolution");
                         let (mut w, h0) = (self.pt.params.0, self.pt.params.1);
-                        // proportia: patrat / 16:9 / 4:3 (inaltimea se calculeaza din latime)
+                        // the aspect: square / 16:9 / 4:3 (the height is computed from the width)
                         let mut ratio = if h0 == w { 0 } else if h0 == w * 9 / 16 { 1 } else if h0 == w * 3 / 4 { 2 } else { 0 };
                         egui::ComboBox::from_id_salt("pt_res").width(80.0).selected_text(format!("{w} px")).show_ui(ui, |ui| {
                             for r in [128u32, 256, 512, 1024, 1920, 2048, 4096] {
@@ -46,7 +46,7 @@ impl App {
                     });
                     ui.checkbox(&mut self.render.with_materials, "🎨 Render with materials")
                         .on_hover_text("Uses the assigned materials (colours, image textures, brick / tile / wood patterns, gloss, metal, glass). With no materials assigned yet, they are added automatically by IFC type. Hidden elements and the section are respected.");
-                    // ---- lumini
+                    // ---- lights
                     ui.separator();
                     ui.label(RichText::new("LIGHTS").small().strong().color(accent()));
                     ui.horizontal(|ui| {
@@ -132,7 +132,7 @@ impl App {
                     let total = job.samples_target;
                     let frac = if total > 0 { n as f32 / total as f32 } else { 0.0 };
                     let done = job.done.load(std::sync::atomic::Ordering::Relaxed);
-                    // timerul se opreste la „Ready": pastram secundele de la terminare
+                    // the timer stops at „Ready": we keep the seconds since finishing
                     let secs = if done { self.pt.done_at.unwrap_or(job.started.elapsed().as_secs_f32()) } else { job.started.elapsed().as_secs_f32() };
                     let fmt_dur = |s: f32| -> String {
                         if s < 60.0 { format!("{s:.0}s") } else { format!("{}m {:02}s", (s / 60.0) as u32, (s % 60.0) as u32) }
@@ -172,7 +172,7 @@ impl App {
                 }
                 });
                 ui.separator();
-                // ---- previewul: ocupa tot restul ferestrei, pe fundal inchis, imaginea in proportia ei
+                // ---- the preview: takes all the rest of the window, on a dark background, the image in its own aspect
                 let size = ui.available_size().max(egui::vec2(280.0, 240.0));
                 let (area, _) = ui.allocate_exact_size(size, Sense::hover());
                 ui.painter().rect_filled(area, crate::theme::RADIUS_MD, Color32::from_rgb(18, 20, 26));

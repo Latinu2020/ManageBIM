@@ -1,15 +1,15 @@
-//! Plansele PDF din viewpoints: o pagina A3 landscape pe viewpoint - imaginea mare, descrierea si
-//! comentariile, cartusul (proiect, viewpoint, stare, responsabil, data, numarul plansei).
-//! Scriitor PDF minimal, fara dependinte: imagini JPEG (DCTDecode), fonturile standard Helvetica.
+//! PDF sheets from viewpoints: one A3 landscape page per viewpoint - the large image, the description and
+//! the comments, the title block (project, viewpoint, status, assignee, date, sheet number).
+//! Minimal PDF writer, no dependencies: JPEG images (DCTDecode), the standard Helvetica fonts.
 
 use crate::markup::ReportItem;
 
-const W: f32 = 1190.55; // A3 landscape, puncte
+const W: f32 = 1190.55; // A3 landscape, points
 const H: f32 = 841.89;
 const M: f32 = 28.0;
 const STRIP: f32 = 150.0;
 
-/// textul in WinAnsi (fonturile standard nu au diacriticele romanesti s, t cu virgula)
+/// the text in WinAnsi (the standard fonts do not have the Romanian diacritics s, t with comma)
 pub(crate) fn ansi(s: &str) -> Vec<u8> {
     let mut out = Vec::new();
     for c in s.chars() {
@@ -43,12 +43,12 @@ pub(crate) fn ansi(s: &str) -> Vec<u8> {
     out
 }
 
-/// latimea aproximativa a textului Helvetica (puncte)
+/// the approximate width of Helvetica text (points)
 pub(crate) fn text_w(s: &str, size: f32) -> f32 {
     s.chars().map(|c| if c.is_ascii_uppercase() || c == 'm' || c == 'w' { 0.68 } else if c == ' ' || c == 'i' || c == 'l' || c == '.' || c == ',' { 0.28 } else { 0.52 }).sum::<f32>() * size
 }
 
-/// imparte textul in randuri de cel mult `max_w` puncte
+/// splits the text into lines of at most `max_w` points
 pub(crate) fn wrap(s: &str, size: f32, max_w: f32) -> Vec<String> {
     let mut out = Vec::new();
     for para in s.split('\n') {
@@ -78,20 +78,20 @@ pub(crate) fn text(c: &mut Vec<u8>, x: f32, y: f32, size: f32, bold: bool, s: &s
     c.extend_from_slice(b") Tj ET\n");
 }
 
-/// Raport PDF pentru Clash Detective: antet, tabel cu rezultatele testului curent si cartus.
-/// Foloseste acelasi scriitor PDF ca plansele de viewpoint (fonturi standard, fara dependinte).
+/// PDF report for Clash Detective: header, a table with the results of the current test and a title block.
+/// Uses the same PDF writer as the viewpoint sheets (standard fonts, no dependencies).
 pub fn clash_report_pdf(project: &str, test: &str, rows: &[(String, String, String, String, String)], date: &str, tb: &TitleBlock) -> Vec<u8> {
     const PW: f32 = 841.89; // A4 landscape
     const PH: f32 = 595.28;
     const MG: f32 = 28.0;
     const ROW: f32 = 13.0;
-    const TOP: f32 = PH - 100.0; // primul rand de date
-    const BOTTOM: f32 = 70.0; // deasupra cartusului
+    const TOP: f32 = PH - 100.0; // the first data row
+    const BOTTOM: f32 = 70.0; // above the title block
     let per_page = (((TOP - BOTTOM) / ROW) as usize).max(1);
     let n_pages = rows.len().div_ceil(per_page).max(1);
     let cols = [MG, MG + 35.0, MG + 115.0, MG + 195.0, MG + 455.0, MG + 545.0];
     let heads = ["No", "Status", "Severity", "Elements", "Distance", "Group"];
-    // textul care ar intra peste coloana urmatoare se scurteaza cu "..."
+    // text that would run over the next column is shortened with "..."
     let fit = |s: &str, w: f32| -> String {
         if text_w(s, 7.5) <= w {
             return s.to_string();
@@ -105,7 +105,7 @@ pub fn clash_report_pdf(project: &str, test: &str, rows: &[(String, String, Stri
     let mut pages = Vec::new();
     for p in 0..n_pages {
         let mut c = Vec::new();
-        // antet (pe fiecare pagina)
+        // header (on every page)
         text(&mut c, MG, PH - 34.0, 15.0, true, "CLASH DETECTIVE - REPORT");
         text(&mut c, MG, PH - 50.0, 9.0, false, &format!("Project: {}", tb.project_or(project)));
         text(&mut c, MG, PH - 62.0, 9.0, false, &format!("Test: {test}    Date: {date}    Clashes: {}", rows.len()));
@@ -122,7 +122,7 @@ pub fn clash_report_pdf(project: &str, test: &str, rows: &[(String, String, Stri
             }
             y -= ROW;
         }
-        // cartus
+        // title block
         let ty = 24.0;
         c.extend_from_slice(format!("0.5 w {MG} {ty} m {:.1} {ty} l {:.1} {:.1} l {MG} {:.1} l h S\n", PW - MG, PW - MG, ty + 30.0, ty + 30.0).as_bytes());
         text(&mut c, MG + 6.0, ty + 18.0, 10.0, true, tb.project_or(project));
@@ -134,17 +134,17 @@ pub fn clash_report_pdf(project: &str, test: &str, rows: &[(String, String, Stri
     write_pdf(&pages, tb.project_or(project), PW, PH)
 }
 
-/// PDF-ul cu cate o plansa pentru fiecare viewpoint.
+/// The PDF with one sheet for each viewpoint.
 pub fn sheets(project: &str, items: &[ReportItem], date: &str, tb: &TitleBlock) -> Vec<u8> {
     let mut pages: Vec<Page> = Vec::new();
     let n = items.len();
     for (k, it) in items.iter().enumerate() {
         let mut c: Vec<u8> = Vec::new();
-        // chenarul plansei
+        // the sheet border
         c.extend_from_slice(format!("0.15 0.17 0.2 RG 1.2 w {M} {M} {:.1} {:.1} re S\n", W - 2.0 * M, H - 2.0 * M).as_bytes());
-        // linia de deasupra benzii de jos
+        // the line above the bottom band
         c.extend_from_slice(format!("0.6 w {M} {:.1} m {:.1} {:.1} l S\n", M + STRIP, W - M, M + STRIP).as_bytes());
-        // imaginea: incadrata in zona de sus, cu proportiile pastrate
+        // the image: fitted into the top area, with the proportions kept
         let (aw, ah) = (W - 2.0 * M - 16.0, H - 2.0 * M - STRIP - 16.0);
         let img = crate::app::png_rgb(&it.image).and_then(|(rgb, w, h)| {
             let mut jpg = Vec::new();
@@ -161,7 +161,7 @@ pub fn sheets(project: &str, items: &[ReportItem], date: &str, tb: &TitleBlock) 
         } else {
             text(&mut c, M + 20.0, H / 2.0, 14.0, false, "(no image)");
         }
-        // ---- cartusul (dreapta jos): firma / proiect, viewpoint, stare, desenat / verificat, numar si revizie
+        // ---- the title block (bottom right): company / project, viewpoint, status, drawn / checked, number and revision
         let tb_w = 380.0;
         let tx = W - M - tb_w;
         c.extend_from_slice(format!("0.6 w {tx:.1} {M} m {tx:.1} {:.1} l S\n", M + STRIP).as_bytes());
@@ -193,7 +193,7 @@ pub fn sheets(project: &str, items: &[ReportItem], date: &str, tb: &TitleBlock) 
         let sheet = format!("{}{:02}", tb.number_prefix, k + 1);
         text(&mut c, W - M - 45.0 - text_w(&sheet, 16.0) / 2.0, M + 18.0, 16.0, true, &sheet);
         text(&mut c, W - M - 60.0, M + 6.0, 6.5, false, &format!("sheet {} of {}", k + 1, n));
-        // ---- descriere si comentarii (stanga jos)
+        // ---- description and comments (bottom left)
         let lw = W - 2.0 * M - tb_w - 24.0;
         let mut y = M + STRIP - 20.0;
         text(&mut c, M + 12.0, y, 8.0, true, "DESCRIPTION");
@@ -215,7 +215,7 @@ pub fn sheets(project: &str, items: &[ReportItem], date: &str, tb: &TitleBlock) 
             text(&mut c, M + 12.0, y, if bold { 8.0 } else { 9.0 }, bold, &l);
             y -= if bold { 13.0 } else { 11.5 };
         }
-        // formatul ales (A2 / A1 / A0 au aceleasi proportii ca A3): plansa se scaleaza intreaga
+        // the chosen format (A2 / A1 / A0 have the same proportions as A3): the whole sheet is scaled
         let s = (paper_mm(&tb.paper).0 / 420.0) as f32;
         let mut full = format!("q {s:.4} 0 0 {s:.4} 0 0 cm\n").into_bytes();
         full.extend_from_slice(&c);
@@ -226,12 +226,12 @@ pub fn sheets(project: &str, items: &[ReportItem], date: &str, tb: &TitleBlock) 
     write_pdf(&pages, tb.project_or(project), W * s, H * s)
 }
 
-/// Plansa PDF cu taietura 2D a sectiunii (linii vectoriale + etichete), cu cartus.
-/// Foloseste aceleasi segmente si texte ca `cut_dxf_annot`, deci pozitia anotatiilor
-/// e exact cea din DWG.
+/// PDF sheet with the 2D cut of the section (vector lines + labels), with a title block.
+/// Uses the same segments and texts as `cut_dxf_annot`, so the position of the annotations
+/// is exactly the one in the DWG.
 pub fn section_sheet(segs: &[(String, [f64; 4])], texts: &[crate::app::CadText], tb: &TitleBlock, project: &str, title: &str, date: &str) -> Vec<u8> {
     let mut c: Vec<u8> = Vec::new();
-    // chenarul plansei si linia de deasupra benzii de jos
+    // the sheet border and the line above the bottom band
     c.extend_from_slice(format!("0.15 0.17 0.2 RG 1.2 w {M} {M} {:.1} {:.1} re S\n", W - 2.0 * M, H - 2.0 * M).as_bytes());
     c.extend_from_slice(format!("0.6 w {M} {:.1} m {:.1} {:.1} l S\n", M + STRIP, W - M, M + STRIP).as_bytes());
 
@@ -249,9 +249,9 @@ pub fn section_sheet(segs: &[(String, [f64; 4])], texts: &[crate::app::CadText],
         let ox = M as f64 + 16.0 + (aw - (x1 - x0) * sc) / 2.0 - x0 * sc;
         let oy = (M + STRIP) as f64 + 16.0 + (ah - (y1 - y0) * sc) / 2.0 - y0 * sc;
         let map = |x: f64, y: f64| -> (f32, f32) { ((x * sc + ox) as f32, (y * sc + oy) as f32) };
-        // grosimi ca in desenul tehnic (ISO 128, stil Inventor): conturul taiat gros, muchiile vizibile
-        // medii, cele ascunse subtiri si intrerupte, hasura / cotele / axele fine.
-        // Ordinea: intai liniile fine, la sfarsit contururile groase (raman deasupra).
+        // line weights as in technical drawing (ISO 128, Inventor style): the cut outline thick, the visible edges
+        // medium, the hidden ones thin and dashed, hatch / dimensions / grids fine.
+        // The order: first the fine lines, at the end the thick outlines (they stay on top).
         let rank = |l: &str| match l.to_ascii_uppercase().as_str() {
             "HATCH" | "GRIDS" | "LEVELS" | "DIMS" => 0,
             "HIDDEN" | "BEHIND" => 1,
@@ -260,7 +260,7 @@ pub fn section_sheet(segs: &[(String, [f64; 4])], texts: &[crate::app::CadText],
         };
         let mut order: Vec<usize> = (0..segs.len()).collect();
         order.sort_by_key(|&i| rank(&segs[i].0));
-        // capete si colturi rotunjite: liniile groase se imbina curat
+        // rounded caps and joins: the thick lines join cleanly
         c.extend_from_slice(b"1 J 1 j
 ");
         let mut last = "";
@@ -282,7 +282,7 @@ pub fn section_sheet(segs: &[(String, [f64; 4])], texts: &[crate::app::CadText],
             c.extend_from_slice(format!("{ax:.2} {ay:.2} m {bx:.2} {by:.2} l S\n").as_bytes());
         }
         c.extend_from_slice(b"[] 0 d\n");
-        // etichetele: CadText.mm e inaltimea pe hartie (1 mm = 72/25.4 pt)
+        // the labels: CadText.mm is the height on paper (1 mm = 72/25.4 pt)
         for t in texts {
             let (x, y) = map(t.x, t.y);
             let size = (t.mm * 72.0 / 25.4) as f32;
@@ -293,7 +293,7 @@ pub fn section_sheet(segs: &[(String, [f64; 4])], texts: &[crate::app::CadText],
             c.extend_from_slice(b") Tj ET\n");
         }
     }
-    // ---- cartusul (acelasi continut ca la plansele din viewpoints)
+    // ---- the title block (the same content as on the viewpoint sheets)
     let tb_w = 380.0;
     let tx = W - M - tb_w;
     c.extend_from_slice(format!("0.6 w {tx:.1} {M} m {tx:.1} {:.1} l S\n", M + STRIP).as_bytes());
@@ -326,7 +326,7 @@ pub fn section_sheet(segs: &[(String, [f64; 4])], texts: &[crate::app::CadText],
 pub(crate) fn write_pdf(pages: &[Page], title: &str, pw: f32, ph: f32) -> Vec<u8> {
     let mut out: Vec<u8> = b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n".to_vec();
     let mut offs: Vec<usize> = Vec::new();
-    // obiecte: 1 catalog, 2 pagini, 3 F1, 4 F2, 5 info, apoi pe pagina: pagina, continut, imagine
+    // objects: 1 catalog, 2 pages, 3 F1, 4 F2, 5 info, then per page: page, content, image
     let page_ids: Vec<usize> = (0..pages.len()).map(|i| 6 + i * 3).collect();
     let obj = |out: &mut Vec<u8>, offs: &mut Vec<usize>, id: usize, body: &[u8]| {
         while offs.len() < id {
@@ -382,7 +382,7 @@ mod tests {
         assert!(super::wrap("one two three four five six", 9.0, 40.0).len() > 1);
     }
 
-    /// raportul de clash continua pe pagini noi (inainte se oprea dupa prima pagina)
+    /// the clash report continues on new pages (before, it stopped after the first page)
     #[test]
     fn clash_report_has_all_pages() {
         let rows: Vec<(String, String, String, String, String)> = (0..120).map(|i| ("New".into(), "Major".into(), format!("Very long element name number {i} that would not fit in the column <-> another long name"), "-12 mm".into(), String::new())).collect();
@@ -395,23 +395,23 @@ mod tests {
     }
 }
 
-/// Cartusul planselor (PDF si DWG), editabil si salvat in proiect.
+/// The title block of the sheets (PDF and DWG), editable and saved in the project.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct TitleBlock {
     pub company: String,
-    /// gol = numele proiectului (.bimr)
+    /// empty = the project name (.bimr)
     pub project: String,
     pub client: String,
     pub drawn: String,
     pub checked: String,
-    /// prefixul numarului de plansa: "S-" -> S-01, S-02...
+    /// the sheet number prefix: "S-" -> S-01, S-02...
     pub number_prefix: String,
     pub revision: String,
     pub notes: String,
-    /// formatul planselor: "A3", "A2", "A1", "A0"
+    /// the sheet format: "A3", "A2", "A1", "A0"
     pub paper: String,
-    /// scara DWG-ului pe plansa: 0 = automata (cea mai mare care incape), altfel 1:N
+    /// the DWG scale on the sheet: 0 = automatic (the largest that fits), otherwise 1:N
     pub scale: u32,
 }
 
@@ -422,7 +422,7 @@ impl Default for TitleBlock {
 }
 
 impl TitleBlock {
-    /// numele proiectului afisat (cel din cartus sau cel dat)
+    /// the displayed project name (the one in the title block or the given one)
     pub fn project_or<'a>(&'a self, fallback: &'a str) -> &'a str {
         if self.project.trim().is_empty() { fallback } else { self.project.trim() }
     }
@@ -431,7 +431,7 @@ impl TitleBlock {
 pub const PAPERS: [&str; 4] = ["A3", "A2", "A1", "A0"];
 pub const SCALES: [u32; 12] = [20, 25, 50, 75, 100, 150, 200, 250, 500, 1000, 2000, 5000];
 
-/// marimea foii (landscape) in milimetri
+/// the sheet size (landscape) in millimetres
 pub fn paper_mm(p: &str) -> (f64, f64) {
     match p {
         "A2" => (594.0, 420.0),

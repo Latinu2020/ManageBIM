@@ -1,14 +1,14 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
-    /// Modelul incarcat, cu parametrii utilizatorului aplicati (copie doar daca modelul e partajat).
+    /// The loaded model, with the user's parameters applied (a copy only if the model is shared).
     pub fn with_user_params(&self, mut m: Arc<Model>) -> Arc<Model> {
         if !self.user_params.iter().any(|p| p.model == m.name) {
             return m;
         }
         let mut sh = self.user_shadow.lock().unwrap_or_else(|e| e.into_inner());
-        // model proaspat (din fisier): valorile lui sunt originale; ce era al utilizatorului se rescrie
+        // fresh model (from the file): its values are the original ones; what belonged to the user is rewritten
         let prev = Self::prev_user_keys(&sh, &m.name);
         sh.applied.retain(|k| k.0 != m.name);
         match Arc::get_mut(&mut m) {
@@ -22,19 +22,19 @@ impl App {
         m
     }
 
-    /// (cheie, tab, proprietate) puse de utilizator pe un model la aplicarea anterioara
+    /// (key, tab, property) set by the user on a model at the previous application
     fn prev_user_keys(sh: &UserShadow, model: &str) -> HashSet<(String, String, String)> {
         sh.applied.iter().filter(|k| k.0 == model).map(|k| (k.1.clone(), k.2.clone(), k.3.clone())).collect()
     }
 
-    /// Reaplica parametrii pe modelul din slot (fara reincarcare si fara a retrimite geometria).
+    /// Reapplies the parameters to the model in the slot (without reloading and without resending the geometry).
     pub(super) fn refresh_user_params(&mut self, slot: usize) {
         let base = self.base_models.get_mut(slot).and_then(|b| b.take());
         let cur = self.models.get_mut(slot).and_then(|c| c.take());
         let same = matches!((&base, &cur), (Some(a), Some(b)) if Arc::ptr_eq(a, b));
         let name = base.as_ref().or(cur.as_ref()).map(|m| m.name.clone()).unwrap_or_default();
         let shadow = &self.user_shadow;
-        // aceeasi stare "anterioara" pentru ambele copii (baza si cea afisata)
+        // the same "previous" state for both copies (the base and the displayed one)
         let prev = {
             let mut sh = shadow.lock().unwrap_or_else(|e| e.into_inner());
             let p = Self::prev_user_keys(&sh, &name);
@@ -71,7 +71,7 @@ impl App {
         self.colors_dirty = true;
     }
 
-    /// Adauga / schimba un parametru pe elementele date (valoare goala = sterge parametrul), in tab-ul "User".
+    /// Adds / changes a parameter on the given elements (empty value = deletes the parameter), in the "User" tab.
     pub fn set_user_param(&mut self, ids: &[ElemId], name: &str, value: &str) -> usize {
         if value.trim().is_empty() {
             return self.remove_user_param(ids, USER_GROUP, name);
@@ -79,7 +79,7 @@ impl App {
         self.set_user_prop(ids, USER_GROUP, name, value)
     }
 
-    /// Scrie proprietatea `name` = `value` in tab-ul `group` pe elementele date (valoarea poate fi goala).
+    /// Writes the property `name` = `value` in the `group` tab on the given elements (the value may be empty).
     pub fn set_user_prop(&mut self, ids: &[ElemId], group: &str, name: &str, value: &str) -> usize {
         let (group, name) = (group.trim(), name.trim());
         if name.is_empty() || group.is_empty() {
@@ -101,7 +101,7 @@ impl App {
         n
     }
 
-    /// Sterge proprietatea `name` din tab-ul `group` (name gol = tot tab-ul) de pe elementele date.
+    /// Deletes the property `name` from the `group` tab (empty name = the whole tab) on the given elements.
     pub fn remove_user_param(&mut self, ids: &[ElemId], group: &str, name: &str) -> usize {
         let keys: HashSet<(String, String)> = ids.iter().filter_map(|id| self.elem(*id).map(|(m, e)| (m.name.clone(), user_key(e, id.e as usize)))).collect();
         let before = self.user_params.len();
@@ -114,7 +114,7 @@ impl App {
         n
     }
 
-    /// Redenumeste o proprietate (din tab-ul `group`) pe elementele date.
+    /// Renames a property (from the `group` tab) on the given elements.
     pub fn rename_user_prop(&mut self, ids: &[ElemId], group: &str, old: &str, new: &str) {
         let new = new.trim();
         if new.is_empty() || new == old {
@@ -132,7 +132,7 @@ impl App {
         }
     }
 
-    /// Redenumeste un tab de date utilizator pe elementele date.
+    /// Renames a user data tab on the given elements.
     pub fn rename_user_tab(&mut self, ids: &[ElemId], old: &str, new: &str) {
         let new = new.trim();
         if new.is_empty() || new == old {
@@ -150,7 +150,7 @@ impl App {
         }
     }
 
-    /// Tab-urile de date utilizator ale unui element, cu proprietatile lor (in ordinea adaugarii).
+    /// The user data tabs of an element, with their properties (in the order they were added).
     pub fn user_tabs_of(&self, id: ElemId) -> Vec<(String, Vec<(String, String)>)> {
         let Some((m, e)) = self.elem(id) else { return Vec::new() };
         let key = user_key(e, id.e as usize);
@@ -164,7 +164,7 @@ impl App {
         out
     }
 
-    /// Citeste un Excel / CSV pentru import si deschide fereastra de potrivire.
+    /// Reads an Excel / CSV for import and opens the matching window.
     pub fn open_prop_import(&mut self, path: &str) {
         let rows = match crate::tables::read_rows(path) {
             Ok(r) => r,
@@ -186,7 +186,7 @@ impl App {
         self.prop_import = Some(PropImport { path: path.to_string(), rows, header, key_col, match_by, tab: "User Data".into(), only_selected: false });
     }
 
-    /// cheia de potrivire a unui element pentru importul de proprietati
+    /// the matching key of an element for the property import
     pub(super) fn prop_match_values(&self, id: ElemId, by: &str) -> Vec<String> {
         let Some((m, e)) = self.elem(id) else { return Vec::new() };
         match by {
@@ -197,7 +197,7 @@ impl App {
         }
     }
 
-    /// Cate randuri din import se potrivesc cu elemente (randuri potrivite, elemente).
+    /// How many rows of the import match elements (matched rows, elements).
     pub fn prop_import_preview(&self, imp: &PropImport) -> (usize, usize) {
         let idx = self.prop_import_index(imp);
         let mut rows_ok = 0;
@@ -229,12 +229,12 @@ impl App {
         idx
     }
 
-    /// Scrie proprietatile din fisier pe elementele potrivite: fiecare coloana (in afara de cheie) = o proprietate.
+    /// Writes the properties from the file onto the matched elements: each column (except the key) = a property.
     pub fn run_prop_import(&mut self) {
         let Some(imp) = self.prop_import.take() else { return };
         let idx = self.prop_import_index(&imp);
         let head: Vec<String> = imp.rows[imp.header].iter().map(|c| c.trim().trim_start_matches('\u{feff}').to_string()).collect();
-        // coloanele de identificare din sablonul exportat nu devin proprietati
+        // the identification columns from the exported template do not become properties
         let skip = ["key", "model", "name", "type", "globalid", "level"];
         let cols: Vec<usize> = (0..head.len()).filter(|&c| c != imp.key_col && !head[c].is_empty() && !(skip.contains(&head[c].to_lowercase().as_str()) && head.iter().any(|h| h.eq_ignore_ascii_case("key")))).collect();
         let tab = if imp.tab.trim().is_empty() { "User Data".to_string() } else { imp.tab.trim().to_string() };
@@ -266,7 +266,7 @@ impl App {
                 slots.insert(id.m as usize);
             }
         }
-        // aceeasi proprietate pe acelasi element: valoarea noua o inlocuieste pe cea veche
+        // the same property on the same element: the new value replaces the old one
         let newk: HashSet<(String, String, String, String)> = new_params.iter().map(|p| (p.model.clone(), p.key.clone(), p.group.clone(), p.name.to_lowercase())).collect();
         self.user_params.retain(|p| !newk.contains(&(p.model.clone(), p.key.clone(), p.group.clone(), p.name.to_lowercase())));
         self.user_params.extend(new_params);
@@ -278,7 +278,7 @@ impl App {
         self.toast(format!("Properties imported into tab \"{tab}\": {n_vals} values from {n_rows} rows{miss}."));
     }
 
-    /// Sablonul Excel: un rand pe element (selectia sau toate vizibile), cheia + proprietatile utilizatorului.
+    /// The Excel template: one row per element (the selection or all visible), the key + the user properties.
     pub fn export_user_props(&mut self, path: &str) {
         use crate::qto::{Cell, Sheet};
         let ids: Vec<ElemId> = if self.selected.is_empty() { self.all_ids().into_iter().filter(|i| !self.hidden.contains(i)).collect() } else { self.selected.iter().copied().collect() };

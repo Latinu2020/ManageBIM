@@ -377,7 +377,7 @@ pub fn load_ply(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
     let mut verts: Vec<DVec3> = Vec::new();
     let mut vcol: Vec<[u8; 4]> = Vec::new();
     let mut faces: Vec<Vec<usize>> = Vec::new();
-    // proprietatile scalare ale fetelor (segment, label, object_id, material_index, culoare...) si ale varfurilor
+    // the scalar properties of faces (segment, label, object_id, material_index, colour...) and of vertices
     let mut face_vals: Vec<Vec<(String, f64)>> = Vec::new();
     let mut vstats: std::collections::BTreeMap<String, (f64, f64, f64, usize)> = std::collections::BTreeMap::new();
     let mut other: Vec<(String, usize)> = Vec::new();
@@ -457,8 +457,8 @@ pub fn load_ply(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
     if faces.is_empty() && !verts.is_empty() {
         return Err("This PLY is a point cloud (no faces). Point clouds are not supported yet.".into());
     }
-    // fetele se impart in elemente dupa primul atribut de identificare gasit (ca in scanarile segmentate,
-    // modelele fotogrammetrice clasificate sau exporturile cu obiecte)
+    // faces are split into elements by the first identifying attribute found (as in segmented scans,
+    // classified photogrammetry models or exports with objects)
     const IDS: [&str; 10] = ["object_id", "objectid", "instance", "instance_id", "segment", "segment_id", "label", "class", "category", "material_index"];
     let id_key = IDS.iter().find(|k| face_vals.first().is_some_and(|fv| fv.iter().any(|(n, _)| n.eq_ignore_ascii_case(k)))).map(|s| s.to_string());
     let fval = |fv: &[(String, f64)], k: &str| fv.iter().find(|(n, _)| n.eq_ignore_ascii_case(k)).map(|x| x.1);
@@ -466,7 +466,7 @@ pub fn load_ply(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
     for (fi, f) in faces.iter().enumerate() {
         let fv = face_vals.get(fi).map(|v| v.as_slice()).unwrap_or(&[]);
         let gid = id_key.as_deref().and_then(|k| fval(fv, k)).map(|v| v as i64).unwrap_or(i64::MIN);
-        // culoarea fetei (daca exista) are prioritate fata de a varfului
+        // the face colour (if present) takes priority over the vertex colour
         let fcol = match (fval(fv, "red"), fval(fv, "green"), fval(fv, "blue")) {
             (Some(r), Some(g), Some(b)) => Some([r as u8, g as u8, b as u8, 255]),
             _ => None,
@@ -511,7 +511,7 @@ pub fn load_ply(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
         }
         els.push(elem(name, "PLY Mesh", "", props, tris));
     }
-    // atributele varfurilor (quality, intensity, confidence...) si comentariile antetului - pe toate elementele
+    // vertex attributes (quality, intensity, confidence...) and the header comments - on all elements
     let mut shared: Vec<Prop> = vstats.iter().map(|(k, (lo, hi, sum, c))| prop("PLY vertex", k, format!("{} … {} (mean {})", num(*lo), num(*hi), num(sum / (*c).max(1) as f64)))).collect();
     for l in header.lines() {
         let l = l.trim();
@@ -597,7 +597,7 @@ fn aci(i: i64) -> [u8; 4] {
     [c[0], c[1], c[2], 255]
 }
 
-/// Sistemul de coordonate al obiectului (OCS) pentru normala `n` - algoritmul "arbitrary axis" AutoCAD.
+/// The object coordinate system (OCS) for normal `n` - the AutoCAD "arbitrary axis" algorithm.
 fn ocs_matrix(n: DVec3) -> DMat4 {
     let n = n.normalize_or(DVec3::Z);
     if n.abs_diff_eq(DVec3::Z, 1e-12) {
@@ -612,7 +612,7 @@ struct DxfCtx {
     blocks: HashMap<String, (DVec3, Vec<Ent>)>,
     layer_col: HashMap<String, [u8; 4]>,
     unsupported: HashMap<String, usize>,
-    /// solide ACIS triangulate (crate::acis), dupa handle-ul entitatii
+    /// triangulated ACIS solids (crate::acis), by entity handle
     acis: crate::acis::AcisMeshes,
 }
 
@@ -748,7 +748,7 @@ impl DxfCtx {
                 let Some((base, ents)) = self.blocks.get(&name).cloned() else { return };
                 let s = DVec3::new(e.f(41).unwrap_or(1.0), e.f(42).unwrap_or(1.0), e.f(43).unwrap_or(1.0));
                 let rot = e.f(50).unwrap_or(0.0).to_radians();
-                // punctul de insertie e in OCS-ul normalei (210/220/230) - ex. stuturile Plant 3D culcate
+                // the insertion point is in the OCS of the normal (210/220/230) - e.g. lying Plant 3D nozzles
                 let m = *xf * ocs_matrix(ext) * DMat4::from_translation(e.p(10)) * DMat4::from_rotation_z(rot) * DMat4::from_scale(s) * DMat4::from_translation(-base);
                 for c in &ents {
                     self.tris(c, &m, col, &layer, depth + 1, out);
@@ -758,7 +758,7 @@ impl DxfCtx {
                 let h = e.s(5).unwrap_or("").trim().to_uppercase();
                 match self.acis.meshes.get(&h) {
                     Some(m) => {
-                        // insertie in oglinda: pastram normalele spre exterior
+                        // mirrored insert: we keep the normals pointing outwards
                         let flip = xf.determinant() < 0.0;
                         for t in &m.tris {
                             if flip {
@@ -776,8 +776,8 @@ impl DxfCtx {
     }
 }
 
-/// XDATA (date extinse ale altor aplicatii): grupul "XData <aplicatie>", valorile in ordine; cele cu
-/// forma "Nume=Valoare" / "Nume: Valoare" devin proprietati cu nume.
+/// XDATA (extended data of other applications): group "XData <application>", values in order; those of
+/// the form "Name=Value" / "Name: Value" become named properties.
 fn xdata_props(e: &Ent) -> Vec<Prop> {
     let mut out = Vec::new();
     let mut app: Option<String> = None;
@@ -791,7 +791,7 @@ fn xdata_props(e: &Ent) -> Vec<Prop> {
                 k = 0;
             }
             _ if app.is_none() => {}
-            1002 => {} // { } liste - ignorate ca structura, valorile din ele se pastreaza
+            1002 => {} // { } lists - ignored as structure, the values inside them are kept
             1000 | 1003 | 1005 | 1040 | 1041 | 1042 | 1070 | 1071 => {
                 if !v.is_empty() && out.len() < 200 {
                     let g = format!("XData {}", app.as_deref().unwrap_or(""));
@@ -807,7 +807,7 @@ fn xdata_props(e: &Ent) -> Vec<Prop> {
                 }
             }
             1010 | 1011 | 1012 | 1013 => {
-                // punct: 10xx / 10xx+10 / 10xx+20
+                // point: 10xx / 10xx+10 / 10xx+20
                 let y = e.codes.get(i + 1).filter(|x| x.0 == c + 10).map(|x| x.1.trim().to_string()).unwrap_or_default();
                 let z = e.codes.get(i + 2).filter(|x| x.0 == c + 20).map(|x| x.1.trim().to_string()).unwrap_or_default();
                 k += 1;
@@ -854,8 +854,8 @@ fn dxf_entities(pairs: &[(i32, String)], start: usize) -> (Vec<Ent>, usize) {
     (out, i)
 }
 
-/// Citeste metadatele lasate de „Cut to DWG”: planul din care a fost extras
-/// desenul 2D. Cauta mai intai sidecar-ul `.mbplane`, apoi comentariul din DXF.
+/// Reads the metadata left by „Cut to DWG”: the plane the 2D drawing was extracted
+/// from. Looks first for the `.mbplane` sidecar, then for the comment in the DXF.
 pub fn read_cut_plane_meta(path: &str) -> Option<(usize, f32, bool, glam::DVec3)> {
     let parse = |line: &str| -> Option<(usize, f32, bool, glam::DVec3)> {
         if !line.starts_with("MB_CUT_PLANE") { return None; }
@@ -874,7 +874,7 @@ pub fn read_cut_plane_meta(path: &str) -> Option<(usize, f32, bool, glam::DVec3)
     if let Ok(s) = std::fs::read_to_string(format!("{path}.mbplane")) {
         if let Some(m) = parse(s.lines().next().unwrap_or("")) { return Some(m); }
     }
-    // textul ascuns din desen (strat MB_CUT_PLANE) sau comentariul DXF; DWG-ul e convertit in text DXF
+    // the hidden text in the drawing (layer MB_CUT_PLANE) or the DXF comment; the DWG is converted to DXF text
     let text = dxf_text_of(path).ok().or_else(|| std::fs::read(path).ok().map(|b| String::from_utf8_lossy(&b).to_string()))?;
     text.lines().map(|l| l.trim()).find_map(parse)
 }
@@ -883,9 +883,9 @@ pub fn load_dxf(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, St
     load_dxf_with(path, progress, None, Vec::new())
 }
 
-/// `acis`: solidele ACIS deja triangulate (DWG). Fara ele, daca DXF-ul are entitati ACIS, le citim
-/// cu acadrust (SAT in grupurile 1 / 3 sau SAB in sectiunea ACDSDATA) si le traducem aici.
-/// `plant`: obiectele Plant 3D / entitatile custom din DWG (`crate::plant3d`), un element fiecare.
+/// `acis`: the already triangulated ACIS solids (DWG). Without them, if the DXF has ACIS entities, we read them
+/// with acadrust (SAT in groups 1 / 3 or SAB in the ACDSDATA section) and translate them here.
+/// `plant`: the Plant 3D objects / custom entities from the DWG (`crate::plant3d`), one element each.
 fn load_dxf_with(path: &str, progress: &dyn Fn(f32, &str), acis: Option<crate::acis::AcisMeshes>, plant: Vec<crate::plant3d::PlantObject>) -> Result<RawModel, String> {
     progress(0.05, "Reading DXF");
     let d = std::fs::read(path).map_err(|e| format!("Cannot read the file: {e}"))?;
@@ -950,7 +950,7 @@ fn load_dxf_with(path: &str, progress: &dyn Fn(f32, &str), acis: Option<crate::a
                             let (ents, j) = dxf_entities(&pairs, i);
                             i = j;
                             if let Some(n) = hdr.s(2) {
-                                // BLOCK: 330 = BLOCK_RECORD-ul proprietar (referit de obiectele Plant 3D)
+                                // BLOCK: 330 = the owner BLOCK_RECORD (referenced by Plant 3D objects)
                                 if let Some(h) = hdr.s(330) {
                                     block_by_handle.insert(h.trim().to_uppercase(), n.to_string());
                                 }
@@ -1004,7 +1004,7 @@ fn load_dxf_with(path: &str, progress: &dyn Fn(f32, &str), acis: Option<crate::a
                 prop("Element", "Insertion point", format!("{:.3}, {:.3}, {:.3}", p.x, p.y, p.z)),
                 prop("Element", "Rotation", format!("{}°", e.f(50).unwrap_or(0.0))),
             ];
-            // atributele blocului (ATTRIB dupa INSERT, pana la SEQEND): eticheta = valoare
+            // block attributes (ATTRIB after INSERT, until SEQEND): tag = value
             let mut title: Option<String> = None;
             for a in entities[k + 1..].iter().take_while(|a| a.ty == "ATTRIB") {
                 let (Some(tag), Some(val)) = (a.s(2), a.s(1)) else { continue };
@@ -1023,7 +1023,7 @@ fn load_dxf_with(path: &str, progress: &dyn Fn(f32, &str), acis: Option<crate::a
             el.guid = e.s(5).unwrap_or("").to_string();
             elements.push(el);
         } else if crate::acis::DXF_TYPES.contains(&e.ty.as_str()) {
-            // un element per solid ACIS: storey = stratul, culoarea entitatii
+            // one element per ACIS solid: storey = the layer, the entity colour
             let h = e.s(5).unwrap_or("").trim().to_uppercase();
             let kind = match e.ty.as_str() {
                 "3DSOLID" => "3D Solid",
@@ -1053,8 +1053,8 @@ fn load_dxf_with(path: &str, progress: &dyn Fn(f32, &str), acis: Option<crate::a
             layers.entry(layer).or_default().extend(out);
         }
     }
-    // obiectele Plant 3D: blocurile din catalog (Plant3DCatalogItem_* / *U*) plasate cu transformarile
-    // din grafica proxy + fetele proxy (teava, grinzi); un element per obiect
+    // Plant 3D objects: the catalog blocks (Plant3DCatalogItem_* / *U*) placed with the transforms
+    // from the proxy graphics + the proxy faces (pipe, beams); one element per object
     let (mut plant_shown, mut plant_missing, mut plant_unplaced) = (0usize, 0usize, 0usize);
     let plant_total = plant.len();
     for o in plant {
@@ -1071,7 +1071,7 @@ fn load_dxf_with(path: &str, progress: &dyn Fn(f32, &str), acis: Option<crate::a
         let mut out: Vec<Tri> = Vec::new();
         let mut names: Vec<String> = Vec::new();
         for pb in &o.blocks {
-            // dupa handle (numele *U* se pot schimba la scrierea DXF), apoi dupa nume
+            // by handle (the *U* names can change when the DXF is written), then by name
             let bn = block_by_handle.get(&pb.record).unwrap_or(&pb.name);
             let Some((base, ents)) = ctx.blocks.get(bn).cloned() else {
                 plant_missing += 1;
@@ -1117,7 +1117,7 @@ fn load_dxf_with(path: &str, progress: &dyn Fn(f32, &str), acis: Option<crate::a
         elements.push(elem(format!("Layer {l}"), "Layer geometry", &l, vec![prop("Element", "Name", format!("Layer {l}")), prop("Element", "Layer", l.clone())], t));
     }
     let mut warnings = Vec::new();
-    // doar solidele care chiar nu au putut fi traduse (cele traduse nu mai genereaza avertismente)
+    // only the solids that really could not be translated (translated ones no longer generate warnings)
     let mut skipped: Vec<(&String, &usize)> = ctx.unsupported.iter().collect();
     skipped.sort_by(|a, b| a.0.cmp(b.0));
     let why = ctx.acis.failure_summary();
@@ -1175,10 +1175,10 @@ fn load_dxf_with(path: &str, progress: &dyn Fn(f32, &str), acis: Option<crate::a
 pub struct Tools {
     #[serde(default)]
     pub oda: String,
-    /// nwd2bimc.exe (ManageBIM pentru Navisworks): deschide NWD / NWC / NWF / RVT prin Navisworks instalat
+    /// nwd2bimc.exe (ManageBIM for Navisworks): opens NWD / NWC / NWF / RVT through the installed Navisworks
     #[serde(default)]
     pub navisworks: String,
-    /// versiunea Navisworks preferata pentru deschiderea NWD / NWC / RVT (0 = automat: cea mai noua suportata)
+    /// preferred Navisworks version for opening NWD / NWC / RVT (0 = automatic: the newest supported)
     #[serde(default)]
     pub navis_year: u32,
 }
@@ -1238,7 +1238,7 @@ pub fn detect_tools() -> Tools {
     }
 }
 
-/// nwd2bimc.exe langa ManageBIM.exe (AddIns\Navisworks\, AddIns\ sau acelasi folder) - doar daca Navisworks e instalat.
+/// nwd2bimc.exe next to ManageBIM.exe (AddIns\Navisworks\, AddIns\ or the same folder) - only if Navisworks is installed.
 pub fn find_nwd2bimc() -> Option<String> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
@@ -1258,8 +1258,8 @@ pub fn find_nwd2bimc() -> Option<String> {
 
 pub const NAVIS_EXT: [&str; 4] = ["nwd", "nwc", "nwf", "rvt"];
 
-/// NWD / NWC / NWF / RVT: formate inchise Autodesk. Le deschidem prin Navisworks-ul instalat
-/// (API-ul oficial, add-in-ul ManageBIM) - convertite in .bimc si citite de acolo.
+/// NWD / NWC / NWF / RVT: closed Autodesk formats. We open them through the installed Navisworks
+/// (the official API, the ManageBIM add-in) - converted to .bimc and read from there.
 pub fn convert_navisworks(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     let ext = ext_of(path).to_uppercase();
     let mut exe = tools().navisworks;
@@ -1272,7 +1272,7 @@ pub fn convert_navisworks(path: &str, progress: &dyn Fn(f32, &str)) -> Result<Ra
              (run AddIns\\ManageBIM-Navisworks-AddIn.exe). Without Navisworks: export the model to IFC or, in Navisworks, Tool add-ins > Export to ManageBIM (.bimc)."
         ));
     }
-    // versiunile instalate, in ordinea de incercare; daca una esueaza (ex. 2027, inca nesuportata) trecem la urmatoarea
+    // the installed versions, in trial order; if one fails (e.g. 2027, not yet supported) we move on to the next
     let years = navis_years();
     let mut errors: Vec<String> = Vec::new();
     let tries: Vec<Option<u32>> = if years.is_empty() { vec![None] } else { years.iter().map(|y| Some(*y)).collect() };
@@ -1293,11 +1293,11 @@ pub fn convert_navisworks(path: &str, progress: &dyn Fn(f32, &str)) -> Result<Ra
     Err(format!("Navisworks could not convert {}: {}", file_name_of(path), errors.join(" | ")))
 }
 
-/// versiunea Navisworks care a mers ultima data (incercata prima)
+/// the Navisworks version that worked last time (tried first)
 static NAVIS_GOOD: RwLock<Option<u32>> = RwLock::new(None);
 
-/// Versiunile Navisworks Manage / Simulate instalate, in ordinea de incercare: cea aleasa in setari,
-/// cea care a mers ultima data, cele suportate (2026 -> 2022), apoi cele mai noi (2027+).
+/// The installed Navisworks Manage / Simulate versions, in trial order: the one chosen in settings,
+/// the one that worked last time, the supported ones (2026 -> 2022), then the newer ones (2027+).
 pub fn navis_years() -> Vec<u32> {
     let mut found: Vec<u32> = Vec::new();
     for pf in ["ProgramFiles", "ProgramW6432"].iter().filter_map(std::env::var_os) {
@@ -1315,7 +1315,7 @@ pub fn navis_years() -> Vec<u32> {
     order_years(&found, tools().navis_year, *NAVIS_GOOD.read().unwrap_or_else(|e| e.into_inner()))
 }
 
-/// ordinea de incercare (separata pentru teste)
+/// the trial order (separate, for tests)
 pub fn order_years(found: &[u32], preferred: u32, good: Option<u32>) -> Vec<u32> {
     let mut out: Vec<u32> = Vec::new();
     for y in [Some(preferred).filter(|y| *y > 0), good].into_iter().flatten() {
@@ -1332,7 +1332,7 @@ pub fn order_years(found: &[u32], preferred: u32, good: Option<u32>) -> Vec<u32>
     out
 }
 
-/// ultima versiune Navisworks pentru care exista add-in-ul ManageBIM
+/// the latest Navisworks version for which the ManageBIM add-in exists
 pub const LAST_SUPPORTED_NAVIS: u32 = 2026;
 
 fn run_nwd2bimc(exe: &str, path: &str, year: Option<u32>, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
@@ -1349,7 +1349,7 @@ fn run_nwd2bimc(exe: &str, path: &str, year: Option<u32>, progress: &dyn Fn(f32,
     }
     c.arg(path).arg(&out).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
     let mut child = c.spawn().map_err(|e| format!("Navisworks converter could not be started: {e}"))?;
-    // erorile pe un fir separat (altfel bufferul stderr plin poate bloca procesul)
+    // errors on a separate thread (otherwise a full stderr buffer can block the process)
     let err_pipe = child.stderr.take();
     let err_thread = std::thread::spawn(move || {
         let mut s = String::new();
@@ -1359,7 +1359,7 @@ fn run_nwd2bimc(exe: &str, path: &str, year: Option<u32>, progress: &dyn Fn(f32,
         }
         s
     });
-    // progresul real: "PROGRESS <0..1>\t<text>" de la nwd2bimc (citit din add-in-ul Navisworks)
+    // real progress: "PROGRESS <0..1>\t<text>" from nwd2bimc (read from the Navisworks add-in)
     let mut log = String::new();
     if let Some(o) = child.stdout.take() {
         use std::io::BufRead;
@@ -1410,7 +1410,7 @@ fn temp_dir(tag: &str) -> Result<PathBuf, String> {
     Ok(d)
 }
 
-/// STEP / IGES / BREP: cititorul OpenCascade incorporat (fara programe externe).
+/// STEP / IGES / BREP: the built-in OpenCascade reader (no external programs).
 pub fn load_cad(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     let ext = ext_of(path);
     let kind = crate::occt::CadKind::from_ext(&ext).ok_or_else(|| format!("Not a CAD exchange format: .{ext}"))?;
@@ -1436,18 +1436,18 @@ fn file_name_of(path: &str) -> String {
 
 pub fn convert_dwg(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     let t = tools();
-    // ordinea: cititorul incorporat -> Navisworks (object enablers; si cand modelul incorporat are entitati
-    // custom ne-Plant 3D fara geometrie, se pastreaza modelul cu mai multe triunghiuri) -> ODA File Converter
+    // order: the built-in reader -> Navisworks (object enablers; also when the built-in model has non-Plant 3D
+    // custom entities without geometry, the model with more triangles is kept) -> ODA File Converter
     let navis = if !t.navisworks.is_empty() && Path::new(&t.navisworks).is_file() { Some(t.navisworks.clone()) } else { find_nwd2bimc() };
     let mut notes = Vec::new();
-    // 1. cititorul incorporat: solide ACIS + obiecte Plant 3D (blocurile din catalog) - mai complet decat
-    //    Navisworks pe modelele Plant 3D (care arata doar tevile). Navisworks / ODA raman rezerva.
+    // 1. the built-in reader: ACIS solids + Plant 3D objects (the catalog blocks) - more complete than
+    //    Navisworks on Plant 3D models (which shows only the pipes). Navisworks / ODA remain the fallback.
     let tris = |m: &RawModel| m.elements.iter().map(|e| e.tris.len()).sum::<usize>();
     let native = convert_dwg_native(path, progress);
     match &native {
         Ok(m) => {
-            // entitati custom ne-Plant 3D fara geometrie (ex. obiecte AutoCAD Architecture / MEP): Navisworks
-            // le poate desena prin object enablers -> il incercam si pastram modelul mai complet
+            // non-Plant 3D custom entities without geometry (e.g. AutoCAD Architecture / MEP objects): Navisworks
+            // can draw them through object enablers -> we try it and keep the more complete model
             let foreign = m.info.iter().any(|(k, v)| k == "Custom objects without 3D geometry" && v.split(", ").any(|c| !c.split_once(' ').map(|(_, n)| n.starts_with("ACPP")).unwrap_or(true)));
             if !(foreign && navis.is_some()) {
                 return native;
@@ -1485,19 +1485,19 @@ pub fn convert_dwg(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel,
     native
 }
 
-/// Cititorul DWG incorporat (acadrust, Rust pur, MPL-2.0): DWG -> DXF in memorie -> incarcatorul DXF.
-/// Fete 3D, mesh-uri, polyface, blocuri, straturi. Solidele ACIS (3DSOLID / REGION / BODY / suprafete)
-/// sunt traduse in B-rep OpenCascade si triangulate (`crate::acis`); doar cele care esueaza sunt semnalate.
-/// Obiectele Autodesk Plant 3D (entitati custom, "UNKNOWN" in acadrust) sunt plasate din grafica lor proxy
-/// si din referintele la blocurile din catalog (`crate::plant3d`).
+/// The built-in DWG reader (acadrust, pure Rust, MPL-2.0): DWG -> DXF in memory -> the DXF loader.
+/// 3D faces, meshes, polyface, blocks, layers. ACIS solids (3DSOLID / REGION / BODY / surfaces)
+/// are translated to OpenCascade B-rep and triangulated (`crate::acis`); only those that fail are reported.
+/// Autodesk Plant 3D objects (custom entities, "UNKNOWN" in acadrust) are placed from their proxy graphics
+/// and from the references to the catalog blocks (`crate::plant3d`).
 pub fn convert_dwg_native(path: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     use acadrust::DwgReader;
     progress(0.05, "Reading DWG (built-in reader)");
     let mut reader = DwgReader::from_mmap(path).map_err(|e| format!("Cannot open the DWG: {e}"))?;
     let (doc, recovered) = match reader.read() {
         Ok(d) => (d, None),
-        // inregistrari corupte / necunoscute (ex. unele DWG Plant 3D mari): recitim in modul de recuperare,
-        // care sare peste obiectele care nu pot fi decodate in loc sa abandoneze tot fisierul
+        // corrupt / unknown records (e.g. some large Plant 3D DWGs): we re-read in recovery mode,
+        // which skips the objects that cannot be decoded instead of abandoning the whole file
         Err(e) => {
             progress(0.1, "Reading DWG (recovery mode)");
             let mut r = DwgReader::from_mmap(path).map_err(|e| format!("Cannot open the DWG: {e}"))?;
@@ -1513,8 +1513,8 @@ pub fn convert_dwg_native(path: &str, progress: &dyn Fn(f32, &str)) -> Result<Ra
     Ok(m)
 }
 
-/// Proprietatile de inginerie Plant 3D (Line Number, Size, Spec, Tag...) din baza proiectului (Piping.dcf,
-/// gasita urcand din folderul DWG-ului), doar citire. Fara baza: modelul ramane cum e.
+/// The Plant 3D engineering properties (Line Number, Size, Spec, Tag...) from the project database (Piping.dcf,
+/// found by walking up from the DWG folder), read only. Without the database: the model stays as it is.
 pub fn attach_plant_db(m: &mut RawModel, dwg: &Path, progress: &dyn Fn(f32, &str)) {
     if !m.elements.iter().any(|e| e.props.iter().any(|p| p.name == "Entity" && p.value.starts_with("ACPP"))) {
         return;
@@ -1527,7 +1527,7 @@ pub fn attach_plant_db(m: &mut RawModel, dwg: &Path, progress: &dyn Fn(f32, &str
     }
 }
 
-/// Entitati custom (Plant 3D si altele) din model space care nu au devenit elemente: (total, pe clase).
+/// Custom entities (Plant 3D and others) in model space that did not become elements: (total, per class).
 fn custom_not_shown(doc: &acadrust::CadDocument, shown: &std::collections::HashSet<String>) -> (usize, Vec<(String, usize)>) {
     let mut by: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for e in doc.model_space_entities() {
@@ -1540,8 +1540,8 @@ fn custom_not_shown(doc: &acadrust::CadDocument, shown: &std::collections::HashS
     (by.values().sum(), by.into_iter().collect())
 }
 
-/// Ca `convert_dwg_native`, pentru un document acadrust deja citit (sau construit in memorie, in teste).
-/// `name` = numele fisierului, folosit in mesaje.
+/// Like `convert_dwg_native`, for an acadrust document already read (or built in memory, in tests).
+/// `name` = the file name, used in messages.
 pub fn convert_dwg_doc(doc: acadrust::CadDocument, name: &str, progress: &dyn Fn(f32, &str)) -> Result<RawModel, String> {
     use acadrust::DxfWriter;
     let acis = crate::acis::mesh_document(&doc, &|f, s| progress(0.2 + f * 0.2, s));
@@ -1557,7 +1557,7 @@ pub fn convert_dwg_doc(doc: acadrust::CadDocument, name: &str, progress: &dyn Fn
     drop(dxf);
     let r = load_dxf_with(&tmp.to_string_lossy(), &|f, s| progress(0.45 + f * 0.5, s), Some(acis), plant);
     let _ = std::fs::remove_dir_all(&dir);
-    // mesajele incarcatorului DXF se refera la fisierul temporar: le punem pe numele DWG-ului
+    // the DXF loader messages refer to the temporary file: we put them under the DWG name
     let mut m = r.map_err(|e| {
         let e = e.replace("model.dxf", name);
         if e.contains("no 3D geometry") {
@@ -1568,7 +1568,7 @@ pub fn convert_dwg_doc(doc: acadrust::CadDocument, name: &str, progress: &dyn Fn
     })?;
     m.info.insert(0, ("Converted from".into(), "DWG (built-in reader)".into()));
     if hidden > 0 {
-        // ex. suduri (ACPPCONNECTOR fara bloc), grid-uri, simboluri izometrice: fara geometrie 3D in proxy
+        // e.g. welds (ACPPCONNECTOR without a block), grids, isometric symbols: no 3D geometry in the proxy
         let list: Vec<String> = hidden_by.iter().map(|(c, n)| format!("{n} {c}")).collect();
         m.info.push(("Custom objects without 3D geometry".into(), list.join(", ")));
     }
@@ -1596,9 +1596,9 @@ fn convert_dwg_oda(oda: &str, path: &str, progress: &dyn Fn(f32, &str)) -> Resul
     })
 }
 
-/// DXF -> DWG cu ODA File Converter (gratuit, instalat separat). Intoarce calea DWG-ului.
-/// DXF -> DWG. Implicit cu scriitorul DWG integrat (acadrust, AutoCAD 2018 / AC1032), fara alte programe;
-/// ODA File Converter (daca e instalat) ramane doar ca rezerva. DWG-ul scris e recitit ca verificare.
+/// DXF -> DWG with ODA File Converter (free, installed separately). Returns the DWG path.
+/// DXF -> DWG. By default with the built-in DWG writer (acadrust, AutoCAD 2018 / AC1032), no other programs;
+/// ODA File Converter (if installed) remains only as a fallback. The written DWG is re-read as a check.
 pub fn dxf_to_dwg(dxf: &str) -> Result<String, String> {
     match dxf_to_dwg_native(dxf) {
         Ok(p) => Ok(p),
@@ -1606,7 +1606,7 @@ pub fn dxf_to_dwg(dxf: &str) -> Result<String, String> {
     }
 }
 
-/// scriitorul DWG integrat; verifica rezultatul recitindu-l (acelasi numar de entitati)
+/// the built-in DWG writer; checks the result by re-reading it (the same number of entities)
 pub fn dxf_to_dwg_native(dxf: &str) -> Result<String, String> {
     let mut doc = acadrust::DxfReader::from_file(dxf).and_then(|r| r.read()).map_err(|e| format!("cannot read the DXF ({e})"))?;
     let n = doc.entities().count();
@@ -1656,12 +1656,12 @@ fn dxf_to_dwg_oda(dxf: &str) -> Result<String, String> {
     res
 }
 
-// ====================================================================== axe din DWG / DXF
-/// Axe gasite intr-un desen: (eticheta, capat 1, capat 2) in metri, plus straturile cu linii (pentru alegere).
+// ====================================================================== grids from DWG / DXF
+/// Grids found in a drawing: (label, end 1, end 2) in metres, plus the layers with lines (to choose from).
 pub struct CadGrids {
     pub grids: Vec<(String, [f64; 2], [f64; 2])>,
     pub layer: String,
-    /// (strat, numar de linii), cele mai probabile pentru axe primele
+    /// (layer, number of lines), the most likely ones for grids first
     pub layers: Vec<(String, usize)>,
     pub scale: f64,
 }
@@ -1689,7 +1689,7 @@ fn dxf_text_of(path: &str) -> Result<String, String> {
     }
 }
 
-/// Textul MTEXT fara coduri de formatare (\P, {\f...;}, \A1; ...).
+/// The MTEXT text without formatting codes (\P, {\f...;}, \A1; ...).
 fn mtext_plain(s: &str) -> String {
     let mut out = String::new();
     let mut it = s.chars().peekable();
@@ -1700,7 +1700,7 @@ fn mtext_plain(s: &str) -> String {
                 Some('P') | Some('~') => out.push(' '),
                 Some('\\') => out.push('\\'),
                 Some(_) => {
-                    // cod cu parametru pana la ';'
+                    // code with a parameter up to ';'
                     for d in it.by_ref() {
                         if d == ';' {
                             break;
@@ -1715,11 +1715,11 @@ fn mtext_plain(s: &str) -> String {
     out.trim().to_string()
 }
 
-/// Citeste axele dintr-un DWG / DXF: liniile stratului de axe (ghicit dupa nume, sau `layer`) si eticheta de la
-/// capatul fiecarei linii (textul / atributul din bula cea mai apropiata). Segmentele cu aceeasi eticheta se unesc.
+/// Reads the grids from a DWG / DXF: the lines of the grid layer (guessed by name, or `layer`) and the label at
+/// the end of each line (the text / attribute in the nearest bubble). Segments with the same label are joined.
 pub fn grids_from_cad(path: &str, layer: Option<&str>) -> Result<CadGrids, String> {
     let (insunits, entities, blocks) = dxf_doc(path)?;
-    // linii (LINE, LWPOLYLINE cu 2 varfuri) pe strat; etichete: TEXT / MTEXT / ATTRIB si TEXT din blocuri (bule)
+    // lines (LINE, LWPOLYLINE with 2 vertices) on the layer; labels: TEXT / MTEXT / ATTRIB and TEXT from blocks (bubbles)
     let mut segs: Vec<(String, glam::DVec2, glam::DVec2)> = Vec::new();
     let mut tags: Vec<(String, glam::DVec2)> = Vec::new();
     let mut circles: Vec<f64> = Vec::new();
@@ -1735,7 +1735,7 @@ pub fn grids_from_cad(path: &str, layer: Option<&str>) -> Result<CadGrids, Strin
             }
             "TEXT" | "ATTRIB" => {
                 if let Some(t) = e.s(1).map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) {
-                    // aliniat (72/73/74 != 0): punctul de aliniere 11 e centrul textului
+                    // aligned (72/73/74 != 0): alignment point 11 is the text centre
                     let p = if e.i(72).unwrap_or(0) != 0 || e.i(73).unwrap_or(0) != 0 || e.i(74).unwrap_or(0) != 0 { e.p(11) } else { e.p(10) };
                     tags.push((t, p.truncate()));
                 }
@@ -1775,7 +1775,7 @@ pub fn grids_from_cad(path: &str, layer: Option<&str>) -> Result<CadGrids, Strin
             _ => {}
         }
     }
-    // straturile cu linii; cele cu nume de axe primele
+    // the layers with lines; those with grid names first
     let mut count: HashMap<String, usize> = HashMap::new();
     for s in &segs {
         *count.entry(s.0.clone()).or_default() += 1;
@@ -1788,7 +1788,7 @@ pub fn grids_from_cad(path: &str, layer: Option<&str>) -> Result<CadGrids, Strin
     layers.sort_by(|a, b| looks(&b.0).cmp(&looks(&a.0)).then(b.1.cmp(&a.1)).then(a.0.cmp(&b.0)));
     let chosen = match layer {
         Some(l) => l.to_string(),
-        // nici un strat cu nume de axe: lista straturilor, ca utilizatorul sa-l aleaga
+        // no layer with grid names: the list of layers, so the user can pick one
         None => match layers.iter().find(|(l, _)| looks(l)) {
             Some((l, _)) => l.clone(),
             None => return Ok(CadGrids { grids: Vec::new(), layer: String::new(), layers, scale: 1.0 }),
@@ -1801,7 +1801,7 @@ pub fn grids_from_cad(path: &str, layer: Option<&str>) -> Result<CadGrids, Strin
         5 => 0.01,
         6 => 1.0,
         _ => {
-            // necunoscut: desenele de arhitectura sunt de obicei in mm
+            // unknown: architectural drawings are usually in mm
             let ext = segs.iter().map(|s| (s.2 - s.1).length()).fold(0.0, f64::max);
             if ext > 1000.0 { 0.001 } else { 1.0 }
         }
@@ -1810,7 +1810,7 @@ pub fn grids_from_cad(path: &str, layer: Option<&str>) -> Result<CadGrids, Strin
     if gsegs.is_empty() {
         return Err(format!("No lines on the layer {chosen}."));
     }
-    // distanta de cautare a etichetei fata de capat: ~2 x raza bulelor, sau 3% din cea mai lunga axa
+    // search distance of the label from the end: ~2 x the bubble radius, or 3% of the longest grid line
     let mut rs: Vec<f64> = circles.iter().copied().filter(|r| *r > 0.0).collect();
     rs.sort_by(|a, b| a.total_cmp(b));
     let longest = gsegs.iter().map(|(a, b)| (*b - *a).length()).fold(0.0, f64::max);
@@ -1828,7 +1828,7 @@ pub fn grids_from_cad(path: &str, layer: Option<&str>) -> Result<CadGrids, Strin
             untagged += 1;
             format!("G{untagged}")
         });
-        // aceeasi eticheta si aceeasi directie: segmentele se unesc (capetele cele mai departate)
+        // same label and same direction: the segments are joined (the farthest ends)
         let d = (b - a).normalize();
         if let Some(g) = by_tag.iter_mut().find(|g| g.0 == tag && ((g.2 - g.1).normalize().perp_dot(d)).abs() < 0.02) {
             let pts = [g.1, g.2, a, b];
@@ -1851,9 +1851,9 @@ pub fn grids_from_cad(path: &str, layer: Option<&str>) -> Result<CadGrids, Strin
     Ok(CadGrids { grids, layer: chosen, layers, scale })
 }
 
-// ====================================================================== portabilitate (Windows / Linux / FreeBSD)
+// ====================================================================== portability (Windows / Linux / FreeBSD)
 
-/// Dialogurile de fisiere native: pe Windows mereu; pe Linux / FreeBSD prin xdg-desktop-portal (D-Bus).
+/// Native file dialogs: always on Windows; on Linux / FreeBSD through xdg-desktop-portal (D-Bus).
 pub fn native_dialogs() -> bool {
     if cfg!(windows) {
         return true;
@@ -1861,7 +1861,7 @@ pub fn native_dialogs() -> bool {
     std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some()
 }
 
-/// Deschide un fisier / folder cu programul implicit (Explorer, xdg-open).
+/// Opens a file / folder with the default program (Explorer, xdg-open).
 pub fn open_with_system(path: &std::path::Path) {
     #[cfg(windows)]
     {
@@ -1873,7 +1873,7 @@ pub fn open_with_system(path: &std::path::Path) {
     }
 }
 
-/// Folderul de setari: %APPDATA% (Windows) sau $XDG_CONFIG_HOME / ~/.config (Linux, FreeBSD).
+/// The settings folder: %APPDATA% (Windows) or $XDG_CONFIG_HOME / ~/.config (Linux, FreeBSD).
 pub fn config_root() -> Option<std::path::PathBuf> {
     if let Some(a) = std::env::var_os("APPDATA") {
         return Some(std::path::PathBuf::from(a));
@@ -1881,7 +1881,7 @@ pub fn config_root() -> Option<std::path::PathBuf> {
     std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
 }
 
-/// Folderul de date locale: %LOCALAPPDATA% (Windows) sau $XDG_DATA_HOME / ~/.local/share (Linux, FreeBSD).
+/// The local data folder: %LOCALAPPDATA% (Windows) or $XDG_DATA_HOME / ~/.local/share (Linux, FreeBSD).
 pub fn data_root() -> Option<std::path::PathBuf> {
     if let Some(a) = std::env::var_os("LOCALAPPDATA") {
         return Some(std::path::PathBuf::from(a));
@@ -1889,9 +1889,9 @@ pub fn data_root() -> Option<std::path::PathBuf> {
     std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local").join("share")))
 }
 
-/// Scriere sigura: continutul merge intr-un fisier temporar (sincronizat pe disc), versiunea veche devine
-/// `<fisier>.bak`, apoi temporarul ia locul fisierului. O cadere / pana de curent in timpul salvarii lasa
-/// intact fie fisierul vechi, fie pe cel nou - niciodata unul pe jumatate scris.
+/// Safe write: the content goes to a temporary file (synced to disk), the old version becomes
+/// `<fisier>.bak`, then the temporary file takes the place of the file. A crash / power cut during saving leaves
+/// either the old file or the new one intact - never a half-written one.
 pub fn write_atomic(path: &Path, data: &[u8], backup: bool) -> std::io::Result<()> {
     use std::io::Write;
     let tmp = path.with_extension(format!("{}.tmp", path.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default()));
@@ -1923,7 +1923,7 @@ pub fn backup_path(path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Citeste un DXF (sau DWG convertit): unitatile ($INSUNITS), entitatile si blocurile.
+/// Reads a DXF (or a converted DWG): the units ($INSUNITS), the entities and the blocks.
 fn dxf_doc(path: &str) -> Result<(i64, Vec<Ent>, HashMap<String, (DVec3, Vec<Ent>)>), String> {
     let text = dxf_text_of(path)?;
     let lines: Vec<&str> = text.lines().collect();
@@ -1981,13 +1981,13 @@ fn dxf_doc(path: &str) -> Result<(i64, Vec<Ent>, HashMap<String, (DVec3, Vec<Ent
     Ok((insunits, entities, blocks))
 }
 
-/// Desen 2D (DWG / DXF) ca linii in metri: LINE, LWPOLYLINE / POLYLINE (si inchise), ARC, CIRCLE, ELLIPSE,
-/// blocuri (INSERT, si imbricate). Intoarce (strat, x1, y1, x2, y2) si scara aplicata (unitati -> m).
+/// 2D drawing (DWG / DXF) as lines in metres: LINE, LWPOLYLINE / POLYLINE (closed too), ARC, CIRCLE, ELLIPSE,
+/// blocks (INSERT, nested too). Returns (layer, x1, y1, x2, y2) and the applied scale (units -> m).
 pub fn cad_lines(path: &str) -> Result<(Vec<(String, [f64; 4])>, f64), String> {
     let (insunits, entities, blocks) = dxf_doc(path)?;
     let mut out: Vec<(String, [f64; 4])> = Vec::new();
     fn arc(c: glam::DVec2, r: f64, a0: f64, a1: f64) -> Vec<glam::DVec2> {
-        // unghiuri / raze invalide dintr-un desen deteriorat: fara arc (o bucla „while” ar fi infinita la -inf)
+        // invalid angles / radii from a damaged drawing: no arc (a „while” loop would be infinite at -inf)
         if !(a0.is_finite() && a1.is_finite() && r.is_finite() && c.is_finite()) {
             return Vec::new();
         }
@@ -2017,7 +2017,7 @@ pub fn cad_lines(path: &str) -> Result<(Vec<(String, [f64; 4])>, f64), String> {
         }
         let push = |out: &mut Vec<(String, [f64; 4])>, lay: &str, pts: &[glam::DVec2], closed: bool| seg(out, xf, lay, pts, closed);
         for e in ents {
-            // stratul "0" din blocuri ia stratul INSERT-ului
+            // layer "0" in blocks takes the layer of the INSERT
             let own = e.s(8).unwrap_or("0");
             let lay = if own == "0" { layer_in.unwrap_or("0") } else { own };
             match e.ty.as_str() {
@@ -2094,7 +2094,7 @@ pub fn cad_lines(path: &str) -> Result<(Vec<(String, [f64; 4])>, f64), String> {
 mod cut_plane_meta_tests {
     #[test]
     fn meta_is_read_from_the_hidden_text_inside_the_drawing() {
-        // fara fisierul alaturat .mbplane si fara comentariul din HEADER: doar textul de pe stratul MB_CUT_PLANE
+        // without the .mbplane sidecar file and without the comment in the HEADER: only the text on layer MB_CUT_PLANE
         let dir = std::env::temp_dir().join(format!("mb_meta_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("cut.dxf");

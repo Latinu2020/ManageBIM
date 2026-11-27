@@ -1,8 +1,8 @@
-//! Sectiune din `impl App` (vezi fisierul parinte pentru restul).
+//! Section of `impl App` (see the parent file for the rest).
 use super::*;
 
 impl App {
-    /// Paleta de comenzi: Ctrl+K (sau clic pe "Search or Ctrl+K"), scrii, Enter.
+    /// The command palette: Ctrl+K (or click on "Search or Ctrl+K"), type, Enter.
     pub(super) fn command_palette(&mut self, ctx: &egui::Context) {
         if !self.palette_open {
             return;
@@ -15,7 +15,7 @@ impl App {
             .filter_map(|(i, c)| fuzzy(&q, &format!("{} {} {}", c.name, c.cat, c.keys)).map(|s| (s + if fuzzy(&q, c.name).is_some() { 50 } else { 0 }, i)))
             .collect();
         hits.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
-        // fara text: ultimele comenzi folosite apar primele (grupul "RECENT")
+        // no text: the most recently used commands appear first (the "RECENT" group)
         let mut recent_n = 0usize;
         if q.is_empty() {
             let rec: Vec<usize> = self.settings.recent_cmds.iter().filter_map(|n| cmds.iter().position(|c| c.name == n.as_str())).collect();
@@ -26,8 +26,8 @@ impl App {
             }
         }
         hits.truncate(12.max(recent_n));
-        // elemente din model cu numele cautat (selectie + zoom)
-        // cautarea in elemente se face o singura data pe text (nu la fiecare cadru): rezultatul e tinut in memorie
+        // elements in the model with the searched name (selection + zoom)
+        // the element search is done only once per text (not on every frame): the result is kept in memory
         let cache_id = egui::Id::new("palette_elems");
         let cached: Option<(String, Vec<(ElemId, String, String)>)> = ctx.data(|d| d.get_temp(cache_id));
         let mut elems: Vec<(ElemId, String, String)> = Vec::new();
@@ -61,7 +61,7 @@ impl App {
         let mut chosen: Option<usize> = if enter && total > 0 { Some(self.palette_sel) } else { None };
         let screen = ctx.screen_rect();
         let w = 560.0_f32.min(screen.width() - 40.0);
-        // fundal estompat; clic in afara inchide
+        // dimmed background; a click outside closes it
         let bg = egui::Area::new(egui::Id::new("palette_bg")).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
             let (r, resp) = ui.allocate_exact_size(screen.size(), Sense::click());
             ui.painter().rect_filled(r, 0.0, Color32::from_black_alpha(90));
@@ -149,7 +149,7 @@ impl App {
         }
     }
 
-    /// Fereastra manualului: cuprins + cautare in stanga, capitolul in dreapta.
+    /// The manual window: table of contents + search on the left, the chapter on the right.
     pub(super) fn manual_window(&mut self, ctx: &egui::Context) {
         if !self.manual_open {
             return;
@@ -164,7 +164,7 @@ impl App {
             .collapsible(false)
             .show(ctx, |ui| {
                 ui.horizontal_top(|ui| {
-                    // ---- cuprins
+                    // ---- table of contents
                     ui.vertical(|ui| {
                         ui.set_width(210.0);
                         ui.add(egui::TextEdit::singleline(&mut self.manual_q).hint_text("🔍 Search the manual").desired_width(200.0));
@@ -191,7 +191,7 @@ impl App {
                             demo = true;
                         }
                     });
-                    // ---- capitolul
+                    // ---- the chapter
                     ui.vertical(|ui| {
                         let (icon, title, body) = MANUAL[self.manual_page.min(MANUAL.len() - 1)];
                         ui.label(crate::theme::icon_job(icon, title, 20.0, ui.visuals().strong_text_color()));
@@ -240,11 +240,11 @@ impl App {
     }
 }
 
-/// un grup din fereastra de scurtaturi: titlul si (tastele, ce fac)
+/// a group in the shortcuts window: the title and (the keys, what they do)
 type KeyGroup<'a> = (&'a str, Vec<(String, &'a str)>);
 
 impl App {
-    /// F1: toate scurtaturile de tastatura, cele configurabile cu valoarea curenta din Settings.
+    /// F1: all keyboard shortcuts, the configurable ones with the current value from Settings.
     pub(super) fn keys_window(&mut self, ctx: &egui::Context) {
         if !self.keys_open {
             return;

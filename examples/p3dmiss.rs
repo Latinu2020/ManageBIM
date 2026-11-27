@@ -1,4 +1,4 @@
-// Ce obiecte custom NU devin elemente: pe clase, cu histograma inregistrarilor proxy.
+// Which custom objects do NOT become elements: by class, with a histogram of the proxy records.
 use acadrust::entities::EntityType;
 use std::collections::{BTreeMap, HashSet};
 

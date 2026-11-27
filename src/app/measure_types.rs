@@ -4,14 +4,14 @@ use super::*;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tool {
     Select,
-    /// selectie cu fereastra: stanga->dreapta = complet in interior, dreapta->stanga = atinge (ca AutoCAD)
+    /// window selection: left->right = fully inside, right->left = crossing (like AutoCAD)
     Window,
     Measure(MeasureKind),
     Redline(crate::markup::RedKind),
     RedErase,
-    /// click pe podea: puncte ale traseului de mers
+    /// click on the floor: points of the walk path
     WalkPath,
-    /// click in 3D: plaseaza o lumina punctuala pe suprafata aleasa
+    /// click in 3D: places a point light on the chosen surface
     PlaceLight,
 }
 

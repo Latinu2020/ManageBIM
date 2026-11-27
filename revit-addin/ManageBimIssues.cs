@@ -7,8 +7,8 @@ using System.Windows.Forms;
 namespace ManageBIM
 {
     /// <summary>
-    /// Issue-urile (viewpoints) scrise de ManageBIM in %LOCALAPPDATA%\ManageBIM\Outbox\issues.txt.
-    /// Coordonate WORLD in metri (aceleasi cu modelele exportate de add-in-uri). Acelasi fisier in Revit / Navisworks.
+    /// The issues (viewpoints) written by ManageBIM to %LOCALAPPDATA%\ManageBIM\Outbox\issues.txt.
+    /// WORLD coordinates in meters (the same as the models exported by the add-ins). The same file in Revit / Navisworks.
     /// </summary>
     internal sealed class MbIssue
     {
@@ -17,7 +17,7 @@ namespace ManageBIM
         public double FovDeg = 50, OrthoHeight;
         public double[] BoxMin, BoxMax;
         public List<string> Selected = new List<string>();
-        /// <summary>Markup-uri: polilinii si texte in coordonate de vedere (x fata de centru / inaltime, y in jos).</summary>
+        /// <summary>Markups: polylines and texts in view coordinates (x relative to center / height, y down).</summary>
         public List<MbMarkLine> Lines = new List<MbMarkLine>();
         public List<MbMarkText> Texts = new List<MbMarkText>();
         public override string ToString() => $"{Name}   [{Status}{(string.IsNullOrEmpty(Priority) ? "" : " · " + Priority)}]";
@@ -45,7 +45,7 @@ namespace ManageBIM
             if (r == 0 && g == 0 && b == 0 && s.Trim().Length == 0) { r = 230; g = 40; b = 40; }
         }
 
-        /// <summary>Punct de markup (coordonate de vedere) -> punct 3D pe planul aflat la distanta d in fata camerei.</summary>
+        /// <summary>Markup point (view coordinates) -> 3D point on the plane at distance d in front of the camera.</summary>
         public static double[] OnPlane(MbIssue it, double x, double y, double d)
         {
             double[] N(double[] v) { double l = Math.Sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); if (l < 1e-12) l = 1; return new[] { v[0] / l, v[1] / l, v[2] / l }; }
@@ -53,7 +53,7 @@ namespace ManageBIM
             var f = N(it.Fwd);
             var right = N(X(f, it.Up));
             var up = X(right, f);
-            // inaltimea vederii la distanta d (perspectiva) sau inaltimea ortografica
+            // the view height at distance d (perspective) or the orthographic height
             double h = it.OrthoHeight > 0 ? it.OrthoHeight : 2 * d * Math.Tan(it.FovDeg * Math.PI / 360.0);
             var r = new double[3];
             for (int i = 0; i < 3; i++) r[i] = it.Eye[i] + f[i] * d + right[i] * x * h - up[i] * y * h;
@@ -130,7 +130,7 @@ namespace ManageBIM
             return list;
         }
 
-        /// <summary>Fereastra cu issue-urile: intoarce indicii alesi (bifati), sau null la Cancel.</summary>
+        /// <summary>The issues window: returns the chosen (checked) indices, or null on Cancel.</summary>
         public static List<int> Pick(List<MbIssue> issues, string title, string okText, bool multi)
         {
             using (var form = new Form { Text = title, Width = 620, Height = 480, StartPosition = FormStartPosition.CenterScreen, MinimizeBox = false, MaximizeBox = false, ShowInTaskbar = false })
@@ -171,7 +171,7 @@ namespace ManageBIM
             }
         }
 
-        /// <summary>Rotatia camerei Navisworks (priveste spre -Z, sus +Y) ca quaternion (a, b, c, d) = (x, y, z, w).</summary>
+        /// <summary>The Navisworks camera rotation (looks toward -Z, up +Y) as a quaternion (a, b, c, d) = (x, y, z, w).</summary>
         public static double[] Quaternion(double[] fwd, double[] up)
         {
             double[] N(double[] v) { double l = Math.Sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); if (l < 1e-12) l = 1; return new[] { v[0] / l, v[1] / l, v[2] / l }; }

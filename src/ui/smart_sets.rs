@@ -1,5 +1,5 @@
-//! Fereastra "Smart set": search set-uri construite din valorile proprietatilor (cu numarul de elemente),
-//! sugestii din selectie, cautare scrisa in cuvinte si folosirea setului direct intr-un test de clash.
+//! The "Smart set" window: search sets built from the property values (with the element count),
+//! suggestions from the selection, search written in words and using the set directly in a clash test.
 use super::*;
 use crate::smart_sets::{common_props, parse_query, rules_for, suggest_name, Index, Key};
 use egui_phosphor::regular as P;
@@ -9,7 +9,7 @@ fn icon(s: &str) -> RichText {
 }
 
 impl App {
-    /// semnatura modelelor incarcate (indexul se reface cand se schimba)
+    /// the signature of the loaded models (the index is rebuilt when they change)
     fn smart_models_sig(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -23,14 +23,14 @@ impl App {
         if !self.smart.open {
             return;
         }
-        // indexul proprietatilor: o data pe set de modele
+        // the property index: once per model set
         let sig = self.smart_models_sig();
         if self.smart.index.as_ref().map(|(s, _)| *s) != Some(sig) {
             let ix = Index::build(self.loaded_models().map(|(_, m)| m));
             self.smart.index = Some((sig, ix));
             self.smart.count = None;
         }
-        // numarul de elemente: doar cand se schimba alegerile
+        // the element count: only when the choices change
         let csig = self.smart.sig() ^ sig;
         if self.smart.count.map(|(s, _)| s) != Some(csig) {
             let rules = rules_for(&self.smart.choices);
@@ -52,7 +52,7 @@ impl App {
             .show(ctx, |ui| {
                 let Some((_, ix)) = self.smart.index.as_ref() else { return };
                 let ix = ix.clone();
-                // ---- cautare in cuvinte
+                // ---- search in words
                 ui.horizontal(|ui| {
                     ui.label(icon(P::MAGNIFYING_GLASS));
                     let r = ui.add(egui::TextEdit::singleline(&mut self.smart.query).hint_text(crate::i18n::tr("Describe it: ducts level 2 · walls, EI60 · valves cs150")).desired_width(ui.available_width() - 90.0));
@@ -64,7 +64,7 @@ impl App {
                         self.smart.cur = self.smart.choices.first().map(|c| c.0.clone());
                     }
                 });
-                // deschis din Clash Detective: excluderea din testul acela, la un click
+                // opened from Clash Detective: the exclusion from that test, with one click
                 if let Some(ti) = self.smart.target_test.filter(|t| *t < self.clash.tests.len()) {
                     let tname = self.clash.tests[ti].name.clone();
                     let n = self.smart.count.map(|c| c.1).unwrap_or(0);
@@ -84,7 +84,7 @@ impl App {
                 if !self.smart.missed.is_empty() {
                     ui.label(RichText::new(format!("{} {}", crate::i18n::tr("Not found in the model:"), self.smart.missed.join(", "))).small().color(Color32::from_rgb(230, 160, 60)));
                 }
-                // ---- sugestii din selectie
+                // ---- suggestions from the selection
                 if !self.selected.is_empty() {
                     let ids: Vec<ElemId> = self.selected.iter().copied().take(2000).collect();
                     let common = common_props(&self.models, &ids, &ix);
@@ -104,7 +104,7 @@ impl App {
                     }
                 }
                 ui.separator();
-                // ---- proprietati | valori
+                // ---- properties | values
                 let h = (ui.available_height() - 120.0).max(180.0);
                 ui.columns(2, |c| {
                     let ui = &mut c[0];
@@ -115,7 +115,7 @@ impl App {
                     let f = self.smart.prop_filter.to_lowercase();
                     egui::ScrollArea::vertical().id_salt("smart_props").max_height(h).auto_shrink([false, false]).show(ui, |ui| {
                         let mut keys: Vec<&Key> = ix.props.keys().filter(|k| ix.useful(k)).filter(|k| f.is_empty() || k.1.to_lowercase().contains(&f) || k.0.to_lowercase().contains(&f)).collect();
-                        // campurile standard primele, apoi dupa cate elemente au proprietatea
+                        // the standard fields first, then by how many elements have the property
                         keys.sort_by(|a, b| (b.0 == ITEM_CAT).cmp(&(a.0 == ITEM_CAT)).then_with(|| ix.count.get(*b).cmp(&ix.count.get(*a))).then_with(|| a.cmp(b)));
                         for k in keys.into_iter().take(400) {
                             let n = ix.count.get(k).copied().unwrap_or(0);
@@ -154,7 +154,7 @@ impl App {
                     }
                 });
                 ui.separator();
-                // ---- conditiile alese
+                // ---- the chosen conditions
                 ui.horizontal_wrapped(|ui| {
                     if self.smart.choices.is_empty() {
                         ui.label(RichText::new(crate::i18n::tr("No conditions yet.")).weak());
@@ -177,7 +177,7 @@ impl App {
                         self.smart.choices.remove(i);
                     }
                 });
-                // ---- rezultat si salvare
+                // ---- result and saving
                 let n = self.smart.count.map(|c| c.1).unwrap_or(0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(format!("{n} {}", crate::i18n::tr("items"))).strong().size(15.0));
@@ -231,7 +231,7 @@ impl App {
             self.apply(Action::Select(ids, false));
             return;
         }
-        // numele unic
+        // the unique name
         let mut name = self.smart.name.trim().to_string();
         if name.is_empty() {
             name = "New set".into();

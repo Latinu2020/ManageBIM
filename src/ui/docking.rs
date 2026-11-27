@@ -2,7 +2,7 @@
 use super::*;
 
 impl App {
-    // ================================================================== ferestre aranjabile
+    // ================================================================== arrangeable windows
     pub(super) fn panel_menu(&mut self, ui: &mut egui::Ui, p: Panel) {
         let cur = self.settings.layout.get(p).map(|s| s.dock);
         for d in [Dock::Left, Dock::Right, Dock::Bottom, Dock::Float] {
@@ -26,7 +26,7 @@ impl App {
     pub(super) fn panel_body(&mut self, ui: &mut egui::Ui, p: Panel) {
         match p {
             Panel::Tree => {
-                // cautare in model (nume, tip, nivel, GUID): rezultatele inlocuiesc arborele cat timp se cauta
+                // search in the model (name, type, level, GUID): the results replace the tree while searching
                 let sid = ui.make_persistent_id("tree_search");
                 let mut q: String = ui.data_mut(|d| d.get_temp(sid)).unwrap_or_default();
                 ui.add(egui::TextEdit::singleline(&mut q).hint_text("🔍 Search model").desired_width(f32::INFINITY));
@@ -96,7 +96,7 @@ impl App {
         }
     }
 
-    /// Banda unei zone in auto-hide: cate un buton pe panou (iconita); hover / clic deschide panoul peste model.
+    /// The strip of an auto-hide zone: one button per panel (icon); hover / click opens the panel over the model.
     pub(super) fn dock_strip(&mut self, ui: &mut egui::Ui, d: Dock) {
         let tabs = self.settings.layout.in_area(d);
         let show = |ui: &mut egui::Ui, p: Panel, this: &mut Self| {
@@ -134,7 +134,7 @@ impl App {
         }
     }
 
-    /// Panoul deschis peste model dintr-o zona auto-hide; se inchide cand mouse-ul pleaca (sau Esc / clic in model).
+    /// The panel opened over the model from an auto-hide zone; it closes when the mouse leaves (or Esc / click in the model).
     pub(super) fn flyout_ui(&mut self, ctx: &egui::Context, strips: [Option<Rect>; 3]) {
         let Some((d, p)) = self.flyout else { return };
         let Some(strip) = strips[d.idx()] else {
@@ -172,7 +172,7 @@ impl App {
             });
         });
         let area = fr.response.rect;
-        // ramane deschis cat mouse-ul e pe panou / pe banda, cat se tasteaza sau se trage ceva
+        // stays open while the mouse is on the panel / on the strip, while typing or dragging something
         let hover = ctx.pointer_hover_pos().is_some_and(|h| area.expand(6.0).contains(h) || strip.contains(h));
         let busy = ctx.wants_keyboard_input() || ctx.is_using_pointer() || ctx.memory(|m| m.any_popup_open());
         if hover || busy {
@@ -190,7 +190,7 @@ impl App {
         let tabs = self.settings.layout.in_area(d);
         let active = self.settings.layout.active[d.idx()];
         if d == Dock::Bottom {
-            // zona de jos: filele sunt in bara de stare; aici doar titlul si comenzile ferestrei
+            // the bottom zone: the tabs are in the status bar; here only the title and the window controls
             ui.horizontal(|ui| {
                 if let Some(a) = active {
                     ui.label(crate::theme::title_job(a.title(), 14.0, ui.visuals().strong_text_color()));
@@ -221,7 +221,7 @@ impl App {
             });
             ui.add_space(2.0);
         } else if d == Dock::Right {
-            // Panoul din dreapta e doar Properties: titlul sus si continutul pe toata inaltimea.
+            // The right panel is only Properties: the title on top and the content over the full height.
             if let Some(a) = active {
                 ui.horizontal(|ui| {
                     ui.label(crate::theme::title_job(a.title(), 14.0, ui.visuals().strong_text_color()));
@@ -236,18 +236,18 @@ impl App {
         } else {
         ui.horizontal_wrapped(|ui| {
             ui.style_mut().spacing.item_spacing.x = 3.0;
-            // auto-hide: zona devine o banda subtire, panourile apar peste model cand le atingi
+            // auto-hide: the zone becomes a thin strip, the panels appear over the model when you touch them
             if ui.small_button("📌").on_hover_text("Auto-hide this area: panels slide in over the model when you point at their tab").clicked() {
                 self.settings.layout.autohide[d.idx()] = true;
             }
-            // file ca un control segmentat (card cu "pastile"): fara contur, activa = suprafata mai deschisa
+            // tabs as a segmented control (a card with "pills"): no outline, active = a lighter surface
             let seg_on = ui.visuals().widgets.hovered.weak_bg_fill;
             egui::Frame::none().fill(card_fill(ui.visuals())).rounding(8.0).inner_margin(3.0).show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
                     for p in &tabs {
                         let on = Some(*p) == active;
-                        // pe zona de jos ramane si iconita; lateral doar numele (mai compact)
+                        // in the bottom zone the icon stays too; on the sides only the name (more compact)
                         let t = p.short().to_string();
                         let txt = if on { RichText::new(t).size(13.0).strong() } else { RichText::new(t).size(13.0).color(ui.visuals().weak_text_color()) };
                         ui.spacing_mut().button_padding = egui::vec2(7.0, 2.0);
@@ -275,22 +275,22 @@ impl App {
             if let Some(a) = active {
                 ui.add_space(4.0);
                 ui.menu_button("⏷", |ui| self.panel_menu(ui, a)).response.on_hover_text("Move or close this window");
-                // lateral: inchiderea e in meniul ⏷ (filele raman pe un singur rand)
+                // sides: closing is in the ⏷ menu (the tabs stay on a single row)
             }
         });
         ui.add_space(4.0);
         }
         if let Some(a) = self.settings.layout.active[d.idx()] {
             if d == Dock::Bottom {
-                // continutul nu are voie sa tina panoul inalt: limitat la inaltimea aleasa (se poate trage liber)
+                // the content may not keep the panel tall: limited to the chosen height (it can be dragged freely)
                 let h = ui.available_height().max(40.0);
                 let size = EV::new(ui.available_width(), h);
                 ui.allocate_ui_with_layout(size, egui::Layout::top_down(egui::Align::Min), |ui| {
                     ui.set_max_height(h);
                     let clip = ui.max_rect().intersect(ui.clip_rect());
                     ui.set_clip_rect(clip);
-                    // panourile fara derulare proprie: continutul inalt se deruleaza in panou,
-                    // nu mai impinge panoul de jos peste vederea 3D
+                    // panels without their own scrolling: tall content scrolls inside the panel,
+                    // it no longer pushes the bottom panel over the 3D view
                     if matches!(a, Panel::Project | Panel::Section | Panel::Measure | Panel::Coords | Panel::Profiler | Panel::Compare) {
                         egui::ScrollArea::vertical().id_salt(("bottom_scroll", a)).max_height(h).auto_shrink([false, false]).show(ui, |ui| self.panel_body(ui, a));
                     } else {
@@ -298,13 +298,13 @@ impl App {
                     }
                 });
             } else {
-                // panourile laterale nu au voie sa impinga viewport-ul: continutul lat se deruleaza
+                // the side panels may not push the viewport: wide content scrolls
                 egui::ScrollArea::horizontal().id_salt(("side_scroll", d.idx())).auto_shrink([false, false]).show(ui, |ui| self.panel_body(ui, a));
             }
         }
     }
 
-    /// Model focus: doar un mic buton de iesire peste model; Esc restaureaza layout-ul.
+    /// Model focus: only a small exit button over the model; Esc restores the layout.
     pub(super) fn immersive_overlay(&mut self, ctx: &egui::Context) {
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             self.toggle_immersive();
@@ -330,12 +330,12 @@ impl App {
             let size = if max {
                 [(screen.width() - 40.0).max(640.0), (screen.height() - 90.0).max(480.0)]
             } else if p == Panel::Clash {
-                // nu mai mare decat ~60% din ecran: vederea 3D ramane vizibila
+                // no larger than ~60% of the screen: the 3D view stays visible
                 [1100.0f32.min(screen.width() * 0.62), 760.0f32.min(screen.height() * 0.6)]
             } else {
                 [560.0f32.min(screen.width() * 0.5), 400.0f32.min(screen.height() * 0.5)]
             };
-            // id-ul include starea: la toggle egui recreaza fereastra cu dimensiunea noua
+            // the id includes the state: on toggle egui recreates the window with the new size
             egui::Window::new(crate::theme::title_job(p.title(), 14.0, ctx.style().visuals.text_color()))
                 .id(egui::Id::new(("float_panel", p, max)))
                 .open(&mut open)
@@ -356,8 +356,8 @@ impl App {
                         }
                         ui.menu_button("⏷ Dock…", |ui| self.panel_menu(ui, p));
                     });
-                    // continutul nu are voie sa mareasca fereastra peste ecran (tabele lungi, liste):
-                    // ramane in marimea ferestrei, care se poate trage de margini
+                    // the content may not enlarge the window beyond the screen (long tables, lists):
+                    // it stays at the window size, which can be dragged by its edges
                     let h = ui.available_height().clamp(80.0, (screen.height() - 120.0).max(200.0));
                     let size = EV::new(ui.available_width(), h);
                     ui.allocate_ui_with_layout(size, egui::Layout::top_down(egui::Align::Min), |ui| {

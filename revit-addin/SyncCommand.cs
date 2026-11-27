@@ -11,8 +11,8 @@ using TaskDialog = Autodesk.Revit.UI.TaskDialog;
 namespace ManageBIM.Revit
 {
     /// <summary>
-    /// Live Link: selectia sincronizata Revit &lt;-&gt; ManageBIM (si Navisworks), prin fisiere mici in
-    /// %LOCALAPPDATA%\ManageBIM\Sync. Butonul porneste / opreste legatura pentru sesiunea curenta.
+    /// Live Link: synchronised selection Revit &lt;-&gt; ManageBIM (and Navisworks), through small files in
+    /// %LOCALAPPDATA%\ManageBIM\Sync. The button starts / stops the link for the current session.
     /// </summary>
     [Transaction(TransactionMode.ReadOnly)]
     public class SyncCommand : IExternalCommand
@@ -55,7 +55,7 @@ namespace ManageBIM.Revit
             _on = !_on;
             if (_on)
             {
-                // selectia veche (de dinainte de pornire) nu se aplica
+                // the old selection (from before starting) is not applied
                 _seen = File.Exists(Incoming) ? File.GetLastWriteTimeUtc(Incoming) : DateTime.MinValue;
                 _lastKey = "";
                 if (_event == null) _event = ExternalEvent.Create(new Handler());
@@ -74,7 +74,7 @@ namespace ManageBIM.Revit
             public void Execute(UIApplication app)
             {
                 if (!_on) return;
-                try { Poll(app); } catch { /* o eroare de sincronizare nu are voie sa deranjeze lucrul in Revit */ }
+                try { Poll(app); } catch { /* a sync error must never disturb the work in Revit */ }
             }
             public string GetName() => "ManageBIM selection sync";
         }
@@ -85,7 +85,7 @@ namespace ManageBIM.Revit
             if (uidoc == null) return;
             Document doc = uidoc.Document;
 
-            // ---- primit din ManageBIM
+            // ---- received from ManageBIM
             if (File.Exists(Incoming))
             {
                 DateTime t = File.GetLastWriteTimeUtc(Incoming);
@@ -114,7 +114,7 @@ namespace ManageBIM.Revit
                 }
             }
 
-            // ---- trimis catre ManageBIM
+            // ---- sent to ManageBIM
             ICollection<ElementId> sel = uidoc.Selection.GetElementIds();
             string key = Key(sel);
             if (key == _lastKey) return;
@@ -155,7 +155,7 @@ namespace ManageBIM.Revit
             return list;
         }
 
-        /// <summary>UniqueId / IfcGUID / GUID de export -> element (pentru documentul activ, refacut la nevoie).</summary>
+        /// <summary>UniqueId / IfcGUID / export GUID -> element (for the active document, rebuilt when needed).</summary>
         static Dictionary<string, ElementId> Index(Document doc, bool rebuild)
         {
             string key = doc.PathName + "|" + doc.Title;

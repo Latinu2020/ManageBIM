@@ -120,9 +120,9 @@ pub enum SelKind {
     Model,
     Set,
     Type,
-    /// elementele selectate curent in model / arbore (ca in Navisworks Clash)
+    /// the elements currently selected in the model / tree (as in Navisworks Clash)
     Selection,
-    /// o disciplina (Structure, Architecture, MEP - HVAC...), recunoscuta din tipul IFC si numele modelului
+    /// a discipline (Structure, Architecture, MEP - HVAC...), recognized from the IFC type and the model name
     Discipline,
 }
 

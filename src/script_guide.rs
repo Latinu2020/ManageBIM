@@ -1,5 +1,5 @@
-//! Manual prietenos pentru scripturi Rhai (RO / EN), afișat în Script Library.
-//! Fiecare funcție are: ce face, exemplu, și efectul în aplicație.
+//! A friendly manual for Rhai scripts (RO / EN), shown in the Script Library.
+//! Each function has: what it does, an example, and the effect in the application.
 
 pub struct Entry {
     pub func: &'static str,
@@ -75,7 +75,7 @@ pub const ENTRIES: &[Entry] = &[
     },
 ];
 
-/// Reguli de sintaxă, explicate simplu.
+/// Syntax rules, explained simply.
 pub const RULES_RO: &[(&str, &str)] = &[
     ("let x = ...;", "Declară o variabilă. Ex: let n = selected_count();"),
     ("\"text\"", "Text mereu între ghilimele duble."),

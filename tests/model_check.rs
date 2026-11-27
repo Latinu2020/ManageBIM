@@ -137,11 +137,11 @@ fn pbr_pack_names_and_roles() {
     assert_eq!(bimrust::materials::pbr_name("Wood_Floor_2K.zip"), "Wood Floor");
 }
 
-/// exporta modelul de proba ca viewer web (rulat manual: --ignored), pentru verificare in browser
+/// exports the sample model as a web viewer (run manually: --ignored), for checking in a browser
 #[test]
 #[ignore]
 fn export_sample_web_viewer() {
-    // cache-ul .bimc (cu golurile pentru ferestre deja taiate), daca exista; altfel IFC-ul
+    // the .bimc cache (with the window openings already cut), if it exists; otherwise the IFC
     let p = "samples/Block_A_Architecture_Structure.ifc";
     let raw = bimrust::load_any(p, &|_, _| {}).unwrap();
     let m = bimrust::build_model(raw, p, glam::DVec3::ZERO);
@@ -153,7 +153,7 @@ fn export_sample_web_viewer() {
 
 #[test]
 fn live_link_ids_match_revit_and_navisworks_forms() {
-    // element din IFC exportat din Revit: GlobalId comprimat + UniqueId in proprietati
+    // element from an IFC exported from Revit: compressed GlobalId + UniqueId in the properties
     let g = bimrust::sync::guid_to_ifc("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0").unwrap();
     let mut e = el("Wall", "IfcWall", &[("Element", "UniqueId", "abc-123-uid")]);
     e.guid = g.clone();
@@ -169,7 +169,7 @@ fn live_link_ids_match_revit_and_navisworks_forms() {
 fn as_built_finds_built_missing_and_unscanned() {
     use bimrust::asbuilt::{check, Occupancy, Params, Status};
     use glam::Vec3;
-    // trei pereti (patrate verticale 2 x 2 m in planul XZ): la y = 0, y = 3 si y = 50
+    // three walls (vertical 2 x 2 m squares in the XZ plane): at y = 0, y = 3 and y = 50
     let quad = |y: f32| vec![Vec3::new(0.0, y, 0.0), Vec3::new(2.0, y, 0.0), Vec3::new(2.0, y, 2.0), Vec3::new(0.0, y, 0.0), Vec3::new(2.0, y, 2.0), Vec3::new(0.0, y, 2.0)];
     let mut pos = Vec::new();
     let mut elems = Vec::new();
@@ -187,7 +187,7 @@ fn as_built_finds_built_missing_and_unscanned() {
     let mut m = model(elems);
     m.tri_color = vec![[200, 200, 200, 255]; 6];
     m.pos = pos;
-    // scanarea acopera primul perete (y = 0) si zona pana la y = 4 (al doilea perete lipseste in realitate)
+    // the scan covers the first wall (y = 0) and the area up to y = 4 (the second wall is missing in reality)
     let mut pts = Vec::new();
     for i in 0..=40 {
         for j in 0..=40 {
@@ -255,12 +255,12 @@ fn sheet_dwg_uses_paper_scale_and_title_block() {
     let mut tb = bimrust::pdf::TitleBlock::default();
     tb.company = "Acme Engineering".into();
     tb.project = "Block A".into();
-    // A3: 30 x 18 m incape la 1:100 (300 x 180 mm)
+    // A3: 30 x 18 m fits at 1:100 (300 x 180 mm)
     let (d, s) = bimrust::app::cut_sheet_dxf(&segs, &tb, "x", "Plan - Level 1", "2026-11-20 10:00");
     assert_eq!(s, 100);
     assert!(d.contains("ACME ENGINEERING") && d.contains("Block A") && d.contains("1:100"));
     assert!(d.contains("$INSUNITS\n70\n4\n"), "sheet in millimetres");
-    // A1 incape la o scara mai mare (1:50); scara fixa e respectata
+    // A1 fits at a larger scale (1:50); a fixed scale is respected
     tb.paper = "A1".into();
     assert_eq!(bimrust::app::cut_sheet_dxf(&segs, &tb, "x", "t", "d").1, 50);
     tb.scale = 200;
@@ -298,7 +298,7 @@ fn dwg_is_written_without_oda() {
     }
 }
 
-/// DWG-ul scris direct: recitit, trebuie sa aiba aceleasi layere, linii, texte, unitati si coordonate.
+/// The directly written DWG: re-read, it must have the same layers, lines, texts, units and coordinates.
 #[test]
 fn dwg_export_round_trip_is_exact() {
     use acadrust::entities::EntityType;
@@ -358,7 +358,7 @@ fn dwg_export_round_trip_is_exact() {
 #[test]
 fn dwg_export_texts_on_layer_and_grids() {
     use acadrust::entities::EntityType;
-    // textele cartusului pe layerul lor
+    // the title block texts on their layer
     let segs = vec![("Walls".to_string(), [0.0, 0.0, 10.0, 0.0])];
     let p = std::path::Path::new("target").join("rt_layers.dxf");
     std::fs::write(&p, bimrust::app::cut_sheet_dxf(&segs, &bimrust::pdf::TitleBlock::default(), "P", "T", "2026-11-20").0).unwrap();
@@ -369,7 +369,7 @@ fn dwg_export_texts_on_layer_and_grids() {
             assert_eq!(t.common.layer, "SHEET_TEXT");
         }
     }
-    // axele: linii, bule (cercuri) si etichete centrate
+    // the grids: lines, bubbles (circles) and centred labels
     let grids = vec![
         bimrust::app::UserGrid { name: "A".into(), a: [0.0, 0.0], b: [0.0, 20.0] },
         bimrust::app::UserGrid { name: "1".into(), a: [-2.0, 2.0], b: [30.0, 2.0] },
@@ -394,7 +394,7 @@ fn dwg_export_texts_on_layer_and_grids() {
     assert!(doc.layers.get("GRID").is_some() && doc.layers.get("GRID_TAGS").is_some());
 }
 
-/// plansa PDF de prezentare (rulat manual: MB_SHEET_IMG=imagine.png ... --ignored)
+/// presentation PDF sheet (run manually: MB_SHEET_IMG=imagine.png ... --ignored)
 #[test]
 #[ignore]
 fn export_demo_sheet() {
@@ -433,12 +433,12 @@ fn export_demo_sheet() {
 #[test]
 fn navisworks_version_order_prefers_supported() {
     use bimrust::formats::order_years;
-    // 2027 instalat dar nesuportat: se incearca ultimul
+    // 2027 installed but unsupported: the last one is tried
     assert_eq!(order_years(&[2027, 2025, 2024], 0, None), vec![2025, 2024, 2027]);
-    // preferinta din setari si versiunea care a mers ultima data au prioritate
+    // the preference from settings and the version that worked last time have priority
     assert_eq!(order_years(&[2027, 2025, 2024], 2024, None), vec![2024, 2025, 2027]);
     assert_eq!(order_years(&[2027, 2025, 2024], 0, Some(2027)), vec![2027, 2025, 2024]);
-    // o preferinta neinstalata e ignorata
+    // a preference that is not installed is ignored
     assert_eq!(order_years(&[2025], 2023, None), vec![2025]);
 }
 
@@ -452,7 +452,7 @@ fn atomic_write_keeps_backup_and_never_half_files() {
     bimrust::formats::write_atomic(&p, b"version 2", true).unwrap();
     assert_eq!(std::fs::read(&p).unwrap(), b"version 2");
     assert_eq!(std::fs::read(bimrust::formats::backup_path(&p)).unwrap(), b"version 1");
-    // niciun fisier temporar ramas
+    // no temporary file left behind
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
 }
 
@@ -462,7 +462,7 @@ fn undo_redo_restores_selection_and_visibility() {
     let mut app = bimrust::app::App::new(Vec::new());
     let a = ElemId { m: 0, e: 1 };
     let b = ElemId { m: 0, e: 2 };
-    // camera oprita de mult: istoricul inregistreaza imediat
+    // camera stopped long ago: the history records immediately
     app.lod_moved = std::time::Instant::now() - std::time::Duration::from_secs(5);
     app.history_tick(false);
     app.selected.insert(a);
@@ -536,12 +536,12 @@ fn ifc_openings_are_cut_from_walls() {
     let raw = bimrust::load_any("tests/data/wall_opening.ifc", &|_, _| {}).unwrap();
     let m = bimrust::build_model(raw, "tests/data/wall_opening.ifc", glam::DVec3::ZERO);
     let wall = m.elements.iter().find(|e| e.name == "Wall 1").expect("wall");
-    let o = m.aabb.min; // modelul e recentrat: coordonatele relative la origine
+    let o = m.aabb.min; // the model is recentred: coordinates relative to the origin
     let _ = o;
-    // niciun triunghi al peretelui nu trece prin interiorul golului (x 1.9..3.1, z 0.9..2.3, in coordonate locale relative)
+    // no wall triangle passes through the inside of the opening (x 1.9..3.1, z 0.9..2.3, in relative local coordinates)
     let tris = wall.tri_start as usize..(wall.tri_start + wall.tri_count) as usize;
     assert!(wall.tri_count > 12, "the wall is cut (a plain box has 12 triangles), got {}", wall.tri_count);
-    // aria fetei din fata (normala -Y) scade cu aria golului: 5 x 3 - 1.2 x 1.4
+    // the area of the front face (normal -Y) drops by the opening area: 5 x 3 - 1.2 x 1.4
     let mut front = 0.0f32;
     for t in tris {
         let (a, b, c) = (m.pos[t * 3], m.pos[t * 3 + 1], m.pos[t * 3 + 2]);
@@ -562,7 +562,7 @@ fn ifc_systems_classifications_and_georeference() {
     assert_eq!(prop("Systems", "System").as_deref(), Some("Supply Air 1"));
     assert_eq!(prop("Classification", "Uniclass 2015").as_deref(), Some("EF_25_10"));
     assert!(m.info.iter().any(|(k, v)| k == "Georeference" && v.contains("E 500000.000") && v.contains("EPSG:3844")));
-    // IDS: clasificarea si sistemul se verifica direct
+    // IDS: the classification and the system are checked directly
     use bimrust::check::{run, Facet, Kind, Rule, Value};
     let mut r = Rule::new("walls classified");
     r.applicability.push(Facet::entity(&["IfcWall"]));
@@ -605,19 +605,19 @@ fn dwg_overlay_reads_lines_and_circles() {
     std::fs::write(&p, bimrust::app::grid_dxf(&grids, 0.5)).unwrap();
     let (lines, scale) = bimrust::formats::cad_lines(&p.to_string_lossy()).unwrap();
     assert_eq!(scale, 1.0, "drawing in metres");
-    // 1 linie de axa + 2 bule (cercuri) tesselate
+    // 1 grid line + 2 tessellated bubbles (circles)
     assert!(lines.len() > 1 + 2 * 40, "{} segments", lines.len());
     assert!(lines.iter().any(|(l, s)| l == "GRID" && (s[3] - 20.0).abs() < 1e-9));
-    // un DWG scris de noi se citeste la fel
+    // a DWG written by us reads the same
     let dwg = bimrust::formats::dxf_to_dwg_native(&p.to_string_lossy()).unwrap();
     let (l2, _) = bimrust::formats::cad_lines(&dwg).unwrap();
     assert_eq!(l2.len(), lines.len());
 }
 
-/// Plan complet: hasura doar in interiorul conturului, la 45 de grade.
+/// Full plan: hatch only inside the outline, at 45 degrees.
 #[test]
 fn hatch_fills_only_the_cut_contour() {
-    // patrat 1 x 1 m cu gol 0.4 x 0.4 m in mijloc (perete cu gol) - regula par / impar
+    // 1 x 1 m square with a 0.4 x 0.4 m hole in the middle (wall with opening) - even / odd rule
     let sq = |a: f64, b: f64| vec![[a, a, b, a], [b, a, b, b], [b, b, a, b], [a, b, a, a]];
     let mut c = sq(0.0, 1.0);
     c.extend(sq(0.3, 0.7));
@@ -638,12 +638,12 @@ fn hatch_fills_only_the_cut_contour() {
     assert!(bimrust::app::cut_is_hatched("IfcWallStandardCase") && bimrust::app::cut_is_hatched("Columns") && !bimrust::app::cut_is_hatched("IfcDoor") && !bimrust::app::cut_is_hatched("IfcOpeningElement"));
 }
 
-/// Axe in plan: bule, lant de cote cu distantele in mm si cota totala; niveluri si axe pe sectiune.
+/// Grids in plan: bubbles, a dimension chain with distances in mm and the overall dimension; levels and grids in section.
 #[test]
 fn plan_grids_get_bubbles_and_dimensions() {
     use bimrust::app::UserGrid;
     let g = |n: &str, a: [f64; 2], b: [f64; 2]| UserGrid { name: n.into(), a, b };
-    // 3 axe verticale (1, 2, 3 la 0 / 6 / 13.5 m; a doua desenata invers) + 2 orizontale (A, B la 0 / 5 m)
+    // 3 vertical grids (1, 2, 3 at 0 / 6 / 13.5 m; the second drawn reversed) + 2 horizontal (A, B at 0 / 5 m)
     let grids = vec![g("1", [0.0, 0.0], [0.0, 20.0]), g("2", [6.0, 20.0], [6.0, 0.0]), g("3", [13.5, 0.0], [13.5, 20.0]), g("A", [0.0, 0.0], [20.0, 0.0]), g("B", [0.0, 5.0], [20.0, 5.0])];
     let (mut segs, mut texts) = (Vec::new(), Vec::new());
     bimrust::app::plan_grid_annotations(&grids, 0.1, &mut segs, &mut texts);
@@ -655,10 +655,10 @@ fn plan_grids_get_bubbles_and_dimensions() {
     let labels: Vec<&str> = texts.iter().filter(|t| t.layer == "GRID_TEXT").map(|t| t.s.as_str()).collect();
     assert_eq!(labels.len(), 5);
     assert_eq!(segs.iter().filter(|s| s.0 == "GRIDS").count(), 5 * 21, "axis line + 20-segment bubble each");
-    // textele cotelor se citesc de jos sau din dreapta
+    // the dimension texts read from below or from the right
     assert!(texts.iter().all(|t| t.rot > -90.0 - 1e-6 && t.rot <= 90.0 + 1e-6));
 
-    // sectiune la Y = 10: axele 1, 2, 3 apar ca verticale la X = 0 / 6 / 13.5; nivelurile ca linii orizontale
+    // section at Y = 10: grids 1, 2, 3 appear as verticals at X = 0 / 6 / 13.5; the levels as horizontal lines
     let (mut segs, mut texts) = (Vec::new(), Vec::new());
     let levels = vec![("Level 0".to_string(), 0.0), ("Level 1".to_string(), 3.5)];
     bimrust::app::section_annotations(&levels, &grids, 1, 10.0, [0.0, -0.5, 13.5, 7.0], 0.1, true, true, &mut segs, &mut texts);
@@ -669,7 +669,7 @@ fn plan_grids_get_bubbles_and_dimensions() {
     assert_eq!(lv, vec!["Level 0  +0.000", "Level 1  +3.500"]);
 }
 
-/// DWG cu plan complet (hasura, etichete, cote rotite): se scrie fara ODA si se reciteste cu textele.
+/// DWG with a full plan (hatch, labels, rotated dimensions): written without ODA and re-read with the texts.
 #[test]
 fn annotated_cut_round_trips_to_dwg() {
     use acadrust::entities::EntityType;
@@ -703,7 +703,7 @@ fn annotated_cut_round_trips_to_dwg() {
     }
 }
 
-/// Interfata RO / EN: comutare, texte fara traducere raman in engleza, fara chei duble.
+/// RO / EN interface: switching, untranslated texts stay in English, no duplicate keys.
 #[test]
 fn romanian_interface_toggle() {
     use bimrust::i18n::{set_romanian, tr, PAIRS};
@@ -721,7 +721,7 @@ fn romanian_interface_toggle() {
     assert_eq!(tr("Sections"), "Sections");
 }
 
-/// Parametri adaugati de utilizator: scrisi in grupul "User", inlocuiti, stersi; cheia = GUID sau #index.
+/// User-added parameters: written in the "User" group, replaced, deleted; the key = GUID or #index.
 #[test]
 fn user_params_apply_replace_and_remove() {
     use bimrust::app::{apply_user_params, user_key, UserParam};
@@ -733,22 +733,22 @@ fn user_params_apply_replace_and_remove() {
     let user: Vec<(String, String)> = m.elements[0].props.iter().filter(|q| q.group == "User").map(|q| (q.name.clone(), q.value.clone())).collect();
     assert_eq!(user, vec![("Status".to_string(), "Approved".to_string()), ("Zone".to_string(), "Z1".to_string())]);
     assert!(m.elements.iter().skip(1).all(|e| e.props.iter().all(|q| q.group != "User")));
-    // a doua aplicare reface grupul (nu dubleaza), lista goala il sterge
+    // the second application rebuilds the group (does not duplicate it), an empty list deletes it
     apply_user_params(&mut m, &[p("Status", "Rejected")]);
     assert_eq!(m.elements[0].props.iter().filter(|q| q.group == "User").count(), 1);
     apply_user_params(&mut m, &[]);
     assert!(m.elements[0].props.iter().all(|q| q.group != "User"));
 }
 
-/// Suprascrierea unei proprietati IFC existente (ex. Pset_WallCommon.FireRating) atinge doar
-/// elementul ales, iar la stergerea suprascrierii valoarea originala revine - nu se pierde nimic.
+/// Overriding an existing IFC property (e.g. Pset_WallCommon.FireRating) touches only
+/// the chosen element, and when the override is deleted the original value comes back - nothing is lost.
 #[test]
 fn user_override_keeps_and_restores_originals() {
     use bimrust::app::{apply_user_params_shadow, user_key, UserParam, UserShadow};
     use bimrust::model::Prop;
     let raw = bimrust::load_any("tests/data/wall_opening.ifc", &|_, _| {}).expect("ifc");
     let mut m = bimrust::model::Model::from_raw(raw, "wall.ifc".into(), "tests/data/wall_opening.ifc".into(), glam::DVec3::ZERO);
-    // un al doilea perete (copie, alt GUID) ca sa vedem ca nu e atins
+    // a second wall (a copy, another GUID) to see that it is not touched
     let mut e1 = m.elements[0].clone();
     e1.guid = "second-wall".into();
     m.elements.truncate(1);
@@ -766,13 +766,13 @@ fn user_override_keeps_and_restores_originals() {
     apply_user_params_shadow(&mut m, &over, &prev, &mut sh);
     assert_eq!(fr(&m, 0), vec!["REI 120".to_string()]);
     assert_eq!(fr(&m, 1), vec!["REI 90".to_string()], "other elements keep their own value");
-    // a doua aplicare (aceeasi stare) nu dubleaza si nu schimba celelalte elemente
+    // the second application (same state) does not duplicate and does not change the other elements
     let prev = prev_of(&sh);
     sh.applied.clear();
     apply_user_params_shadow(&mut m, &over, &prev, &mut sh);
     assert_eq!(fr(&m, 0), vec!["REI 120".to_string()]);
     assert_eq!(fr(&m, 1), vec!["REI 90".to_string()]);
-    // suprascrierea stearsa: originalul revine
+    // override deleted: the original comes back
     let prev = prev_of(&sh);
     sh.applied.clear();
     apply_user_params_shadow(&mut m, &[], &prev, &mut sh);
@@ -780,7 +780,7 @@ fn user_override_keeps_and_restores_originals() {
     assert_eq!(fr(&m, 1), vec!["REI 90".to_string()]);
 }
 
-/// Gravitatea clash-urilor si sabloanele de teste.
+/// Clash severity and test templates.
 #[test]
 fn clash_severity_and_templates() {
     use bimrust::app::{severity_of, ClashTest, SelKind, Severity};
@@ -798,13 +798,13 @@ fn clash_severity_and_templates() {
     assert!(t.iter().any(|(_, _, x)| x.ty == ClashType::Clearance && x.a.kind == SelKind::Discipline));
 }
 
-/// Verificari rapide: duplicatul si GUID-ul dublat se gasesc, elementele normale trec.
+/// Quick checks: the duplicate and the doubled GUID are found, normal elements pass.
 #[test]
 fn quick_checks_find_duplicates() {
     let raw = bimrust::load_any("tests/data/wall_opening.ifc", &|_, _| {}).expect("ifc");
     let mut m = bimrust::model::Model::from_raw(raw, "w.ifc".into(), "w".into(), glam::DVec3::ZERO);
     let n = m.elements.len();
-    // acelasi element copiat (acelasi GUID, aceeasi geometrie)
+    // the same element copied (same GUID, same geometry)
     let e = m.elements.iter().find(|e| e.tri_count > 0).unwrap().clone();
     m.elements.push(e);
     let res = bimrust::check::quick_checks(&[(0, &m)]);
@@ -814,7 +814,7 @@ fn quick_checks_find_duplicates() {
     assert_eq!(get("Duplicate GUID").result.checked, n + 1);
 }
 
-/// Planificari MS Project / Primavera P6 (XML) si pozitia soarelui.
+/// MS Project / Primavera P6 (XML) schedules and the sun position.
 #[test]
 fn schedule_xml_and_sun_position() {
     let msp = r#"<?xml version="1.0"?><Project xmlns="http://schemas.microsoft.com/project"><Tasks>
@@ -842,17 +842,17 @@ fn schedule_xml_and_sun_position() {
     assert_eq!(t.len(), 1);
     assert_eq!(w.len(), 1);
     assert!(bimrust::timeline::parse_schedule_xml("<Other/>").is_err());
-    // Bucuresti, 21 iunie, 13:20 ora de vara (~ amiaza solara): soarele la sud, ~69 grade
+    // Bucharest, 21 June, 13:20 summer time (~ solar noon): the sun to the south, ~69 degrees
     let day = bimrust::timeline::parse_date("2026-06-21").unwrap();
     let (az, el) = bimrust::anim::sun_position(day, 13.3, 3.0, 44.43, 26.10);
     assert!((az - 180.0).abs() < 4.0, "azimuth {az}");
     assert!((el - 69.0).abs() < 1.5, "elevation {el}");
-    // 21 decembrie la amiaza: jos (~22 grade)
+    // 21 December at noon: low (~22 degrees)
     let (_, el) = bimrust::anim::sun_position(bimrust::timeline::parse_date("2026-12-21").unwrap(), 12.3, 2.0, 44.43, 26.10);
     assert!((el - 22.0).abs() < 1.5, "winter elevation {el}");
 }
 
-/// Compare pe parametri: proprietatile schimbate, cu valorile vechi si noi, grupate pe parametru.
+/// Compare on parameters: the changed properties, with old and new values, grouped by parameter.
 #[test]
 fn compare_lists_changed_parameters() {
     let raw = bimrust::load_any("tests/data/wall_opening.ifc", &|_, _| {}).expect("ifc");
@@ -874,7 +874,7 @@ fn compare_lists_changed_parameters() {
     assert!(csv.contains("CHANGED") && csv.lines().count() == 3);
 }
 
-/// Diff geometric: perete mutat 300 mm pe X, placa coborata 100 mm -> abaterile exacte, pe triunghi.
+/// Geometric diff: wall moved 300 mm on X, slab lowered 100 mm -> the exact deviations, per triangle.
 #[test]
 fn compare_geometric_deviation_heatmap() {
     use bimrust::model::{Model, RawElement, RawModel};
@@ -901,7 +901,7 @@ fn compare_geometric_deviation_heatmap() {
     let w = dev("wall");
     assert!((w.max - 0.3).abs() < 1e-4, "wall moved 300 mm: {}", w.max);
     assert_eq!(w.tri.len(), 12);
-    // fetele laterale ale peretelui alunecate in planul lor raman pe loc (0), capatul mutat = 300 mm
+    // the side faces of the wall sliding in their own plane stay in place (0), the moved end = 300 mm
     assert!(w.tri.iter().any(|d| *d < 1e-4) && w.tri.iter().any(|d| (*d - 0.3).abs() < 1e-4));
     let s = dev("slab");
     assert!((s.max - 0.1).abs() < 1e-4, "slab lowered 100 mm: {}", s.max);

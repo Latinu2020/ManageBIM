@@ -1,5 +1,5 @@
-//! Verificare cap-la-cap: materialele atribuite în proiect ajung în scena path trace-ului
-//! (nu doar culorile brute din fișier), iar secțiunea / elementele ascunse sunt respectate.
+//! End-to-end check: the materials assigned in the project reach the path trace scene
+//! (not just the raw colours from the file), and the section / hidden elements are respected.
 use bimrust::app::App;
 use bimrust::*;
 use std::sync::Arc;
@@ -16,18 +16,18 @@ fn app() -> App {
 #[test]
 fn assigned_materials_reach_the_pathtrace_scene() {
     let mut app = app();
-    // scena brute (fara materiale)
+    // the raw scene (without materials)
     app.rebuild_colors();
     let plain = bimrust::pathtrace::Scene::build(&app);
     assert!(!plain.colors.is_empty(), "modelul de test nu are geometrie");
 
-    // culorile brute ale fisierului, pe elemente
+    // the raw colours of the file, per element
     let first_elem = &app.models[0].as_ref().unwrap().elements[0];
     let t0 = first_elem.tri_start as usize;
     let raw_col = app.models[0].as_ref().unwrap().tri_color[t0];
 
-    // atribuim materiale dupa tipul IFC (Exact ca in UI: Render with materials)
-    // cache_types se umple la incarcarea normala a modelului
+    // we assign materials by IFC type (Exactly as in the UI: Render with materials)
+    // cache_types is filled on the normal loading of the model
     app.refresh_caches();
     app.auto_materials();
     app.materials_on = true;
@@ -37,13 +37,13 @@ fn assigned_materials_reach_the_pathtrace_scene() {
     let with = bimrust::pathtrace::Scene::build(&app);
     assert_eq!(with.colors.len(), plain.colors.len());
 
-    // cel putin unele triunghiuri au culoarea / parametrii materialului, diferiti de fisier
+    // at least some triangles have the material colour / parameters, different from the file
     let changed_col = plain.colors.iter().zip(&with.colors).filter(|(a, b)| a != b).count();
     let changed_mat = with.mats.iter().filter(|m| **m != [0, 0, 0, 0]).count();
     assert!(changed_col > 0 || changed_mat > 0, "materialele nu au ajuns in scena (raw_col {raw_col:?})");
     eprintln!("materiale in scena: {changed_col} triunghiuri recolorate, {changed_mat} cu parametri PBR");
 
-    // un element ascuns nu trebuie sa apara in scena
+    // a hidden element must not appear in the scene
     let n_before = with.colors.len();
     app.hidden.insert(bimrust::model::ElemId { m: 0, e: 0 });
     app.colors_dirty = true;

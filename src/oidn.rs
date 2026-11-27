@@ -1,10 +1,10 @@
-//! Intel Open Image Denoise (Apache 2.0), incarcat la rulare din `<exe>\oidn\OpenImageDenoise.dll`.
-//! Fara DLL aplicatia merge normal; doar optiunea Denoise din Render e indisponibila.
-//! Folosim filtrul „RT” pe CPU cu imaginile auxiliare albedo + normala (rezultat mult mai curat).
+//! Intel Open Image Denoise (Apache 2.0), loaded at runtime from `<exe>\oidn\OpenImageDenoise.dll`.
+//! Without the DLL the application works normally; only the Denoise option in Render is unavailable.
+//! We use the „RT” filter on the CPU with the auxiliary albedo + normal images (a much cleaner result).
 
 use std::path::PathBuf;
 
-/// Folderele in care se cauta `OpenImageDenoise.dll`, in ordine.
+/// The folders searched for `OpenImageDenoise.dll`, in order.
 pub fn search_dirs() -> Vec<PathBuf> {
     let mut v = Vec::new();
     if let Some(d) = std::env::var_os("MANAGEBIM_OIDN_DIR") {
@@ -12,17 +12,17 @@ pub fn search_dirs() -> Vec<PathBuf> {
     }
     if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
         v.push(dir.join("oidn"));
-        // testele ruleaza din target\<profil>\deps
+        // the tests run from target\<profile>\deps
         if let Some(up) = dir.parent() {
             v.push(up.join("oidn"));
         }
     }
-    // in dezvoltare: third_party\oidn (tools\get-oidn.ps1)
+    // in development: third_party\oidn (tools\get-oidn.ps1)
     v.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("third_party").join("oidn"));
     v
 }
 
-/// Imaginile de intrare: culoarea liniara (HDR) si, optional, albedo [0,1] si normala [-1,1]; toate RGB f32.
+/// The input images: the linear colour (HDR) and, optionally, albedo [0,1] and normal [-1,1]; all RGB f32.
 pub struct Input<'a> {
     pub width: usize,
     pub height: usize,
@@ -53,7 +53,7 @@ mod ffi {
         release_filter: unsafe extern "C" fn(Handle),
     }
 
-    // pointerii la functii sunt doar adrese de cod din DLL
+    // the function pointers are only code addresses in the DLL
     unsafe impl Send for Api {}
     unsafe impl Sync for Api {}
 
@@ -81,7 +81,7 @@ mod ffi {
         let dll = std::fs::canonicalize(&dll).unwrap_or(dll);
         let shown = dll.to_string_lossy().trim_start_matches(r"\\?\").to_string();
         let wide: Vec<u16> = shown.encode_utf16().chain(std::iter::once(0)).collect();
-        // OpenImageDenoise_core.dll, _device_cpu.dll si tbb12.dll se cauta in acelasi folder
+        // OpenImageDenoise_core.dll, _device_cpu.dll and tbb12.dll are looked up in the same folder
         let h = unsafe { LoadLibraryExW(wide.as_ptr(), std::ptr::null_mut(), LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS) };
         if h.is_null() {
             let code = unsafe { GetLastError() };
@@ -149,11 +149,11 @@ mod ffi {
                         self.check(dev)?;
                         return Err("Open Image Denoise: cannot create the RT filter.".to_string());
                     }
-                    // OIDN nu scrie in intrari; API-ul C cere totusi *mut
+                    // OIDN does not write to the inputs; the C API still requires *mut
                     (self.set_image)(f, c"color".as_ptr(), inp.color.as_ptr() as *mut c_void, FORMAT_FLOAT3, w, h, 0, 0, 0);
                     if let Some(a) = inp.albedo {
                         (self.set_image)(f, c"albedo".as_ptr(), a.as_ptr() as *mut c_void, FORMAT_FLOAT3, w, h, 0, 0, 0);
-                        // normala ajuta doar impreuna cu albedo
+                        // the normal helps only together with albedo
                         if let Some(nm) = inp.normal {
                             (self.set_image)(f, c"normal".as_ptr(), nm.as_ptr() as *mut c_void, FORMAT_FLOAT3, w, h, 0, 0, 0);
                         }
@@ -176,7 +176,7 @@ mod ffi {
     }
 }
 
-/// OIDN e disponibil? (Ok = folderul DLL-ului)
+/// Is OIDN available? (Ok = the DLL folder)
 pub fn available() -> Result<String, String> {
     #[cfg(windows)]
     {
@@ -188,7 +188,7 @@ pub fn available() -> Result<String, String> {
     }
 }
 
-/// Curata zgomotul unei imagini randate (RGB liniar). Intoarce imaginea curatata, aceeasi marime.
+/// Removes the noise from a rendered image (linear RGB). Returns the cleaned image, the same size.
 pub fn denoise(inp: &Input) -> Result<Vec<f32>, String> {
     #[cfg(windows)]
     {
@@ -203,7 +203,7 @@ pub fn denoise(inp: &Input) -> Result<Vec<f32>, String> {
 
 #[cfg(test)]
 mod tests {
-    /// Cu DLL-ul descarcat (tools\get-oidn.ps1): o imagine cu zgomot devine mult mai neteda.
+    /// With the DLL downloaded (tools\get-oidn.ps1): a noisy image becomes much smoother.
     #[test]
     fn denoises_noisy_image_when_available() {
         if super::available().is_err() {
