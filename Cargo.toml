@@ -42,7 +42,7 @@ laz = "0.9"
 
 # dialogurile de fisiere: Windows nativ; Linux / FreeBSD prin xdg-desktop-portal
 [target.'cfg(any(windows, unix))'.dependencies]
-rfd = "0.15"
+rfd = "0.18"
 
 [build-dependencies]
 # compileaza shim-ul OpenCascade (src/occt/mbocct.cpp) cu MSVC - vezi build.rs
