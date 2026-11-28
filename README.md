@@ -96,6 +96,7 @@ ManageBIM is a native desktop application for reviewing and coordinating federat
 - **MCP for testing**: new tools `get_performance`, `set_performance`, `run_check`, `get_log`, `load_price_catalog`, `get_cost` and `export_cost` - an assistant can now measure what was drawn, run the checks, read the errors and verify 5D numbers through the same connection used for `capture_view`.
 - **Performance measurement (C1)**: `get_performance` reports FPS, elements / triangles total vs. drawn, hidden and frustum / section / LOD culled counts, draw calls and point-cloud points; the viewport already culls by frustum and uses adaptive LOD.
 - **Notifications and exit**: toasts wrap on several lines instead of one, and closing the window (X, Alt+F4 or File › Exit) asks for confirmation, with save-and-close / close-without-saving / cancel.
+- **Top bar**: no more Light button (use View › Lighting), larger **ManageBIM** title on the left with the version beside it.
 - **Code quality / CI**: clippy baseline lowered from 33 to 0 (`as_chunks`, Rust 1.88+), `quality.sh` accepts a zero-warning baseline, and the FreeBSD memory test no longer assumes `/proc/meminfo` exists.
 
 **0.29.2**

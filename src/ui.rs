@@ -776,12 +776,12 @@ impl App {
                     if ui.add(sb).on_hover_text("Command palette: type a command or an element name").clicked() {
                         self.palette_open = true;
                     }
-                    // right-to-left layout: what is added last sits furthest left. A spacer after
-                    // the search field pulls the title block towards the left of the window.
-                    ui.add_space(24.0);
+                    // right-to-left: the spacer pushes the title block to the left edge of the bar
+                    let spare = (ui.available_width() - if self.project_path.is_some() { 320.0 } else { 180.0 }).max(0.0);
+                    ui.add_space(spare);
                     if let Some(p) = &self.project_path {
                         ui.label(RichText::new(crate::file_name(p)).weak().size(11.5));
-                        ui.add_space(8.0);
+                        ui.add_space(10.0);
                     }
                     ui.label(RichText::new(format!("v{}", env!("CARGO_PKG_VERSION"))).small().weak());
                     ui.add_space(6.0);
