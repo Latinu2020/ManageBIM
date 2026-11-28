@@ -6,7 +6,7 @@ fn textures_png_and_jpg_load_and_resample() {
     for f in ["tests/fixtures/tex/tiles_test.png", "tests/fixtures/tex/tiles_test.jpg"] {
         let px = load_texture(f).expect(f);
         assert_eq!(px.len(), (tex_size() * tex_size() * 4) as usize);
-        assert!(px.chunks_exact(4).all(|c| c[3] == 255));
+        assert!(px.as_chunks::<4>().0.iter().all(|c| c[3] == 255));
     }
     assert!(load_texture("Cargo.toml").is_err());
     assert!(load_texture("missing.png").is_err());

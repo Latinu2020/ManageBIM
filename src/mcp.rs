@@ -378,7 +378,8 @@ pub fn tools() -> Vec<Value> {
                 "view": { "type": "string", "enum": ["top", "front", "back", "left", "right", "iso"], "description": "Standard view direction" },
                 "width": { "type": "integer", "description": "Pixels (256 - 2048, default 1280)" },
                 "height": { "type": "integer", "description": "Pixels (default width × 9/16)" },
-                "ray_trace": { "type": "boolean", "description": "Path-traced image (GPU): soft shadows, reflections, sky light; turns the Ray Trace view on" }
+                "ray_trace": { "type": "boolean", "description": "Path-traced image (GPU): soft shadows, reflections, sky light; turns the Ray Trace view on" },
+                "live": { "type": "boolean", "description": "Capture the current live Ray Trace view (its accumulated image) instead of a new offscreen render; use get_render_status to wait until it converged" }
             }),
             &[],
             true,
@@ -415,6 +416,7 @@ pub fn tools() -> Vec<Value> {
             &[],
             false,
         ),
+        tool("get_render_status", "Render status", "Progress of the interactive Ray Trace view: ray_trace on/off, samples / max_samples, resolution, denoise state, light bounces and the last GPU error. Poll it to know when the live view has converged.", json!({}), &[], true),
         tool("zoom_to", "Zoom to", "Fit the 3D view to elements (ids / selection) or, with all=true, to the whole model.", json!({ "ids": ids, "all": { "type": "boolean" } }), &[], false),
         tool(
             "set_property",

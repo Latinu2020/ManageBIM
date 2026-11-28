@@ -109,6 +109,10 @@ pub struct CaptureReq {
     pub lists: Option<std::sync::Arc<HashMap<u32, DrawList>>>,
     /// path traced on the GPU instead of rasterised (Ray Trace view on): (frame, samples per pixel)
     pub pt: Option<(crate::gpu_pt::PtFrame, u32)>,
+    /// read back the accumulated interactive Ray Trace image instead of rendering a new one
+    pub live: bool,
+    /// a path-traced image was requested: never fall back to the raster view silently
+    pub require_pt: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -716,7 +720,7 @@ impl Renderer {
         if let Some(f) = self.pt_live.take() {
             let mut vp = [0i32; 4];
             gl.get_parameter_i32_slice(glow::VIEWPORT, &mut vp);
-            if self.gpu_live.live(gl, &f, vp, self.tex) {
+            if self.gpu_live.live(gl, &f, vp, self.tex, true) {
                 if let Some(req) = self.capture.take() {
                     let r = self.capture_frame(gl, &req);
                     self.captured = Some(r);
@@ -867,11 +871,16 @@ impl Renderer {
         let mut vp = [0i32; 4];
         gl.get_parameter_i32_slice(glow::VIEWPORT, &mut vp);
         let scissor = gl.is_enabled(glow::SCISSOR_TEST);
+        let mut sc = [0i32; 4];
+        gl.get_parameter_i32_slice(glow::SCISSOR_BOX, &mut sc);
         let restore = |gl: &glow::Context| {
             gl.bind_framebuffer(glow::FRAMEBUFFER, prev_fb);
             gl.viewport(vp[0], vp[1], vp[2], vp[3]);
             if scissor {
+                gl.scissor(sc[0], sc[1], sc[2], sc[3]);
                 gl.enable(glow::SCISSOR_TEST);
+            } else {
+                gl.disable(glow::SCISSOR_TEST);
             }
         };
         let finished = n >= target || timed_out || cancel;
@@ -913,6 +922,8 @@ impl Renderer {
         let mut vp = [0i32; 4];
         gl.get_parameter_i32_slice(glow::VIEWPORT, &mut vp);
         let scissor = gl.is_enabled(glow::SCISSOR_TEST);
+        let mut sc = [0i32; 4];
+        gl.get_parameter_i32_slice(glow::SCISSOR_BOX, &mut sc);
         let mut ok = true;
         // a few samples per call so one call never blocks the GPU for long
         let mut left = spp.max(1);
@@ -926,7 +937,10 @@ impl Renderer {
         gl.bind_framebuffer(glow::FRAMEBUFFER, prev_fb);
         gl.viewport(vp[0], vp[1], vp[2], vp[3]);
         if scissor {
+            gl.scissor(sc[0], sc[1], sc[2], sc[3]);
             gl.enable(glow::SCISSOR_TEST);
+        } else {
+            gl.disable(glow::SCISSOR_TEST);
         }
         let (col, _) = data?;
         let n = self.gpu_off.samples.max(1) as f32;
@@ -938,12 +952,34 @@ impl Renderer {
         Some(Frame { w, h, rgba })
     }
 
+    /// Tone maps the accumulated interactive Ray Trace image - exactly what the 3D view shows, including
+    /// the quick filter and partial bands - so an assistant can inspect the live view, not a new render.
+    unsafe fn capture_live(&self, gl: &glow::Context) -> Option<Frame> {
+        let (col, _) = self.gpu_live.read_back(gl)?;
+        let n = self.gpu_live.samples.max(1) as f32;
+        let mut rgba = Vec::with_capacity(col.len() / 3 * 4);
+        for p in col.chunks_exact(3) {
+            let c = crate::pathtrace::to_srgb([p[0] / n, p[1] / n, p[2] / n]);
+            rgba.extend_from_slice(&[c[0], c[1], c[2], 255]);
+        }
+        Some(Frame { w: self.gpu_live.status.w.max(1) as u32, h: self.gpu_live.status.h.max(1) as u32, rgba })
+    }
+
     /// Renders the scene into an off-screen framebuffer of any size and reads it back.
     unsafe fn capture_frame(&mut self, gl: &glow::Context, req: &CaptureReq) -> Result<Frame, String> {
+        if req.live {
+            if let Some(fr) = self.capture_live(gl) {
+                return Ok(fr);
+            }
+        }
         // Ray Trace view: the image is path traced at the requested size (not while a final render uses the GPU)
         if let (Some((f, spp)), None) = (&req.pt, &self.pt_job) {
             if let Some(fr) = self.capture_pt(gl, f, req.w.max(16), req.h.max(16), *spp) {
                 return Ok(fr);
+            }
+            if req.require_pt {
+                let why = self.gpu_off.error.clone().unwrap_or_else(|| "unknown GPU error".into());
+                return Err(format!("GPU path tracing failed: {why}. Turn it off in the Path trace window to use the processor."));
             }
         }
         let (w, h) = (req.w.max(16), req.h.max(16));
@@ -1304,16 +1340,34 @@ impl Renderer {
             Some(t)
         };
         let col = tex(glow::RGBA8, glow::RGBA, glow::UNSIGNED_BYTE)?;
-        let dep = tex(glow::DEPTH_COMPONENT24, glow::DEPTH_COMPONENT, glow::UNSIGNED_INT)?;
+        let Some(dep) = tex(glow::DEPTH_COMPONENT24, glow::DEPTH_COMPONENT, glow::UNSIGNED_INT) else {
+            gl.delete_texture(col);
+            return None;
+        };
         gl.bind_texture(glow::TEXTURE_2D, None);
-        let fbo = gl.create_framebuffer().ok()?;
+        let Ok(fbo) = gl.create_framebuffer() else {
+            gl.delete_texture(col);
+            gl.delete_texture(dep);
+            return None;
+        };
         gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
         gl.framebuffer_texture_2d(glow::FRAMEBUFFER, glow::COLOR_ATTACHMENT0, glow::TEXTURE_2D, Some(col), 0);
         gl.framebuffer_texture_2d(glow::FRAMEBUFFER, glow::DEPTH_ATTACHMENT, glow::TEXTURE_2D, Some(dep), 0);
         let mut ok = gl.check_framebuffer_status(glow::FRAMEBUFFER) == glow::FRAMEBUFFER_COMPLETE;
         let mut ms = None;
         if ok && samples > 1 {
-            let (Ok(f), Ok(c), Ok(d)) = (gl.create_framebuffer(), gl.create_renderbuffer(), gl.create_renderbuffer()) else { return None };
+            let Ok(f) = gl.create_framebuffer() else { free_ao(gl, col, dep, fbo, None); return None };
+            let Ok(c) = gl.create_renderbuffer() else {
+                gl.delete_framebuffer(f);
+                free_ao(gl, col, dep, fbo, None);
+                return None;
+            };
+            let Ok(d) = gl.create_renderbuffer() else {
+                gl.delete_framebuffer(f);
+                gl.delete_renderbuffer(c);
+                free_ao(gl, col, dep, fbo, None);
+                return None;
+            };
             gl.bind_renderbuffer(glow::RENDERBUFFER, Some(c));
             gl.renderbuffer_storage_multisample(glow::RENDERBUFFER, samples, glow::RGBA8, w, h);
             gl.bind_renderbuffer(glow::RENDERBUFFER, Some(d));
@@ -1326,11 +1380,24 @@ impl Renderer {
             ms = Some((f, c, d));
         }
         if !ok {
+            free_ao(gl, col, dep, fbo, ms);
             return None;
         }
         self.ao_targets.push(AoTargets { w, h, samples, ms, fbo, col, dep });
         Some(self.ao_targets.len() - 1)
     }
+}
+
+/// Frees a half-built SSAO target (a failed allocation used to leak its textures / FBOs).
+unsafe fn free_ao(gl: &glow::Context, col: glow::Texture, dep: glow::Texture, fbo: glow::Framebuffer, ms: Option<(glow::Framebuffer, glow::Renderbuffer, glow::Renderbuffer)>) {
+    if let Some((f, c, d)) = ms {
+        gl.delete_framebuffer(f);
+        gl.delete_renderbuffer(c);
+        gl.delete_renderbuffer(d);
+    }
+    gl.delete_framebuffer(fbo);
+    gl.delete_texture(col);
+    gl.delete_texture(dep);
 }
 
 unsafe fn delete_points(gl: &glow::Context, p: GpuPoints) {
@@ -1341,20 +1408,38 @@ unsafe fn delete_points(gl: &glow::Context, p: GpuPoints) {
 
 pub(crate) unsafe fn compile_program(gl: &glow::Context, header: &str, vs: &str, fs: &str) -> Result<glow::Program, String> {
     let prog = gl.create_program()?;
+    let cleanup = |gl: &glow::Context, shaders: &[glow::Shader]| {
+        for s in shaders {
+            gl.detach_shader(prog, *s);
+            gl.delete_shader(*s);
+        }
+        gl.delete_program(prog);
+    };
     let mut shaders = Vec::new();
     for (ty, src) in [(glow::VERTEX_SHADER, vs), (glow::FRAGMENT_SHADER, fs)] {
-        let s = gl.create_shader(ty)?;
+        let s = match gl.create_shader(ty) {
+            Ok(s) => s,
+            Err(e) => {
+                cleanup(gl, &shaders);
+                return Err(e);
+            }
+        };
         gl.shader_source(s, &format!("{header}{src}"));
         gl.compile_shader(s);
         if !gl.get_shader_compile_status(s) {
-            return Err(gl.get_shader_info_log(s));
+            let info = gl.get_shader_info_log(s);
+            gl.delete_shader(s);
+            cleanup(gl, &shaders);
+            return Err(info);
         }
         gl.attach_shader(prog, s);
         shaders.push(s);
     }
     gl.link_program(prog);
     if !gl.get_program_link_status(prog) {
-        return Err(gl.get_program_info_log(prog));
+        let info = gl.get_program_info_log(prog);
+        cleanup(gl, &shaders);
+        return Err(info);
     }
     for s in shaders {
         gl.detach_shader(prog, s);

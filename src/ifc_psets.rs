@@ -290,7 +290,8 @@ pub fn step_value(pset: &str, prop: &str, v: &str, esc: &dyn Fn(&str) -> String)
         Integer => format!("IFCINTEGER({})", v.trim().parse::<i64>().ok()?),
         Thermal => format!("IFCTHERMALTRANSMITTANCEMEASURE({})", step_real(num(v)?)),
         Ratio => format!("IFCNORMALISEDRATIOMEASURE({})", step_real(num(v)?.clamp(0.0, 1.0))),
-        Angle => format!("IFCPLANEANGLEMEASURE({})", step_real(num(v)?)),
+        // The editor shows degrees; IFC stores plane angles in radians.
+        Angle => format!("IFCPLANEANGLEMEASURE({})", step_real(num(v)?.to_radians())),
         Area => format!("IFCAREAMEASURE({})", step_real(num(v)?)),
         Years => format!("IFCREAL({})", step_real(num(v)?)),
         Identifier => format!("IFCIDENTIFIER({})", esc(v)),

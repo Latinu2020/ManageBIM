@@ -611,7 +611,7 @@ impl App {
             self.anim_time = t;
             self.sim_sync(anim, t);
             self.anim_objects(anim, t);
-            self.pending_capture = Some((w, h));
+            self.pending_capture = Some((w, h, false));
             if let Some(j) = self.render_job.as_mut() {
                 j.waiting = true;
             }

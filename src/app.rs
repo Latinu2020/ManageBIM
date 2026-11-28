@@ -618,7 +618,8 @@ pub struct App {
     /// the IFC Mapping window (BIM › Map classes)
     pub ifc_map_open: bool,
     pub still_path: Option<String>,
-    pub pending_capture: Option<(u32, u32)>,
+    /// (width, height, capture the live Ray Trace view instead of rendering again)
+    pub pending_capture: Option<(u32, u32, bool)>,
     /// the image (Render Image): the previous view (style, materials, selection), restored after the capture
     pub still_restore: Option<(crate::render::VisualStyle, bool, BTreeSet<ElemId>)>,
     /// frames to wait before the capture (the new colors / materials reach the GPU)

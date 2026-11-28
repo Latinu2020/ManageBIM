@@ -1,30 +1,39 @@
 # ManageBIM roadmap
 
-What is planned next. Done items move to the [CHANGELOG](CHANGELOG.md).
+What remains. Done items are in [CHANGELOG.md](CHANGELOG.md); a full feature index is in
+[FEATURE_BACKLOG.md](FEATURE_BACKLOG.md).
 
-## Status - 0.29.1 (published)
-Done in 0.29.1 (details in the [CHANGELOG](CHANGELOG.md)):
-- [x] Ray Trace: more than one bounce of indirect light (1 - 4, slider in the Path Trace window), CPU and GPU
-- [x] Ray Trace: up to 64 samples per frame on fast graphics cards
-- [x] Fewer `unwrap` outside tests (47 -> 24) and fixes for the risky ones
-- [x] `viewport()` split (1,770 -> about 700 lines); `App` state grouped (4D, point cloud, updates, bSDD, viewpoints, sections)
-- [x] Clippy 130 -> 33 warnings (CI baseline 33)
-- [x] Longer robustness run (6,559 damaged files) - found and fixed a crash on damaged LAS files
-- [x] MCP tool `render_settings`; `.gitattributes` for the same line endings on every computer; README rewritten
-- [x] Checked: 257 tests pass on Linux; clippy on Windows 0 errors; local installer built on Windows
+## Current build — 0.29.2 (local, not published)
 
-Still to check by hand after the release:
-- [ ] `tools\test-addins.ps1` with Revit and a functional test of the installed 0.29.1 (Ray Trace with the Light bounces slider, sections, measure, 4D, a LAS point cloud)
-- [ ] Optional: copy `packaging\ci\build.yml.proposed` over `.github\workflows\build.yml` so the release page shows the changelog and a download table
+- [x] Interactive Ray Trace: correct divisor for the band in progress, scissor state restored, full
+      cache invalidation (hidden elements, lamp kind, samples, denoise), no black rectangle at startup.
+- [x] Damaged files: HDR over-allocation / RLE panic and LAZ over-allocation fixed.
+- [x] OpenGL: incomplete FBOs are not cached; failed SSAO / shader allocations are freed.
+- [x] Release: `build-release.ps1` passes `--features addins` and includes the Navisworks installer.
+- [x] Verification: MCP `get_render_status` + `capture_view(live: true)`, `tools\test-raytrace.ps1`,
+      `tools\verify-release.ps1`, `fuzz\` targets, CI guard against "0 tests ran".
+- [x] Windows installer built and Ray Trace smoke test passed (256/256 samples, no GPU error).
+- [x] Functional audit fixes: light placement face normal, OSNAP Surface toggle, viewpoint Update/Go to state and selection, MEP classification order, IFC angle units, AutoCAD install status, MCP `run_script` double run, path-trace capture no longer falls back silently.
+- [ ] Final `cargo test --release` and clippy baseline (the full test link takes >30 min here).
+- [ ] Review the 0.29.2 installer by the user, then publish **only on request**.
 
-## Add-ins (Revit, Navisworks, AutoCAD / Plant 3D / Civil 3D)
-- **Test every add-in** on the other supported versions (only 2025 is installed here; all versions already build): checklist per command - export, Live Link, SwitchBack, coordination objects, properties.
-- **Sign the add-ins** (code-signing certificate) so Revit no longer asks to allow them after every update; the Revit self-test then runs unattended.
-- **Improvements from testing**: clearer messages, faster exports on large models, fewer clicks.
+## Focus now — stability of the existing application
 
-## Code care
-- **Split further**: the light gizmo and walk-path tools out of `viewport()` (about 700 lines left after 0.29.1), `app.rs` by area.
-- **Lower the clippy baseline** (33 after 0.29.1): `chunks_exact` -> `as_chunks` (Rust 1.88+), once every build target has that compiler.
+- [ ] Lower the clippy baseline from 33 to 0 (`as_chunks` is stable in Rust 1.100).
+- [ ] Run the fuzz targets (`tools\fuzz.ps1`, needs nightly + cargo-fuzz) for HDR / BIMC / LAS.
+- [ ] Repeat the damaged-file robustness run (6,559 variants in 0.29.1) and the 40-reload endurance test.
+- [ ] Add-in matrix on every installed Autodesk version. Result here: AutoCAD 2025 4/4 PASS,
+      Revit 2025 PASS, Navisworks 2025 blocked by COM Automation (`CO_E_SERVER_EXEC_FAILURE`) —
+      environment issue, not a code regression.
+- [ ] Manual pass on the installed build: Ray Trace with the Light bounces slider, sections, measure,
+      4D, a LAS point cloud.
 
-## Stability
-- **Coverage-guided fuzzing** (`cargo-fuzz`, needs the nightly compiler); 0.29.1 ran the robustness test with 16x more damaged variants of every format.
+## Features still open (after stability)
+
+- **C1** instancing + occlusion culling in the viewport.
+- **C2** progressive IFC import with progress bar and cancel.
+- Scheduled headless checks through MCP, BCF live sync, property write-back to host applications.
+
+## Not planned
+
+Tauri rewrite, Eevee, MaterialX C++ FFI, code signing (excluded for this round).

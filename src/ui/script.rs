@@ -147,6 +147,11 @@ impl App {
             Ok(o) => o,
             Err(e) => return self.error(format!("{name}: {e}")),
         };
+        self.apply_script_result(result, &input);
+    }
+
+    /// Applies an already-run script (MCP runs it once, then hands over the result).
+    pub(crate) fn apply_script_result(&mut self, result: crate::scripting::Output, input: &crate::scripting::Input) {
         for l in &result.logs {
             self.toast(l.clone());
         }

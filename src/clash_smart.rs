@@ -78,14 +78,16 @@ pub fn kind_of(e: &Element) -> Kind {
     if has(&t, &["fitting", "elbow", "reducer", "fiting"]) {
         return Kind::Fitting;
     }
-    if has(&t, &["duct", "conduct", "tubulatur"]) {
-        return Kind::Duct;
+    // Order matters: "conduit" contains "duct" and "conducta" contains "conduct", so checking
+    // ducts first mislabelled cable trays and Romanian pipes as HVAC ducts.
+    if has(&t, &["cable", "conduit", "tray", "cablu", "jgheab"]) {
+        return Kind::Cable;
     }
     if has(&t, &["pipe", "teava", "conducta"]) {
         return Kind::Pipe;
     }
-    if has(&t, &["cable", "conduit", "tray", "cablu", "jgheab"]) {
-        return Kind::Cable;
+    if has(&t, &["duct", "tubulatur"]) {
+        return Kind::Duct;
     }
     if has(&t, &["terminal", "diffuser", "grille", "sprinkler", "lightfixture", "lighting fixture", "air terminal"]) {
         return Kind::Terminal;

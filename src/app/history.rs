@@ -205,6 +205,8 @@ impl App {
             self.settings.cad_view = v.cad_view;
             self.settings.cad_view_pos = v.cad_view_pos;
             self.hidden = v.hidden.into_iter().collect();
+            // the selection saved with the viewpoint (the Update button promises to store it)
+            self.selected = v.selected.into_iter().collect();
             // the dimensions saved with the viewpoint (old viewpoints, without dimensions, keep the current measurements)
             if !v.measures.is_empty() {
                 self.measures = v.measures;

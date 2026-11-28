@@ -90,6 +90,12 @@ ManageBIM is a native desktop application for reviewing and coordinating federat
 
 ## What's new in 0.29
 
+**0.29.2**
+- **Interactive Ray Trace fixes**: no black rectangle at startup, no flicker between half and full resolution, and the path-traced image stays on screen while it refines instead of switching back to the raster view between samples.
+- **Stability**: damaged HDR headers can no longer request gigabytes or panic the RLE decoder, damaged LAZ headers are capped, OpenGL resources are freed on failed allocations, and incomplete render targets are never reused.
+- **Functional fixes**: lights placed in 3D land on the surface with a real face normal, OSNAP *Surface* respects its checkbox, viewpoint **Update**/**Go to** keep the same state and selection, cable trays and Romanian pipes are classified correctly, IFC angle properties are exported in radians, and MCP `run_script` no longer runs each script twice.
+- **Verification**: MCP tools `get_render_status` and `capture_view(live: true)`, plus `tools\test-raytrace.ps1`, `tools\verify-release.ps1` and fuzz targets for HDR / BIMC / LAS.
+
 **0.29.1**
 - **Multi-bounce indirect light** in renders and the Ray Trace view (CPU and GPU): sun and lamp light bounces up to four times between surfaces, so interiors are brighter and corners are no longer dark. Adjustable in the Path Trace window.
 - **Faster Ray Trace refinement** on fast graphics cards — up to 64 samples per frame within the frame budget.
@@ -257,6 +263,7 @@ ManageBIM includes a local [Model Context Protocol](https://modelcontextprotocol
 - Off by default; listens on `127.0.0.1` only and requires a bearer token.
 - Ready-to-copy client configurations in the AI connection window; `ManageBIM.exe --mcp-stdio` bridges clients that use stdio.
 - A read-only mode blocks every tool that changes the model.
+- `get_render_status` reports Ray Trace samples, resolution, denoise state and GPU errors; `capture_view(live: true)` returns the accumulated 3D view instead of a new offscreen render.
 
 ---
 
@@ -280,7 +287,7 @@ cargo build --release        # the application and bimc-convert
 cargo test --release         # the test suite
 ```
 
-The repository is self-contained. OpenCascade (STEP / IGES / BREP) and the Autodesk add-ins are optional; without them the application builds and runs, and those formats report that the runtime is missing.
+The repository is self-contained. OpenCascade (STEP / IGES / BREP) and the Autodesk add-ins are optional; without them the application builds and runs, and those formats report that the runtime is missing. On Windows, `powershell -ExecutionPolicy Bypass -File tools\verify-release.ps1` runs the tests, the clippy/rustfmt gate, the release build with add-ins, the setup wizard, a Ray Trace smoke test through MCP and a SHA256 manifest. `tools\test-raytrace.ps1` can be used on its own; `tools\fuzz.ps1` needs nightly + cargo-fuzz.
 
 <details>
 <summary><b>Windows: add-ins, OpenCascade and the installer</b></summary>

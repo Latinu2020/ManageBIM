@@ -654,10 +654,17 @@ pub fn laz_to_las(b: &[u8]) -> Result<Vec<u8>, String> {
     if offset >= b.len() || rec == 0 {
         return Err("LAZ: no point data.".into());
     }
-    // the point count comes from the header: a damaged one must not allocate terabytes (LASzip compresses
-    // about 7-10 times, so more than 100 times the file size is not real)
-    let points = count.checked_mul(rec).filter(|n| *n / 100 <= b.len()).ok_or("LAZ: the point count does not match the file (damaged header).")?;
-    let mut out = Vec::with_capacity(offset + points);
+    // The point count comes from the header: a damaged one must not allocate gigabytes. LASzip compresses
+    // about 7-10 times, so 20x the file size is already generous; 1 GiB is a hard ceiling. The old 100x
+    // check allowed a 100 MB file to ask for 10 GB and abort the process before decompression failed.
+    const MAX_LAZ_BYTES: usize = 1024 * 1024 * 1024;
+    let max_points = b.len().saturating_mul(20).min(MAX_LAZ_BYTES) / rec.max(1);
+    if count > max_points {
+        return Err("LAZ: the point count does not match the file (damaged header).".into());
+    }
+    let points = count.checked_mul(rec).ok_or("LAZ: the point count does not match the file (damaged header).")?;
+    let total = offset.checked_add(points).ok_or("LAZ: point data is too large.")?;
+    let mut out = Vec::with_capacity(total);
     out.extend_from_slice(&b[..offset]);
     out[104] &= 0x7f;
     let start = out.len();

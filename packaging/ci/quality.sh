@@ -11,7 +11,7 @@ cd "$root"
 fail=0
 
 # ---- clippy
-cargo clippy --all-targets --message-format=short > clippy.log 2>&1
+cargo clippy --all-targets --message-format=short --color never > clippy.log 2>&1
 code=$?
 n=$(grep -cE '^[^ ]+\.rs:[0-9]+:[0-9]+: warning' clippy.log || true)
 errs=$(grep -cE '^[^ ]+\.rs:[0-9]+:[0-9]+: error' clippy.log || true)

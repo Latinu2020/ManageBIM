@@ -130,7 +130,8 @@ $bins = @(
     @{ Name = 'ManageBIM';               Src = 'src\main.rs';              Dest = '' },
     @{ Name = 'bimc-convert';            Src = 'src\bin\bimc_convert.rs';  Dest = '' },
     @{ Name = 'ManageBIM-Revit-AddIn';   Src = 'src\bin\addin\revit.rs';   Dest = 'AddIns' },
-    @{ Name = 'ManageBIM-AutoCAD-AddIn'; Src = 'src\bin\addin\acad.rs';    Dest = 'AddIns' }
+    @{ Name = 'ManageBIM-AutoCAD-AddIn'; Src = 'src\bin\addin\acad.rs';    Dest = 'AddIns' },
+    @{ Name = 'ManageBIM-Navisworks-AddIn'; Src = 'src\bin\addin\navis.rs'; Dest = 'AddIns' }
 )
 $present = @($bins | Where-Object { Test-Path (Join-Path $root $_.Src) })
 $absent = @($bins | Where-Object { -not (Test-Path (Join-Path $root $_.Src)) })
@@ -140,7 +141,9 @@ if ($present.Count -eq 0) { throw 'No binary sources found.' }
 if (-not $SkipBuild) {
     Step 'cargo build --release'
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { throw 'cargo not found. Install Rust from https://rustup.rs (MSVC toolchain).' }
-    $cargoArgs = @('build', '--release')
+    # the three add-in installers are behind the `addins` feature (see Cargo.toml); without it
+    # cargo refuses to build these targets at all
+    $cargoArgs = @('build', '--release', '--features', 'addins')
     foreach ($b in $present) { $cargoArgs += @('--bin', $b.Name) }
     Push-Location $root
     try {

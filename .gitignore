@@ -1,6 +1,9 @@
 # build
 /target/
 /installers/setup/target/
+/fuzz/target/
+/fuzz/artifacts/
+/fuzz/corpus/
 /dist/
 **/bin/
 # sursele programelor Rust (bimc-convert, installerele add-in-urilor) fac parte din proiect

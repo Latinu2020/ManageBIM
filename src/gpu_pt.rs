@@ -95,6 +95,45 @@ pub struct PtStatus {
     pub denoised: bool,
 }
 
+/// A sample is drawn in horizontal bands within a time budget. Until the whole sample is finished, the
+/// rows already drawn hold one *extra* contribution: dividing them by `samples` (the finished count) makes
+/// them too bright - a moving bright stripe that looks like a blotch and never settles on a slow card.
+/// `show()` uses one scale for those rows and another for the rest.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ShowPasses {
+    /// accumulation rows `[0, partial_rows)` contain `samples + 1` contributions (counted from the bottom)
+    partial_rows: i32,
+    total_rows: i32,
+    /// scale for rows with only the finished samples
+    complete: f32,
+    /// scale for rows that also contain the band in progress
+    partial: f32,
+}
+
+fn show_passes(samples: u32, band_y: i32, h: i32) -> ShowPasses {
+    let total_rows = h.max(1);
+    ShowPasses {
+        partial_rows: band_y.clamp(0, total_rows),
+        total_rows,
+        complete: 1.0 / samples.max(1) as f32,
+        partial: 1.0 / (samples + 1) as f32,
+    }
+}
+
+/// Quick edge filter: full strength on the first sample, gone at 48 samples.
+fn filter_strength(samples: u32) -> f32 {
+    let n = samples.max(1) as f32;
+    (1.0 - (n - 1.0) / 47.0).clamp(0.0, 1.0)
+}
+
+/// The raster view is kept only until the first complete sample: before that the accumulation
+/// targets are still empty and would show as a black band. Afterwards the image is shown on every
+/// frame, including while the next sample is being drawn in bands (show() uses the right divisor
+/// for those rows). Requiring `band_y == 0` made the view flicker back to raster between samples.
+fn ready_to_display(samples: u32, _band_y: i32) -> bool {
+    samples >= 1
+}
+
 type Denoised = Arc<Mutex<Option<(u64, Vec<f32>)>>>;
 
 #[derive(Default)]
@@ -224,7 +263,14 @@ impl GpuPt {
         let mut ts = Vec::new();
         gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fb));
         for i in 0..3u32 {
-            let t = gl.create_texture()?;
+            let t = match gl.create_texture() {
+                Ok(t) => t,
+                Err(e) => {
+                    for t in &ts { gl.delete_texture(*t); }
+                    gl.delete_framebuffer(fb);
+                    return Err(e);
+                }
+            };
             gl.bind_texture(glow::TEXTURE_2D, Some(t));
             gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32);
             gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
@@ -236,10 +282,13 @@ impl GpuPt {
         }
         gl.bind_texture(glow::TEXTURE_2D, None);
         let status = gl.check_framebuffer_status(glow::FRAMEBUFFER);
-        self.fbo = Some((fb, [ts[0], ts[1], ts[2]], w, h));
         if status != glow::FRAMEBUFFER_COMPLETE {
+            // never cache an incomplete target: the next frame would keep drawing into it
+            for t in &ts { gl.delete_texture(*t); }
+            gl.delete_framebuffer(fb);
             return Err(format!("GPU path tracing: float render targets not available (0x{status:x})"));
         }
+        self.fbo = Some((fb, [ts[0], ts[1], ts[2]], w, h));
         Ok(true)
     }
 
@@ -403,7 +452,7 @@ impl GpuPt {
     ///
     /// # Safety
     /// Call with the OpenGL context current (inside the egui_glow paint callback).
-    pub unsafe fn show(&self, gl: &glow::Context) {
+    pub unsafe fn show(&self, gl: &glow::Context, vp: [i32; 4], acc_h: i32) {
         let (Some(disp), Some((_, ts, ..))) = (self.disp, self.fbo) else { return };
         gl.use_program(Some(disp));
         gl.disable(glow::BLEND);
@@ -419,15 +468,38 @@ impl GpuPt {
         gl.active_texture(glow::TEXTURE0 + 2);
         gl.bind_texture(glow::TEXTURE_2D, Some(ts[2]));
         gl.uniform_1_i32(gl.get_uniform_location(disp, "u_nrm").as_ref(), 2);
-        let n = self.samples.max(1) as f32;
-        let k = if den.is_some() { 1.0 } else { 1.0 / n };
-        gl.uniform_1_f32(gl.get_uniform_location(disp, "u_scale").as_ref(), k);
-        gl.uniform_1_f32(gl.get_uniform_location(disp, "u_gscale").as_ref(), 1.0 / n);
-        // full filter at 1 sample, none from 48 samples on (and never on the denoised image)
-        let strength = if den.is_some() { 0.0 } else { (1.0 - (n - 1.0) / 47.0).clamp(0.0, 1.0) };
-        gl.uniform_1_f32(gl.get_uniform_location(disp, "u_filter").as_ref(), strength);
+        let u_scale = gl.get_uniform_location(disp, "u_scale");
+        let u_gscale = gl.get_uniform_location(disp, "u_gscale");
+        let u_filter = gl.get_uniform_location(disp, "u_filter");
+        let passes = show_passes(self.samples, self.band_y, acc_h);
+        let draw = |gl: &glow::Context, samples: u32, scale: f32| {
+            gl.uniform_1_f32(u_scale.as_ref(), if den.is_some() { 1.0 } else { scale });
+            gl.uniform_1_f32(u_gscale.as_ref(), scale);
+            // full filter at 1 sample, none from 48 samples on (and never on the denoised image)
+            gl.uniform_1_f32(u_filter.as_ref(), if den.is_some() { 0.0 } else { filter_strength(samples) });
+            gl.draw_arrays(glow::TRIANGLES, 0, 3);
+        };
         gl.bind_vertex_array(self.vao);
-        gl.draw_arrays(glow::TRIANGLES, 0, 3);
+        if passes.partial_rows > 0 && passes.partial_rows < passes.total_rows {
+            // The sample in progress covers only the bottom rows: they need their own divisor. Otherwise the
+            // stripe is too bright (and the edge filter divides by the wrong count) until the sample finishes.
+            let mut sc = [0i32; 4];
+            gl.get_parameter_i32_slice(glow::SCISSOR_BOX, &mut sc);
+            let was_on = gl.is_enabled(glow::SCISSOR_TEST);
+            let y = vp[1] + (passes.partial_rows as f32 * vp[3] as f32 / passes.total_rows as f32).round() as i32;
+            gl.enable(glow::SCISSOR_TEST);
+            gl.scissor(vp[0], vp[1], vp[2], (y - vp[1]).max(0));
+            draw(gl, self.samples + 1, passes.partial);
+            gl.scissor(vp[0], y, vp[2], (vp[1] + vp[3] - y).max(0));
+            draw(gl, self.samples, passes.complete);
+            if was_on {
+                gl.scissor(sc[0], sc[1], sc[2], sc[3]);
+            } else {
+                gl.disable(glow::SCISSOR_TEST);
+            }
+        } else {
+            draw(gl, self.samples, passes.complete);
+        }
         gl.bind_vertex_array(None);
         for i in [2, 1, 0] {
             gl.active_texture(glow::TEXTURE0 + i);
@@ -468,15 +540,26 @@ impl GpuPt {
     }
 
     /// Interactive view: refine the image of `f` in the current viewport (vp = x, y, w, h in pixels).
-    /// Half resolution while the camera moves; once `max_samples` is reached the image is denoised
-    /// (Intel Open Image Denoise, in the background) and shown clean. Returns false if not available.
+    /// One resolution throughout; once `max_samples` is reached the image is denoised
+    /// (Intel Open Image Denoise, in the background) and shown clean.
+    /// Returns true only when the image was drawn into the viewport: the caller keeps the normal
+    /// rasterised view until at least one whole sample exists, so the band in progress never appears
+    /// as a black rectangle rising over the 3D view.
     ///
     /// # Safety
     /// Call with the OpenGL context current (inside the egui_glow paint callback).
-    pub unsafe fn live(&mut self, gl: &glow::Context, f: &PtFrame, vp: [i32; 4], tex_array: Option<glow::Texture>) -> bool {
+    pub unsafe fn live(&mut self, gl: &glow::Context, f: &PtFrame, vp: [i32; 4], tex_array: Option<glow::Texture>, display: bool) -> bool {
         let prev_fb = gl.get_parameter_framebuffer(glow::FRAMEBUFFER_BINDING);
         let scissor = gl.is_enabled(glow::SCISSOR_TEST);
-        let scale = if f.moving { 0.5 } else { 1.0 };
+        // accumulate() sets its own scissor box for the bands: restore the box too, not just the flag,
+        // otherwise the rest of the frame (and the next viewport) is clipped to the last band
+        let mut scissor_box = [0i32; 4];
+        gl.get_parameter_i32_slice(glow::SCISSOR_BOX, &mut scissor_box);
+        // Keep one resolution for the whole session: switching to half resolution while `moving`
+        // recreated the targets and cleared the accumulation. When the camera actually changes,
+        // its key in PtFrame already restarts the accumulation, so the half-resolution step only
+        // caused a visible black / flickering switch between 1/2 and full size.
+        let scale = 1.0;
         let (w, h) = (((vp[2] as f32 * scale) as i32).max(8), ((vp[3] as f32 * scale) as i32).max(8));
         let ok = self.samples >= f.max_samples.max(1) && self.fbo.is_some_and(|x| x.2 == w && x.3 == h) && {
             // already converged for this view: no new samples, only check the key
@@ -486,11 +569,18 @@ impl GpuPt {
         gl.bind_framebuffer(glow::FRAMEBUFFER, prev_fb);
         gl.viewport(vp[0], vp[1], vp[2], vp[3]);
         if scissor {
+            gl.scissor(scissor_box[0], scissor_box[1], scissor_box[2], scissor_box[3]);
             gl.enable(glow::SCISSOR_TEST);
+        } else {
+            gl.disable(glow::SCISSOR_TEST);
         }
         if !ok {
             return false;
         }
+        // A sample is drawn in bands: until one whole sample exists, the accumulation targets still
+        // contain empty rows. Showing them would black out part of the viewport (and leave the rest
+        // showing the previous raster frame), so keep the raster view until this is true.
+        let ready = ready_to_display(self.samples, self.band_y);
         // denoise the converged image once per view
         let converged = self.samples >= f.max_samples.max(1) && !f.moving;
         if converged && f.denoise && self.den_started != self.key && crate::oidn::available().is_ok() {
@@ -539,10 +629,12 @@ impl GpuPt {
                 }
             }
         }
-        self.show(gl);
+        if display && ready {
+            self.show(gl, vp, h);
+        }
         let denoised = self.den_tex.is_some_and(|d| d.1 == self.key);
         self.status = PtStatus { samples: self.samples, max: f.max_samples, w, h, denoising: converged && f.denoise && self.den_started == self.key && !denoised && crate::oidn::available().is_ok(), denoised };
-        true
+        display && ready
     }
 }
 
@@ -1085,3 +1177,52 @@ void main() {
     o_nrm = vec4(nrm0, 1.0);
 }
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn partial_band_gets_its_own_divisor() {
+        let p = show_passes(4, 10, 100);
+        assert_eq!(p.partial_rows, 10);
+        assert_eq!(p.total_rows, 100);
+        assert!((p.complete - 0.25).abs() < 1e-6);
+        // the drawn rows have 5 contributions, not 4: a single divisor makes them 25% too bright
+        assert!((p.partial - 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn first_partial_band_is_not_darkened() {
+        let p = show_passes(0, 5, 20);
+        assert_eq!(p.partial_rows, 5);
+        assert!((p.complete - 1.0).abs() < 1e-6);
+        assert!((p.partial - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn finished_sample_uses_one_divisor_for_the_whole_image() {
+        let p = show_passes(8, 0, 600);
+        assert_eq!(p.partial_rows, 0);
+        assert!((p.complete - 0.125).abs() < 1e-6);
+        assert!((p.partial - 1.0 / 9.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn raster_view_is_kept_until_a_whole_sample_exists() {
+        assert!(!ready_to_display(0, 0));
+        assert!(!ready_to_display(0, 64));
+        // after the first sample the image stays on screen even while another band is drawn
+        assert!(ready_to_display(1, 32));
+        assert!(ready_to_display(2, 32));
+        assert!(ready_to_display(256, 0));
+    }
+
+    #[test]
+    fn quick_filter_fades_out_by_48_samples() {
+        assert!((filter_strength(1) - 1.0).abs() < 1e-6);
+        assert!(filter_strength(24) > 0.0 && filter_strength(24) < 1.0);
+        assert_eq!(filter_strength(48), 0.0);
+        assert_eq!(filter_strength(256), 0.0);
+    }
+}

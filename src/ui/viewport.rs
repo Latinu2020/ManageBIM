@@ -106,14 +106,15 @@ impl App {
         let params = self.frame_params(aspect);
         // the image waits a few frames after the style / materials changed (see still_wait)
         let capture = if self.still_wait == 0 { self.pending_capture.take() } else { None };
-        if let Some((w, h)) = capture {
+        if let Some((w, h, live)) = capture {
             let (bg_top, bg_bottom) = self.render_bg();
             let cp = self.frame_params(w as f32 / h.max(1) as f32);
             // Dashboard / AI: the image shows what is seen in the viewport (hidden items and clash dimming included)
             let lists = (self.dash_job.is_some() || self.mcp.capture.is_some()).then(|| std::sync::Arc::new(self.draw_lists(&cp, h as f32)));
             // Ray Trace view on: the image is path traced too (64 samples, or the view's own count if lower)
-            let pt = if self.rt.on { self.rt.scene.clone().map(|sc| (self.rt_capture_frame(sc), self.settings.rt_samples.clamp(16, 64))) } else { None };
-            self.renderer.lock().unwrap_or_else(|e| e.into_inner()).capture = Some(crate::render::CaptureReq { params: cp, w, h, bg_top, bg_bottom, lists, pt });
+            let pt = if self.rt.on && !live { self.rt.scene.clone().map(|sc| (self.rt_capture_frame(sc), self.settings.rt_samples.clamp(16, 64))) } else { None };
+            let require_pt = pt.is_some();
+            self.renderer.lock().unwrap_or_else(|e| e.into_inner()).capture = Some(crate::render::CaptureReq { params: cp, w, h, bg_top, bg_bottom, lists, pt, live, require_pt });
         }
         // what gets drawn: the field of view, without hidden items; simplified while the camera moves.
         // The list is captured by the callback (NOT in the renderer) - otherwise, in split view, the second
@@ -213,8 +214,15 @@ impl App {
                         }
                     }
                 }
-                snap = Some(best.0);
-                snap_kind = best.1;
+                // Surface (8) is only a fallback when no vertex / midpoint / edge was found, and must
+                // respect its checkbox - previously it always snapped, even with the box unticked.
+                if types & 8 != 0 && best.1 == 0 {
+                    best = (p, 4, 0.0);
+                }
+                if best.1 != 0 {
+                    snap = Some(best.0);
+                    snap_kind = best.1;
+                }
             }
         }
         self.vp_rect = [rect.left(), rect.top(), rect.width(), rect.height()];
@@ -1141,7 +1149,10 @@ impl App {
                                 name: format!("Point light {}", self.lights.len() + 1),
                                 ..Default::default()
                             };
-                            let nv = n[0];
+                            // `pick` returns the triangle vertices, not normals: compute the face normal
+                            // and flip it towards the camera, otherwise the lamp lands at a vertex far away.
+                            let mut nv = (n[1] - n[0]).cross(n[2] - n[0]).normalize_or_zero();
+                            if nv.dot(d) > 0.0 { nv = -nv; }
                             l.pos = (hit + nv * 0.15).to_array();
                             l.target = (hit - nv).to_array();
                             self.light_sel = Some(self.lights.len());
@@ -1608,7 +1619,7 @@ impl App {
                         painter.circle_stroke(sp, 6.0 * z, st);
                     }
                 }
-                let lbl = ["", "Vertex", "Midpoint", "Edge"][snap_kind as usize];
+                let lbl = ["", "Vertex", "Midpoint", "Edge", "Surface"].get(snap_kind as usize).copied().unwrap_or("");
                 if !lbl.is_empty() {
                     painter.text(sp + EV::splat(7.0 * z + 4.0), Align2::LEFT_TOP, lbl, FontId::proportional(10.5 + z), Color32::from_rgb(120, 230, 255));
                 }

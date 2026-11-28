@@ -426,7 +426,7 @@ impl App {
         j.wait -= 1;
         if j.wait == 0 {
             j.waiting = true;
-            self.pending_capture = Some((1280, 720));
+            self.pending_capture = Some((1280, 720, false));
         }
     }
 

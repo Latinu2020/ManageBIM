@@ -13,4 +13,9 @@ if [ "$code" -ne 0 ]; then
     summary=$(grep -E "^test result:|^error: test failed|could not compile" test.log | head -n 30 | enc)
     [ -n "$summary" ] && echo "::error title=Summary::$summary"
 fi
+# a silent "0 tests ran" (bad filter / changed invocation) must not pass CI
+if ! grep -q '^test result:' test.log; then
+    echo "::error::no tests ran - check the cargo test invocation"
+    exit 1
+fi
 exit $code

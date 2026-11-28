@@ -194,7 +194,7 @@ fn animation_orbit_and_avi() {
     let mut sink = bimrust::video::open_sink(bimrust::video::VideoFormat::Avi, &path, 320, 180, 24, 90).unwrap();
     for i in 0..12u32 {
         let mut rgba = vec![0u8; 320 * 180 * 4];
-        for (k, p) in rgba.chunks_exact_mut(4).enumerate() {
+        for (k, p) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             let x = (k % 320) as u32;
             p.copy_from_slice(&[((x + i * 20) % 256) as u8, 80, 200, 255]);
         }

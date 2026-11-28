@@ -450,7 +450,7 @@ impl App {
                 // two frames: the new colors are sent to the GPU before the capture
                 self.still_wait = 2;
                 let ss = if self.render.supersample { 2 } else { 1 };
-                self.pending_capture = Some((self.render.width * ss, self.render.height * ss));
+                self.pending_capture = Some((self.render.width * ss, self.render.height * ss, false));
             }
             Purpose::ExportPathTrace => {
                 let p = if path.to_lowercase().ends_with(".png") { path.clone() } else { format!("{path}.png") };

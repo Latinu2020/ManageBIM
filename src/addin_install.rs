@@ -163,17 +163,19 @@ fn acad(job: &Job, out: &mut Vec<String>) {
     }
     // an upgrade starts from an empty bundle: nothing of an older version stays behind
     remove(&bundle);
-    let mut ok = false;
+    let mut xml_ok = false;
     if let Some(xml) = payload(job.files, "PackageContents.xml") {
-        ok |= write(&bundle.join("PackageContents.xml"), xml);
+        xml_ok = write(&bundle.join("PackageContents.xml"), xml);
     }
     // PackageContents.xml loads ./Contents/R24/ManageBIM.AcadExporter.dll (and R25)
+    let mut dll_ok = false;
     for (r, dll) in [("R24", "ManageBIM.AcadExporter.R24.dll"), ("R25", "ManageBIM.AcadExporter.R25.dll")] {
         if let Some(b) = payload(job.files, dll) {
-            ok |= write(&bundle.join("Contents").join(r).join("ManageBIM.AcadExporter.dll"), b);
+            dll_ok |= write(&bundle.join("Contents").join(r).join("ManageBIM.AcadExporter.dll"), b);
         }
     }
-    if ok {
+    // Reporting success when only the XML was written left AutoCAD with no loadable add-in.
+    if xml_ok && dll_ok {
         out.push("AutoCAD: installed".into());
         // no "Unsigned Executable File - Always Load" dialog on every start: the folder becomes trusted
         if let Some(n) = acad_trust(&bundle, job, true) {

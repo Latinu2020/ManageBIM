@@ -403,11 +403,22 @@ In MS Project / P6, link a task with [Level=Level 1;Type=IfcSlab] at the end of 
             let mut hidden: Vec<ElemId> = self.hidden.iter().copied().collect();
             hidden.sort();
             let sel: Vec<ElemId> = self.selected.iter().copied().collect();
+            // "Update" must store the same state as "Save": otherwise Go to restores the old
+            // style, cut plane, dimensions and colour overrides. Read everything before taking
+            // the mutable borrow of the viewpoint.
+            let cad_view = self.settings.cad_view;
+            let cad_view_pos = self.settings.cad_view_pos;
+            let measures = self.measures.clone();
+            let look = self.current_look();
             let v = &mut self.viewpoints[i];
             v.cam = self.cam;
             v.section = self.section.clone();
             v.hidden = hidden;
             v.selected = sel;
+            v.cad_view = cad_view;
+            v.cad_view_pos = cad_view_pos;
+            v.measures = measures;
+            v.look = Some(look);
             self.active_vp = Some(i);
         }
         if let Some(i) = del {

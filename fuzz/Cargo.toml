@@ -1,0 +1,32 @@
+[package]
+name = "bimrust-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+bimrust = { path = ".." }
+
+[workspace]
+
+[[bin]]
+name = "hdri"
+path = "fuzz_targets/hdri.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "bimc"
+path = "fuzz_targets/bimc.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "las"
+path = "fuzz_targets/las.rs"
+test = false
+doc = false

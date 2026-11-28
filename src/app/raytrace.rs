@@ -54,14 +54,25 @@ impl App {
             (slot, Arc::as_ptr(m) as usize).hash(&mut h);
         }
         self.rt.looks_gen.hash(&mut h);
-        self.hidden.len().hash(&mut h);
+        // which elements are hidden matters, not only how many: hiding one and showing another used to keep
+        // the old scene (and its accumulated image) on the screen
+        let mut hidden: Vec<_> = self.hidden.iter().copied().collect();
+        hidden.sort_unstable();
+        for id in hidden {
+            (id.m, id.e).hash(&mut h);
+        }
         for p in self.section.gpu_planes() {
             p.to_array().map(f32::to_bits).hash(&mut h);
         }
         for l in self.lights.iter().filter(|l| l.enabled) {
+            let kind = match l.kind {
+                crate::lights::LightKind::Point => 0u8,
+                crate::lights::LightKind::Spot => 1,
+                crate::lights::LightKind::Distant => 2,
+            };
             l.pos.map(f32::to_bits).hash(&mut h);
             l.target.map(f32::to_bits).hash(&mut h);
-            (l.power.to_bits(), l.radius.to_bits(), l.angle.to_bits(), l.color).hash(&mut h);
+            (l.power.to_bits(), l.radius.to_bits(), l.angle.to_bits(), l.color, kind).hash(&mut h);
         }
         self.tex_layers.len().hash(&mut h);
         h.finish().max(1)
@@ -104,7 +115,7 @@ impl App {
         for v in [cam.eye(), cam.fwd(), cam.up(), sun] {
             v.to_array().map(f32::to_bits).hash(&mut h);
         }
-        (cam.fov_deg.to_bits(), light.to_bits(), env.0, env.1.to_bits(), env.2.to_bits(), self.render.night, hdri.as_ref().map(|x| Arc::as_ptr(x) as usize), bounces).hash(&mut h);
+        (cam.fov_deg.to_bits(), light.to_bits(), env.0, env.1.to_bits(), env.2.to_bits(), self.render.night, hdri.as_ref().map(|x| Arc::as_ptr(x) as usize), bounces, max_samples, self.settings.render_denoise).hash(&mut h);
         PtFrame {
             scene,
             eye: cam.eye(),
@@ -198,6 +209,8 @@ impl App {
         let building = self.rt.pending.is_some();
         let text = if self.rt.scene.is_none() {
             "Ray Trace · preparing the scene…".to_string()
+        } else if status.samples == 0 {
+            "Ray Trace · preparing the image…".to_string()
         } else if status.denoised {
             format!("Ray Trace · {} samples · denoised", status.samples)
         } else if status.denoising {

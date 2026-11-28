@@ -240,6 +240,23 @@ impl App {
                 }
                 Ok(json!(format!("{action}: {n} element(s); hidden now: {}", self.hidden.len())))
             }
+            "get_render_status" => {
+                let r = self.renderer.lock().unwrap_or_else(|e| e.into_inner());
+                let s = r.gpu_live.status;
+                Ok(json!({
+                    "ray_trace": self.rt.on,
+                    "samples": s.samples,
+                    "max_samples": s.max,
+                    "width": s.w,
+                    "height": s.h,
+                    "denoising": s.denoising,
+                    "denoised": s.denoised,
+                    "light_bounces": self.settings.light_bounces,
+                    "denoise_enabled": self.settings.render_denoise,
+                    "building_scene": self.rt.pending.is_some(),
+                    "gpu_error": r.gpu_live.error.clone(),
+                }))
+            }
             "render_settings" => {
                 let num = |k: &str| args.get(k).and_then(|v| v.as_f64()).map(|v| v as f32);
                 if let Some(on) = args.get("ray_trace").and_then(|v| v.as_bool()) {
@@ -406,7 +423,8 @@ impl App {
                 let out = crate::scripting::run(&src, &input)?;
                 let logs = out.logs.clone();
                 let n = out.actions.len();
-                self.run_source("AI script", &src);
+                // run_source would run the Rhai code a second time (double actions and duplicate logs)
+                self.apply_script_result(out, &input);
                 Ok(json!({ "log": logs, "actions": n, "selected": self.selected.len() }))
             }
             "open_model" => {
@@ -531,7 +549,8 @@ impl App {
             }
             self.rt_scene_now();
         }
-        self.pending_capture = Some((w, h));
+        let live = args.get("live").and_then(|v| v.as_bool()).unwrap_or(false) && self.rt.on;
+        self.pending_capture = Some((w, h, live));
         Ok(())
     }
 
