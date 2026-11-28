@@ -278,6 +278,9 @@ pub struct ProjectFile {
     /// Quantification
     #[serde(default)]
     pub qto: Option<crate::qto::QtoSetup>,
+    /// 5D cost: the price catalog and the priced quantity column
+    #[serde(default)]
+    pub cost: Option<crate::cost::CostSetup>,
     #[serde(default)]
     pub check_rules: Vec<crate::check::Rule>,
     /// the parameters added by the user on elements

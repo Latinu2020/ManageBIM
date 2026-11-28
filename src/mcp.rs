@@ -335,6 +335,7 @@ const INSTRUCTIONS: &str = "ManageBIM is a BIM viewer / coordination app. Elemen
 (from find_elements / get_selection). Lengths are in metres. Typical flow: get_model_info -> find_elements -> \
 get_properties / select_elements -> set_visibility or set_property; capture_view shows the 3D view as an image. \
 Clash tests: list_clash_tests, run_clash_test, get_clash_results, focus_clash + capture_view, update_clash_results, export_clash_bcf. \
+Quality: run_check runs the quick checks and the IDS rules; get_performance reports what the last frame drew; get_log returns recent messages and errors. \
 run_script executes a Rhai script of the app's Script console for bulk work.";
 
 fn tool(name: &str, title: &str, desc: &str, props: Value, required: &[&str], read_only: bool) -> Value {
@@ -417,6 +418,68 @@ pub fn tools() -> Vec<Value> {
             false,
         ),
         tool("get_render_status", "Render status", "Progress of the interactive Ray Trace view: ray_trace on/off, samples / max_samples, resolution, denoise state, light bounces and the last GPU error. Poll it to know when the live view has converged.", json!({}), &[], true),
+        tool(
+            "get_performance",
+            "Performance",
+            "What the last frame drew after culling: FPS, elements / triangles total vs drawn, hidden and frustum / section / LOD culled counts, draw calls (merged vertex ranges), point-cloud points, background loads and GPU errors. Use it to measure a view or a setting change.",
+            json!({}),
+            &[],
+            true,
+        ),
+        tool(
+            "set_performance",
+            "Performance settings",
+            "Change the viewport performance settings: full_detail turns the temporary simplification off (everything is drawn), lod_px is the pixel threshold used while the camera moves, cloud_density is the fraction of the point cloud drawn (0.01 - 1).",
+            json!({
+                "full_detail": { "type": "boolean" },
+                "lod_px": { "type": "number", "description": "Elements smaller than this many pixels are skipped while moving (0.5 - 48)" },
+                "cloud_density": { "type": "number", "description": "Fraction of the point cloud drawn, 0.01 - 1" }
+            }),
+            &[],
+            false,
+        ),
+        tool(
+            "run_check",
+            "Run model checks",
+            "Run the quality checks on the loaded models: quick (no level / name / classification / material / geometry, tiny or duplicate geometry, duplicated GUID) and/or the IDS rules loaded in the Model Check panel. Returns the counts and the first failures.",
+            json!({
+                "mode": { "type": "string", "enum": ["quick", "rules", "both"], "description": "Default quick" },
+                "limit": { "type": "integer", "description": "Max failures per check (default 50, max 500)" }
+            }),
+            &[],
+            true,
+        ),
+        tool("get_log", "Log and errors", "Recent messages from the Output panel, the on-screen notifications, the MCP status and the last GPU error - for diagnosing a test run.", json!({ "limit": { "type": "integer", "description": "Log lines (default 100, max 1000)" } }), &[], true),
+        tool(
+            "load_price_catalog",
+            "Load price catalog",
+            "Load a 5D price catalog from Excel / CSV (columns: Code, Description, Unit, Unit price, optional Budget) and match it to the quantified groups.",
+            json!({ "path": { "type": "string", "description": "The .xlsx or .csv file" } }),
+            &["path"],
+            false,
+        ),
+        tool(
+            "get_cost",
+            "5D cost",
+            "The priced take-off: every quantified group with its quantity, unit price, amount, budget and variance (budget - amount), plus the totals. Needs a price catalog (load_price_catalog).",
+            json!({
+                "column": { "type": "integer", "description": "Quantity column index (default: the chosen one, or the first quantity)" },
+                "limit": { "type": "integer", "description": "Max rows (default 200, max 2000)" }
+            }),
+            &[],
+            true,
+        ),
+        tool(
+            "export_cost",
+            "Export 5D cost",
+            "Write the priced take-off to an Excel workbook or CSV file.",
+            json!({
+                "path": { "type": "string" },
+                "format": { "type": "string", "enum": ["xlsx", "csv"], "description": "Default from the extension, else xlsx" }
+            }),
+            &["path"],
+            false,
+        ),
         tool("zoom_to", "Zoom to", "Fit the 3D view to elements (ids / selection) or, with all=true, to the whole model.", json!({ "ids": ids, "all": { "type": "boolean" } }), &[], false),
         tool(
             "set_property",
@@ -494,7 +557,7 @@ pub fn tools() -> Vec<Value> {
 
 /// The tools that change something (blocked when "Allow changes" is off)
 pub fn is_edit(tool: &str) -> bool {
-    matches!(tool, "set_property" | "run_script" | "open_model" | "run_clash_test" | "update_clash_results" | "export_clash_bcf")
+    matches!(tool, "set_property" | "run_script" | "open_model" | "run_clash_test" | "update_clash_results" | "export_clash_bcf" | "set_performance" | "load_price_catalog" | "export_cost")
 }
 
 // ---------------------------------------------------------------- the stdio bridge
@@ -625,7 +688,7 @@ mod tests {
         let r = post(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#, &token);
         assert!(r.starts_with("HTTP/1.1 202"), "{r}");
         let r = post(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#, &token);
-        assert!(r.contains("find_elements") && r.contains("render_settings") && r.contains("inputSchema"));
+        assert!(r.contains("find_elements") && r.contains("render_settings") && r.contains("get_performance") && r.contains("get_cost") && r.contains("inputSchema"));
         let r = post(r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_selection","arguments":{}}}"#, &token);
         assert!(r.contains("get_selection") && r.contains("\"isError\":false"), "{r}");
         let r = post(r#"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#, "wrong");

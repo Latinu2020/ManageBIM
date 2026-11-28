@@ -128,7 +128,7 @@ pub fn geo_qty(m: &Model, e: &Element) -> GeoQty {
     let (mut vol, mut surf, mut plan) = (0.0f64, 0.0f64, 0.0f64);
     // volume through tetrahedra with the apex at the element centre (numerically stable relative to the scene origin)
     let c = e.aabb.center().as_dvec3();
-    for tri in t.chunks_exact(3) {
+    for tri in t.as_chunks::<3>().0 {
         let (a, b, d) = (tri[0].as_dvec3() - c, tri[1].as_dvec3() - c, tri[2].as_dvec3() - c);
         vol += a.dot(b.cross(d)) / 6.0;
         let n = (b - a).cross(d - a);

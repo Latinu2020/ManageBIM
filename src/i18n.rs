@@ -285,4 +285,11 @@ pub const PAIRS: &[(&str, &str)] = &[
     ("Right", "Dreapta"),
     ("Top", "Sus"),
     ("Bottom", "Jos"),
+    // ---- close confirmation and notifications
+    ("Close ManageBIM?", "Închizi ManageBIM?"),
+    ("Do you want to close the application?", "Vrei să închizi aplicația?"),
+    ("The project is saved only if you choose Save and close (autosave keeps a recovery copy).", "Proiectul se salvează doar dacă alegi Salvează și închide (autosalvarea păstrează o copie de recuperare)."),
+    ("💾 Save and close", "💾 Salvează și închide"),
+    ("Close without saving", "Închide fără salvare"),
+    ("Cancel", "Anulează"),
 ];

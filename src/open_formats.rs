@@ -278,7 +278,7 @@ pub(crate) fn poly_tris(outer: &[DVec3], holes: &[Vec<DVec3>]) -> Vec<[DVec3; 3]
         }
     }
     if let Ok(idx) = earcutr::earcut(&flat, &hole_idx, 2) {
-        for t in idx.chunks_exact(3) {
+        for t in idx.as_chunks::<3>().0 {
             out.push([all[t[0]], all[t[1]], all[t[2]]]);
         }
     }

@@ -617,6 +617,34 @@ impl App {
                 }
                 Err(e) => self.error(e),
             },
+            Purpose::ImportPriceCatalog => match crate::cost::PriceCatalog::load(&path) {
+                Ok(c) => {
+                    let (n, name) = (c.items.len(), c.name.clone());
+                    self.cost.catalog = Some(c);
+                    self.qto_update();
+                    if let Some(r) = &self.qto_result {
+                        self.cost.column = crate::cost::default_column(r);
+                    }
+                    self.toast(format!("Price catalog loaded: {name} ({n} items)"));
+                    self.open_panel(Panel::Quantities);
+                }
+                Err(e) => self.error(e),
+            },
+            Purpose::ExportCostXlsx | Purpose::ExportCostCsv => {
+                let Some(p) = self.cost_update() else {
+                    return self.error("Load a price catalog first (Quantities › 5D cost).");
+                };
+                let title = self.project_path.as_deref().map(crate::file_name).unwrap_or_else(|| "ManageBIM".into());
+                let (p2, bytes) = if purpose == Purpose::ExportCostXlsx {
+                    (with_ext(&path, "xlsx"), p.to_xlsx(&title))
+                } else {
+                    (with_ext(&path, "csv"), p.to_csv().into_bytes())
+                };
+                match std::fs::write(&p2, bytes) {
+                    Ok(()) => self.toast(format!("Cost report saved ({} groups): {}", p.rows.len(), crate::file_name(&p2))),
+                    Err(e) => self.error(format!("Cannot write the file: {e}")),
+                }
+            }
         }
     }
 
@@ -743,6 +771,9 @@ Purpose::ExportPathTrace => d.set_title("Export path trace").add_filter("PNG ima
                     d.set_title("Save quantification template").add_filter("ManageBIM quantification template", &["bimqto"]).set_file_name(name).save_file().map(|p| vec![p.to_string_lossy().to_string()])
                 }
                 Purpose::ImportQtoTemplate => d.set_title("Open quantification template").add_filter("ManageBIM quantification template", &["bimqto", "json"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ImportPriceCatalog => d.set_title("Open price catalog").add_filter("Price catalog (Excel / CSV)", &["xlsx", "csv", "txt"]).pick_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportCostXlsx => d.set_title("Export 5D cost (Excel)").add_filter("Excel workbook", &["xlsx"]).set_file_name("cost.xlsx").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
+                Purpose::ExportCostCsv => d.set_title("Export 5D cost (CSV)").add_filter("CSV", &["csv"]).set_file_name("cost.csv").save_file().map(|p| vec![p.to_string_lossy().to_string()]),
                 Purpose::ExportCache(slot) => {
                     let name = self.models.get(slot).and_then(|m| m.as_ref()).map(|m| format!("{}.bimc", m.name)).unwrap_or_else(|| "model.bimc".into());
                     d.set_title("Export ManageBIM cache").add_filter("ManageBIM cache", &["bimc"]).set_file_name(name).save_file().map(|p| vec![p.to_string_lossy().to_string()])
@@ -820,6 +851,9 @@ Purpose::ExportPathTrace => "pathtrace.png".into(),
                 Purpose::ExportQtoXlsx => "quantities.xlsx".into(),
                 Purpose::ExportQtoCsv => "quantities.csv".into(),
                 Purpose::ExportQtoTemplate => "quantities.bimqto".into(),
+                Purpose::ImportPriceCatalog => "prices.csv".into(),
+                Purpose::ExportCostXlsx => "cost.xlsx".into(),
+                Purpose::ExportCostCsv => "cost.csv".into(),
                 Purpose::ExportCache(slot) => self.models.get(slot).and_then(|m| m.as_ref()).map(|m| crate::bimc::cache_path(&m.path)).unwrap_or_default(),
                 _ => String::new(),
             };

@@ -84,14 +84,14 @@ pub fn deviation(ma: &Model, ea: &Element, mb: &Model, eb: &Element) -> ElemDev 
     let (ta, tb) = (ma.tris(ea), mb.tris(eb));
     let cap = 1000.0;
     let mut tri = Vec::with_capacity(tb.len() / 3);
-    for t in tb.chunks_exact(3) {
+    for t in tb.as_chunks::<3>().0 {
         let d = t.iter().map(|p| ea.bvh.nearest(ta, *p, cap)).fold(0.0f32, f32::max);
         tri.push(d);
     }
     // the reverse direction: the vertices of A that no longer have a surface in B (part cut / moved)
     let mut back = 0.0f32;
     let step = (ta.len() / 3 / 20_000).max(1);
-    for t in ta.chunks_exact(3).step_by(step) {
+    for t in ta.as_chunks::<3>().0.iter().step_by(step) {
         for p in t {
             back = back.max(eb.bvh.nearest(tb, *p, cap));
         }

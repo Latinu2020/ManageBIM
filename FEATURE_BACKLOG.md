@@ -8,12 +8,10 @@ open**; there is no need to re-read thousands of lines of old notes.
 
 | Item | Why | Status |
 |---|---|---|
-| **C1 — Instancing + occlusion culling in the viewport** | Repeated elements (columns, bolts) are still drawn one by one; large models such as the 500k-triangle HVAC sample need culling on AABB / hierarchy and an FPS counter is already in the status bar. | open |
+| **C1 — Instancing + occlusion culling in the viewport** | Repeated elements (columns, bolts) are still drawn one by one; the renderer already does frustum culling + adaptive LOD, and `get_performance` now reports drawn / total triangles and cull reasons so a change can be measured. | open |
 | **C2 — Progressive IFC import (progress + cancel)** | Loading already runs in the background, but there is no progress bar or cancel button; a big model looks frozen. | open |
-| **Clippy baseline 33 → 0** | Only `chunks_exact` → `as_chunks` suggestions from Rust 1.88 remain; the toolchain here is 1.100, so they can be fixed and the baseline lowered. | in progress |
-| **Scheduled headless checks through MCP** | Run IDS / clash / model checks on a newly delivered model from CI or a scheduler, using the MCP server that already exists. | idea |
-| **BCF live sync (server, not just file)** | BCF export/import exists; synchronising issues and comments with a BCF server does not. | idea |
 | **Property write-back to the host applications** | Voids and levels already go back to Revit/Navisworks; writing arbitrary user properties back (by GUID) does not. | idea |
+| **BCF live sync (server, not just file)** | BCF export/import exists; synchronising issues and comments with a BCF server does not. | not planned for 0.29.5 |
 
 ## Already shipped (kept here only as an index)
 
@@ -21,7 +19,10 @@ open**; there is no need to re-read thousands of lines of old notes.
   export (PDF / HTML / Excel / BCF), shareable `.mbprofile`.
 - **BIM**: space checks (Headroom / Egress), OpenPBR parameters + MaterialX XML subset, IBL/HDRI and
   GGX with up to four bounces, bSDD + IDS + IFC + MVD, the local MCP server (with `render_settings`,
-  `get_render_status`, `capture_view(live: true)`), rotation circles as light paths.
+  `get_render_status`, `capture_view(live: true)`, `get_performance`, `run_check`, `get_log` and the
+  5D tools), rotation circles as light paths.
+- **Checks / 5D**: quick quality checks and IDS rules in the GUI and in headless `--check` runs;
+  Excel / CSV price catalog, priced take-off and budget vs. actual.
 - **Interface**: full ribbon labels, Phosphor vector icons, EN/RO interface, no overlapping level
   labels or duplicate ribbon commands, remembered floating windows, consistent panels.
 - **Coordination**: voids approved in ManageBIM are cut into host walls in Revit; coordination objects

@@ -49,6 +49,9 @@ if (-not $SkipInstaller) {
 Step 'interactive Ray Trace smoke test'
 Run 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'tools\test-raytrace.ps1', '-Out', (Join-Path $env:TEMP 'bim-verify-raytrace'))
 
+Step 'MCP test tools + 5D cost smoke test'
+Run 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'tools\test-mcp.ps1', '-Out', (Join-Path $env:TEMP 'bim-verify-mcp'))
+
 Step "SHA256 manifest for $Out"
 $files = Get-ChildItem $Out -Filter "ManageBIM-Setup-$version.exe" -ErrorAction SilentlyContinue
 if ($files) {

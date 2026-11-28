@@ -231,8 +231,8 @@ fn decode(kind: Kind, bytes: &[u8], count: usize) -> Vec<f64> {
         Kind::Int { bits, .. } => count.min(bytes.len().saturating_mul(8) / bits as usize),
     };
     match kind {
-        Kind::F32 => bytes.chunks_exact(4).take(count).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]) as f64).collect(),
-        Kind::F64 => bytes.chunks_exact(8).take(count).map(|c| f64::from_le_bytes(c.try_into().unwrap())).collect(),
+        Kind::F32 => bytes.as_chunks::<4>().0.iter().take(count).map(|c| f32::from_le_bytes(*c) as f64).collect(),
+        Kind::F64 => bytes.as_chunks::<8>().0.iter().take(count).map(|c| f64::from_le_bytes(*c)).collect(),
         Kind::Int { min, bits, scale, offset } => {
             let conv = |raw: u64| (raw as i128 + min as i128) as f64 * scale + offset;
             if bits == 0 {

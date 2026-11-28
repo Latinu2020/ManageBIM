@@ -587,6 +587,7 @@ impl App {
         let min_px = if self.settings.no_lod { 0.0 } else if moving { self.lod_px } else { 0.6 };
         let eye = c.eye();
         let mut out = HashMap::new();
+        let mut st = crate::render::DrawStats::default();
         let slots: Vec<usize> = self.loaded_models().map(|(i, _)| i).collect();
         for slot in slots {
             let Some(model) = self.models[slot].clone() else { continue };
@@ -606,19 +607,24 @@ impl App {
                 _ => v.push((first, count)),
             };
             for (ei, e) in model.elements.iter().enumerate() {
+                st.elements += 1;
+                st.triangles += e.tri_count as u64;
                 if e.tri_count == 0 {
                     continue;
                 }
                 let look = looks.and_then(|l| l.get(ei));
                 if look.map(|l| l.hidden).unwrap_or(false) {
+                    st.hidden += 1;
                     continue;
                 }
                 let bb = &e.aabb;
                 if !bb.is_valid() || !inside(bb) {
+                    st.culled_frustum += 1;
                     continue;
                 }
                 if let Some(sb) = &section_box {
                     if !bb.overlaps(sb, 0.0) {
+                        st.culled_section += 1;
                         continue;
                     }
                 }
@@ -626,9 +632,12 @@ impl App {
                     let r = bb.size().length() * 0.5;
                     let px = if c.ortho { r / c.ortho_half().max(1e-3) * vp_h * 0.5 } else { r / ((bb.center() - eye).length().max(1e-3) * tanh) * vp_h * 0.5 };
                     if px < min_px {
+                        st.culled_lod += 1;
                         continue;
                     }
                 }
+                st.elements_drawn += 1;
+                st.triangles_drawn += e.tri_count as u64;
                 let (first, count) = (e.tri_start as i32 * 3, e.tri_count as i32 * 3);
                 push(&mut all, first, count);
                 let t = match look.and_then(|l| l.col) {
@@ -654,6 +663,7 @@ impl App {
                     gap *= 4;
                 }
             }
+            st.ranges += (all.len() + transp.len()) as u64;
             // point cloud: the visible scans, the first N% of the points (shuffled on reading); fewer while moving
             let mut points = Vec::new();
             if let Some(cl) = &model.cloud {
@@ -675,14 +685,17 @@ impl App {
                             continue;
                         }
                     }
+                    st.points += n as u64;
                     let k = ((n as f32 * dens).ceil() as i32).clamp(0, n as i32);
                     if k > 0 {
+                        st.points_drawn += k as u64;
                         points.push((start as i32, k));
                     }
                 }
             }
             out.insert(slot as u32, crate::render::DrawList { all, transp, points });
         }
+        self.perf = st;
         out
     }
 

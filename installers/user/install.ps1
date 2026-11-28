@@ -26,7 +26,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 # stamped by tools\make-setup.ps1 from Cargo.toml (the wizard and Settings > Apps show it)
-$version = '0.29.2'
+$version = '0.29.5'
 
 # --- locatii (redirectionate in modul test)
 if ($TestRoot) {

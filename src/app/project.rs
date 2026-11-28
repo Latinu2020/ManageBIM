@@ -647,6 +647,7 @@ impl App {
             walk_path: self.walk_path.iter().map(|p| p.to_array()).collect(),
             profile: if self.profile.rules.is_empty() { None } else { Some(self.profile.clone()) },
             qto: Some(self.qto.clone()),
+            cost: if self.cost.catalog.is_some() { Some(self.cost.clone()) } else { None },
             check_rules: self.check_rules.clone(),
             user_params: self.user_params.clone(),
             title_block: Some(self.title_block.clone()),
@@ -833,6 +834,7 @@ impl App {
         self.profile = pf.profile.unwrap_or_default();
         self.profile_map = None;
         self.qto = pf.qto.unwrap_or_default();
+        self.cost = pf.cost.unwrap_or_default();
         self.check_rules = pf.check_rules;
         self.user_params = pf.user_params;
         // models already loaded get the parameters now (the ones coming later, at load time)
@@ -1185,11 +1187,17 @@ pub fn available_memory() -> Option<u64> {
         // SAFETY: the struct has the size and fields from the Win32 documentation (MEMORYSTATUSEX)
         (unsafe { GlobalMemoryStatusEx(&mut s) } != 0).then_some(s.avail_phys)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     {
         let s = std::fs::read_to_string("/proc/meminfo").ok()?;
         let kb: u64 = s.lines().find(|l| l.starts_with("MemAvailable:"))?.split_whitespace().nth(1)?.parse().ok()?;
         Some(kb * 1024)
+    }
+    // FreeBSD and macOS have no /proc: the value stays unknown and the low-memory warning is skipped
+    // (the file is still loaded). Keeping it unknown is better than a wrong number.
+    #[cfg(all(not(windows), not(target_os = "linux")))]
+    {
+        None
     }
 }
 
@@ -1197,8 +1205,13 @@ pub fn available_memory() -> Option<u64> {
 mod memory_tests {
     #[test]
     fn free_memory_is_known_and_estimates_scale() {
-        let free = super::available_memory().expect("free memory");
-        assert!(free > 64 * 1024 * 1024, "{free}");
+        // Windows and Linux report the free memory; FreeBSD / macOS have no /proc, so the value is
+        // unknown there and the low-memory warning is skipped (the FreeBSD CI used to panic here).
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            let free = super::available_memory().expect("free memory");
+            assert!(free > 64 * 1024 * 1024, "{free}");
+        }
         assert_eq!(super::estimated_memory("a.IFC", 100), 400);
         assert_eq!(super::estimated_memory("a.bimc", 100), 200);
         assert_eq!(super::estimated_memory("a.dwg", 100), 600);

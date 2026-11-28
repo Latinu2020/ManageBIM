@@ -457,7 +457,7 @@ impl App {
         // the image cleaned by OIDN, if there is one; otherwise the mean of the samples
         let den = if done { job.denoised.lock().ok().and_then(|d| d.clone()) } else { None };
         if let Some(img) = den {
-            for p in img.chunks_exact(3) {
+            for p in img.as_chunks::<3>().0 {
                 let c = crate::pathtrace::to_srgb([p[0], p[1], p[2]]);
                 pixels.extend_from_slice(&[c[0], c[1], c[2], 255]);
             }
@@ -467,7 +467,7 @@ impl App {
                 return;
             };
             let n = count as f32;
-            for p in buf.chunks_exact(3) {
+            for p in buf.as_chunks::<3>().0 {
                 let c = crate::pathtrace::to_srgb([p[0] / n, p[1] / n, p[2] / n]);
                 pixels.extend_from_slice(&[c[0], c[1], c[2], 255]);
             }

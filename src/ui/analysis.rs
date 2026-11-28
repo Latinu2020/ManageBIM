@@ -269,6 +269,82 @@ impl App {
         }
         ui.separator();
 
+        // --- 5D cost: price catalog + priced take-off + budget vs. actual
+        let mut act: Option<Purpose> = None;
+        egui::CollapsingHeader::new("💰 5D cost — prices, budget and variance")
+            .default_open(self.cost.catalog.is_some())
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("📂 Price catalog…").on_hover_text("Excel / CSV with Code, Description, Unit, Unit price and (optional) Budget columns").clicked() {
+                        act = Some(Purpose::ImportPriceCatalog);
+                    }
+                    if let Some(c) = &self.cost.catalog {
+                        ui.label(RichText::new(format!("{} · {} items", c.name, c.items.len())).weak());
+                        if ui.button("📊 Excel…").on_hover_text("Priced take-off: quantity × unit price, with budget and variance").clicked() {
+                            act = Some(Purpose::ExportCostXlsx);
+                        }
+                        if ui.button("CSV…").clicked() {
+                            act = Some(Purpose::ExportCostCsv);
+                        }
+                    }
+                });
+                if self.cost.catalog.is_none() {
+                    ui.label(RichText::new("Load a price catalog to price the quantities and compare them with the budget.").weak());
+                    return;
+                }
+                let titles: Vec<String> = self.qto.columns.iter().map(|c| c.title()).collect();
+                let cur = self.cost.column.min(titles.len().saturating_sub(1));
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Quantity:");
+                    let mut pick = cur;
+                    egui::ComboBox::from_id_salt("cost_col").selected_text(titles.get(cur).cloned().unwrap_or_default()).show_ui(ui, |ui| {
+                        for (i, t) in titles.iter().enumerate() {
+                            ui.selectable_value(&mut pick, i, t);
+                        }
+                    });
+                    if pick != cur {
+                        self.cost.column = pick;
+                    }
+                });
+                if let Some(p) = self.cost_update() {
+                    let cur = p.currency.clone();
+                    let money = |v: f64| if cur.is_empty() { format!("{v:.2}") } else { format!("{v:.2} {cur}") };
+                    ui.label(RichText::new(format!(
+                        "Total {} · budget {} · variance {} · {} priced, {} without a price",
+                        money(p.amount_total),
+                        money(p.budget_total),
+                        money(p.variance_total),
+                        p.matched,
+                        p.unmatched
+                    )).strong());
+                    egui::ScrollArea::both().id_salt("cost_table").max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
+                        egui::Grid::new("cost_grid").striped(true).min_col_width(60.0).show(ui, |ui| {
+                            for h in ["Group", "Code", "Description", "Quantity", "Unit price", "Amount", "Budget", "Variance"] {
+                                ui.label(RichText::new(h).strong());
+                            }
+                            ui.end_row();
+                            for row in &p.rows {
+                                ui.label(row.keys.join(" / "));
+                                ui.label(&row.code);
+                                ui.label(&row.description);
+                                ui.label(match row.quantity {
+                                    Some(q) => format!("{q:.3} {}", row.unit),
+                                    None => "–".into(),
+                                });
+                                ui.label(row.price.map(|v| format!("{v:.2}")).unwrap_or_else(|| "–".into()));
+                                ui.label(row.amount.map(|v| format!("{v:.2}")).unwrap_or_else(|| "–".into()));
+                                ui.label(row.budget.map(|v| format!("{v:.2}")).unwrap_or_else(|| "–".into()));
+                                ui.label(row.variance.map(|v| format!("{v:+.2}")).unwrap_or_else(|| "–".into()));
+                                ui.end_row();
+                            }
+                        });
+                    });
+                }
+            });
+        if let Some(p) = act {
+            self.request_path(p);
+        }
+
         // --- the table (recalculated automatically on any change)
         self.qto_update();
         let Some(r) = &self.qto_result else { return };

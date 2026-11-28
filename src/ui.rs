@@ -106,6 +106,19 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.self_screenshot(ctx);
+        // the window X / Alt+F4 / File › Exit asks for confirmation first; the screenshot mode closes by itself
+        if std::env::var_os("MANAGEBIM_SCREENSHOT").is_none() {
+            if ctx.input(|i| i.viewport().close_requested()) {
+                if self.exit_ok {
+                    self.exit_ok = false;
+                } else {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                    self.exit_ask = true;
+                }
+            } else {
+                self.exit_ok = false;
+            }
+        }
         // the light bounces of the renders follow the setting (also for CPU renders and AI captures)
         crate::pathtrace::set_light_bounces(self.settings.light_bounces);
         let now = Instant::now();
@@ -166,6 +179,7 @@ impl eframe::App for App {
             egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| self.viewport(ui, true));
             self.tools_window(ctx);
             self.windows(ctx);
+            self.exit_dialog(ctx);
             self.toasts_ui(ctx);
             if !self.toasts.is_empty() {
                 ctx.request_repaint();
@@ -282,6 +296,7 @@ impl eframe::App for App {
         self.history_tick(pointer_down);
         self.float_windows(ctx);
         self.windows(ctx);
+        self.exit_dialog(ctx);
         self.pathtrace_window(ctx);
         self.script_window(ctx);
         self.settings_window(ctx);
@@ -580,7 +595,10 @@ impl App {
         }
         let Ok(exe) = std::env::current_exe() else { return self.error("Cannot find ManageBIM.exe to restart it.") };
         match std::process::Command::new(exe).args(&args).env(crate::softgl::ENV, if software { "1" } else { "0" }).spawn() {
-            Ok(_) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Ok(_) => {
+                self.exit_ok = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close)
+            }
             Err(e) => self.error(format!("Could not restart ManageBIM: {e}")),
         }
     }
@@ -684,7 +702,7 @@ impl App {
 
     /// Top bar, above the ribbon: search, Model focus, theme, Settings and
     /// the project name. Moved here so it does not push / overlap the tabs.
-    /// Quick lighting (top bar and navigation bar): brightness, ambient, sun, shadows. True when
+    /// Quick lighting (navigation bar): brightness, ambient, sun and shadows. True when
     /// "More lighting…" was clicked (the caller closes its popup).
     pub(super) fn quick_light_ui(&mut self, ui: &mut egui::Ui) -> bool {
         ui.set_min_width(300.0);
@@ -749,17 +767,8 @@ impl App {
                     if ui.add(chip).on_hover_text(format!("Theme: {} - click for {}", self.settings.theme.label(), nt.label())).clicked() {
                         self.set_theme(nt);
                     }
-                    // quick lighting: brightness, ambient, sun and shadows one click away
-                    let lb = ui.add(egui::Button::new("💡 Light").frame(false)).on_hover_text("Lighting of the 3D view (also used for images, videos and renders): brightness, ambient, sun, shadows");
-                    let lid = ui.make_persistent_id("quick_light");
-                    if lb.clicked() {
-                        ui.memory_mut(|m| m.toggle_popup(lid));
-                    }
-                    egui::popup_below_widget(ui, lid, &lb, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                        if self.quick_light_ui(ui) {
-                            ui.memory_mut(|m| m.close_popup());
-                        }
-                    });
+                    // the top-bar Light button was removed: the Lighting panel in the View ribbon
+                    // has the same controls (brightness, ambient, sun, shadows, lamps)
                     if ui.add(egui::Button::new("⚙ Settings").frame(false)).on_hover_text("Application settings: fonts / DPI, export, navigation, files").clicked() {
                         self.settings_open = true;
                     }
@@ -767,11 +776,16 @@ impl App {
                     if ui.add(sb).on_hover_text("Command palette: type a command or an element name").clicked() {
                         self.palette_open = true;
                     }
-                    ui.label(RichText::new("ManageBIM").strong().color(accent()));
+                    // right-to-left layout: what is added last sits furthest left. A spacer after
+                    // the search field pulls the title block towards the left of the window.
+                    ui.add_space(24.0);
                     if let Some(p) = &self.project_path {
-                        ui.add_space(4.0);
-                        ui.label(RichText::new(crate::file_name(p)).weak());
+                        ui.label(RichText::new(crate::file_name(p)).weak().size(11.5));
+                        ui.add_space(8.0);
                     }
+                    ui.label(RichText::new(format!("v{}", env!("CARGO_PKG_VERSION"))).small().weak());
+                    ui.add_space(6.0);
+                    ui.label(RichText::new("ManageBIM").strong().size(17.0).color(accent()));
                 });
             });
     }
@@ -1171,6 +1185,9 @@ impl App {
                 Purpose::ExportQtoCsv => "Export Quantities (CSV)",
                 Purpose::ExportQtoTemplate => "Save Quantification Template",
                 Purpose::ImportQtoTemplate => "Open Quantification Template",
+                Purpose::ImportPriceCatalog => "Open Price Catalog",
+                Purpose::ExportCostXlsx => "Export 5D Cost (Excel)",
+                Purpose::ExportCostCsv => "Export 5D Cost (CSV)",
             };
             egui::Window::new(title).collapsible(false).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
                 ui.label("File path:");
@@ -1509,6 +1526,54 @@ impl App {
         }
     }
 
+    /// The question shown when the window is closed (X, Alt+F4 or File › Exit).
+    fn exit_dialog(&mut self, ctx: &egui::Context) {
+        if !self.exit_ask {
+            return;
+        }
+        let mut save = false;
+        let mut close = false;
+        let mut cancel = false;
+        egui::Window::new(crate::i18n::tr("Close ManageBIM?"))
+            .id(egui::Id::new("exit_ask"))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.set_max_width(400.0);
+                ui.label(crate::i18n::tr("Do you want to close the application?"));
+                ui.label(RichText::new(crate::i18n::tr("The project is saved only if you choose Save and close (autosave keeps a recovery copy).")).weak());
+                ui.add_space(8.0);
+                ui.horizontal_wrapped(|ui| {
+                    let has = self.project_path.is_some() || self.bimd_path.is_some();
+                    if ui.add_enabled(has, egui::Button::new(crate::i18n::tr("💾 Save and close"))).clicked() {
+                        save = true;
+                    }
+                    if ui.button(crate::i18n::tr("Close without saving")).clicked() {
+                        close = true;
+                    }
+                    if ui.button(crate::i18n::tr("Cancel")).clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            cancel = true;
+        }
+        if cancel {
+            self.exit_ask = false;
+        }
+        if save {
+            self.save_now();
+            close = true;
+        }
+        if close {
+            self.exit_ask = false;
+            self.exit_ok = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
     fn toasts_ui(&mut self, ctx: &egui::Context) {
         self.toasts.retain(|t| t.1.elapsed().as_secs_f32() < 6.0);
         if self.toasts.is_empty() {
@@ -1528,15 +1593,16 @@ impl App {
                 .multiply_with_opacity(a)
                 .show(ui, |ui| {
                     ui.set_max_width(440.0);
-                    ui.horizontal(|ui| {
+                    ui.horizontal_top(|ui| {
                         let (ic, col) = if err { ("⚠", Color32::from_rgb(255, 170, 160)) } else { ("✔", Color32::from_rgb(120, 220, 150)) };
                         ui.label(RichText::new(crate::theme::ph(ic)).font(crate::theme::icon_font(15.0)).color(col));
-                        ui.label(RichText::new(&m).color(Color32::WHITE));
-                        if total > 1 {
-                            egui::Frame::none().fill(Color32::from_rgba_unmultiplied(59, 130, 246, 70)).rounding(6.0).inner_margin(egui::Margin::symmetric(6.0, 1.0)).show(ui, |ui| {
-                                ui.label(RichText::new(format!("+{}", total - 1)).small().color(Color32::from_rgb(190, 215, 255)));
-                            });
-                        }
+                        ui.vertical(|ui| {
+                            // the message wraps on as many lines as it needs (long paths / errors)
+                            ui.add_sized([380.0, 0.0], egui::Label::new(RichText::new(&m).color(Color32::WHITE)).wrap());
+                            if total > 1 {
+                                ui.label(RichText::new(format!("+{} more", total - 1)).small().color(Color32::from_rgb(190, 215, 255)));
+                            }
+                        });
                     });
                 });
         });

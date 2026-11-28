@@ -453,7 +453,7 @@ fn mesh_tris(p: &Prim, m: &DMat4) -> Vec<[DVec3; 3]> {
     let tf = |q: DVec3| m.transform_point3(q);
     match p.ty.as_str() {
         "Mesh" => {
-            let pts: Vec<DVec3> = get(p, "points").map(|v| v.nums()).unwrap_or_default().chunks_exact(3).map(|c| DVec3::new(c[0], c[1], c[2])).collect();
+            let pts: Vec<DVec3> = get(p, "points").map(|v| v.nums()).unwrap_or_default().as_chunks::<3>().0.iter().map(|c| DVec3::new(c[0], c[1], c[2])).collect();
             let counts: Vec<usize> = get(p, "faceVertexCounts").map(|v| v.nums()).unwrap_or_default().iter().map(|x| *x as usize).collect();
             let idx: Vec<usize> = get(p, "faceVertexIndices").map(|v| v.nums()).unwrap_or_default().iter().map(|x| *x as usize).collect();
             let left = get(p, "orientation").map(|v| v.text() == "leftHanded").unwrap_or(false);

@@ -17,8 +17,9 @@ n=$(grep -cE '^[^ ]+\.rs:[0-9]+:[0-9]+: warning' clippy.log || true)
 errs=$(grep -cE '^[^ ]+\.rs:[0-9]+:[0-9]+: error' clippy.log || true)
 baseline=$(tr -dc '0-9' < packaging/ci/clippy-baseline.txt)
 echo "clippy: exit $code, $n warnings (baseline $baseline), $errs errors"
-# clippy n-a rulat pana la capat (dependinte, build script): ultimele randuri ca adnotari, nu "0 avertismente"
-if [ "$code" -ne 0 ] || [ "$n" -eq 0 ]; then
+# clippy must have reached the end ("Finished"). Zero warnings is a valid result once the baseline is 0,
+# so it can no longer be used as the "did not run" signal (that made the job fail without a real problem).
+if [ "$code" -ne 0 ] || ! grep -q 'Finished' clippy.log; then
   echo "::error::clippy did not finish (exit $code) - last lines of its output follow"
   tail -n 15 clippy.log | sed 's/^/::warning::clippy: /'
   fail=1

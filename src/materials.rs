@@ -314,8 +314,8 @@ pub fn decode_file(path: &str) -> Result<(u32, u32, Vec<u8>), String> {
         let px = &buf[..info.buffer_size()];
         let rgba: Vec<u8> = match info.color_type {
             png::ColorType::Rgba => px.to_vec(),
-            png::ColorType::Rgb => px.chunks_exact(3).flat_map(|c| [c[0], c[1], c[2], 255]).collect(),
-            png::ColorType::GrayscaleAlpha => px.chunks_exact(2).flat_map(|c| [c[0], c[0], c[0], c[1]]).collect(),
+            png::ColorType::Rgb => px.as_chunks::<3>().0.iter().flat_map(|c| [c[0], c[1], c[2], 255]).collect(),
+            png::ColorType::GrayscaleAlpha => px.as_chunks::<2>().0.iter().flat_map(|c| [c[0], c[0], c[0], c[1]]).collect(),
             _ => px.iter().flat_map(|g| [*g, *g, *g, 255]).collect(),
         };
         (info.width, info.height, rgba)
@@ -324,9 +324,9 @@ pub fn decode_file(path: &str) -> Result<(u32, u32, Vec<u8>), String> {
         let px = dec.decode().map_err(|e| format!("JPEG: {e}"))?;
         let info = dec.info().ok_or("JPEG without header")?;
         let rgba: Vec<u8> = match info.pixel_format {
-            jpeg_decoder::PixelFormat::RGB24 => px.chunks_exact(3).flat_map(|c| [c[0], c[1], c[2], 255]).collect(),
+            jpeg_decoder::PixelFormat::RGB24 => px.as_chunks::<3>().0.iter().flat_map(|c| [c[0], c[1], c[2], 255]).collect(),
             jpeg_decoder::PixelFormat::L8 => px.iter().flat_map(|g| [*g, *g, *g, 255]).collect(),
-            jpeg_decoder::PixelFormat::CMYK32 => px.chunks_exact(4).flat_map(|c| {
+            jpeg_decoder::PixelFormat::CMYK32 => px.as_chunks::<4>().0.iter().flat_map(|c| {
                 let k = 255 - c[3] as u32;
                 [((255 - c[0] as u32) * k / 255) as u8, ((255 - c[1] as u32) * k / 255) as u8, ((255 - c[2] as u32) * k / 255) as u8, 255]
             }).collect(),
@@ -572,7 +572,7 @@ fn avg(rgba: &[u8], ch: usize) -> f32 {
     if n == 0 {
         return 0.0;
     }
-    rgba.chunks_exact(4).map(|p| p[ch] as f64).sum::<f64>() as f32 / n as f32
+    rgba.as_chunks::<4>().0.iter().map(|p| p[ch] as f64).sum::<f64>() as f32 / n as f32
 }
 
 /// Imports a PBR pack (downloaded .zip archive or the unzipped folder) into the user library:

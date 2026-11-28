@@ -117,9 +117,22 @@ impl App {
         QtoResult { setup: setup.clone(), rows, totals, missing, count: ids.len(), units }
     }
 
+    // ------------------------------------------------------------------ 5D cost
+    /// The priced take-off for the current quantities and price catalog.
+    pub fn cost_compute(&self) -> Option<crate::cost::PricedQto> {
+        let cat = self.cost.catalog.as_ref()?;
+        let r = self.qto_result.as_ref()?;
+        Some(crate::cost::price(r, cat, self.cost.column))
+    }
+
+    /// Recomputes the quantities if needed and returns the priced take-off.
+    pub fn cost_update(&mut self) -> Option<crate::cost::PricedQto> {
+        self.qto_update();
+        self.cost_compute()
+    }
+
     /// (model, name, IFC type, level, GlobalId) for the detailed sheet in Excel
-    pub fn qto_item_info(&self, id: ElemId) -> [String; 5] {
-        match self.elem(id) {
+    pub fn qto_item_info(&self, id: ElemId) -> [String; 5] {        match self.elem(id) {
             Some((m, e)) => [m.name.clone(), e.name.clone(), e.ifc_type.clone(), e.storey.clone(), e.guid.clone()],
             None => Default::default(),
         }

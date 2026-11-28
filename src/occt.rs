@@ -255,7 +255,7 @@ pub fn brep_from_desc(ints: &[i32], reals: &[f64], q: MeshQuality) -> Result<Bre
                 if nt > 0 && !xp.is_null() {
                     let xyz = unsafe { std::slice::from_raw_parts(xp, nt * 9) };
                     out.tris = xyz
-                        .chunks_exact(9)
+                        .as_chunks::<9>().0.iter()
                         .map(|v| [DVec3::new(v[0], v[1], v[2]), DVec3::new(v[3], v[4], v[5]), DVec3::new(v[6], v[7], v[8])])
                         .filter(|t| t.iter().all(|p| p.is_finite()))
                         .collect();

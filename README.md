@@ -90,6 +90,14 @@ ManageBIM is a native desktop application for reviewing and coordinating federat
 
 ## What's new in 0.29
 
+**0.29.5** (local build, not published)
+- **Headless model checks for CI**: `ManageBIM --check model.ifc [more] [--ids spec.ids] [--out report.json]` runs the quick checks and the IDS rules without a window or a graphics card; the JSON report contains every failure and the process exits 0 (pass), 1 (failures) or 2 (load / IDS error).
+- **5D cost**: load a price catalog from Excel / CSV (code, description, unit, unit price, optional budget), price the quantities, compare budget with actual, and export the result to Excel or CSV. The catalog and the chosen quantity column are saved in the project.
+- **MCP for testing**: new tools `get_performance`, `set_performance`, `run_check`, `get_log`, `load_price_catalog`, `get_cost` and `export_cost` - an assistant can now measure what was drawn, run the checks, read the errors and verify 5D numbers through the same connection used for `capture_view`.
+- **Performance measurement (C1)**: `get_performance` reports FPS, elements / triangles total vs. drawn, hidden and frustum / section / LOD culled counts, draw calls and point-cloud points; the viewport already culls by frustum and uses adaptive LOD.
+- **Notifications and exit**: toasts wrap on several lines instead of one, and closing the window (X, Alt+F4 or File › Exit) asks for confirmation, with save-and-close / close-without-saving / cancel.
+- **Code quality / CI**: clippy baseline lowered from 33 to 0 (`as_chunks`, Rust 1.88+), `quality.sh` accepts a zero-warning baseline, and the FreeBSD memory test no longer assumes `/proc/meminfo` exists.
+
 **0.29.2**
 - **Interactive Ray Trace fixes**: no black rectangle at startup, no flicker between half and full resolution, and the path-traced image stays on screen while it refines instead of switching back to the raster view between samples.
 - **Stability**: damaged HDR headers can no longer request gigabytes or panic the RLE decoder, damaged LAZ headers are capped, OpenGL resources are freed on failed allocations, and incomplete render targets are never reused.

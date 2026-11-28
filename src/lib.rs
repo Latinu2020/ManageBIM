@@ -26,6 +26,7 @@ pub mod bsdd;
 pub mod hlr;
 pub mod update;
 pub mod coord_objects;
+pub mod cost;
 pub mod pro_materials;
 pub mod hdri;
 pub mod materialx;

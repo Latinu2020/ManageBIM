@@ -111,7 +111,7 @@ fn write_element(body: &mut W, st: &mut Strings, e: &RawElement, sc: &mut ElemSc
         prev = *v;
     }
     let mut pa = 0i64;
-    for t in sc.idx.chunks_exact(3) {
+    for t in sc.idx.as_chunks::<3>().0 {
         let a = t[0] as i64;
         body.i(a - pa);
         body.i(t[1] as i64 - a);
@@ -170,7 +170,7 @@ fn write_geometry(body: &mut W, verts: &[[i64; 3]], idx: &[u32]) {
         prev = *v;
     }
     let mut pa = 0i64;
-    for t in idx.chunks_exact(3) {
+    for t in idx.as_chunks::<3>().0 {
         let a = t[0] as i64;
         body.i(a - pa);
         body.i(t[1] as i64 - a);
@@ -420,7 +420,7 @@ fn read_element_v3(r: &mut R, strs: &[String], lim: usize, shared: &mut Vec<(Vec
             let q = v.get(k as usize).ok_or("Bad vertex index")?;
             Ok(DVec3::new((q[0] + d[0]) as f64 / Q, (q[1] + d[1]) as f64 / Q, (q[2] + d[2]) as f64 / Q))
         };
-        idx.chunks_exact(3).map(|t| Ok([p(t[0])?, p(t[1])?, p(t[2])?])).collect()
+        idx.as_chunks::<3>().0.iter().map(|t| Ok([p(t[0])?, p(t[1])?, p(t[2])?])).collect()
     };
     let tris = match tag {
         0 | 2 => {
@@ -715,7 +715,7 @@ pub fn from_model(m: &Model, origin: DVec3) -> RawModel {
         .iter()
         .map(|e| {
             let t = m.tris(e);
-            let tris = t.chunks_exact(3).map(|c| [c[0].as_dvec3() + origin, c[1].as_dvec3() + origin, c[2].as_dvec3() + origin]).collect();
+            let tris = t.as_chunks::<3>().0.iter().map(|c| [c[0].as_dvec3() + origin, c[1].as_dvec3() + origin, c[2].as_dvec3() + origin]).collect();
             let colors = m.tri_color[e.tri_start as usize..(e.tri_start + e.tri_count) as usize].to_vec();
             RawElement {
                 name: e.name.clone(),

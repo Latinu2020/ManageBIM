@@ -593,7 +593,7 @@ impl GpuPt {
                     let color: Vec<f32> = col.iter().map(|v| v / n).collect();
                     let mut albedo = Vec::with_capacity(color.len());
                     let mut normal = Vec::with_capacity(color.len());
-                    for x in aux.chunks_exact(6) {
+                    for x in aux.as_chunks::<6>().0 {
                         albedo.extend_from_slice(&[(x[0] / n).clamp(0.0, 1.0), (x[1] / n).clamp(0.0, 1.0), (x[2] / n).clamp(0.0, 1.0)]);
                         normal.extend_from_slice(&[x[3] / n, x[4] / n, x[5] / n]);
                     }

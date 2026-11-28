@@ -1,7 +1,9 @@
 [package]
 name = "bimrust"
-version = "0.29.2"
+version = "0.29.5"
 edition = "2021"
+# as_chunks / as_chunks_mut (used in the mesh and pixel loops) need Rust 1.88
+rust-version = "1.88"
 license = "MIT"
 description = "BimRust - vizualizare si coordonare modele BIM (IFC / glTF)"
 

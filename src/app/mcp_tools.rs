@@ -257,6 +257,157 @@ impl App {
                     "gpu_error": r.gpu_live.error.clone(),
                 }))
             }
+            "get_performance" => {
+                let r = self.renderer.lock().unwrap_or_else(|e| e.into_inner());
+                Ok(json!({
+                    "fps": (self.fps * 10.0).round() / 10.0,
+                    "moving": self.lod_moving(),
+                    "lod_px": self.lod_px,
+                    "full_detail": self.settings.no_lod,
+                    "cloud_density": self.cloud.density,
+                    "draw": self.perf,
+                    "loads": self.loads.iter().map(|l| json!({
+                        "slot": l.slot,
+                        "model": crate::file_name(&l.path),
+                        "progress": (l.progress * 1000.0).round() / 1000.0,
+                        "stage": l.stage,
+                    })).collect::<Vec<_>>(),
+                    "gpu_error": r.error.clone(),
+                }))
+            }
+            "set_performance" => {
+                if let Some(on) = args.get("full_detail").and_then(|v| v.as_bool()) {
+                    self.settings.no_lod = on;
+                    self.settings.save();
+                }
+                if let Some(v) = args.get("lod_px").and_then(|v| v.as_f64()) {
+                    self.lod_px = (v as f32).clamp(0.5, 48.0);
+                }
+                if let Some(v) = args.get("cloud_density").and_then(|v| v.as_f64()) {
+                    self.cloud.density = (v as f32).clamp(0.01, 1.0);
+                }
+                Ok(json!({
+                    "full_detail": self.settings.no_lod,
+                    "lod_px": self.lod_px,
+                    "cloud_density": self.cloud.density,
+                }))
+            }
+            "run_check" => {
+                let mode = args.get("mode").and_then(|v| v.as_str()).unwrap_or("quick");
+                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50).clamp(1, 500) as usize;
+                let mut out = json!({});
+                if mode != "rules" {
+                    self.run_quick_checks();
+                    let checks: Vec<Value> = self.quick_checks.iter().map(|c| json!({
+                        "name": c.name,
+                        "about": c.about,
+                        "checked": c.result.checked,
+                        "failed": c.result.failed.len(),
+                        "failures": c.result.failed.iter().take(limit).map(|(id, why)| json!({
+                            "id": fmt_id(*id),
+                            "element": self.elem(*id).map(|(_, e)| e.name.clone()).unwrap_or_default(),
+                            "reason": why,
+                        })).collect::<Vec<_>>(),
+                    })).collect();
+                    out["quick"] = json!(checks);
+                }
+                if mode != "quick" {
+                    if self.check_rules.is_empty() {
+                        out["rules_error"] = json!("No rules loaded - import an IDS file or load the starter rules first.");
+                    } else {
+                        self.run_check();
+                        let rules: Vec<Value> = self.check_results.as_ref().map(|res| res.iter().enumerate().map(|(i, r)| json!({
+                            "rule": self.check_rules.get(i).map(|x| x.name.clone()).unwrap_or_default(),
+                            "checked": r.checked,
+                            "failed": r.failed.len(),
+                            "failures": r.failed.iter().take(limit).map(|(id, why)| json!({
+                                "id": fmt_id(*id),
+                                "element": self.elem(*id).map(|(_, e)| e.name.clone()).unwrap_or_default(),
+                                "reason": why,
+                            })).collect::<Vec<_>>(),
+                        })).collect()).unwrap_or_default();
+                        out["rules"] = json!(rules);
+                    }
+                }
+                Ok(out)
+            }
+            "get_log" => {
+                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100).clamp(1, 1000) as usize;
+                let start = self.log.len().saturating_sub(limit);
+                let toasts: Vec<Value> = self.toasts.iter().rev().take(20).map(|(m, t, err)| json!({
+                    "message": m,
+                    "age_s": (t.elapsed().as_secs_f32() * 10.0).round() / 10.0,
+                    "error": err,
+                })).collect();
+                let r = self.renderer.lock().unwrap_or_else(|e| e.into_inner());
+                Ok(json!({
+                    "log": &self.log[start..],
+                    "toasts": toasts,
+                    "mcp_status": self.mcp.status,
+                    "gpu_error": r.error.clone(),
+                }))
+            }
+            "load_price_catalog" => {
+                let path = args.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
+                let c = crate::cost::PriceCatalog::load(path)?;
+                let (n, name) = (c.items.len(), c.name.clone());
+                self.cost.catalog = Some(c);
+                self.qto_update();
+                if let Some(r) = &self.qto_result {
+                    self.cost.column = crate::cost::default_column(r);
+                }
+                self.toast(format!("Price catalog loaded: {name} ({n} items)"));
+                Ok(json!({ "catalog": name, "items": n, "column": self.cost.column }))
+            }
+            "get_cost" => {
+                if self.cost.catalog.is_none() {
+                    return Err("No price catalog loaded - use load_price_catalog with an Excel / CSV file.".into());
+                }
+                self.qto_update();
+                if let Some(c) = args.get("column").and_then(|v| v.as_u64()) {
+                    self.cost.column = c as usize;
+                }
+                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(200).clamp(1, 2000) as usize;
+                let Some(p) = self.cost_update() else { return Err("No quantities - load a model first.".into()) };
+                let r2 = |v: f64| (v * 100.0).round() / 100.0;
+                Ok(json!({
+                    "catalog": p.catalog,
+                    "currency": p.currency,
+                    "column": p.column,
+                    "amount_total": r2(p.amount_total),
+                    "budget_total": r2(p.budget_total),
+                    "variance_total": r2(p.variance_total),
+                    "matched": p.matched,
+                    "unmatched": p.unmatched,
+                    "missing_quantity": p.missing_quantity,
+                    "rows": p.rows.iter().take(limit).map(|r| json!({
+                        "group": r.keys.join(" / "),
+                        "code": r.code,
+                        "description": r.description,
+                        "quantity": r.quantity.map(r2),
+                        "unit": r.unit,
+                        "price": r.price.map(r2),
+                        "amount": r.amount.map(r2),
+                        "budget": r.budget.map(r2),
+                        "variance": r.variance.map(r2),
+                        "matched": r.matched,
+                    })).collect::<Vec<_>>(),
+                    "truncated": p.rows.len() > limit,
+                }))
+            }
+            "export_cost" => {
+                let path = args.get("path").and_then(|v| v.as_str()).ok_or("path is required")?;
+                let fmt = args.get("format").and_then(|v| v.as_str()).map(str::to_string).unwrap_or_else(|| if path.to_lowercase().ends_with(".csv") { "csv".into() } else { "xlsx".into() });
+                let Some(p) = self.cost_update() else { return Err("Load a price catalog first.".into()) };
+                let title = self.project_path.as_deref().map(crate::file_name).unwrap_or_else(|| "ManageBIM".into());
+                let (p2, bytes) = if fmt == "csv" {
+                    (with_ext(path, "csv"), p.to_csv().into_bytes())
+                } else {
+                    (with_ext(path, "xlsx"), p.to_xlsx(&title))
+                };
+                std::fs::write(&p2, bytes).map_err(|e| format!("Cannot write {p2}: {e}"))?;
+                Ok(json!({ "path": p2, "rows": p.rows.len(), "amount_total": p.amount_total, "budget_total": p.budget_total }))
+            }
             "render_settings" => {
                 let num = |k: &str| args.get(k).and_then(|v| v.as_f64()).map(|v| v as f32);
                 if let Some(on) = args.get("ray_trace").and_then(|v| v.as_bool()) {

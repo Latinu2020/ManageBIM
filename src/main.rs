@@ -89,10 +89,155 @@ fn install_crash_log() {
     }));
 }
 
+/// Headless model checks (no window): `ManageBIM --check model.ifc [more models] [--ids spec.ids] [--out report.json]`.
+/// Exit code: 0 = every check passed, 1 = failures, 2 = usage / load / IDS error. The JSON report is written
+/// to `--out` (or printed); this is what a CI job or a scheduler reads.
+fn check_cli(args: &[String]) -> i32 {
+    // A windowed executable has no console of its own: show the progress in the console that started it.
+    #[cfg(windows)]
+    {
+        extern "system" {
+            fn AttachConsole(pid: u32) -> i32;
+        }
+        // ATTACH_PARENT_PROCESS
+        unsafe {
+            AttachConsole(0xFFFF_FFFF);
+        }
+    }
+    let (mut ids_path, mut out) = (None::<String>, None::<String>);
+    let mut models: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--check" => {}
+            "--ids" => {
+                i += 1;
+                ids_path = args.get(i).cloned();
+            }
+            "--out" => {
+                i += 1;
+                out = args.get(i).cloned();
+            }
+            a if a.starts_with("--") => {
+                eprintln!("ManageBIM --check: unknown option {a}");
+                return 2;
+            }
+            a => models.push(a.to_string()),
+        }
+        i += 1;
+    }
+    if models.is_empty() {
+        eprintln!("usage: ManageBIM --check <model> [more models] [--ids spec.ids] [--out report.json]");
+        return 2;
+    }
+    let mut loaded = Vec::new();
+    for (slot, path) in models.iter().enumerate() {
+        let t = std::time::Instant::now();
+        match bimrust::load_any(path, &|_, _| {}).map(|raw| bimrust::build_model(raw, path, glam::DVec3::ZERO)) {
+            Ok(m) => {
+                eprintln!("{path}: {} elements ({:.1} s)", m.elements.len(), t.elapsed().as_secs_f32());
+                loaded.push((slot, m));
+            }
+            Err(e) => {
+                eprintln!("{path}: {e}");
+                return 2;
+            }
+        }
+    }
+    let refs: Vec<(usize, &bimrust::model::Model)> = loaded.iter().map(|(i, m)| (*i, m)).collect();
+    let failure_json = |id: bimrust::model::ElemId, why: &str| {
+        let e = loaded.get(id.m as usize).and_then(|(_, m)| m.elements.get(id.e as usize));
+        serde_json::json!({
+            "model": id.m,
+            "element": id.e,
+            "name": e.map(|e| e.name.clone()).unwrap_or_default(),
+            "type": e.map(|e| e.ifc_type.clone()).unwrap_or_default(),
+            "level": e.map(|e| e.storey.clone()).unwrap_or_default(),
+            "guid": e.map(|e| e.guid.clone()).unwrap_or_default(),
+            "reason": why,
+        })
+    };
+    let quick = bimrust::check::quick_checks(&refs);
+    let quick_json: Vec<serde_json::Value> = quick
+        .iter()
+        .map(|c| {
+            serde_json::json!({
+                "check": c.name,
+                "about": c.about,
+                "checked": c.result.checked,
+                "failed": c.result.failed.len(),
+                "failures": c.result.failed.iter().map(|(id, why)| failure_json(*id, why)).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    let mut rules_json: Vec<serde_json::Value> = Vec::new();
+    if let Some(p) = &ids_path {
+        let txt = match std::fs::read_to_string(p) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("{p}: {e}");
+                return 2;
+            }
+        };
+        match bimrust::check::parse_ids(&txt, &bimrust::file_name(p)) {
+            Ok((rules, warn)) => {
+                if !warn.is_empty() {
+                    eprintln!("IDS warnings: {}", warn.join("; "));
+                }
+                let res = bimrust::check::run(&rules, &refs);
+                for (r, x) in rules.iter().zip(res.iter()) {
+                    rules_json.push(serde_json::json!({
+                        "rule": r.name,
+                        "source": r.source,
+                        "checked": x.checked,
+                        "failed": x.failed.len(),
+                        "failures": x.failed.iter().map(|(id, why)| failure_json(*id, why)).collect::<Vec<_>>(),
+                    }));
+                }
+            }
+            Err(e) => {
+                eprintln!("{p}: {e}");
+                return 2;
+            }
+        }
+    }
+    let failed: usize = quick.iter().map(|c| c.result.failed.len()).sum::<usize>()
+        + rules_json.iter().map(|r| r["failed"].as_u64().unwrap_or(0) as usize).sum::<usize>();
+    let report = serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "ok": failed == 0,
+        "failed": failed,
+        "models": loaded.iter().map(|(_, m)| serde_json::json!({
+            "name": m.name, "file": m.path, "elements": m.elements.len(),
+            "triangles": m.pos.len() / 3, "warnings": m.warnings,
+        })).collect::<Vec<_>>(),
+        "quick": quick_json,
+        "rules": rules_json,
+    });
+    let text = serde_json::to_string_pretty(&report).unwrap_or_default();
+    match out {
+        Some(p) => match std::fs::write(&p, text) {
+            Ok(()) => eprintln!("Report: {p}"),
+            Err(e) => {
+                eprintln!("{p}: {e}");
+                return 2;
+            }
+        },
+        None => println!("{text}"),
+    }
+    eprintln!("Model check: {} failure(s) -> {}", failed, if failed == 0 { "PASS" } else { "FAIL" });
+    if failed == 0 { 0 } else { 1 }
+}
+
 fn main() -> eframe::Result<()> {
     // MCP stdio bridge for Claude Desktop / OpenCode (no window): talks to the already running ManageBIM
     if std::env::args().nth(1).as_deref() == Some("--mcp-stdio") {
         std::process::exit(bimrust::mcp::stdio_bridge());
+    }
+    // headless model checks for CI / a scheduler (no window, no graphics card needed)
+    let all: Vec<String> = std::env::args().skip(1).collect();
+    if all.iter().any(|a| a == "--check") {
+        std::process::exit(check_cli(&all));
     }
     install_crash_log();
     let files: Vec<String> = std::env::args().skip(1).collect();

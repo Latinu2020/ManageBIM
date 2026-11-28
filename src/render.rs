@@ -35,6 +35,24 @@ pub struct DrawList {
     pub points: Vec<(i32, i32)>,
 }
 
+/// What the last frame actually drew, after the frustum / section / LOD culling. Exposed through
+/// MCP `get_performance`, so the effect of a change can be measured instead of guessed.
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub struct DrawStats {
+    pub elements: u64,
+    pub elements_drawn: u64,
+    pub triangles: u64,
+    pub triangles_drawn: u64,
+    pub hidden: u64,
+    pub culled_frustum: u64,
+    pub culled_section: u64,
+    pub culled_lod: u64,
+    /// merged vertex ranges = draw calls for the opaque + transparent pass
+    pub ranges: u64,
+    pub points: u64,
+    pub points_drawn: u64,
+}
+
 struct GpuPoints {
     vao: glow::VertexArray,
     vbo_pos: glow::Buffer,
@@ -945,7 +963,7 @@ impl Renderer {
         let (col, _) = data?;
         let n = self.gpu_off.samples.max(1) as f32;
         let mut rgba = Vec::with_capacity((w * h * 4) as usize);
-        for p in col.chunks_exact(3) {
+        for p in col.as_chunks::<3>().0 {
             let c = crate::pathtrace::to_srgb([p[0] / n, p[1] / n, p[2] / n]);
             rgba.extend_from_slice(&[c[0], c[1], c[2], 255]);
         }
@@ -958,7 +976,7 @@ impl Renderer {
         let (col, _) = self.gpu_live.read_back(gl)?;
         let n = self.gpu_live.samples.max(1) as f32;
         let mut rgba = Vec::with_capacity(col.len() / 3 * 4);
-        for p in col.chunks_exact(3) {
+        for p in col.as_chunks::<3>().0 {
             let c = crate::pathtrace::to_srgb([p[0] / n, p[1] / n, p[2] / n]);
             rgba.extend_from_slice(&[c[0], c[1], c[2], 255]);
         }
@@ -1043,7 +1061,7 @@ impl Renderer {
                 let t = y as f32 / (h - 1).max(1) as f32;
                 let bg: [f32; 3] = std::array::from_fn(|i| req.bg_top[i] as f32 * (1.0 - t) + req.bg_bottom[i] as f32 * t);
                 let dst = &mut out[y * row..(y + 1) * row];
-                for (s, d) in src.chunks_exact(4).zip(dst.chunks_exact_mut(4)) {
+                for (s, d) in src.as_chunks::<4>().0.iter().zip(dst.as_chunks_mut::<4>().0.iter_mut()) {
                     let a = s[3] as f32 / 255.0;
                     for i in 0..3 {
                         d[i] = (s[i] as f32 + bg[i] * (1.0 - a)).min(255.0) as u8;
@@ -1464,7 +1482,7 @@ fn bytes_f32(v: &[f32]) -> &[u8] {
 pub fn mesh_data(m: &Model) -> (Vec<f32>, Vec<i8>) {
     let mut pos = Vec::with_capacity(m.pos.len() * 3);
     let mut nrm = Vec::with_capacity(m.pos.len() * 4);
-    for t in m.pos.chunks_exact(3) {
+    for t in m.pos.as_chunks::<3>().0 {
         let n = (t[1] - t[0]).cross(t[2] - t[0]).normalize_or_zero();
         let q = [(n.x * 127.0) as i8, (n.y * 127.0) as i8, (n.z * 127.0) as i8, 0];
         for p in t {

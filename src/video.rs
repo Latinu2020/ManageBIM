@@ -42,7 +42,7 @@ pub struct Frame {
 impl Frame {
     pub fn rgb(&self) -> Vec<u8> {
         let mut v = Vec::with_capacity((self.w * self.h * 3) as usize);
-        for p in self.rgba.chunks_exact(4) {
+        for p in self.rgba.as_chunks::<4>().0 {
             v.extend_from_slice(&p[..3]);
         }
         v

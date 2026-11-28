@@ -94,7 +94,7 @@ pub fn load_gltf_bytes(bytes: &[u8], path: &str, progress: &dyn Fn(f32, &str), b
                     mats.push(n.to_string());
                 }
             }
-            for t in idx.chunks_exact(3) {
+            for t in idx.as_chunks::<3>().0 {
                 let (Some(a), Some(b), Some(cc)) = (pos.get(t[0] as usize), pos.get(t[1] as usize), pos.get(t[2] as usize)) else { continue };
                 if (*b - *a).cross(*cc - *a).length_squared() < 1e-18 {
                     continue;

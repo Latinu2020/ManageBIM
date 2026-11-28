@@ -174,7 +174,7 @@ pub fn png_rgb(png_data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     let px = &buf[..info.buffer_size()];
     let rgb: Vec<u8> = match info.color_type {
         png::ColorType::Rgb => px.to_vec(),
-        png::ColorType::Rgba => px.chunks_exact(4).flat_map(|c| [c[0], c[1], c[2]]).collect(),
+        png::ColorType::Rgba => px.as_chunks::<4>().0.iter().flat_map(|c| [c[0], c[1], c[2]]).collect(),
         _ => return None,
     };
     Some((rgb, info.width, info.height))
@@ -280,6 +280,9 @@ pub enum Purpose {
     ExportQtoCsv,
     ExportQtoTemplate,
     ImportQtoTemplate,
+    ImportPriceCatalog,
+    ExportCostXlsx,
+    ExportCostCsv,
 }
 
 pub struct PathPrompt {
@@ -426,8 +429,13 @@ pub struct App {
     pub pivot: Option<Vec3>,
     pub last_frame: Instant,
     pub fps: f32,
+    /// what the last frame drew after culling (Performance panel / MCP `get_performance`)
+    pub perf: crate::render::DrawStats,
     pub show_help: bool,
     pub show_about: bool,
+    /// the close confirmation (window X / Alt+F4 / File › Exit) and the "already confirmed" flag
+    pub exit_ask: bool,
+    pub exit_ok: bool,
     /// the Lighting window (View › Scene)
     pub show_light: bool,
     /// physical pixels per logical point (for the point size)
@@ -763,6 +771,8 @@ pub struct App {
     pub qto_result: Option<crate::qto::QtoResult>,
     /// the signature of the state for which the result was computed (setup + selection / hidden)
     pub qto_sig: u64,
+    /// 5D cost: the price catalog and the quantity column used for the priced take-off
+    pub cost: crate::cost::CostSetup,
     /// 4D simulation: the day shown, playback and the element states of that day
     pub sim: Sim4dState,
     /// point cloud display: density, point size and shape
@@ -847,8 +857,11 @@ impl App {
             pivot: None,
             last_frame: Instant::now(),
             fps: 0.0,
+            perf: Default::default(),
             show_help: false,
             show_about: false,
+            exit_ask: false,
+            exit_ok: false,
             show_light: false,
             ppp: 1.0,
             grid_cache: Default::default(),
@@ -1068,6 +1081,7 @@ impl App {
             qto: Default::default(),
             qto_result: None,
             qto_sig: 0,
+            cost: Default::default(),
         };
         {
             let p = &app.settings.clash_ui;
@@ -2107,7 +2121,7 @@ pub fn hatch_lines(contour: &[[f64; 4]], spacing: f64) -> Vec<[f64; 4]> {
             }
         }
         xs.sort_by(|a, b| a.total_cmp(b));
-        for w in xs.chunks_exact(2) {
+        for w in xs.as_chunks::<2>().0 {
             if w[1] - w[0] > 1e-6 {
                 let (a, b) = (xy(w[0], v), xy(w[1], v));
                 out.push([a.0, a.1, b.0, b.1]);

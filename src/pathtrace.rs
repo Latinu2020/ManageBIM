@@ -458,7 +458,7 @@ fn denoise_job(job: &PathTraceJob) -> Result<Vec<f32>, String> {
     let aux = job.aux.lock().unwrap_or_else(|e| e.into_inner());
     let mut albedo = Vec::with_capacity(color.len());
     let mut normal = Vec::with_capacity(color.len());
-    for x in aux.chunks_exact(6) {
+    for x in aux.as_chunks::<6>().0 {
         albedo.extend_from_slice(&[(x[0] / n).clamp(0.0, 1.0), (x[1] / n).clamp(0.0, 1.0), (x[2] / n).clamp(0.0, 1.0)]);
         normal.extend_from_slice(&[x[3] / n, x[4] / n, x[5] / n]);
     }
@@ -824,7 +824,7 @@ pub fn to_srgb(rgb: [f32; 3]) -> [u8; 3] {
 pub fn save_png(path: &str, buf: &[f32], count: u32, w: u32, h: u32) -> Result<(), String> {
     let mut img = Vec::with_capacity((w * h * 3) as usize);
     let n = count.max(1) as f32;
-    for p in buf.chunks_exact(3) {
+    for p in buf.as_chunks::<3>().0 {
         img.extend_from_slice(&to_srgb([p[0] / n, p[1] / n, p[2] / n]));
     }
     let f = std::fs::File::create(path).map_err(|e| e.to_string())?;
